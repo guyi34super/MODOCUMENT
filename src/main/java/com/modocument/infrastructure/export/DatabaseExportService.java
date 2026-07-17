@@ -7,12 +7,10 @@ import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
-import java.sql.Driver;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -23,14 +21,6 @@ import java.util.stream.Collectors;
  */
 @Service
 public class DatabaseExportService {
-
-    /** Conservative identifier rule for target table/column names. */
-    private static final Pattern IDENTIFIER = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]{0,127}$");
-
-    /** Drivers actually on the classpath; other targets need a driver dependency first. */
-    private static final Map<String, String> DRIVERS_BY_URL_PREFIX = Map.of(
-            "jdbc:sqlserver:", "com.microsoft.sqlserver.jdbc.SQLServerDriver",
-            "jdbc:h2:", "org.h2.Driver");
 
     /** Exports all rows and returns the inserted row count. */
     public int export(TableData table, DatabaseExportRequest request) {
@@ -67,22 +57,8 @@ public class DatabaseExportService {
     }
 
     private static SimpleDriverDataSource dataSourceFor(DatabaseExportRequest request) {
-        String url = request.getJdbcUrl() == null ? "" : request.getJdbcUrl().trim();
-        String driverClass = DRIVERS_BY_URL_PREFIX.entrySet().stream()
-                .filter(e -> url.toLowerCase(java.util.Locale.ROOT).startsWith(e.getKey()))
-                .map(Map.Entry::getValue)
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Unsupported jdbcUrl; supported prefixes: "
-                                + String.join(", ", DRIVERS_BY_URL_PREFIX.keySet())));
-        try {
-            Driver driver = (Driver) Class.forName(driverClass)
-                    .getDeclaredConstructor().newInstance();
-            return new SimpleDriverDataSource(driver, url,
-                    request.getUsername(), request.getPassword());
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("JDBC driver " + driverClass + " is unavailable.", e);
-        }
+        return JdbcIdentifiers.dataSource(
+                request.getJdbcUrl(), request.getUsername(), request.getPassword());
     }
 
     private static boolean tableExists(JdbcTemplate jdbc, String tableName) {
@@ -118,26 +94,15 @@ public class DatabaseExportService {
     }
 
     private static String requireValidIdentifier(String value, String what) {
-        if (value == null || !IDENTIFIER.matcher(value).matches()) {
-            throw new IllegalArgumentException(
-                    "Invalid " + what + " '" + value + "': only letters, digits, and underscores "
-                            + "are allowed (max 128 chars, must not start with a digit).");
-        }
-        return value;
+        return JdbcIdentifiers.requireValidIdentifier(value, what);
     }
 
     private static String quote(String identifier) {
-        return '"' + identifier + '"';
+        return JdbcIdentifiers.quote(identifier);
     }
 
     /** Host portion of the JDBC url, safe to persist in export info (no credentials). */
     public static String describeTarget(String jdbcUrl) {
-        if (jdbcUrl == null) {
-            return "";
-        }
-        int semicolon = jdbcUrl.indexOf(';');
-        String base = semicolon < 0 ? jdbcUrl : jdbcUrl.substring(0, semicolon);
-        int question = base.indexOf('?');
-        return question < 0 ? base : base.substring(0, question);
+        return JdbcIdentifiers.describeTarget(jdbcUrl);
     }
 }
