@@ -16,11 +16,17 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.pdfbox.cos.COSName;
+import org.apache.poi.hwpf.HWPFDocument;
+import org.apache.poi.hwpf.extractor.WordExtractor;
+import org.apache.poi.xwpf.extractor.XWPFWordExtractor;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.springframework.stereotype.Component;
 
-import java.io.BufferedReader;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.Reader;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -28,9 +34,10 @@ import java.nio.file.Path;
 import java.util.Locale;
 
 /**
- * Reads xlsx/csv/pdf files into plain text for LLM prompts: full reads for
- * extraction and small snippets for template classification. PDFs fall back
- * to OCR on embedded images when a page has no extractable text.
+ * Reads xlsx/csv/pdf/doc(x) files and standalone images into plain text for
+ * LLM prompts: full reads for extraction and small snippets for template
+ * classification. PDFs fall back to OCR on embedded images when a page has no
+ * extractable text; standalone images are OCRed directly.
  */
 @Component
 public class FileTextReader {
@@ -49,6 +56,9 @@ public class FileTextReader {
                 case ".xlsx", ".xls" -> readExcel(path, Integer.MAX_VALUE, Integer.MAX_VALUE);
                 case ".csv" -> Files.readString(Path.of(path));
                 case ".pdf" -> readPdf(path, Integer.MAX_VALUE);
+                case ".docx" -> readDocx(path);
+                case ".doc" -> readDoc(path);
+                case ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp" -> readImage(path);
                 default -> throw new UnsupportedOperationException(
                         "File type '" + extension + "' is not supported.");
             };
@@ -66,6 +76,9 @@ public class FileTextReader {
                 case ".xlsx", ".xls" -> readExcel(path, 5, 10);
                 case ".csv" -> readCsvSnippet(path, 5);
                 case ".pdf" -> readPdf(path, 2);
+                case ".docx" -> readDocx(path);
+                case ".doc" -> readDoc(path);
+                case ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp" -> readImage(path);
                 default -> throw new UnsupportedOperationException(
                         "Unsupported file type: " + extension);
             };
@@ -141,6 +154,31 @@ public class FileTextReader {
             }
         }
         return sb.toString();
+    }
+
+    private static String readDocx(String path) throws IOException {
+        try (InputStream in = Files.newInputStream(Path.of(path));
+             XWPFDocument document = new XWPFDocument(in);
+             XWPFWordExtractor extractor = new XWPFWordExtractor(document)) {
+            return extractor.getText();
+        }
+    }
+
+    private static String readDoc(String path) throws IOException {
+        try (InputStream in = Files.newInputStream(Path.of(path));
+             HWPFDocument document = new HWPFDocument(in);
+             WordExtractor extractor = new WordExtractor(document)) {
+            return extractor.getText();
+        }
+    }
+
+    /** Standalone scans/photos are OCRed as a whole (empty when OCR is unavailable). */
+    private String readImage(String path) throws IOException {
+        BufferedImage image = ImageIO.read(new File(path));
+        if (image == null) {
+            throw new IOException("Could not decode image: " + path);
+        }
+        return ocrService.extractText(image);
     }
 
     private String ocrPageImages(PDPage page) throws IOException {

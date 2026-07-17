@@ -5,9 +5,9 @@ import com.modocument.application.dto.TemplateIdentifierPromptInput;
 import com.modocument.application.dto.TransformRequest;
 import com.modocument.application.dto.TransformResult;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.DocumentParser;
 import com.modocument.application.port.PromptStrategy;
 import com.modocument.application.port.TransformService;
-import com.modocument.infrastructure.file.FileTextReader;
 import com.modocument.infrastructure.prompt.PromptFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,14 +27,14 @@ public class TransformServiceImpl implements TransformService {
 
     private final PromptFactory promptFactory;
     private final AiFilesService aiFilesService;
-    private final FileTextReader fileTextReader;
+    private final DocumentParser documentParser;
 
     public TransformServiceImpl(PromptFactory promptFactory,
                                 AiFilesService aiFilesService,
-                                FileTextReader fileTextReader) {
+                                DocumentParser documentParser) {
         this.promptFactory = promptFactory;
         this.aiFilesService = aiFilesService;
-        this.fileTextReader = fileTextReader;
+        this.documentParser = documentParser;
     }
 
     @Override
@@ -45,7 +45,7 @@ public class TransformServiceImpl implements TransformService {
                     "File '" + request.getFileName() + "' not found in uploads folder.");
         }
 
-        String fileContent = fileTextReader.readAsText(filePath.toString());
+        String fileContent = documentParser.extractText(filePath);
 
         PromptStrategy strategy = promptFactory.getPrompt("Extraction");
         String prompt = strategy.buildPrompt(new ExtractionPromptInput(fileContent, model));
