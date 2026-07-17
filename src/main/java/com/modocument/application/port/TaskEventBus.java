@@ -12,4 +12,8 @@ public interface TaskEventBus {
 
     /** Registers a listener invoked when work may be available. */
     void onTaskAvailable(Runnable listener);
+
+    /** Announces a task that exhausted its retries (ops visibility). */
+    default void publishDeadLetter(String taskId, String jobId) {
+    }
 }
