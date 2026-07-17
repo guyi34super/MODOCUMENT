@@ -1,0 +1,44 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # H2 profile: seeded in-memory database, no external services required.
+      # Point SPRING_DATASOURCE_URL at the mssql service (or your own server)
+      # and drop the profile for a production-style setup.
+      SPRING_PROFILES_ACTIVE: local
+      DOCLING_BASEURL: http://docling:5001
+      # Passed through from the host environment; empty keeps the app booting
+      # with the LLM endpoints disabled.
+      AIFILES_OPENAI_APIKEY: ${AIFILES_OPENAI_APIKEY:-}
+      AIFILES_OPENAI_MODELID: ${AIFILES_OPENAI_MODELID:-gpt-4o}
+    volumes:
+      - modocument-files:/app/wwwroot
+    depends_on:
+      - docling
+
+  # Rich document conversion (pdf/doc/docx/pptx/images) with OCR. The app falls
+  # back to its built-in readers automatically if this service is down.
+  docling:
+    image: ghcr.io/docling-project/docling-serve:latest
+    ports:
+      - "5001:5001"
+
+  # Optional production-style database: docker compose --profile mssql up
+  # Then create the MoDocument database and run data.sql +
+  # src/main/resources/sql/sqlserver-additions.sql once (see README).
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    profiles: ["mssql"]
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-Change_me_123}
+    ports:
+      - "1433:1433"
+    volumes:
+      - modocument-mssql:/var/opt/mssql
+
+volumes:
+  modocument-files:
+  modocument-mssql:
