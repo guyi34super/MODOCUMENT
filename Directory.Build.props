@@ -1,0 +1,7 @@
+﻿<Project>
+  <PropertyGroup>
+    <Product>MoDocument</Product>
+    <Description>MoDocument document processing service</Description>
+    <AssemblyTitle>$(Product)</AssemblyTitle>
+  </PropertyGroup>
+</Project>

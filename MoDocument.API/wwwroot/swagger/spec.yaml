@@ -1,0 +1,944 @@
+﻿openapi: 3.0.1
+info:
+  title: MoDocument Service
+  version: "1.0"
+servers:
+- url: /
+paths:
+  /TemplateDataTypes/GetAll:
+    get:
+      description: Get a list of TemplateDataTypes
+      operationId: getAllTemplateTypes
+      responses:
+        default:
+          description: OK
+      summary: Get a list of TemplateDataTypes
+      tags:
+      - TemplateDataTypes 
+  /TemplateDataTypes/GetById/{id}:
+    get:
+      description: Get a TemplateType By Id
+      operationId: getTemplateTypeById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the TemplateType record
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Not found
+      summary: Get a TemplateType by Id
+      tags:
+      - TemplateDataTypes
+  /TemplateDataTypes/Create:
+    post:
+      description: Create a new TemplateDataTypes
+      operationId: postTemplateTypes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateTypesCreate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateTypesCreate'
+          description: success
+      summary: Create a new TemplateType
+      tags:
+      - TemplateDataTypes
+  /TemplateDataTypes/Update:
+    put:
+      description: Update a TemplateType
+      operationId: putTemplateTypes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateTypesUpdate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateTypesUpdate'
+          description: success
+      summary: Update a TemplateType
+      tags:
+      - TemplateDataTypes
+  /TemplateDataTypes/{Id}:
+    delete:
+      description: Deletes the TemplateType
+      operationId: deleteTemplateType
+      parameters:
+      - content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+        description: Id of the TemplateType to delete
+        in: path
+        name: Id
+        required: true
+      requestBody:
+        content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+      responses:
+        "200":
+          content:
+            text/plain:
+              schema:
+                format: int32
+                type: integer
+          description: success
+      summary: Delete a TemplateType by Id
+      tags:
+      - TemplateDataTypes
+  /Templates/GetAll:
+    get:
+      description: Get a list of Templates
+      operationId: getAllTemplates
+      responses:
+        default:
+          description: OK
+      summary: Get a list of Templates
+      tags:
+      - Templates 
+  /Templates/GetById/{id}:
+    get:
+      description: Get a Template By Id
+      operationId: getTemplateById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the Template record
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Not found
+      summary: Get a Template by Id
+      tags:
+      - Templates
+  /Templates/Create:
+    post:
+      description: Create a new Template
+      operationId: postTemplate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateCreate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateCreate'
+          description: success
+      summary: Create a new Template
+      tags:
+      - Templates
+  /Templates/Update:
+    put:
+      description: Update a Template
+      operationId: putTemplate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateUpdate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateUpdate'
+          description: success
+      summary: Update a Template
+      tags:
+      - Templates
+  /Templates/{Id}:
+    delete:
+      description: Deletes the Template
+      operationId: deleteTemplate
+      parameters:
+      - content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+        description: Id of the Template to delete
+        in: path
+        name: Id
+        required: true
+      requestBody:
+        content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+      responses:
+        "200":
+          content:
+            text/plain:
+              schema:
+                format: int32
+                type: integer
+          description: success
+      summary: Delete a Template by Id
+      tags:
+      - Templates
+  /ProcessStep/GetAll:
+    get:
+      description: Get a list of ProcessSteps
+      operationId: getAllProcessSteps
+      responses:
+        default:
+          description: OK
+      summary: Get a list of ProcessSteps
+      tags:
+      - ProcessStep 
+  /ProcessStep/GetById/{id}:
+    get:
+      description: Get a ProcessStep By Id
+      operationId: getProcessStepById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the ProcessStep record
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Not found
+      summary: Get a ProcessStep by Id
+      tags:
+      - ProcessStep
+  /ProcessStep/Create:
+    post:
+      description: Create a new ProcessStep
+      operationId: postProcessStep
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessStepCreate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessStepCreate'
+          description: success
+      summary: Create a new ProcessStep
+      tags:
+      - ProcessStep
+  /ProcessStep/Update:
+    put:
+      description: Update a ProcessStep
+      operationId: putProcessStep
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessStepUpdate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessStepUpdate'
+          description: success
+      summary: Update a TemplateType
+      tags:
+      - ProcessStep
+  /ProcessStep/{Id}:
+    delete:
+      description: Deletes the ProcessStep
+      operationId: deleteProcessStep
+      parameters:
+      - content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+        description: Id of the ProcessStep to delete
+        in: path
+        name: Id
+        required: true
+      requestBody:
+        content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+      responses:
+        "200":
+          content:
+            text/plain:
+              schema:
+                format: int32
+                type: integer
+          description: success
+      summary: Delete a ProcessStep by Id
+      tags:
+      - ProcessStep
+  /TemplateFields/GetAll:
+    get:
+      description: Get a list of TemplateFields
+      operationId: getAllTemplateFields
+      responses:
+        default:
+          description: OK
+      summary: Get a list of TemplateFields
+      tags:
+      - TemplateFields 
+  /TemplateFields/GetById/{id}:
+    get:
+      description: Get a TemplateField By Id
+      operationId: getTemplateFieldById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the TemplateField record
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Not found
+      summary: Get a TemplateField by Id
+      tags:
+      - TemplateFields
+  /TemplateFields/Create:
+    post:
+      description: Create a new TemplateField
+      operationId: postTemplateField
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateFieldCreate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateFieldCreate'
+          description: success
+      summary: Create a new TemplateField
+      tags:
+      - TemplateFields
+  /TemplateFields/Update/{id}:
+    put:
+      description: Update a TemplateField
+      operationId: putTemplateField
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TemplateFieldUpdate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateFieldUpdate'
+          description: success
+      summary: Update a TemplateField
+      tags:
+      - TemplateFields
+  /TemplateFields/{Id}:
+    delete:
+      description: Deletes the TemplateField
+      operationId: deleteTemplateField
+      parameters:
+      - content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+        description: Id of the TemplateField to delete
+        in: path
+        name: Id
+        required: true
+      requestBody:
+        content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+      responses:
+        "200":
+          content:
+            text/plain:
+              schema:
+                format: int32
+                type: integer
+          description: success
+      summary: Delete a TemplateField by Id
+      tags:
+      - TemplateFields
+  /ImportHistory/GetAll:
+    get:
+      description: Get a list of ImportHistory
+      operationId: getAllImportHistory
+      responses:
+        default:
+          description: OK
+      summary: Get a list of ImportHistory
+      tags:
+      - ImportHistory 
+  /ImportHistory/GetById/{id}:
+    get:
+      description: Get a ImportHistory By Id
+      operationId: getImportHistoryById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the ImportHistory record
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Not found
+      summary: Get a ImportHistory by Id
+      tags:
+      - ImportHistory
+  /ImportHistory/Create:
+    post:
+      description: Create a new ImportHistory
+      operationId: postImportHistory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportHistoryCreate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportHistoryCreate'
+          description: success
+      summary: Create a new ImportHistory
+      tags:
+      - ImportHistory
+  /ImportHistory/Update/{id}:
+    put:
+      description: Update an ImportHistory
+      operationId: putImportHistory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportHistoryUpdate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportHistoryUpdate'
+          description: success
+      summary: Update an ImportHistory
+      tags:
+      - ImportHistory
+  /ImportHistory/{Id}:
+    delete:
+      description: Deletes the ImportHistory by Id
+      operationId: deleteImportHistory
+      parameters:
+      - content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+        description: Id of the ImportHistory to delete
+        in: path
+        name: Id
+        required: true
+      requestBody:
+        content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+      responses:
+        "200":
+          content:
+            text/plain:
+              schema:
+                format: int32
+                type: integer
+          description: success
+      summary: Delete a ImportHistory by Id
+      tags:
+      - ImportHistory
+  /ImportDetails/GetAll:
+    get:
+      description: Get a list of ImportDetails
+      operationId: getAllImportDetails
+      responses:
+        default:
+          description: OK
+      summary: Get a list of ImportDetails
+      tags:
+      - ImportDetails 
+  /ImportDetails/GetById/{id}:
+    get:
+      description: Get a ImportDetails By Id
+      operationId: getImportDetailsById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the ImportDetails record
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Not found
+      summary: Get a ImportDetails by Id
+      tags:
+      - ImportDetails
+  /ImportDetails/Create:
+    post:
+      description: Create a new ImportDetails
+      operationId: postImportDetails
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportDetailsCreate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportDetailsCreate'
+          description: success
+      summary: Create a new ImportDetails
+      tags:
+      - ImportDetails
+  /ImportDetails/Update/{id}:
+    put:
+      description: Update an ImportDetails
+      operationId: putImportDetails
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportDetailsUpdate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportDetailsUpdate'
+          description: success
+      summary: Update an ImportDetails
+      tags:
+      - ImportDetails
+  /ImportDetails/{Id}:
+    delete:
+      description: Deletes the ImportDetails by Id
+      operationId: deleteImportDetails
+      parameters:
+      - content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+        description: Id of the ImportDetails to delete
+        in: path
+        name: Id
+        required: true
+      requestBody:
+        content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+      responses:
+        "200":
+          content:
+            text/plain:
+              schema:
+                format: int32
+                type: integer
+          description: success
+      summary: Delete a ImportDetails by Id
+      tags:
+      - ImportDetails
+  /Validations/GetAll:
+    get:
+      description: Get a list of Validations
+      operationId: getAllValidations
+      responses:
+        default:
+          description: OK
+      summary: Get a list of ImportHistory
+      tags:
+      - Validations 
+  /Validations/GetById/{id}:
+    get:
+      description: Get a Validation By Id
+      operationId: getValidationById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the Validation record
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Not found
+      summary: Get a Validation by Id
+      tags:
+      - Validations
+  /Validations/Create:
+    post:
+      description: Create a new Validation
+      operationId: postValidation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidationCreate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationCreate'
+          description: success
+      summary: Create a new ImportHistory
+      tags:
+      - Validations
+  /Validations/Update/{id}:
+    put:
+      description: Update a Validation
+      operationId: putValidation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidationUpdate'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationUpdate'
+          description: success
+      summary: Update a Validation
+      tags:
+      - Validations
+  /Validations/{Id}:
+    delete:
+      description: Deletes the Validation by Id
+      operationId: deleteValidation
+      parameters:
+      - content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+        description: Id of the Validation to delete
+        in: path
+        name: Id
+        required: true
+      requestBody:
+        content:
+          text/plain:
+            schema:
+              format: int32
+              type: integer
+      responses:
+        "200":
+          content:
+            text/plain:
+              schema:
+                format: int32
+                type: integer
+          description: success
+      summary: Delete a Validation by Id
+      tags:
+      - Validations
+components:
+  schemas:
+    TemplateDataTypesCreate:
+      description: TemplateDataTypesCreate object
+      example:
+        DataType: ""
+      properties:
+        Name:
+          description: DataType for TemplateDataTypes
+          type: String
+      type: object
+    TemplateTypesUpdate:
+      description: TemplateTypesUpdate object
+      example:
+        TemplateTypeId: ""
+        DataType: ""
+      properties:
+        TemplateTypeId:
+          description: Id for TemplateDataTypes
+          type: int
+        Name:
+          description: Name for TemplateDataTypes
+          type: String
+      type: object
+    TemplateCreate:
+      description: TemplateCreate object
+      example:
+        Name: ""
+        Description: ""
+      properties:
+        Name:
+          description: Name for Template
+          type: String
+        Description:
+          description: Description for Template
+          type: String
+      type: object
+    TemplateUpdate:
+      description: TemplateUpdate object
+      example:
+        TemplateId: ""
+        Name: ""
+        Description: ""
+      properties:
+        TemplateId:
+          description: Id for Template
+          type: int
+        Name:
+          description: Name for Template
+          type: String
+        Description:
+          description: Description for Template
+          type: String
+      type: object
+    ProcessStepCreate:
+      description: ProcessStepCreate object
+      example:
+        Name: ""
+        Description: ""
+      properties:
+        Name:
+          description: Name for ProcessStep
+          type: String
+        Description:
+          description: Description for ProcessStep
+          type: String
+      type: object
+    ProcessStepUpdate:
+      description: ProcessStepUpdate object
+      example:
+        ProcessStepId: ""
+        Name: ""
+        Description: ""
+      properties:
+        ProcessStepId:
+          description: Id for ProcessStep
+          type: int
+        Name:
+          description: Name for ProcessStep
+          type: String
+        Description:
+          description: Description for ProcessStep
+          type: String
+      type: object
+    TemplateFieldCreate:
+      description: TemplateFieldCreate object
+      example:
+        TemplateId: ""
+        FieldName: ""
+        TemplateDataTypeId: ""
+      properties:
+        TemplateId:
+          description: TemplateId for TemplateField
+          type: int
+        FieldName:
+          description: Type for TemplateField
+          type: String
+        TemplateDataTypeId:
+          description: TemplateDataTypeId for TemplateField
+          type: int
+      type: object
+    TemplateFieldUpdate:
+      description: TemplateFieldUpdate object
+      example:
+        TemplateFieldsId: ""
+        TemplateId: ""
+        FieldName: ""
+        TemplateDataTypeId: ""
+      properties:
+        TemplateFieldsId:
+          description: TemplateFieldsId for TemplateField
+          type: int
+        TemplateId:
+          description: TemplateId for TemplateField
+          type: int
+        FieldName:
+          description: FieldName for TemplateField
+          type: String
+        TemplateDataTypeId:
+          description: TemplateDataTypeId for TemplateField
+          type: int
+      type: object
+    ImportHistoryCreate:
+      description: ImportHistoryCreate object
+      example:
+        ImportDate: ""
+        FileName: ""
+        CompanyId: ""
+        TemplateId: ""
+      properties:
+        ImportDate:
+          description: ImportDate for ImportHistory
+          type: DateTime
+        FileName:
+          description: FileName for ImportHistory
+          type: string
+        CompanyId:
+          description: CompanyId for ImportHistory
+          type: int
+        TemplateId:
+          description: TemplateId for ImportHistory
+          type: int
+      type: object
+    ImportHistoryUpdate:
+      description: ImportHistoryUpdate object
+      example:
+        ImportHistoryId: ""
+        ImportDate: ""
+        FileName: ""
+        CompanyId: ""
+        TemplateId: ""
+      properties:
+        ImportHistoryId:
+          description: Id for ImportHistory
+          type: int
+        ImportDate:
+          description: ImportDate for ImportHistory
+          type: DateTime
+        FileName:
+          description: FileName for ImportHistory
+          type: string
+        CompanyId:
+          description: CompanyId for ImportHistory
+          type: int
+        TemplateId:
+          description: TemplateId for ImportHistory
+          type: int
+      type: object
+    ImportDetailsCreate:
+      description: ImportDetailsCreate object
+      example:
+        ImportHistoryId: ""
+        ProcessStepId: ""
+        RawJSON: ""
+      properties:
+        ImportHistoryId:
+          description: ImportHistoryId for ImportDetails
+          type: int
+        ProcessStepId:
+          description: ProcessStepId for ImportDetails
+          type: int
+        RawJSON:
+          description: RawJSON for ImportDetails
+          type: string
+      type: object
+    ImportDetailsUpdate:
+      description: ImportDetailsUpdate object
+      example:
+        ImportDetailsId: ""
+        ImportHistoryId: ""
+        ProcessStepId: ""
+        RawJSON: ""
+      properties:
+        ImportDetailsId:
+          description: Id for ImportDetails
+          type: int
+        ImportHistoryId:
+          description: ImportHistoryId for ImportDetails
+          type: int
+        ProcessStepId:
+          description: ProcessStepId for ImportDetails
+          type: int
+        RawJSON:
+          description: RawJSON for ImportDetails
+          type: string
+      type: object
+    ValidationCreate:
+      description: ValidationCreate object
+      example:
+        TemplateFieldsId: ""
+        Name: ""
+        Description: ""
+      properties:
+        TemplateFieldsId:
+          description: TemplateFieldsId for ImportHistory
+          type: Int
+        Name:
+          description: Name for Validation
+          type: string
+        Description:
+          description: Description for Validation
+          type: int
+      type: object
+    ValidationUpdate:
+      description: ValidationUpdate object
+      example:
+        ValidationId: ""
+        TemplateFieldsId: ""
+        Name: ""
+        Description: ""
+      properties:
+        ValidationId:
+          description: Id for Validation
+          type: 
+        TemplateFieldsId:
+          description: TemplateFieldsId for ImportHistory
+          type: Int
+        Name:
+          description: Name for Validation
+          type: string
+        Description:
+          description: Description for Validation
+          type: int
+      type: object
