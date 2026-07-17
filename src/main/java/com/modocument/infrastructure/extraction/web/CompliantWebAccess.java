@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.extraction.web;
 
+import com.modocument.domain.model.UrlNormalizer;
 import com.modocument.application.dto.FetchRequest;
 import com.modocument.application.dto.FetchResult;
 import com.modocument.application.port.ExtractionAuditLog;

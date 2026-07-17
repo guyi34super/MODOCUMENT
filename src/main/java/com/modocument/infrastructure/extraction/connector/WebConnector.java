@@ -14,7 +14,7 @@ import com.modocument.infrastructure.extraction.ExtractionProperties;
 import com.modocument.domain.model.Hashing;
 import com.modocument.infrastructure.extraction.web.CompliantWebAccess;
 import com.modocument.infrastructure.extraction.web.HtmlContentExtractor;
-import com.modocument.infrastructure.extraction.web.UrlNormalizer;
+import com.modocument.domain.model.UrlNormalizer;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;

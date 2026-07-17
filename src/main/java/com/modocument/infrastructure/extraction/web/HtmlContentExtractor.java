@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.extraction.web;
 
+import com.modocument.domain.model.UrlNormalizer;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;

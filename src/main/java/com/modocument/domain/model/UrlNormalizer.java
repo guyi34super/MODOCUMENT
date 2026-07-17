@@ -1,4 +1,4 @@
-package com.modocument.infrastructure.extraction.web;
+package com.modocument.domain.model;
 
 import java.net.URI;
 import java.util.Arrays;

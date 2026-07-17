@@ -19,7 +19,7 @@ import com.modocument.domain.model.ExtractionTaskType;
 import com.modocument.domain.model.SourceType;
 import com.modocument.infrastructure.extraction.ExtractionProperties;
 import com.modocument.domain.model.Hashing;
-import com.modocument.infrastructure.extraction.web.UrlNormalizer;
+import com.modocument.domain.model.UrlNormalizer;
 import com.modocument.infrastructure.extraction.worker.ExtractionMetrics;
 import org.springframework.stereotype.Component;
 
