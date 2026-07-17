@@ -1061,6 +1061,365 @@ paths:
       summary: Export to a custom database
       tags:
       - IngestionJobs
+  /api/extraction/sources:
+    post:
+      description: Create an extraction source (website / REST API / external database).
+        Requires termsAcknowledged=true; website sources must allow-list their domains;
+        configurations never store secrets.
+      operationId: createExtractionSource
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                type:
+                  type: string
+                  enum: [WEBSITE, REST_API, DATABASE]
+                termsAcknowledged:
+                  type: boolean
+                dataSpec:
+                  type: string
+                web:
+                  type: object
+                api:
+                  type: object
+                db:
+                  type: object
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Invalid configuration (e.g. terms not acknowledged)
+      summary: Create an extraction source
+      tags:
+      - Extraction
+    get:
+      description: List extraction sources
+      operationId: listExtractionSources
+      responses:
+        default:
+          description: OK
+      summary: List extraction sources
+      tags:
+      - Extraction
+  /api/extraction/sources/{id}:
+    get:
+      description: Get an extraction source by id
+      operationId: getExtractionSource
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Not found
+      summary: Get an extraction source
+      tags:
+      - Extraction
+    put:
+      description: Update an extraction source
+      operationId: updateExtractionSource
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Updated
+        '404':
+          description: Not found
+      summary: Update an extraction source
+      tags:
+      - Extraction
+    delete:
+      description: Delete an extraction source
+      operationId: deleteExtractionSource
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+        '404':
+          description: Not found
+      summary: Delete an extraction source
+      tags:
+      - Extraction
+  /api/extraction/jobs:
+    post:
+      description: Create a distributed extraction job for a source and (by default)
+        start it. Optional per-run credentials (dbUsername/dbPassword/apiToken) are
+        held in memory only and never persisted.
+      operationId: createExtractionJob
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sourceId:
+                  type: string
+                templateId:
+                  type: integer
+                dataSpec:
+                  type: string
+                incremental:
+                  type: boolean
+                autoStart:
+                  type: boolean
+                credentials:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        '201':
+          description: Created
+      summary: Create (and start) an extraction job
+      tags:
+      - Extraction
+    get:
+      description: List extraction jobs
+      operationId: listExtractionJobs
+      responses:
+        default:
+          description: OK
+      summary: List extraction jobs
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}:
+    get:
+      description: Get an extraction job with live task counts
+      operationId: getExtractionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+        '404':
+          description: Not found
+      summary: Get an extraction job
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}/start:
+    post:
+      description: Plan seed tasks and start the workers
+      operationId: startExtractionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Started
+        '409':
+          description: Already started
+      summary: Start an extraction job
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}/pause:
+    post:
+      description: Pause a running job (queued tasks stay queued)
+      operationId: pauseExtractionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paused
+      summary: Pause an extraction job
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}/resume:
+    post:
+      description: Resume a paused or failed job; unfinished tasks are re-announced
+      operationId: resumeExtractionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Resumed
+      summary: Resume an extraction job
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}/cancel:
+    post:
+      description: Cancel a job; remaining tasks are skipped as workers reach them
+      operationId: cancelExtractionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancelled
+      summary: Cancel an extraction job
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}/records:
+    get:
+      description: Cursor-paged peek at the job's raw or processed records
+      operationId: getExtractionRecords
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          description: raw or processed (default processed)
+          schema:
+            type: string
+        - name: afterId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+      summary: Page through extracted records
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}/audit:
+    get:
+      description: Cursor-paged audit trail (every fetch, robots/domain block, retry,
+        dedup, LLM call, bridge)
+      operationId: getExtractionAudit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: afterId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+      summary: Page through the extraction audit trail
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}/bridge:
+    post:
+      description: Bridge extracted records into the document pipeline - auto-map onto
+        the template, validate with the rule engine, and create a standard ingestion
+        job (chat editing and file/database export then work unchanged).
+      operationId: bridgeExtractionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                templateId:
+                  type: integer
+                maxRows:
+                  type: integer
+                llmClean:
+                  type: boolean
+      responses:
+        '200':
+          description: Bridged; response includes the new ingestionJobId
+        '409':
+          description: Extraction job not completed yet
+      summary: Bridge extracted records to a template
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}/infer-schema:
+    post:
+      description: 'LLM agent: suggest a template schema (field names, types, examples)
+        from sample extracted records'
+      operationId: inferExtractionSchema
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+        '409':
+          description: LLM key not configured or no records yet
+      summary: Infer a schema from extracted records
+      tags:
+      - Extraction
+  /api/extraction/jobs/{id}/summary:
+    get:
+      description: 'LLM agent: short human summary of the extraction run'
+      operationId: summarizeExtractionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+        '409':
+          description: LLM key not configured
+      summary: Summarize an extraction run
+      tags:
+      - Extraction
+  /api/extraction/metrics:
+    get:
+      description: Queue depth, fetch/compliance counters, and worker pool state
+      operationId: getExtractionMetrics
+      responses:
+        '200':
+          description: Successful response
+      summary: Extraction metrics
+      tags:
+      - Extraction
 components:
   schemas:
     TemplateDataTypesCreate:

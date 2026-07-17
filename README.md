@@ -75,6 +75,46 @@ development and tests.
   only ever travel as bound parameters (no SQL injection); credentials are used for the
   one export and never persisted or logged.
 
+### Data extraction from external sources
+- Collect structured data from **authorized external sources** — websites, REST APIs
+  (the compliant way to pull social-platform data is their **official API** with your
+  own credentials), and external JDBC databases — then feed it into the same template
+  mapping / validation / export pipeline.
+- **Sources** (`/api/extraction/sources`) describe where and what to extract. Creating
+  one requires `termsAcknowledged: true` — you confirm you are authorized to access the
+  source under its terms of service and applicable data-protection/privacy law.
+- **Jobs** (`/api/extraction/jobs`) run distributed: work is split into small leased
+  tasks (one page / one API page / one DB batch) claimed by a worker pool. Retries with
+  exponential backoff, content-hash deduplication, incremental re-extraction
+  (ETag/Last-Modified, API cursors, DB watermarks), pause/resume, and crash recovery
+  via lease expiry come built in. Records stream through bounded batches — the whole
+  dataset is never held in memory.
+- **Storage**: raw payloads, normalized records, job state, the task queue, and the
+  audit trail live in **MongoDB** (`extraction.store=mongo`); local/test profiles use
+  in-memory adapters so nothing external is needed. **Kafka** (optional,
+  `extraction.kafka.enabled`) fans work signals across app instances — the store stays
+  the source of truth, so duplicate or lost signals are harmless.
+- **Compliance is enforced in code, not just documented**: every web fetch passes one
+  gate that checks the per-source **domain allow-list**, **robots.txt** (fail-closed
+  when it cannot be fetched, crawl-delay honored), and a **per-host rate limiter**;
+  the crawler sends an honest bot User-Agent, and 401/402/403 (logins, paywalls) are
+  terminal skips — never retried, never worked around, no cookies, no CAPTCHA handling.
+  Every fetch attempt and every blocked/deduped/retried decision is written to a
+  queryable **audit trail** (`GET /api/extraction/jobs/{id}/audit`).
+- **Secrets are never persisted**: API auth is an env-var reference on the source, or a
+  per-run token; DB credentials are supplied per-run and held in process memory only
+  (DB tasks are pinned to the node that holds them).
+- **LLM agents (optional)**: infer a template schema from sample records
+  (`POST .../infer-schema`), clean batches during bridging (`llmClean: true`), and
+  summarize a run (`GET .../summary`). All degrade gracefully without an API key.
+- **Bridge** (`POST /api/extraction/jobs/{id}/bridge`) hands the records to the
+  existing document pipeline: columns are auto-mapped onto your template, rows are
+  validated by the rule engine, and a standard ingestion job is created — so review,
+  chat editing, and CSV/JSON/XLSX/database export work on extracted data unchanged.
+- Websites are fetched with plain HTTP by default; **Playwright** (headless Chromium)
+  renders JS-heavy pages when `extraction.web.render-js-enabled=true` and its browsers
+  are installed, degrading to HTTP otherwise.
+
 ### AI integration (Spring AI)
 - All LLM access goes through **Spring AI's `ChatClient`** (OpenAI chat model) behind a
   single application port, with structured output for extraction, mapping, and chat
@@ -123,6 +163,9 @@ AIFILES_OPENAI_APIKEY=<your-openai-key> docker compose up --build
 
 # also start SQL Server (then create the schema — see Database below)
 docker compose --profile mssql up --build
+
+# extraction at scale: MongoDB store + Kafka work distribution
+APP_PROFILES=local,scale docker compose --profile extraction up --build
 ```
 
 The API is on <http://localhost:8080> (Swagger UI: <http://localhost:8080/swagger-ui>),
@@ -143,7 +186,16 @@ mvn -B verify
 | OpenAI base URL | `aifiles.openai.base-url` / `AIFILES_OPENAI_BASEURL` | `https://api.openai.com` (host root, no `/v1`) |
 | docling-serve URL | `docling.base-url` / `DOCLING_BASEURL` | empty (built-in readers only) |
 | Database | `spring.datasource.url` / `SPRING_DATASOURCE_URL` | SQL Server `localhost`, database `MoDocument` |
-| Profile | `SPRING_PROFILES_ACTIVE` | default (SQL Server); use `local` for H2 |
+| Profile | `SPRING_PROFILES_ACTIVE` | default (SQL Server); use `local` for H2, add `scale` for Mongo+Kafka extraction |
+| Extraction store | `extraction.store` / `EXTRACTION_STORE` | `mongo` (default profile); `memory` in `local`/`test` |
+| MongoDB URI | `spring.data.mongodb.uri` / `EXTRACTION_MONGO_URI` | `mongodb://localhost:27017/modocument` |
+| Kafka distribution | `extraction.kafka.enabled` / `EXTRACTION_KAFKA_ENABLED` | `false` (workers poll the store queue) |
+| Kafka brokers | `spring.kafka.bootstrap-servers` / `EXTRACTION_KAFKA_SERVERS` | `localhost:9092` |
+| Worker pool | `extraction.worker.threads` (+ `lease-seconds`, `max-attempts`, `backoff-millis`) | 4 threads, 60s lease, 4 attempts |
+| Crawler identity | `extraction.web.user-agent` | `MoDocumentBot/1.0 (+https://example.com/bot)` — set a real contact URL |
+| Crawl politeness | `extraction.web.default-delay-millis` (robots crawl-delay always honored) | `1000` |
+| Crawl caps | `extraction.web.max-pages-default` / `max-depth-default` | 100 pages, depth 2 |
+| JS rendering | `extraction.web.render-js-enabled` (needs Playwright browsers) | `false` |
 
 LLM calls go through [Spring AI](https://docs.spring.io/spring-ai/reference/); the
 legacy `aifiles.openai.*` keys are bridged into the Spring AI OpenAI auto-configuration,
@@ -183,6 +235,22 @@ contract at `/swagger/spec.yaml`. Summary:
 |---|---|
 | `GET /api/ingestion/jobs/{id}/export/file?format=csv\|json\|xlsx` | Download validated rows (copy archived in `wwwroot/exports/`) |
 | `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied SQL Server/H2 database |
+
+### Data extraction
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/extraction/sources` | Create a source (requires `termsAcknowledged: true`; website sources need a domain allow-list) |
+| `GET/PUT/DELETE /api/extraction/sources/{id}` | Manage sources |
+| `POST /api/extraction/jobs` | Create (and by default start) a distributed extraction job; optional per-run `credentials` stay in memory only |
+| `POST /api/extraction/jobs/{id}/start\|pause\|resume\|cancel` | Job lifecycle |
+| `GET /api/extraction/jobs/{id}` | Status with live task counts and counters |
+| `GET /api/extraction/jobs/{id}/records?kind=raw\|processed` | Cursor-paged record peek |
+| `GET /api/extraction/jobs/{id}/audit` | Cursor-paged audit trail (fetches, robots/domain blocks, retries, dedups, LLM calls) |
+| `POST /api/extraction/jobs/{id}/bridge` | Hand records to the document pipeline (auto-map + validate → standard ingestion job) |
+| `POST /api/extraction/jobs/{id}/infer-schema` | LLM: suggest a template schema from sample records |
+| `GET /api/extraction/jobs/{id}/summary` | LLM: short human summary of the run |
+| `GET /api/extraction/metrics` | Queue depth, compliance counters, worker pool state |
 
 ### Legacy pipeline & utilities
 
@@ -237,20 +305,78 @@ curl -X POST localhost:8080/api/ingestion/jobs/1/export/database -H 'Content-Typ
 If a stage fails (LLM outage, unreadable scan, ...), the job stores the error and stays
 at its last completed step — fix the cause and `POST .../resume`.
 
+## Extraction walkthrough
+
+```
+source ──> tasks ─────────> raw records ──> processed records ──> bridge ──> ingestion job
+(website/  leased by        content-hash    normalized flat        auto-map   review, chat
+ API/DB)   worker fleet,    deduplicated    rows, deterministic    + rule     edit, export
+           robots + rate    (Mongo)         cleanup (+ optional    engine     (same as any
+           limits enforced                  LLM cleaning)                     document)
+```
+
+```bash
+# 1. register a source you are authorized to extract from
+curl -X POST localhost:8080/api/extraction/sources -H 'Content-Type: application/json' -d '{
+  "name": "Public docs site",
+  "type": "WEBSITE",
+  "termsAcknowledged": true,
+  "dataSpec": "employee names and numbers from the staff tables",
+  "web": {"seedUrls": ["https://docs.example.com/staff"],
+          "allowedDomains": ["example.com"], "maxDepth": 2, "maxPages": 50}}'
+
+# 2. run an extraction job (distributed workers, robots.txt + rate limits enforced)
+curl -X POST localhost:8080/api/extraction/jobs -H 'Content-Type: application/json' \
+     -d '{"sourceId": "<source-id>"}'
+
+# 3. watch progress, peek at records, check the audit trail
+curl localhost:8080/api/extraction/jobs/<job-id>
+curl "localhost:8080/api/extraction/jobs/<job-id>/records?kind=processed&limit=10"
+curl "localhost:8080/api/extraction/jobs/<job-id>/audit"
+
+# 4. optional LLM help: suggest a template schema from the extracted records
+curl -X POST localhost:8080/api/extraction/jobs/<job-id>/infer-schema
+
+# 5. bridge into the document pipeline, then use the normal review/export endpoints
+curl -X POST localhost:8080/api/extraction/jobs/<job-id>/bridge \
+     -H 'Content-Type: application/json' -d '{"templateId": 100, "llmClean": true}'
+curl -OJ "localhost:8080/api/ingestion/jobs/<ingestion-job-id>/export/file?format=csv"
+```
+
+A REST API source pulls pages through official APIs (`"type": "REST_API"`, auth via an
+env-var reference or a per-run `credentials.apiToken`); a database source
+(`"type": "DATABASE"`) streams watermark-ordered batches with per-run
+`credentials.dbUsername`/`dbPassword` that are never persisted.
+
+**Responsible use**: only extract from sources you are authorized to access. The
+service enforces robots.txt, domain allow-lists, rate limits, and never bypasses
+logins, paywalls, CAPTCHAs, or anti-bot measures — but *you* remain responsible for
+complying with each source's terms of service and with data-protection law (GDPR and
+similar) for any personal data you collect, store, or process.
+
 ## Architecture
 
 Single Maven module with Clean Architecture layering by package:
 
 ```
 com.modocument
-├── domain           entities (JPA) + value objects/enums
+├── domain           entities (JPA) + Mongo documents + value objects/enums
 ├── application      DTOs, ports (interfaces), use cases, validation messages
 ├── infrastructure   JPA repositories, Spring AI ChatClient adapter, prompt strategies,
 │                    file readers (POI/Commons CSV/PDFBox + optional Tess4J OCR),
 │                    docling-serve client, transform/ingestion pipeline,
-│                    validation rules, file/database export
+│                    validation rules, file/database export,
+│                    extraction (Mongo + in-memory stores, lease queue, Kafka event
+│                    bus, worker pool, robots/rate-limit compliance, web/API/JDBC
+│                    connectors)
 └── api              REST controllers + web config (CORS, case-insensitive routes)
 ```
+
+Extraction runs on a lease-based task queue: the store (MongoDB in production,
+in-memory locally) is the source of truth for every task's lease/attempt state, and
+Kafka — when enabled — only distributes "work available" signals across instances, so
+duplicate or lost signals are harmless and any instance can pick up a crashed
+instance's tasks once their leases expire. Scale out by running more app instances.
 
 ## Database
 
@@ -274,3 +400,11 @@ com.modocument
   - `mssql` (optional, `--profile mssql`): SQL Server 2022 for a production-style
     setup — point the app at it with `SPRING_DATASOURCE_URL` and create the schema as
     described in [Database](#database).
+  - `mongodb` + `kafka` (optional, `--profile extraction`): the extraction store and
+    work-distribution bus. Run `APP_PROFILES=local,scale docker compose --profile
+    extraction up --build` to switch the app onto them. JS rendering (Playwright) is
+    off in the container image — the crawler uses plain HTTP there; install the
+    Playwright browsers locally (`npx playwright install chromium` or
+    `mvn exec:java -e -D exec.mainClass=com.microsoft.playwright.CLI -D
+    'exec.args=install chromium'`) and set `extraction.web.render-js-enabled=true`
+    to enable it in local runs.

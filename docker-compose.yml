@@ -7,12 +7,17 @@ services:
       # H2 profile: seeded in-memory database, no external services required.
       # Point SPRING_DATASOURCE_URL at the mssql service (or your own server)
       # and drop the profile for a production-style setup.
-      SPRING_PROFILES_ACTIVE: local
+      # For extraction at scale, run with APP_PROFILES=local,scale together
+      # with `--profile extraction` so Mongo + Kafka come up too.
+      SPRING_PROFILES_ACTIVE: ${APP_PROFILES:-local}
       DOCLING_BASEURL: http://docling:5001
       # Passed through from the host environment; empty keeps the app booting
       # with the LLM endpoints disabled.
       AIFILES_OPENAI_APIKEY: ${AIFILES_OPENAI_APIKEY:-}
       AIFILES_OPENAI_MODELID: ${AIFILES_OPENAI_MODELID:-gpt-4o}
+      # Only used when the scale profile is active.
+      EXTRACTION_MONGO_URI: mongodb://mongodb:27017/modocument
+      EXTRACTION_KAFKA_SERVERS: kafka:9092
     volumes:
       - modocument-files:/app/wwwroot
     depends_on:
@@ -39,6 +44,39 @@ services:
     volumes:
       - modocument-mssql:/var/opt/mssql
 
+  # Extraction at scale: docker compose --profile extraction up with
+  # APP_PROFILES=local,scale. MongoDB stores raw/processed records, job state,
+  # and the task queue; Kafka distributes work across app instances.
+  mongodb:
+    image: mongo:7
+    profiles: ["extraction"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - modocument-mongo:/data/db
+
+  kafka:
+    image: apache/kafka:3.8.0
+    profiles: ["extraction"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+    volumes:
+      - modocument-kafka:/var/lib/kafka/data
+
 volumes:
   modocument-files:
   modocument-mssql:
+  modocument-mongo:
+  modocument-kafka:

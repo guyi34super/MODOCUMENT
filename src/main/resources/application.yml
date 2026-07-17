@@ -1,6 +1,14 @@
 spring:
   application:
     name: MoDocument
+  data:
+    mongodb:
+      # Extraction store (raw pages/payloads, processed records, job state,
+      # task queue). Only used when extraction.store=mongo.
+      uri: ${EXTRACTION_MONGO_URI:mongodb://localhost:27017/modocument}
+  kafka:
+    # Extraction work distribution. Only used when extraction.kafka.enabled=true.
+    bootstrap-servers: ${EXTRACTION_KAFKA_SERVERS:localhost:9092}
   datasource:
     # Same database the original backend targeted. Override via SPRING_DATASOURCE_* env vars.
     url: jdbc:sqlserver://localhost;databaseName=MoDocument;integratedSecurity=true;trustServerCertificate=true
@@ -39,6 +47,37 @@ docling:
   # Optional docling-serve endpoint (e.g. http://localhost:5001). When empty,
   # documents are parsed with the built-in readers (POI/CSV/PDFBox + OCR).
   base-url: ""
+
+extraction:
+  # Where extraction data (sources, jobs, tasks, raw/processed records, audit)
+  # lives: "mongo" for production scale, "memory" for local/test.
+  store: ${EXTRACTION_STORE:mongo}
+  kafka:
+    # When enabled, task-available events are published to Kafka so any
+    # instance in the consumer group can claim the task from the store. When
+    # disabled, workers poll the store queue directly.
+    enabled: ${EXTRACTION_KAFKA_ENABLED:false}
+  worker:
+    enabled: true
+    threads: 4
+    lease-seconds: 60
+    poll-millis: 500
+    shutdown-grace-seconds: 20
+    max-attempts: 4
+    backoff-millis: 5000
+    sweep-millis: 15000
+  batch-size: 500
+  web:
+    # Honest bot identity sent on every request; set the contact URL to a page
+    # describing your crawler before extracting at scale.
+    user-agent: "MoDocumentBot/1.0 (+https://example.com/bot)"
+    default-delay-millis: 1000
+    robots-ttl-seconds: 3600
+    max-body-bytes: 5242880
+    request-timeout-seconds: 20
+    render-js-enabled: false
+    max-pages-default: 100
+    max-depth-default: 2
 
 springdoc:
   swagger-ui:
