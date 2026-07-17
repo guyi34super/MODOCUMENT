@@ -48,6 +48,20 @@ docling:
   # documents are parsed with the built-in readers (POI/CSV/PDFBox + OCR).
   base-url: ""
 
+ocr:
+  vision:
+    # LLM vision OCR for standalone images and scanned PDF pages, tried before
+    # the Tesseract fallback. Active only when an OpenAI key is configured
+    # (see aifiles.openai above); without one it disables itself silently.
+    enabled: ${OCR_VISION_ENABLED:true}
+    model: ${OCR_VISION_MODEL:gpt-4o}
+    # Vision-OCR page budget per PDF; pages beyond it fall back to Tesseract.
+    max-pages: ${OCR_VISION_MAXPAGES:20}
+    # Rasterization DPI for scanned pages and the longest image edge uploaded;
+    # larger images are downscaled first (the upload size/cost control).
+    dpi: 200
+    max-dimension: 2048
+
 extraction:
   # Where extraction data (sources, jobs, tasks, raw/processed records, audit)
   # lives: "mongo" for production scale, "memory" for local/test.

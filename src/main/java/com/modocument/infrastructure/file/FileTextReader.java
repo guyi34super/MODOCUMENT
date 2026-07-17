@@ -8,6 +8,7 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
@@ -36,16 +37,18 @@ import java.util.Locale;
 /**
  * Reads xlsx/csv/pdf/doc(x) files and standalone images into plain text for
  * LLM prompts: full reads for extraction and small snippets for template
- * classification. PDFs fall back to OCR on embedded images when a page has no
- * extractable text; standalone images are OCRed directly.
+ * classification. Pages with no extractable text and standalone images go
+ * through the OCR chain: vision LLM first (when enabled), then Tesseract.
  */
 @Component
 public class FileTextReader {
 
     private final OcrService ocrService;
+    private final VisionOcrService visionOcrService;
 
-    public FileTextReader(OcrService ocrService) {
+    public FileTextReader(OcrService ocrService, VisionOcrService visionOcrService) {
         this.ocrService = ocrService;
+        this.visionOcrService = visionOcrService;
     }
 
     /** Full text of the file, used to build the extraction prompt. */
@@ -142,12 +145,28 @@ public class FileTextReader {
         try (PDDocument document = Loader.loadPDF(new File(path))) {
             int pages = Math.min(document.getNumberOfPages(), maxPages);
             PDFTextStripper stripper = new PDFTextStripper();
+            PDFRenderer renderer = new PDFRenderer(document);
+            int visionPagesUsed = 0;
             for (int page = 1; page <= pages; page++) {
                 stripper.setStartPage(page);
                 stripper.setEndPage(page);
                 String pageText = stripper.getText(document).trim();
                 if (!pageText.isEmpty()) {
                     sb.append(pageText).append(System.lineSeparator());
+                    continue;
+                }
+                // Scanned page: rasterize the whole page for the vision model
+                // (captures multi-image/vector scans the per-image path misses),
+                // bounded by the per-document vision page budget.
+                String ocrText = "";
+                if (visionOcrService.isEnabled()
+                        && visionPagesUsed < visionOcrService.maxPagesPerDocument()) {
+                    visionPagesUsed++;
+                    ocrText = visionOcrService.extractText(
+                            renderer.renderImageWithDPI(page - 1, visionOcrService.renderDpi()));
+                }
+                if (!ocrText.isBlank()) {
+                    sb.append(ocrText).append(System.lineSeparator());
                 } else {
                     sb.append(ocrPageImages(document.getPage(page - 1)));
                 }
@@ -178,7 +197,8 @@ public class FileTextReader {
         if (image == null) {
             throw new IOException("Could not decode image: " + path);
         }
-        return ocrService.extractText(image);
+        String text = visionOcrService.extractText(image);
+        return !text.isBlank() ? text : ocrService.extractText(image);
     }
 
     private String ocrPageImages(PDPage page) throws IOException {

@@ -12,9 +12,11 @@ import java.util.Set;
 /**
  * Primary {@link DocumentParser}: docling-serve when configured (rich layout
  * handling + OCR for scans), transparently falling back to the built-in
- * readers (POI/Commons CSV/PDFBox/Tess4J) when docling is disabled, does not
- * support the format, or errors — the same graceful-degradation philosophy as
- * {@link OcrService}.
+ * readers (POI/Commons CSV/PDFBox) when docling is disabled, does not support
+ * the format, or errors. Inside the built-in readers, images and scanned PDF
+ * pages go through {@link VisionOcrService} (OpenAI vision model) first and
+ * {@link OcrService} (Tess4J) as offline fallback — the same
+ * graceful-degradation philosophy throughout.
  */
 @Component
 public class CompositeDocumentParser implements DocumentParser {
