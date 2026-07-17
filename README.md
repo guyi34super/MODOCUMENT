@@ -28,9 +28,12 @@ development and tests.
 - **Everything else via docling + OCR:** when a [docling-serve](https://github.com/docling-project/docling-serve)
   endpoint is configured, `pdf`, `doc`, `docx`, `pptx`, `html`, and images/scans
   (`png`, `jpg`, `tiff`, `bmp`, `webp`) are converted to markdown with OCR.
-- **Automatic fallback readers** when docling is absent or fails: PDFBox for PDFs
-  (per-page Tesseract OCR for scanned pages), POI for `.docx`/`.doc`, Tesseract OCR for
-  standalone images. Degrades gracefully when the native OCR library is unavailable.
+- **Automatic fallback readers** when docling is absent or fails: PDFBox for PDFs,
+  POI for `.docx`/`.doc`, plus a two-tier OCR chain for standalone images and scanned
+  PDF pages — **LLM vision OCR** (the configured OpenAI model, `gpt-4o` by default,
+  reading rasterized pages/images) first, then per-page **Tesseract** as the offline
+  fallback. Each tier degrades gracefully: no OpenAI key disables vision OCR, no
+  native Tesseract library disables local OCR — parsing never fails because of OCR.
 - **LLM table extraction** (Spring AI structured output) turns the extracted text of
   unstructured documents into the same table shape.
 
@@ -119,6 +122,9 @@ development and tests.
 - All LLM access goes through **Spring AI's `ChatClient`** (OpenAI chat model) behind a
   single application port, with structured output for extraction, mapping, and chat
   edits.
+- The same `ChatClient` and key also power **multimodal vision OCR** of images and
+  scanned PDF pages (`ocr.vision.*` settings); it switches itself off when no key is
+  configured.
 - Legacy config keys are bridged, so `AIFILES_OPENAI_APIKEY` / `AIFILES_OPENAI_MODELID`
   keep working. The app **boots without an API key** — only LLM-dependent endpoints
   return an error until one is set.
@@ -185,6 +191,9 @@ mvn -B verify
 | OpenAI model | `aifiles.openai.model-id` / `AIFILES_OPENAI_MODELID` | `gpt-4o` |
 | OpenAI base URL | `aifiles.openai.base-url` / `AIFILES_OPENAI_BASEURL` | `https://api.openai.com` (host root, no `/v1`) |
 | docling-serve URL | `docling.base-url` / `DOCLING_BASEURL` | empty (built-in readers only) |
+| Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | `true` (active only when an OpenAI key is set) |
+| Vision OCR model | `ocr.vision.model` / `OCR_VISION_MODEL` | `gpt-4o` |
+| Vision OCR page budget | `ocr.vision.max-pages` / `OCR_VISION_MAXPAGES` (+ `dpi`, `max-dimension`) | 20 pages/PDF, 200 DPI, 2048px longest edge |
 | Database | `spring.datasource.url` / `SPRING_DATASOURCE_URL` | SQL Server `localhost`, database `MoDocument` |
 | Profile | `SPRING_PROFILES_ACTIVE` | default (SQL Server); use `local` for H2, add `scale` for Mongo+Kafka extraction |
 | Extraction store | `extraction.store` / `EXTRACTION_STORE` | `mongo` (default profile); `memory` in `local`/`test` |
@@ -363,7 +372,8 @@ com.modocument
 ├── domain           entities (JPA) + Mongo documents + value objects/enums
 ├── application      DTOs, ports (interfaces), use cases, validation messages
 ├── infrastructure   JPA repositories, Spring AI ChatClient adapter, prompt strategies,
-│                    file readers (POI/Commons CSV/PDFBox + optional Tess4J OCR),
+│                    file readers (POI/Commons CSV/PDFBox + vision LLM OCR with
+│                    optional Tess4J fallback),
 │                    docling-serve client, transform/ingestion pipeline,
 │                    validation rules, file/database export,
 │                    extraction (Mongo + in-memory stores, lease queue, Kafka event
@@ -394,9 +404,10 @@ instance's tasks once their leases expire. Scale out by running more app instanc
     external services); pass `AIFILES_OPENAI_APIKEY` through your environment for the
     LLM features. Uploads/exports are kept in a named volume.
   - `docling`: [docling-serve](https://github.com/docling-project/docling-serve) on
-    port 5001, pre-wired via `DOCLING_BASEURL` — this is what gives the containerized
-    app full PDF/Word/image OCR conversion (the slim app image has no native Tesseract;
-    the built-in OCR fallback silently disables itself there).
+    port 5001, pre-wired via `DOCLING_BASEURL` for rich layout-aware conversion. Note
+    the slim app image has no native Tesseract, so the local OCR fallback silently
+    disables itself there — but with `AIFILES_OPENAI_APIKEY` set the container still
+    gets full-quality image/scan OCR via the vision model, even without docling.
   - `mssql` (optional, `--profile mssql`): SQL Server 2022 for a production-style
     setup — point the app at it with `SPRING_DATASOURCE_URL` and create the schema as
     described in [Database](#database).
