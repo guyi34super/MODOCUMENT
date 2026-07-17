@@ -161,3 +161,7 @@ ALTER TABLE TemplateDataTypes ALTER COLUMN TemplateDataTypeId RESTART WITH 100;
 ALTER TABLE Template ALTER COLUMN TemplateId RESTART WITH 100;
 ALTER TABLE TemplateFields ALTER COLUMN TemplateFieldsId RESTART WITH 100;
 ALTER TABLE ProcessStep ALTER COLUMN ProcessStepId RESTART WITH 100;
+
+-- Demo login for local/dev profiles (email: demo@modocument.local, password: Demo123!).
+INSERT INTO AppUsers (Email, PasswordHash, DisplayName, SettingsJson, CreatedDate, UpdatedDate) VALUES ('demo@modocument.local', '$2a$10$B2c04DCSNn/ji4VIRRUdTOJukpR6E1cqynSre.sJiPPaFGTY2GNuy', 'Demo User', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+ALTER TABLE AppUsers ALTER COLUMN AppUserId RESTART WITH 100;

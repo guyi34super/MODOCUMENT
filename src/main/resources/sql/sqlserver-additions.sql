@@ -21,3 +21,15 @@ CREATE TABLE IngestionJob (
     CONSTRAINT FK_IngestionJob_Template FOREIGN KEY (TemplateId) REFERENCES Template (TemplateId),
     CONSTRAINT FK_IngestionJob_ImportHistory FOREIGN KEY (ImportHistoryId) REFERENCES ImportHistory (ImportHistoryId)
 );
+
+-- Application users for JWT authentication. H2 profiles create this table
+-- automatically from the JPA entity; run this once against SQL Server.
+CREATE TABLE AppUsers (
+    AppUserId    INT IDENTITY (1, 1) NOT NULL PRIMARY KEY,
+    Email        NVARCHAR(256)       NOT NULL UNIQUE,
+    PasswordHash NVARCHAR(100)       NOT NULL,
+    DisplayName  NVARCHAR(200)       NULL,
+    SettingsJson NVARCHAR(MAX)       NULL,
+    CreatedDate  DATETIME2           NULL,
+    UpdatedDate  DATETIME2           NULL
+);

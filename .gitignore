@@ -4,8 +4,8 @@ target/
 # Local secrets (OpenAI key, local DB overrides) — never commit
 application-local-secrets.yml
 
-# Uploaded files created at runtime
-wwwroot/uploads/
+# Files created at runtime
+wwwroot/
 
 # IDE
 .idea/

@@ -1,0 +1,264 @@
+import { useCallback, useEffect, useState } from 'react';
+import { SOURCE_TYPES, createSource, deleteSource, listSources } from '../api/extraction';
+import PageHeader from '../components/PageHeader';
+import DataTable from '../components/DataTable';
+import { Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+
+const emptyForm = {
+  name: '',
+  type: 'WEBSITE',
+  dataSpec: '',
+  termsAcknowledged: false,
+  seedUrls: '',
+  allowedDomains: '',
+  maxDepth: 2,
+  maxPages: 50,
+  renderJs: false,
+  baseUrl: '',
+  path: '',
+  recordsJsonPath: '',
+  jdbcUrl: '',
+  table: '',
+  columns: '',
+};
+
+function buildPayload(form) {
+  const payload = {
+    name: form.name,
+    type: form.type,
+    termsAcknowledged: form.termsAcknowledged,
+    dataSpec: form.dataSpec || null,
+  };
+  if (form.type === 'WEBSITE') {
+    payload.web = {
+      seedUrls: form.seedUrls.split('\n').map((s) => s.trim()).filter(Boolean),
+      allowedDomains: form.allowedDomains.split(',').map((s) => s.trim()).filter(Boolean),
+      maxDepth: Number(form.maxDepth),
+      maxPages: Number(form.maxPages),
+      renderJs: form.renderJs,
+    };
+  } else if (form.type === 'REST_API') {
+    payload.api = {
+      baseUrl: form.baseUrl,
+      path: form.path,
+      recordsJsonPath: form.recordsJsonPath || null,
+    };
+  } else {
+    payload.db = {
+      jdbcUrl: form.jdbcUrl,
+      table: form.table,
+      columns: form.columns.split(',').map((s) => s.trim()).filter(Boolean),
+    };
+  }
+  return payload;
+}
+
+export default function ExtractionSourcesPage() {
+  const [sources, setSources] = useState(null);
+  const [error, setError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setSources(await listSources());
+    } catch (err) {
+      setError(err.message);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const set = (key) => (e) =>
+    setForm((f) => ({
+      ...f,
+      [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value,
+    }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await createSource(buildPayload(form));
+      setForm(emptyForm);
+      setShowForm(false);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (source) => {
+    if (!window.confirm(`Delete source "${source.name}"?`)) return;
+    setError('');
+    try {
+      await deleteSource(source.id);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <div>
+      <PageHeader
+        crumbs={[{ label: 'Docs' }, { label: 'Extraction' }, { label: 'Sources' }]}
+        title="Extraction Sources"
+        subtitle="Websites, REST APIs and databases you extract data from"
+        actions={
+          <>
+            <Button variant="secondary" onClick={load}>Refresh</Button>
+            <Button onClick={() => setShowForm((v) => !v)}>
+              {showForm ? 'Close form' : 'New source'}
+            </Button>
+          </>
+        }
+      />
+      <ErrorBanner message={error} onDismiss={() => setError('')} />
+
+      {showForm && (
+        <Card className="mb-6">
+          <h2 className="mb-3 text-lg font-normal">New source</h2>
+          <form onSubmit={submit} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Name">
+                <input required className={inputClass} value={form.name} onChange={set('name')} />
+              </Field>
+              <Field label="Type">
+                <select className={inputClass} value={form.type} onChange={set('type')}>
+                  {SOURCE_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            {form.type === 'WEBSITE' && (
+              <>
+                <Field label="Seed URLs" hint="One URL per line. Crawling honors robots.txt.">
+                  <textarea
+                    required
+                    rows={3}
+                    className={inputClass}
+                    value={form.seedUrls}
+                    onChange={set('seedUrls')}
+                  />
+                </Field>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <Field label="Allowed domains" hint="Comma-separated allow-list.">
+                    <input
+                      required
+                      className={inputClass}
+                      placeholder="example.com"
+                      value={form.allowedDomains}
+                      onChange={set('allowedDomains')}
+                    />
+                  </Field>
+                  <Field label="Max depth">
+                    <input type="number" min="0" className={inputClass} value={form.maxDepth} onChange={set('maxDepth')} />
+                  </Field>
+                  <Field label="Max pages">
+                    <input type="number" min="1" className={inputClass} value={form.maxPages} onChange={set('maxPages')} />
+                  </Field>
+                </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.renderJs} onChange={set('renderJs')} />
+                  Render JavaScript (needs Playwright browsers on the server)
+                </label>
+              </>
+            )}
+
+            {form.type === 'REST_API' && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field label="Base URL">
+                  <input required className={inputClass} value={form.baseUrl} onChange={set('baseUrl')} />
+                </Field>
+                <Field label="Path">
+                  <input required className={inputClass} value={form.path} onChange={set('path')} />
+                </Field>
+                <Field label="Records JSON path" hint="e.g. $.data.items">
+                  <input className={inputClass} value={form.recordsJsonPath} onChange={set('recordsJsonPath')} />
+                </Field>
+              </div>
+            )}
+
+            {form.type === 'DATABASE' && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field label="JDBC URL" hint="Without credentials — passed per run.">
+                  <input required className={inputClass} value={form.jdbcUrl} onChange={set('jdbcUrl')} />
+                </Field>
+                <Field label="Table">
+                  <input required className={inputClass} value={form.table} onChange={set('table')} />
+                </Field>
+                <Field label="Columns" hint="Comma-separated.">
+                  <input className={inputClass} value={form.columns} onChange={set('columns')} />
+                </Field>
+              </div>
+            )}
+
+            <Field label="Data spec (optional)" hint="Describe the data you want, e.g. 'product name, price, SKU'.">
+              <input className={inputClass} value={form.dataSpec} onChange={set('dataSpec')} />
+            </Field>
+
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                required
+                checked={form.termsAcknowledged}
+                onChange={set('termsAcknowledged')}
+                className="mt-0.5"
+              />
+              <span>
+                I confirm I'm allowed to extract from this source and accept its terms of use.
+                <span className="text-danger-ink"> (required)</span>
+              </span>
+            </label>
+
+            <Button type="submit" disabled={busy}>
+              {busy ? 'Creating…' : 'Create source'}
+            </Button>
+          </form>
+        </Card>
+      )}
+
+      {!sources ? (
+        <Spinner />
+      ) : (
+        <DataTable
+          columns={[
+            { key: 'name', label: 'Name' },
+            { key: 'type', label: 'Type' },
+            {
+              key: 'detail',
+              label: 'Target',
+              render: (row) =>
+                row.web?.seedUrls?.join(', ') || row.api?.baseUrl || row.db?.jdbcUrl || '—',
+            },
+            { key: 'dataSpec', label: 'Data spec', render: (row) => row.dataSpec || '—' },
+            {
+              key: 'actions',
+              label: '',
+              render: (row) => (
+                <div className="text-right">
+                  <Button variant="danger" onClick={() => remove(row)}>
+                    Delete
+                  </Button>
+                </div>
+              ),
+            },
+          ]}
+          rows={sources}
+          emptyMessage="No sources yet — create one to start extracting."
+        />
+      )}
+    </div>
+  );
+}
