@@ -11,7 +11,7 @@ import com.modocument.domain.document.WebSourceConfig;
 import com.modocument.domain.model.ExtractionTaskType;
 import com.modocument.domain.model.SourceType;
 import com.modocument.infrastructure.extraction.ExtractionProperties;
-import com.modocument.infrastructure.extraction.Hashing;
+import com.modocument.domain.model.Hashing;
 import com.modocument.infrastructure.extraction.web.CompliantWebAccess;
 import com.modocument.infrastructure.extraction.web.HtmlContentExtractor;
 import com.modocument.infrastructure.extraction.web.UrlNormalizer;

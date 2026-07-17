@@ -93,6 +93,16 @@ public class InMemoryExtractionTaskQueue implements ExtractionTaskQueue {
     }
 
     @Override
+    public synchronized void release(String taskId, String owner) {
+        ExtractionTask task = requireLeasedBy(taskId, owner);
+        task.setStatus(ExtractionTaskStatus.PENDING);
+        task.setLeaseOwner(null);
+        task.setLeaseExpiresAt(null);
+        task.setAttempts(Math.max(0, task.getAttempts() - 1));
+        task.setUpdatedDate(Instant.now());
+    }
+
+    @Override
     public synchronized boolean fail(String taskId, String owner, String error, Duration baseBackoff) {
         ExtractionTask task = requireLeasedBy(taskId, owner);
         task.setLastError(error);

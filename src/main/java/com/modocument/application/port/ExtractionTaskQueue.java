@@ -37,6 +37,12 @@ public interface ExtractionTaskQueue {
     void complete(String taskId, String owner, ExtractionTaskStatus terminal);
 
     /**
+     * Returns a leased task to PENDING without consuming an attempt (e.g. the
+     * job was paused after the claim).
+     */
+    void release(String taskId, String owner);
+
+    /**
      * Records a failure: schedules a retry with exponential backoff, or marks
      * the task DEAD once attempts are exhausted.
      *

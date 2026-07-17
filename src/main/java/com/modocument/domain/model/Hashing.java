@@ -1,11 +1,11 @@
-package com.modocument.infrastructure.extraction;
+package com.modocument.domain.model;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
-/** SHA-256 content hashing for dedup keys. */
+/** SHA-256 content hashing for extraction dedup keys. */
 public final class Hashing {
 
     private Hashing() {

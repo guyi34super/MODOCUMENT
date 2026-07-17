@@ -1,0 +1,160 @@
+package com.modocument.application.usecase;
+
+import com.modocument.application.port.Connector;
+import com.modocument.application.port.ConnectorStateStore;
+import com.modocument.application.port.ExtractionJobStore;
+import com.modocument.application.port.ExtractionSourceStore;
+import com.modocument.application.port.ExtractionTaskQueue;
+import com.modocument.application.port.JobSecrets;
+import com.modocument.application.port.TaskEventBus;
+import com.modocument.domain.document.ConnectorState;
+import com.modocument.domain.document.ExtractionJob;
+import com.modocument.domain.document.ExtractionSource;
+import com.modocument.domain.document.ExtractionTask;
+import com.modocument.domain.model.ExtractionJobStatus;
+import com.modocument.domain.model.ExtractionTaskStatus;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+
+/**
+ * Lifecycle of distributed extraction jobs. Starting a job plans the seed
+ * tasks and publishes wake events; workers do the rest. Resume re-announces
+ * work (unfinished tasks are still in the queue) — dedup keys make repeated
+ * planning idempotent, so nothing is lost or extracted twice.
+ */
+@Service
+public class ExtractionJobUseCase {
+
+    private final ExtractionSourceStore sources;
+    private final ExtractionJobStore jobs;
+    private final ExtractionTaskQueue queue;
+    private final TaskEventBus eventBus;
+    private final ConnectorStateStore states;
+    private final JobSecrets secrets;
+    private final List<Connector> connectors;
+
+    public ExtractionJobUseCase(ExtractionSourceStore sources,
+                                ExtractionJobStore jobs,
+                                ExtractionTaskQueue queue,
+                                TaskEventBus eventBus,
+                                ConnectorStateStore states,
+                                JobSecrets secrets,
+                                List<Connector> connectors) {
+        this.sources = sources;
+        this.jobs = jobs;
+        this.queue = queue;
+        this.eventBus = eventBus;
+        this.states = states;
+        this.secrets = secrets;
+        this.connectors = connectors;
+    }
+
+    /**
+     * Creates a job. Per-run credentials (DB username/password, API token)
+     * are held in process memory only and removed when the job finishes.
+     */
+    public ExtractionJob create(String sourceId, Integer templateId, String dataSpec,
+                                boolean incremental, Map<String, String> credentials) {
+        ExtractionSource source = requireSource(sourceId);
+        if (!source.isTermsAcknowledged()) {
+            throw new IllegalStateException(
+                    "Source " + sourceId + " has not acknowledged the source's terms of use.");
+        }
+        ExtractionJob job = new ExtractionJob();
+        job.setSourceId(sourceId);
+        job.setTemplateId(templateId);
+        job.setDataSpec(dataSpec != null ? dataSpec : source.getDataSpec());
+        job.setIncremental(incremental);
+        job.setStatus(ExtractionJobStatus.PENDING);
+        job = jobs.save(job);
+        if (credentials != null && !credentials.isEmpty()) {
+            secrets.put(job.getId(), credentials);
+        }
+        return job;
+    }
+
+    /** Plans the seed tasks and sets the workers loose. */
+    public ExtractionJob start(String jobId) {
+        ExtractionJob job = get(jobId);
+        if (job.getStatus() != ExtractionJobStatus.PENDING) {
+            throw new IllegalStateException("Job " + jobId + " has already been started.");
+        }
+        ExtractionSource source = requireSource(job.getSourceId());
+        ConnectorState state = states.get(source.getId()).orElse(null);
+        List<ExtractionTask> seeds = connectorFor(source).seedTasks(job, source, state);
+        if (seeds.isEmpty()) {
+            throw new IllegalStateException("Source " + source.getId()
+                    + " produced no work (check its seed URLs / endpoint / table).");
+        }
+        for (ExtractionTask seed : seeds) {
+            queue.enqueue(seed);
+        }
+        job.setStatus(ExtractionJobStatus.RUNNING);
+        job = jobs.save(job);
+        eventBus.publishTaskAvailable(jobId);
+        return job;
+    }
+
+    /** Workers finish their in-flight task, then leave the rest queued. */
+    public ExtractionJob pause(String jobId) {
+        ExtractionJob job = get(jobId);
+        if (job.getStatus() != ExtractionJobStatus.RUNNING) {
+            throw new IllegalStateException("Only a running job can be paused.");
+        }
+        job.setStatus(ExtractionJobStatus.PAUSED);
+        return jobs.save(job);
+    }
+
+    public ExtractionJob resume(String jobId) {
+        ExtractionJob job = get(jobId);
+        if (job.getStatus() == ExtractionJobStatus.PENDING) {
+            return start(jobId);
+        }
+        if (job.getStatus() != ExtractionJobStatus.PAUSED
+                && job.getStatus() != ExtractionJobStatus.FAILED) {
+            throw new IllegalStateException("Only a paused or failed job can be resumed.");
+        }
+        job.setStatus(ExtractionJobStatus.RUNNING);
+        job = jobs.save(job);
+        eventBus.publishTaskAvailable(jobId);
+        return job;
+    }
+
+    public ExtractionJob cancel(String jobId) {
+        ExtractionJob job = get(jobId);
+        job.setStatus(ExtractionJobStatus.CANCELLED);
+        job = jobs.save(job);
+        secrets.remove(jobId);
+        return job;
+    }
+
+    public ExtractionJob get(String jobId) {
+        return jobs.getById(jobId).orElseThrow(
+                () -> new NoSuchElementException("Extraction job " + jobId + " not found."));
+    }
+
+    public List<ExtractionJob> list() {
+        return jobs.list();
+    }
+
+    public Map<ExtractionTaskStatus, Long> taskCounts(String jobId) {
+        get(jobId);
+        return queue.countByStatus(jobId);
+    }
+
+    private ExtractionSource requireSource(String sourceId) {
+        return sources.getById(sourceId).orElseThrow(
+                () -> new NoSuchElementException("Extraction source " + sourceId + " not found."));
+    }
+
+    private Connector connectorFor(ExtractionSource source) {
+        return connectors.stream()
+                .filter(c -> c.type() == source.getType())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "No connector registered for source type " + source.getType() + "."));
+    }
+}

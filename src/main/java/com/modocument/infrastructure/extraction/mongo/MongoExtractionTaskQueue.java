@@ -106,6 +106,22 @@ public class MongoExtractionTaskQueue implements ExtractionTaskQueue {
     }
 
     @Override
+    public void release(String taskId, String owner) {
+        ExtractionTask task = mongo.findAndModify(
+                new Query(leasedBy(taskId, owner)),
+                new Update()
+                        .set("status", ExtractionTaskStatus.PENDING)
+                        .unset("leaseOwner")
+                        .unset("leaseExpiresAt")
+                        .inc("attempts", -1)
+                        .set("updatedDate", Instant.now()),
+                FindAndModifyOptions.options().returnNew(true), ExtractionTask.class);
+        if (task == null) {
+            throw new IllegalStateException("Task " + taskId + " is not leased by " + owner + ".");
+        }
+    }
+
+    @Override
     public boolean fail(String taskId, String owner, String error, Duration baseBackoff) {
         ExtractionTask task = mongo.findOne(
                 new Query(leasedBy(taskId, owner)), ExtractionTask.class);
