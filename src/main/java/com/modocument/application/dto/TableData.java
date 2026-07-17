@@ -1,5 +1,8 @@
 package com.modocument.application.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +12,7 @@ import java.util.Map;
  * names plus one string map per row. Also the structured-output shape the LLM
  * returns for unstructured documents and chat edits.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class TableData {
 
     private List<String> columns = new ArrayList<>();
@@ -38,6 +42,7 @@ public class TableData {
         this.rows = rows;
     }
 
+    @JsonIgnore
     public boolean isEmpty() {
         return columns == null || columns.isEmpty() || rows == null || rows.isEmpty();
     }

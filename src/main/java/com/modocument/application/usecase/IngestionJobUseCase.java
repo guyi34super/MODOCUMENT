@@ -109,6 +109,14 @@ public class IngestionJobUseCase {
         IngestionJob job = get(jobId);
         requireActive(job);
 
+        // A previously failed job is resumable: clear the failure marker so the
+        // per-stage guards below only react to failures from THIS run.
+        if (job.getStatus() == JobStatus.FAILED) {
+            job.setStatus(JobStatus.PENDING);
+            job.setErrorMessage(null);
+            job = jobs.save(job);
+        }
+
         if (job.getCurrentStep() == JobStep.UPLOADED) {
             job = runStage(job, JobStep.PARSED, this::doParse);
         }
