@@ -1,8 +1,10 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.dto.ChatEditRequest;
 import com.modocument.application.dto.CreateIngestionJobRequest;
 import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.UpdateMappingRequest;
+import com.modocument.application.usecase.ChatEditTableUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.infrastructure.file.UploadStorage;
@@ -31,10 +33,14 @@ import java.util.NoSuchElementException;
 public class IngestionJobController {
 
     private final IngestionJobUseCase useCase;
+    private final ChatEditTableUseCase chatEdit;
     private final UploadStorage uploadStorage;
 
-    public IngestionJobController(IngestionJobUseCase useCase, UploadStorage uploadStorage) {
+    public IngestionJobController(IngestionJobUseCase useCase,
+                                  ChatEditTableUseCase chatEdit,
+                                  UploadStorage uploadStorage) {
         this.useCase = useCase;
+        this.chatEdit = chatEdit;
         this.uploadStorage = uploadStorage;
     }
 
@@ -90,6 +96,13 @@ public class IngestionJobController {
     @PostMapping("/api/ingestion/jobs/{id}/cancel")
     public ResponseEntity<?> cancel(@PathVariable int id) {
         return ResponseEntity.ok(IngestionJobDto.from(useCase.cancel(id)));
+    }
+
+    /** Modifies the job's current table via a natural-language instruction. */
+    @PostMapping("/api/ingestion/jobs/{id}/chat-edit")
+    public ResponseEntity<?> chatEdit(@PathVariable int id, @RequestBody ChatEditRequest request) {
+        return ResponseEntity.ok(IngestionJobDto.from(
+                chatEdit.handle(id, request == null ? null : request.getInstruction())));
     }
 
     /** User-reviewed mapping override; clears validation so it can be re-run. */
