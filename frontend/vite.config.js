@@ -26,4 +26,9 @@ export default defineConfig({
       proxiedPaths.map((path) => [path, { target: backend, changeOrigin: true }])
     ),
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test/setup.js',
+  },
 });

@@ -190,6 +190,7 @@ running backend with:
 cd frontend
 npm install
 npm run dev          # http://localhost:3000, proxies API calls to :8080
+npm test             # unit tests (Vitest + React Testing Library)
 ```
 
 ### Authentication
