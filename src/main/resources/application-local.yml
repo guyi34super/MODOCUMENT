@@ -1,6 +1,13 @@
 # Local development without SQL Server: in-memory H2 with the seed data loaded.
 # Run with: SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 spring:
+  autoconfigure:
+    # No Mongo/Kafka needed locally: extraction uses in-memory adapters.
+    exclude:
+      - org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   datasource:
     url: jdbc:h2:mem:modocument;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
@@ -16,3 +23,8 @@ spring:
   h2:
     console:
       enabled: true
+
+extraction:
+  store: memory
+  kafka:
+    enabled: false
