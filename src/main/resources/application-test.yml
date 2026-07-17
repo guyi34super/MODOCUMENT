@@ -11,3 +11,8 @@ spring:
   sql:
     init:
       mode: always
+  ai:
+    openai:
+      # Dummy key so the Spring AI auto-configuration boots in offline tests;
+      # no test ever calls the real API (the AiFilesService port is mocked).
+      api-key: test-key

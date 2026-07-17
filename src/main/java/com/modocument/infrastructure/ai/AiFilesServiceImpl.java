@@ -1,32 +1,49 @@
 package com.modocument.infrastructure.ai;
 
 import com.modocument.application.port.AiFilesService;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AiFilesServiceImpl implements AiFilesService {
 
-    private final AiFilesProperties properties;
-    private final OpenAiChatClient chatClient;
+    /**
+     * Sentinel bridged into spring.ai.openai.api-key when no real key is
+     * configured, so the OpenAI auto-configuration can boot keyless.
+     */
+    public static final String UNSET_API_KEY = "unset";
 
-    public AiFilesServiceImpl(AiFilesProperties properties, OpenAiChatClient chatClient) {
+    private final AiFilesProperties properties;
+    private final ChatClient chatClient;
+
+    public AiFilesServiceImpl(AiFilesProperties properties, ChatClient chatClient) {
         this.properties = properties;
         this.chatClient = chatClient;
     }
 
     @Override
     public String sendPrompt(String prompt) {
+        requireConfigured(prompt);
+        String response = chatClient.prompt().user(prompt).call().content();
+        return response == null ? "" : response;
+    }
+
+    @Override
+    public <T> T sendForObject(String prompt, ParameterizedTypeReference<T> type) {
+        requireConfigured(prompt);
+        return chatClient.prompt().user(prompt).call().entity(type);
+    }
+
+    private void requireConfigured(String prompt) {
         if (prompt == null || prompt.isBlank()) {
             throw new IllegalArgumentException("Prompt cannot be empty.");
         }
         // Validated per call (not at startup) so the app can boot without a key
         // and only the LLM endpoints fail when it is missing.
-        if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
+        String apiKey = properties.getApiKey();
+        if (apiKey == null || apiKey.isBlank() || UNSET_API_KEY.equals(apiKey)) {
             throw new IllegalStateException("aifiles.openai.api-key must be configured.");
         }
-
-        String response = chatClient.complete(
-                properties.getBaseUrl(), properties.getApiKey(), properties.getModelId(), prompt);
-        return response == null ? "" : response;
     }
 }
