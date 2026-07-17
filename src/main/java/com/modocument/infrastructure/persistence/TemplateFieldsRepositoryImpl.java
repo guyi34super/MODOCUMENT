@@ -27,6 +27,11 @@ public class TemplateFieldsRepositoryImpl implements TemplateFieldsRepository {
     }
 
     @Override
+    public List<TemplateFields> listByTemplateId(int templateId) {
+        return jpa.findByTemplateId(templateId);
+    }
+
+    @Override
     public void add(TemplateFields entity) {
         jpa.save(entity);
     }

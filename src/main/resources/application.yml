@@ -16,12 +16,29 @@ spring:
     multipart:
       max-file-size: 50MB
       max-request-size: 50MB
+  ai:
+    openai:
+      # Bridged from the legacy aifiles.openai.* keys so AIFILES_OPENAI_* env
+      # vars keep working. The "unset" sentinel lets the auto-configuration
+      # boot without a key; AiFilesServiceImpl rejects LLM calls until a real
+      # key is provided.
+      api-key: ${aifiles.openai.api-key:unset}
+      base-url: ${aifiles.openai.base-url:https://api.openai.com}
+      chat:
+        options:
+          model: ${aifiles.openai.model-id:gpt-4o}
 
 aifiles:
   openai:
-    # Set via AIFILES_OPENAI_APIKEY env var or an application-local.yml (gitignored).
-    api-key: ""
+    # Set via AIFILES_OPENAI_APIKEY env var or an application-local.yml
+    # (gitignored). Intentionally not defaulted here so the spring.ai bridge
+    # above falls back to its "unset" sentinel when no key is configured.
     model-id: gpt-4o
+
+docling:
+  # Optional docling-serve endpoint (e.g. http://localhost:5001). When empty,
+  # documents are parsed with the built-in readers (POI/CSV/PDFBox + OCR).
+  base-url: ""
 
 springdoc:
   swagger-ui:

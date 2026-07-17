@@ -11,6 +11,8 @@ public interface TemplateFieldsRepository {
 
     List<TemplateFields> list();
 
+    List<TemplateFields> listByTemplateId(int templateId);
+
     void add(TemplateFields entity);
 
     TemplateFields update(TemplateFields entity);

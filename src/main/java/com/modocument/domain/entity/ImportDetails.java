@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
@@ -25,6 +26,9 @@ public class ImportDetails {
     @Column(name = "ProcessStepId")
     private int processStepId;
 
+    // Large-object mapping so H2 (ddl-auto: create) sizes the column for full
+    // JSON payloads; SQL Server's manual schema already uses NVARCHAR(MAX).
+    @Lob
     @Column(name = "RawJson")
     private String rawJson;
 

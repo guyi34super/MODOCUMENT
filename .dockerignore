@@ -1,0 +1,7 @@
+.git
+.github
+.claude
+target
+wwwroot
+*.md
+docker-compose.yml

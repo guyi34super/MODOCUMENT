@@ -698,6 +698,369 @@ paths:
       summary: Delete a Validation by Id
       tags:
       - Validations
+  /Templates/CreateWithFields:
+    post:
+      description: Create a custom template with its fields and validation rules
+        (regex patterns are compiled and rejected with details when invalid)
+      operationId: createTemplateWithFields
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                fields:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      fieldName:
+                        type: string
+                      dataType:
+                        type: string
+                        description: TemplateDataType name (Text/Number/Date) or id
+                      rules:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            ruleType:
+                              type: string
+                              description: RuleType enum name, e.g. REGEX, REQUIRED
+                            config:
+                              type: object
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Invalid template definition (details in errors array)
+      summary: Create a template with fields and validation rules
+      tags:
+      - Templates
+  /ValidationRules/GetByTemplate/{templateId}:
+    get:
+      description: List the validation rules configured for a template
+      operationId: getValidationRulesByTemplate
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      responses:
+        default:
+          description: OK
+      summary: List validation rules for a template
+      tags:
+      - ValidationRules
+  /ValidationRules/Upsert:
+    put:
+      description: Insert or update a validation rule (regex patterns are verified)
+      operationId: upsertValidationRule
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                templateId:
+                  format: int32
+                  type: integer
+                fieldName:
+                  type: string
+                ruleType:
+                  type: string
+                config:
+                  type: object
+      responses:
+        default:
+          description: OK
+      summary: Upsert a validation rule
+      tags:
+      - ValidationRules
+  /ValidationRules/{templateId}/{fieldName}/{ruleType}:
+    delete:
+      description: Delete a validation rule by its composite key
+      operationId: deleteValidationRule
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+        - name: fieldName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ruleType
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+      summary: Delete a validation rule
+      tags:
+      - ValidationRules
+  /api/ingestion/jobs:
+    get:
+      description: List all ingestion jobs with their checkpoints
+      operationId: listIngestionJobs
+      responses:
+        default:
+          description: OK
+      summary: List ingestion jobs
+      tags:
+      - IngestionJobs
+    post:
+      description: Create a resumable ingestion job. Accepts multipart/form-data
+        (file + templateId + optional autoRun) or application/json (fileName of a
+        previously uploaded file + templateId + optional autoRun). With autoRun
+        (default true) the job runs parse -> map -> validate immediately.
+      operationId: createIngestionJob
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                templateId:
+                  format: int32
+                  type: integer
+                autoRun:
+                  type: boolean
+          application/json:
+            schema:
+              type: object
+              properties:
+                fileName:
+                  type: string
+                templateId:
+                  format: int32
+                  type: integer
+                autoRun:
+                  type: boolean
+      responses:
+        "201":
+          description: Created
+      summary: Create an ingestion job
+      tags:
+      - IngestionJobs
+  /api/ingestion/jobs/{id}:
+    get:
+      description: Get an ingestion job with parsed table, mapping, validation
+        results, and export info
+      operationId: getIngestionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      responses:
+        default:
+          description: OK
+      summary: Get an ingestion job
+      tags:
+      - IngestionJobs
+  /api/ingestion/jobs/{id}/resume:
+    post:
+      description: Continue the pipeline from the last completed step (also after
+        a failure)
+      operationId: resumeIngestionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      responses:
+        default:
+          description: OK
+      summary: Resume an ingestion job
+      tags:
+      - IngestionJobs
+  /api/ingestion/jobs/{id}/remap:
+    post:
+      description: Re-run the auto-mapping stage on the parsed table
+      operationId: remapIngestionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      responses:
+        default:
+          description: OK
+      summary: Re-run mapping
+      tags:
+      - IngestionJobs
+  /api/ingestion/jobs/{id}/revalidate:
+    post:
+      description: Re-run validation on the mapped rows
+      operationId: revalidateIngestionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      responses:
+        default:
+          description: OK
+      summary: Re-run validation
+      tags:
+      - IngestionJobs
+  /api/ingestion/jobs/{id}/cancel:
+    post:
+      description: Cancel the job (terminal; it can no longer be resumed)
+      operationId: cancelIngestionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      responses:
+        default:
+          description: OK
+      summary: Cancel an ingestion job
+      tags:
+      - IngestionJobs
+  /api/ingestion/jobs/{id}/mapping:
+    put:
+      description: Apply a user-reviewed mapping override (source column ->
+        template field or null); rebuilds the mapped rows and clears validation
+      operationId: updateIngestionJobMapping
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mapping:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        default:
+          description: OK
+      summary: Override the column mapping
+      tags:
+      - IngestionJobs
+  /api/ingestion/jobs/{id}/chat-edit:
+    post:
+      description: Modify the job's current table with a natural-language
+        instruction executed by the LLM; clears stale validation results
+      operationId: chatEditIngestionJob
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                instruction:
+                  type: string
+      responses:
+        default:
+          description: OK
+      summary: Edit the table via chat instruction
+      tags:
+      - IngestionJobs
+  /api/ingestion/jobs/{id}/export/file:
+    get:
+      description: Download the validated (mapped) rows as csv, json, or xlsx;
+        a copy is archived under wwwroot/exports
+      operationId: exportIngestionJobFile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [csv, json, xlsx]
+      responses:
+        "200":
+          description: File download
+        "409":
+          description: Job not validated yet
+      summary: Export to a file
+      tags:
+      - IngestionJobs
+  /api/ingestion/jobs/{id}/export/database:
+    post:
+      description: Insert the validated (mapped) rows into a user-supplied
+        database over JDBC (sqlserver/h2 URL prefixes); identifiers are strictly
+        validated, values are bound parameters, credentials are never stored
+      operationId: exportIngestionJobDatabase
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jdbcUrl:
+                  type: string
+                username:
+                  type: string
+                password:
+                  type: string
+                tableName:
+                  type: string
+                createTableIfMissing:
+                  type: boolean
+      responses:
+        default:
+          description: OK
+      summary: Export to a custom database
+      tags:
+      - IngestionJobs
 components:
   schemas:
     TemplateDataTypesCreate:

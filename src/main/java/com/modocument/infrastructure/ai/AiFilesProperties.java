@@ -11,7 +11,11 @@ public class AiFilesProperties {
 
     private String apiKey = "";
     private String modelId = "gpt-4o";
-    private String baseUrl = "https://api.openai.com/v1";
+    /**
+     * Host root, without the /v1 suffix the pre-Spring-AI client used —
+     * Spring AI appends the /v1/chat/completions path itself.
+     */
+    private String baseUrl = "https://api.openai.com";
 
     public String getApiKey() {
         return apiKey;
