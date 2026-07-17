@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: MoDocument
+  datasource:
+    # Same database the original backend targeted. Override via SPRING_DATASOURCE_* env vars.
+    url: jdbc:sqlserver://localhost;databaseName=MoDocument;integratedSecurity=true;trustServerCertificate=true
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+      naming:
+        # Keep the exact PascalCase table/column names from the original schema.
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+aifiles:
+  openai:
+    # Set via AIFILES_OPENAI_APIKEY env var or an application-local.yml (gitignored).
+    api-key: ""
+    model-id: gpt-4o
+
+springdoc:
+  swagger-ui:
+    # Render the static, hand-maintained spec instead of a generated one.
+    url: /swagger/spec.yaml
+
+logging:
+  level:
+    root: info
