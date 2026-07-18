@@ -11,6 +11,7 @@ import {
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 const RULE_TYPE_NAMES = {
   0: 'CONDITIONAL_REQUIREMENT',
@@ -27,6 +28,7 @@ const ruleTypeName = (value) =>
   typeof value === 'number' ? (RULE_TYPE_NAMES[value] ?? value) : value;
 
 export default function ValidationRulesPage() {
+  const toast = useToast();
   const [templates, setTemplates] = useState([]);
   const [allFields, setAllFields] = useState([]);
   const [templateId, setTemplateId] = useState('');
@@ -38,7 +40,6 @@ export default function ValidationRulesPage() {
   const [ruleType, setRuleType] = useState('REQUIRED');
   const [configText, setConfigText] = useState('{}');
   const [pattern, setPattern] = useState('');
-  const [savedMessage, setSavedMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
   // Ad-hoc row test
@@ -70,7 +71,6 @@ export default function ValidationRulesPage() {
 
   const selectTemplate = (tid) => {
     setTemplateId(tid);
-    setSavedMessage('');
     setError('');
     loadRules(tid);
   };
@@ -78,8 +78,6 @@ export default function ValidationRulesPage() {
   const submitRule = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
-    setSavedMessage('');
     try {
       let config;
       if (ruleType === 'REGEX') {
@@ -88,14 +86,17 @@ export default function ValidationRulesPage() {
         try {
           config = configText.trim() ? JSON.parse(configText) : {};
         } catch {
-          throw new Error('Config must be valid JSON.');
+          toast.error('Config must be valid JSON.');
+          return;
         }
       }
-      await upsertRule(Number(templateId), fieldName, ruleType, config);
-      setSavedMessage(`Rule ${ruleType} saved for field "${fieldName}".`);
+      await toast.promise(upsertRule(Number(templateId), fieldName, ruleType, config), {
+        loading: 'Saving rule…',
+        success: `Rule ${ruleType} saved for field "${fieldName}"`,
+      });
       await loadRules(templateId);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -104,24 +105,27 @@ export default function ValidationRulesPage() {
   const removeRule = async (rule) => {
     const type = ruleTypeName(rule.ruleType);
     if (!window.confirm(`Delete ${type} rule on "${rule.fieldName}"?`)) return;
-    setError('');
     try {
-      await deleteRule(Number(templateId), rule.fieldName, type);
+      await toast.promise(deleteRule(Number(templateId), rule.fieldName, type), {
+        loading: 'Deleting rule…',
+        success: `${type} rule on "${rule.fieldName}" deleted`,
+      });
       await loadRules(templateId);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     }
   };
 
   const runTest = async (e) => {
     e.preventDefault();
-    setError('');
     setTestResults(null);
     try {
-      const results = await validateRows(Number(templateId), [testRow]);
+      const results = await toast.promise(validateRows(Number(templateId), [testRow]), {
+        loading: 'Validating row…',
+      });
       setTestResults(results);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     }
   };
 
@@ -185,12 +189,6 @@ export default function ValidationRulesPage() {
               rows={rules}
               emptyMessage="No rules for this template yet."
             />
-          )}
-
-          {savedMessage && (
-            <div className="mt-4">
-              <Callout variant="success" title="Saved">{savedMessage}</Callout>
-            </div>
           )}
 
           <Card className="mt-5">

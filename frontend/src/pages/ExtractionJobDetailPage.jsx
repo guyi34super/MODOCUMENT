@@ -14,11 +14,20 @@ import usePolling from '../hooks/usePolling';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 const ACTIVE_STATUSES = ['PENDING', 'RUNNING'];
 
+const ACTION_MESSAGES = {
+  start: { loading: 'Starting job…', success: 'Job started' },
+  pause: { loading: 'Pausing job…', success: 'Job paused' },
+  resume: { loading: 'Resuming job…', success: 'Job resumed' },
+  cancel: { loading: 'Cancelling job…', success: 'Job cancelled' },
+};
+
 export default function ExtractionJobDetailPage() {
   const { id } = useParams();
+  const toast = useToast();
   const [job, setJob] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [error, setError] = useState('');
@@ -51,11 +60,10 @@ export default function ExtractionJobDetailPage() {
 
   const runAction = async (name, fn) => {
     setBusyAction(name);
-    setError('');
     try {
-      setJob(await fn());
-    } catch (err) {
-      setError(err.message);
+      setJob(await toast.promise(fn, ACTION_MESSAGES[name] || { loading: 'Working…' }));
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusyAction('');
     }
@@ -63,14 +71,15 @@ export default function ExtractionJobDetailPage() {
 
   const loadRecords = async (afterId) => {
     setBusyAction('records');
-    setError('');
     try {
-      const page = await getRecords(id, { afterId });
+      const page = await toast.promise(getRecords(id, { afterId }), {
+        loading: 'Loading records…',
+      });
       setRecords((prev) => (afterId ? [...prev, ...page.records] : page.records));
       setNextAfterId(page.nextAfterId || null);
       setRecordsLoaded(true);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusyAction('');
     }
@@ -79,11 +88,14 @@ export default function ExtractionJobDetailPage() {
   const runBridge = async (e) => {
     e.preventDefault();
     setBusyAction('bridge');
-    setError('');
     try {
-      setBridgeResult(await bridgeToIngestion(id, Number(bridgeTemplateId)));
-    } catch (err) {
-      setError(err.message);
+      const result = await toast.promise(bridgeToIngestion(id, Number(bridgeTemplateId)), {
+        loading: 'Bridging records into an ingestion job…',
+        success: (r) => `Created ingestion job #${r.ingestionJobId}`,
+      });
+      setBridgeResult(result);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusyAction('');
     }

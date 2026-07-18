@@ -10,12 +10,14 @@ import {
   updateTemplate,
 } from '../api/templates';
 import PageHeader from '../components/PageHeader';
-import { Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 export default function TemplateEditorPage() {
   const { id } = useParams();
   const isNew = !id;
   const navigate = useNavigate();
+  const toast = useToast();
 
   const [dataTypes, setDataTypes] = useState([]);
   const [name, setName] = useState('');
@@ -25,7 +27,6 @@ export default function TemplateEditorPage() {
   const [savedFields, setSavedFields] = useState([]);
   const [newField, setNewField] = useState({ fieldName: '', templateDataTypeId: 1 });
   const [error, setError] = useState('');
-  const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(!isNew);
 
@@ -54,7 +55,6 @@ export default function TemplateEditorPage() {
   const submitNew = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
     try {
       const payload = {
         name,
@@ -63,10 +63,13 @@ export default function TemplateEditorPage() {
           .filter((f) => f.fieldName.trim())
           .map((f) => ({ fieldName: f.fieldName.trim(), dataType: f.dataType, rules: [] })),
       };
-      const created = await createWithFields(payload);
+      const created = await toast.promise(createWithFields(payload), {
+        loading: 'Creating template…',
+        success: 'Template created',
+      });
       navigate(`/templates/${created.templateId}`);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -74,13 +77,13 @@ export default function TemplateEditorPage() {
 
   const saveDetails = async () => {
     setBusy(true);
-    setError('');
-    setSaved(false);
     try {
-      await updateTemplate({ templateId: Number(id), name, description });
-      setSaved(true);
-    } catch (err) {
-      setError(err.message);
+      await toast.promise(updateTemplate({ templateId: Number(id), name, description }), {
+        loading: 'Saving template…',
+        success: 'Template details saved',
+      });
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -90,17 +93,19 @@ export default function TemplateEditorPage() {
     e.preventDefault();
     if (!newField.fieldName.trim()) return;
     setBusy(true);
-    setError('');
     try {
-      await createField({
-        templateId: Number(id),
-        fieldName: newField.fieldName.trim(),
-        templateDataTypeId: Number(newField.templateDataTypeId),
-      });
+      await toast.promise(
+        createField({
+          templateId: Number(id),
+          fieldName: newField.fieldName.trim(),
+          templateDataTypeId: Number(newField.templateDataTypeId),
+        }),
+        { loading: 'Adding field…', success: `Field "${newField.fieldName.trim()}" added` }
+      );
       setNewField({ fieldName: '', templateDataTypeId: 1 });
       await loadExisting();
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -108,12 +113,14 @@ export default function TemplateEditorPage() {
 
   const removeField = async (field) => {
     if (!window.confirm(`Delete field "${field.fieldName}"?`)) return;
-    setError('');
     try {
-      await deleteField(field.templateFieldsId);
+      await toast.promise(deleteField(field.templateFieldsId), {
+        loading: 'Deleting field…',
+        success: `Field "${field.fieldName}" deleted`,
+      });
       setSavedFields((fields) => fields.filter((f) => f.templateFieldsId !== field.templateFieldsId));
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     }
   };
 
@@ -127,11 +134,6 @@ export default function TemplateEditorPage() {
         subtitle={isNew ? 'Create a template together with its fields' : 'Update details and manage fields'}
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
-      {saved && (
-        <div className="mb-4">
-          <Callout variant="success" title="Saved">Template details updated.</Callout>
-        </div>
-      )}
 
       {isNew ? (
         <form onSubmit={submitNew} className="space-y-5">

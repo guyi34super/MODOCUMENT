@@ -3,21 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import * as authApi from '../api/auth';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
-import { Button, Callout, Card, ErrorBanner, Field, inputClass } from '../components/ui';
+import { Button, Card, ErrorBanner, Field, inputClass } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 export default function ProfilePage() {
+  const toast = useToast();
   const { user, updateUser, logout } = useAuth();
   const navigate = useNavigate();
 
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [theme, setTheme] = useState('light');
   const [error, setError] = useState('');
-  const [savedMessage, setSavedMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [passwordMessage, setPasswordMessage] = useState('');
 
   // One refresh on mount keeps the local copy honest without recurring calls.
   useEffect(() => {
@@ -39,14 +39,14 @@ export default function ProfilePage() {
   const saveProfile = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
-    setSavedMessage('');
     try {
-      const updated = await authApi.updateProfile(displayName, JSON.stringify({ theme }));
+      const updated = await toast.promise(
+        authApi.updateProfile(displayName, JSON.stringify({ theme })),
+        { loading: 'Saving profile…', success: 'Profile saved' }
+      );
       updateUser(updated);
-      setSavedMessage('Profile saved.');
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -55,15 +55,15 @@ export default function ProfilePage() {
   const savePassword = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
-    setPasswordMessage('');
     try {
-      await authApi.changePassword(currentPassword, newPassword);
+      await toast.promise(authApi.changePassword(currentPassword, newPassword), {
+        loading: 'Changing password…',
+        success: 'Password changed',
+      });
       setCurrentPassword('');
       setNewPassword('');
-      setPasswordMessage('Password changed.');
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -85,11 +85,6 @@ export default function ProfilePage() {
 
       <Card className="mb-5">
         <h2 className="mb-3 text-lg font-normal">Details</h2>
-        {savedMessage && (
-          <div className="mb-3">
-            <Callout variant="success" title="Saved">{savedMessage}</Callout>
-          </div>
-        )}
         <form onSubmit={saveProfile} className="space-y-4">
           <Field label="Email">
             <input className={`${inputClass} bg-sidebar`} value={user?.email || ''} disabled />
@@ -116,11 +111,6 @@ export default function ProfilePage() {
 
       <Card className="mb-5">
         <h2 className="mb-3 text-lg font-normal">Change password</h2>
-        {passwordMessage && (
-          <div className="mb-3">
-            <Callout variant="success" title="Done">{passwordMessage}</Callout>
-          </div>
-        )}
         <form onSubmit={savePassword} className="space-y-4">
           <Field label="Current password">
             <input

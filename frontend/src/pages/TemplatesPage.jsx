@@ -5,9 +5,11 @@ import { deleteTemplate } from '../api/templates';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Button, ErrorBanner, Spinner } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 export default function TemplatesPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [templates, setTemplates] = useState(null);
   const [error, setError] = useState('');
 
@@ -25,12 +27,14 @@ export default function TemplatesPage() {
 
   const remove = async (template) => {
     if (!window.confirm(`Delete template "${template.name}"?`)) return;
-    setError('');
     try {
-      await deleteTemplate(template.templateId);
+      await toast.promise(deleteTemplate(template.templateId), {
+        loading: 'Deleting template…',
+        success: `Template "${template.name}" deleted`,
+      });
       setTemplates(await getTemplates());
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     }
   };
 

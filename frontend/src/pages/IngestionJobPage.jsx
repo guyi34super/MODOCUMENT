@@ -16,8 +16,19 @@ import {
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 const STEPS = ['UPLOADED', 'PARSED', 'MAPPED', 'VALIDATED', 'EXPORTED'];
+
+const ACTION_MESSAGES = {
+  resume: { loading: 'Resuming pipeline…', success: 'Pipeline resumed' },
+  remap: { loading: 'Re-mapping columns…', success: 'Columns re-mapped' },
+  revalidate: { loading: 'Re-validating rows…', success: 'Rows re-validated' },
+  cancel: { loading: 'Cancelling job…', success: 'Job cancelled' },
+  mapping: { loading: 'Saving mapping…', success: 'Mapping saved' },
+  'chat-edit': { loading: 'Applying chat edit…', success: 'Chat edit applied' },
+  'db-export': { loading: 'Exporting to database…', success: 'Exported to database' },
+};
 
 function StepIndicator({ currentStep }) {
   const currentIndex = STEPS.indexOf(currentStep);
@@ -63,6 +74,7 @@ function TablePreview({ table, maxRows = 15 }) {
 
 export default function IngestionJobPage() {
   const { id } = useParams();
+  const toast = useToast();
   const [job, setJob] = useState(null);
   const [templateFields, setTemplateFields] = useState([]);
   const [error, setError] = useState('');
@@ -97,11 +109,10 @@ export default function IngestionJobPage() {
 
   const runAction = async (name, fn) => {
     setBusyAction(name);
-    setError('');
     try {
-      applyJob(await fn());
-    } catch (err) {
-      setError(err.message);
+      applyJob(await toast.promise(fn, ACTION_MESSAGES[name] || { loading: 'Working…' }));
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusyAction('');
     }
@@ -118,11 +129,13 @@ export default function IngestionJobPage() {
 
   const download = async () => {
     setBusyAction('download');
-    setError('');
     try {
-      await downloadFile(exportFilePath(id, exportFormat), `job-${id}.${exportFormat}`);
-    } catch (err) {
-      setError(err.message);
+      await toast.promise(downloadFile(exportFilePath(id, exportFormat), `job-${id}.${exportFormat}`), {
+        loading: 'Preparing download…',
+        success: 'File downloaded',
+      });
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusyAction('');
     }
