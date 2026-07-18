@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -30,6 +31,7 @@ const sections = [
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const handleLogout = () => {
     logout();
@@ -40,6 +42,24 @@ export default function Layout() {
     <div className="min-h-screen bg-white">
       <header className="fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between border-b border-line bg-white px-5">
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSidebarOpen((open) => !open)}
+            aria-label="Toggle sidebar"
+            aria-expanded={sidebarOpen}
+            className="cursor-pointer rounded p-2 text-ink hover:bg-neutral-200/60"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
+              <path d="M2 4.5h14M2 9h14M2 13.5h14" />
+            </svg>
+          </button>
           <div className="flex size-9 items-center justify-center rounded border-2 border-ink text-base font-black">
             MO
           </div>
@@ -61,10 +81,11 @@ export default function Layout() {
         </div>
       </header>
 
-      <aside className="fixed top-14 bottom-0 left-0 z-10 w-64 overflow-y-auto border-r border-line bg-sidebar px-4 py-5">
-        <p className="mb-4 px-2 text-[11px] font-bold uppercase tracking-wider text-muted">
-          Documentation
-        </p>
+      <aside
+        className={`fixed top-14 bottom-0 left-0 z-10 w-64 overflow-y-auto border-r border-line bg-sidebar px-4 py-5 transition-transform duration-200 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         {sections.map((section) => (
           <div key={section.label} className="mb-5">
             <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
@@ -90,7 +111,7 @@ export default function Layout() {
         ))}
       </aside>
 
-      <main className="ml-64 pt-14">
+      <main className={`pt-14 transition-[margin] duration-200 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
         <div className="mx-auto max-w-4xl px-8 py-8">
           <Outlet />
         </div>
