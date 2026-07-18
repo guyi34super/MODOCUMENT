@@ -20,7 +20,7 @@ public final class JdbcIdentifiers {
 
     /** Drivers actually on the classpath; other targets need a driver dependency first. */
     private static final Map<String, String> DRIVERS_BY_URL_PREFIX = Map.of(
-            "jdbc:sqlserver:", "com.microsoft.sqlserver.jdbc.SQLServerDriver",
+            "jdbc:postgresql:", "org.postgresql.Driver",
             "jdbc:h2:", "org.h2.Driver");
 
     private JdbcIdentifiers() {

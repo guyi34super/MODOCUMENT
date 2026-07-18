@@ -1,4 +1,4 @@
-# Local development without SQL Server: in-memory H2 with the seed data loaded.
+# Local development without PostgreSQL: in-memory H2 with the seed data loaded.
 # Run with: SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 spring:
   autoconfigure:
@@ -13,6 +13,9 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
+  flyway:
+    # Migrations are PostgreSQL-only; H2 gets its schema from ddl-auto: create.
+    enabled: false
   jpa:
     hibernate:
       ddl-auto: create
@@ -23,6 +26,19 @@ spring:
   h2:
     console:
       enabled: true
+
+modocument:
+  security:
+    jwt:
+      # Dev-only signing key; production requires MODOCUMENT_JWT_SECRET.
+      secret: modocument-local-dev-secret-change-in-production-0123456789
+    permit-dev-paths: true
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
 
 extraction:
   store: memory

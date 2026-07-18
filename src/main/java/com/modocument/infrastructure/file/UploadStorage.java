@@ -11,22 +11,25 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 /**
- * Stores uploaded files under wwwroot/uploads with the same timestamp-suffix
- * naming the original upload endpoint used; shared by the upload endpoint and
- * ingestion job creation.
+ * Stores uploaded files under the configured storage root (uploads/) with the
+ * same timestamp-suffix naming the original upload endpoint used; shared by
+ * the upload endpoint and ingestion job creation.
  */
 @Component
 public class UploadStorage {
 
-    /** Uploaded files live under ./wwwroot/uploads, same location the original backend used. */
-    public static final Path UPLOADS_DIR = Path.of("wwwroot", "uploads");
-
     private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+
+    private final Path uploadsDir;
+
+    public UploadStorage(StorageProperties storage) {
+        this.uploadsDir = storage.uploadsDir();
+    }
 
     /** Saves the file and returns the stored (timestamped) file name. */
     public String store(MultipartFile file) {
         try {
-            Files.createDirectories(UPLOADS_DIR);
+            Files.createDirectories(uploadsDir);
 
             String originalName = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
             // Keep only the last path segment; browsers/clients may send paths.
@@ -40,7 +43,7 @@ public class UploadStorage {
             }
 
             String storedName = baseName + "_" + LocalDateTime.now().format(TIMESTAMP) + extension;
-            file.transferTo(UPLOADS_DIR.resolve(storedName).toAbsolutePath());
+            file.transferTo(uploadsDir.resolve(storedName).toAbsolutePath());
             return storedName;
         } catch (IOException e) {
             throw new UncheckedIOException("Could not store uploaded file.", e);
@@ -49,8 +52,8 @@ public class UploadStorage {
 
     /** Resolves a previously stored file name inside the uploads folder (no traversal). */
     public Path resolve(String fileName) {
-        Path candidate = UPLOADS_DIR.resolve(fileName).normalize();
-        if (!candidate.startsWith(UPLOADS_DIR)) {
+        Path candidate = uploadsDir.resolve(fileName).normalize();
+        if (!candidate.startsWith(uploadsDir)) {
             throw new IllegalArgumentException("Invalid file name: " + fileName);
         }
         return candidate;

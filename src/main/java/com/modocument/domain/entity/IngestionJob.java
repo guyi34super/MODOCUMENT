@@ -9,8 +9,9 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -48,23 +49,23 @@ public class IngestionJob {
     @Column(name = "ErrorMessage", length = 2000)
     private String errorMessage;
 
-    @Lob
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "ParsedTableJson")
     private String parsedTableJson;
 
-    @Lob
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "MappingJson")
     private String mappingJson;
 
-    @Lob
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "MappedRowsJson")
     private String mappedRowsJson;
 
-    @Lob
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "ValidationResultJson")
     private String validationResultJson;
 
-    @Lob
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "ExportInfoJson")
     private String exportInfoJson;
 

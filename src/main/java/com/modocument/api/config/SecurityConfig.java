@@ -24,16 +24,40 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Stateless JWT security: /api/auth/login|register are open, Swagger and the
- * H2 console stay reachable, everything else requires a Bearer token.
+ * Stateless JWT security: /api/auth/login|register and the health probe are
+ * open, the dev tooling paths (Swagger, H2 console) only when
+ * modocument.security.permit-dev-paths is on (local/test profiles), and
+ * everything else requires a Bearer token.
  */
 @Configuration
 public class SecurityConfig {
 
-    private final SecretKey secretKey;
+    /** The old baked-in dev fallback; must never be used as a real secret. */
+    private static final String LEGACY_DEV_SECRET =
+            "modocument-local-dev-secret-change-in-production-0123456789";
 
-    public SecurityConfig(@Value("${modocument.security.jwt.secret}") String secret) {
+    private final SecretKey secretKey;
+    private final boolean permitDevPaths;
+
+    public SecurityConfig(@Value("${modocument.security.jwt.secret}") String secret,
+                          @Value("${modocument.security.permit-dev-paths:false}") boolean permitDevPaths) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "MODOCUMENT_JWT_SECRET is not set. Generate a signing key of at least "
+                            + "32 bytes (e.g. `openssl rand -base64 48`) and set it in the "
+                            + "environment before starting the app.");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException(
+                    "MODOCUMENT_JWT_SECRET is too short: HS256 needs at least 32 bytes.");
+        }
+        if (!permitDevPaths && LEGACY_DEV_SECRET.equals(secret)) {
+            throw new IllegalStateException(
+                    "MODOCUMENT_JWT_SECRET is set to the publicly-known development default. "
+                            + "Generate a real key (e.g. `openssl rand -base64 48`).");
+        }
         this.secretKey = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+        this.permitDevPaths = permitDevPaths;
     }
 
     @Bean
@@ -42,12 +66,16 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(h -> h.frameOptions(f -> f.sameOrigin()))
-                .authorizeHttpRequests(a -> a
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
-                        .requestMatchers("/swagger/**", "/swagger-ui/**", "/swagger-ui.html",
-                                "/v3/api-docs/**", "/h2-console/**", "/error").permitAll()
-                        .anyRequest().authenticated())
+                .authorizeHttpRequests(a -> {
+                    a.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                            .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
+                            .requestMatchers("/actuator/health", "/error").permitAll();
+                    if (permitDevPaths) {
+                        a.requestMatchers("/swagger/**", "/swagger-ui/**", "/swagger-ui.html",
+                                "/v3/api-docs/**", "/h2-console/**").permitAll();
+                    }
+                    a.anyRequest().authenticated();
+                })
                 .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()));
         return http.build();
     }

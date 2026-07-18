@@ -5,8 +5,8 @@ into clean, validated, tabular data — driven by **user-defined templates** wit
 per-field validation (including UI-supplied regex), AI-assisted extraction and mapping,
 and resumable ingestion jobs checkpointed in SQL.
 
-Java 21 / Spring Boot 3.5 / Spring AI. SQL Server in production, in-memory H2 for local
-development and tests.
+Java 21 / Spring Boot 3.5 / Spring AI. PostgreSQL in production (schema managed by
+Flyway), in-memory H2 for local development and tests.
 
 ## Features
 
@@ -73,7 +73,7 @@ development and tests.
   under `wwwroot/exports/`.
 - **Push directly to your own database**: `POST /api/ingestion/jobs/{id}/export/database`
   with `{jdbcUrl, username, password, tableName, createTableIfMissing}`. Supports
-  `jdbc:sqlserver:` and `jdbc:h2:` targets, auto-creates the table when asked, inserts
+  `jdbc:postgresql:` and `jdbc:h2:` targets, auto-creates the table when asked, inserts
   in batches. Table/column identifiers are strictly validated **and** quoted; row values
   only ever travel as bound parameters (no SQL injection); credentials are used for the
   one export and never persisted or logged.
@@ -138,23 +138,23 @@ development and tests.
 - File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`).
 - **Swagger UI** at `/swagger-ui` (static contract at `/swagger/spec.yaml`).
 - H2 `local` profile with seeded lookup data — runs with zero external dependencies.
-- **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + docling-serve,
-  optional SQL Server).
+- **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + PostgreSQL +
+  docling-serve), non-root runtime image with a healthcheck.
 - CI: GitHub Actions runs `mvn -B verify` on every push/PR to `main`.
 
 ## Quick start
 
-### Run locally (no SQL Server, no OpenAI key needed)
+### Run locally (no PostgreSQL, no OpenAI key needed)
 
 ```bash
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
 
-Boots on in-memory H2 seeded from `src/main/resources/data.sql` (lookup data and a
-demo user only — templates, fields and validation rules are created through the UI).
-All CRUD, template, validation, job, and export endpoints work immediately; only
-LLM-dependent paths (unstructured extraction, automap leftovers, chat edit) need an
-API key:
+Boots on in-memory H2 seeded from `src/main/resources/data.sql` (lookup data only —
+users, templates, fields and validation rules are created through the app; register
+your first account via the UI or `POST /api/auth/register`). All CRUD, template,
+validation, job, and export endpoints work immediately; only LLM-dependent paths
+(unstructured extraction, automap leftovers, chat edit) need an API key:
 
 ```bash
 AIFILES_OPENAI_APIKEY=<your-openai-key> SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
@@ -163,17 +163,19 @@ AIFILES_OPENAI_APIKEY=<your-openai-key> SPRING_PROFILES_ACTIVE=local mvn spring-
 ### Run with Docker
 
 ```bash
-# app (H2 profile) + docling-serve for full pdf/doc/image OCR conversion
+# production-style stack: app + PostgreSQL (Flyway-managed schema) + docling-serve.
+# The JWT signing secret is required — the app refuses to boot without one.
+export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
 docker compose up --build
 
 # with an OpenAI key for the LLM features
 AIFILES_OPENAI_APIKEY=<your-openai-key> docker compose up --build
 
-# also start SQL Server (then create the schema — see Database below)
-docker compose --profile mssql up --build
+# zero-dependency dev mode instead (in-memory H2, dev JWT secret)
+APP_PROFILES=local docker compose up --build
 
 # extraction at scale: MongoDB store + Kafka work distribution
-APP_PROFILES=local,scale docker compose --profile extraction up --build
+APP_PROFILES=scale docker compose --profile extraction up --build
 ```
 
 The API is on <http://localhost:8080> (Swagger UI: <http://localhost:8080/swagger-ui>),
@@ -197,14 +199,18 @@ npm test             # unit tests (Vitest + React Testing Library)
 
 ### Authentication
 
-All API endpoints (except `/api/auth/login`, `/api/auth/register`, and Swagger)
-require a JWT Bearer token:
+All API endpoints (except `/api/auth/login`, `/api/auth/register`, and
+`/actuator/health`) require a JWT Bearer token. No accounts are seeded — register
+the first user, then log in:
 
 ```bash
-# demo user seeded on the local/H2 profiles
+curl -X POST http://localhost:8080/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"<your-password>","displayName":"You"}'
+
 curl -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"demo@modocument.local","password":"Demo123!"}'
+  -d '{"email":"you@example.com","password":"<your-password>"}'
 # -> { "token": "...", "user": { ... } }
 
 curl http://localhost:8080/Templates/GetAll -H "Authorization: Bearer <token>"
@@ -213,8 +219,9 @@ curl http://localhost:8080/Templates/GetAll -H "Authorization: Bearer <token>"
 Endpoints: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`,
 `PUT /api/auth/profile`, `PUT /api/auth/password`. Logout is client-side (discard
 the token; it expires after `modocument.security.jwt.ttl-hours`, default 24h).
-Set `MODOCUMENT_JWT_SECRET` (≥32 chars) in production — the dev default in
-`application.yml` is not a secret.
+`MODOCUMENT_JWT_SECRET` (≥32 bytes, e.g. `openssl rand -base64 48`) is **required**
+in production — the app fails fast at startup if it is missing, too short, or set
+to the old dev default. The `local`/`test` profiles ship their own dev-only secret.
 
 ### Build & test
 
@@ -233,9 +240,12 @@ mvn -B verify
 | Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | `true` (active only when an OpenAI key is set) |
 | Vision OCR model | `ocr.vision.model` / `OCR_VISION_MODEL` | `gpt-4o` |
 | Vision OCR page budget | `ocr.vision.max-pages` / `OCR_VISION_MAXPAGES` (+ `dpi`, `max-dimension`) | 20 pages/PDF, 200 DPI, 2048px longest edge |
-| Database | `spring.datasource.url` / `SPRING_DATASOURCE_URL` | SQL Server `localhost`, database `MoDocument` |
-| Profile | `SPRING_PROFILES_ACTIVE` | default (SQL Server); use `local` for H2, add `scale` for Mongo+Kafka extraction |
-| Extraction store | `extraction.store` / `EXTRACTION_STORE` | `mongo` (default profile); `memory` in `local`/`test` |
+| JWT signing secret | `modocument.security.jwt.secret` / `MODOCUMENT_JWT_SECRET` | **required** in production (≥32 bytes); dev secret on `local`/`test` |
+| Database | `spring.datasource.url` / `MODOCUMENT_DB_URL` (+ `MODOCUMENT_DB_USERNAME`, `MODOCUMENT_DB_PASSWORD`) | PostgreSQL `localhost:5432/modocument` |
+| CORS origins | `modocument.cors.allowed-origins` / `MODOCUMENT_CORS_ALLOWED_ORIGINS` | localhost dev origins — set your frontend origin in production |
+| Storage root | `modocument.storage.root` / `MODOCUMENT_STORAGE_ROOT` | `wwwroot` (uploads + export copies; mount a volume) |
+| Profile | `SPRING_PROFILES_ACTIVE` | default (PostgreSQL); use `local` for H2, `scale` for Mongo+Kafka extraction |
+| Extraction store | `extraction.store` / `EXTRACTION_STORE` | `memory`; set `mongo` (or the `scale` profile) for multi-instance runs |
 | MongoDB URI | `spring.data.mongodb.uri` / `EXTRACTION_MONGO_URI` | `mongodb://localhost:27017/modocument` |
 | Kafka distribution | `extraction.kafka.enabled` / `EXTRACTION_KAFKA_ENABLED` | `false` (workers poll the store queue) |
 | Kafka brokers | `spring.kafka.bootstrap-servers` / `EXTRACTION_KAFKA_SERVERS` | `localhost:9092` |
@@ -282,7 +292,7 @@ contract at `/swagger/spec.yaml`. Summary:
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/ingestion/jobs/{id}/export/file?format=csv\|json\|xlsx` | Download validated rows (copy archived in `wwwroot/exports/`) |
-| `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied SQL Server/H2 database |
+| `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied PostgreSQL/H2 database |
 
 ### Data extraction
 
@@ -346,7 +356,7 @@ curl -X POST localhost:8080/api/ingestion/jobs/1/chat-edit -H 'Content-Type: app
 # 5. export — download a file, or push to your own database
 curl -OJ "localhost:8080/api/ingestion/jobs/1/export/file?format=xlsx"
 curl -X POST localhost:8080/api/ingestion/jobs/1/export/database -H 'Content-Type: application/json' \
-     -d '{"jdbcUrl": "jdbc:sqlserver://myhost;databaseName=Staging;trustServerCertificate=true",
+     -d '{"jdbcUrl": "jdbc:postgresql://myhost:5432/staging",
           "username": "loader", "password": "***", "tableName": "Contacts", "createTableIfMissing": true}'
 ```
 
@@ -429,33 +439,57 @@ instance's tasks once their leases expire. Scale out by running more app instanc
 
 ## Database
 
+- **Production (PostgreSQL):** the schema is created and versioned by **Flyway**
+  (`src/main/resources/db/migration/` — `V1__baseline_schema.sql` +
+  `V2__lookup_seed.sql`) automatically on startup; Hibernate runs with
+  `ddl-auto: validate` and only checks the mapping. Point the app at your server
+  with `MODOCUMENT_DB_URL` / `MODOCUMENT_DB_USERNAME` / `MODOCUMENT_DB_PASSWORD`.
+  Only lookup data is seeded — no accounts, templates, or rules.
 - **Local/tests (H2):** schema is auto-created from the JPA entities and seeded from
-  `src/main/resources/data.sql` (data-type and process-step lookups plus a demo user;
-  templates, fields and validation rules start empty).
-- **Production (SQL Server):** create the `MoDocument` database, run `data.sql` once,
-  and apply `src/main/resources/sql/sqlserver-additions.sql` once to create the
-  `IngestionJob` table used by the resumable pipeline.
+  `src/main/resources/data.sql` (data-type and process-step lookups only); Flyway is
+  disabled on these profiles.
 
 ## Docker
 
-- `Dockerfile` — multi-stage: Maven + Temurin 21 build, slim JRE 21 runtime image.
+- `Dockerfile` — multi-stage: Maven + Temurin 21 build, slim JRE 21 runtime image
+  that runs as a non-root user and healthchecks `/actuator/health`.
 - `docker-compose.yml` —
-  - `app`: this API on port 8080 (H2 `local` profile by default, so it works with no
-    external services); pass `AIFILES_OPENAI_APIKEY` through your environment for the
-    LLM features. Uploads/exports are kept in a named volume.
+  - `app`: this API on port 8080, wired to the `postgres` service by default.
+    Requires `MODOCUMENT_JWT_SECRET` in your environment; pass
+    `AIFILES_OPENAI_APIKEY` through for the LLM features. Uploads/exports are kept
+    in a named volume. Set `APP_PROFILES=local` for the zero-dependency in-memory
+    H2 dev mode.
+  - `postgres`: PostgreSQL 17 with a named volume and a `pg_isready` healthcheck;
+    the app waits for it to be healthy and Flyway migrates the schema on boot.
+    Override `POSTGRES_USER`/`POSTGRES_PASSWORD` (the compose default is for local
+    use only).
   - `docling`: [docling-serve](https://github.com/docling-project/docling-serve) on
     port 5001, pre-wired via `DOCLING_BASEURL` for rich layout-aware conversion. Note
     the slim app image has no native Tesseract, so the local OCR fallback silently
     disables itself there — but with `AIFILES_OPENAI_APIKEY` set the container still
     gets full-quality image/scan OCR via the vision model, even without docling.
-  - `mssql` (optional, `--profile mssql`): SQL Server 2022 for a production-style
-    setup — point the app at it with `SPRING_DATASOURCE_URL` and create the schema as
-    described in [Database](#database).
   - `mongodb` + `kafka` (optional, `--profile extraction`): the extraction store and
-    work-distribution bus. Run `APP_PROFILES=local,scale docker compose --profile
+    work-distribution bus. Run `APP_PROFILES=scale docker compose --profile
     extraction up --build` to switch the app onto them. JS rendering (Playwright) is
     off in the container image — the crawler uses plain HTTP there; install the
     Playwright browsers locally (`npx playwright install chromium` or
     `mvn exec:java -e -D exec.mainClass=com.microsoft.playwright.CLI -D
     'exec.args=install chromium'`) and set `extraction.web.render-js-enabled=true`
     to enable it in local runs.
+
+## Production deployment checklist
+
+- **`MODOCUMENT_JWT_SECRET`** — required; generate with `openssl rand -base64 48`.
+  The app refuses to start with a missing, short, or known-default secret.
+- **Database** — set `MODOCUMENT_DB_URL` / `MODOCUMENT_DB_USERNAME` /
+  `MODOCUMENT_DB_PASSWORD` to a PostgreSQL instance with a strong password;
+  Flyway migrates the schema on startup.
+- **CORS** — set `MODOCUMENT_CORS_ALLOWED_ORIGINS` to your frontend origin(s).
+- **TLS** — terminate HTTPS at your reverse proxy / load balancer in front of the
+  frontend (nginx, port 80) and the API; nothing in the stack serves TLS itself.
+- **Health** — probe `GET /actuator/health` (unauthenticated); the Docker image and
+  compose file already use it.
+- **Files** — mount a volume at the storage root (`MODOCUMENT_STORAGE_ROOT`,
+  default `wwwroot/`) so uploads and export copies survive restarts.
+- **API docs** — Swagger/OpenAPI endpoints are disabled outside the `local`/`test`
+  profiles; the H2 console permit is likewise dev-only.

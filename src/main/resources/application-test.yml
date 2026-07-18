@@ -11,6 +11,9 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
+  flyway:
+    # Migrations are PostgreSQL-only; H2 gets its schema from ddl-auto: create.
+    enabled: false
   jpa:
     hibernate:
       ddl-auto: create
@@ -23,6 +26,13 @@ spring:
       # Dummy key so the Spring AI auto-configuration boots in offline tests;
       # no test ever calls the real API (the AiFilesService port is mocked).
       api-key: test-key
+
+modocument:
+  security:
+    jwt:
+      # Test-only signing key; production requires MODOCUMENT_JWT_SECRET.
+      secret: modocument-local-dev-secret-change-in-production-0123456789
+    permit-dev-paths: true
 
 extraction:
   store: memory

@@ -9,6 +9,7 @@ import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStep;
 import com.modocument.infrastructure.export.DatabaseExportService;
 import com.modocument.infrastructure.export.FileExportService;
+import com.modocument.infrastructure.file.StorageProperties;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -39,22 +40,22 @@ import java.util.NoSuchElementException;
 @RestController
 public class IngestionExportController {
 
-    /** Exported file copies live under ./wwwroot/exports. */
-    public static final Path EXPORTS_DIR = Path.of("wwwroot", "exports");
-
     private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final IngestionJobUseCase jobs;
     private final FileExportService fileExport;
     private final DatabaseExportService databaseExport;
+    private final Path exportsDir;
 
     public IngestionExportController(IngestionJobUseCase jobs,
                                      FileExportService fileExport,
-                                     DatabaseExportService databaseExport) {
+                                     DatabaseExportService databaseExport,
+                                     StorageProperties storage) {
         this.jobs = jobs;
         this.fileExport = fileExport;
         this.databaseExport = databaseExport;
+        this.exportsDir = storage.exportsDir();
     }
 
     @GetMapping("/api/ingestion/jobs/{id}/export/file")
@@ -119,10 +120,10 @@ public class IngestionExportController {
         }
     }
 
-    private static void archiveCopy(String exportName, byte[] bytes) {
+    private void archiveCopy(String exportName, byte[] bytes) {
         try {
-            Files.createDirectories(EXPORTS_DIR);
-            Files.write(EXPORTS_DIR.resolve(exportName), bytes);
+            Files.createDirectories(exportsDir);
+            Files.write(exportsDir.resolve(exportName), bytes);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not archive the export file.", e);
         }
