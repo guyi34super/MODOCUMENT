@@ -11,6 +11,7 @@ import {
 } from '../api/validationRules';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
+import RegexBuilder from '../components/RegexBuilder';
 import { Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 
@@ -234,14 +235,7 @@ export default function ValidationRulesPage() {
                 </Field>
               </div>
               {ruleType === 'REGEX' ? (
-                <Field label="Pattern" hint="Java regular expression, e.g. ^[A-Z]{2}\d{4}$">
-                  <input
-                    required
-                    className={`${inputClass} font-mono`}
-                    value={pattern}
-                    onChange={(e) => setPattern(e.target.value)}
-                  />
-                </Field>
+                <RegexBuilder pattern={pattern} onChange={setPattern} />
               ) : (
                 <Field label="Config (JSON)" hint='Rule-specific settings, e.g. {"Min": 0, "Max": 100}'>
                   <input
@@ -251,7 +245,7 @@ export default function ValidationRulesPage() {
                   />
                 </Field>
               )}
-              <Button type="submit" disabled={busy || !fieldName}>
+              <Button type="submit" disabled={busy || !fieldName || (ruleType === 'REGEX' && !pattern)}>
                 {busy ? 'Saving…' : 'Save rule'}
               </Button>
             </form>
