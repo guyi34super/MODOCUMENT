@@ -41,9 +41,9 @@ export default function TemplatesPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Templates' }]}
-        title="Templates & Fields"
-        subtitle="Define the shape of the documents you ingest"
+        crumbs={[{ label: 'Design Templates' }]}
+        title="Design Templates"
+        subtitle="Step 1 — define the shape of the documents you process"
         actions={
           <>
             <Button
@@ -84,6 +84,12 @@ export default function TemplatesPage() {
                   <Button variant="secondary" onClick={() => navigate(`/templates/${row.templateId}`)}>
                     Edit
                   </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => navigate(`/validation?templateId=${row.templateId}`)}
+                  >
+                    Rules
+                  </Button>
                   <Button variant="danger" onClick={() => remove(row)}>
                     Delete
                   </Button>
@@ -92,7 +98,15 @@ export default function TemplatesPage() {
             },
           ]}
           rows={templates}
-          emptyMessage="No templates yet — create one to start ingesting documents."
+          emptyMessage={
+            <>
+              No templates yet —{' '}
+              <Link to="/templates/new" className="text-accent hover:underline">
+                design your first template
+              </Link>{' '}
+              to start processing documents.
+            </>
+          }
         />
       )}
     </div>

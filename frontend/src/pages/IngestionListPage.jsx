@@ -53,9 +53,9 @@ export default function IngestionListPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'File Uploads' }]}
-        title="File Uploads"
-        subtitle="Upload a document, review the extracted table, validate and save"
+        crumbs={[{ label: 'Upload & Process' }]}
+        title="Upload & Process"
+        subtitle="Step 3 — upload a document, review the extracted table, validate and export"
         actions={<Button variant="secondary" onClick={load}>Refresh</Button>}
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
@@ -90,6 +90,15 @@ export default function IngestionListPage() {
                   </option>
                 ))}
               </select>
+              {templates.length === 0 && (
+                <p className="mt-1 text-xs text-muted">
+                  No templates yet —{' '}
+                  <Link to="/templates/new" className="text-accent hover:underline">
+                    design one first (step 1)
+                  </Link>
+                  .
+                </p>
+              )}
             </Field>
           </div>
           <label className="flex items-center gap-2 text-sm">

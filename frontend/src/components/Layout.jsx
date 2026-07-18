@@ -2,22 +2,23 @@ import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+// Nav mirrors the product journey: Home, then the numbered document flow,
+// then the extraction toolset and account.
 const sections = [
   {
-    label: 'Workspace',
-    links: [{ to: '/', label: 'Dashboard', end: true }],
+    links: [{ to: '/', label: 'Home', end: true }],
   },
   {
-    label: 'Templates',
+    label: 'Document Flow',
     links: [
-      { to: '/templates', label: 'Templates & Fields' },
-      { to: '/validation', label: 'Validation Rules' },
+      { to: '/templates', label: 'Design Templates', step: 1 },
+      { to: '/validation', label: 'Set Field Rules', step: 2 },
+      { to: '/ingestion', label: 'Upload & Process', step: 3 },
     ],
   },
   {
-    label: 'Data Pipeline',
+    label: 'Data Extraction',
     links: [
-      { to: '/ingestion', label: 'File Uploads' },
       { to: '/extraction/sources', label: 'Extraction Sources' },
       { to: '/extraction/jobs', label: 'Extraction Jobs' },
     ],
@@ -86,25 +87,40 @@ export default function Layout() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {sections.map((section) => (
-          <div key={section.label} className="mb-5">
-            <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
-              {section.label}
-            </p>
+        {sections.map((section, i) => (
+          <div key={section.label || i} className="mb-5">
+            {section.label && (
+              <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                {section.label}
+              </p>
+            )}
             {section.links.map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}
                 end={link.end}
                 className={({ isActive }) =>
-                  `block rounded-md px-2 py-1.5 text-sm ${
+                  `flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
                     isActive
                       ? 'bg-pill font-medium text-accent'
                       : 'text-ink hover:bg-neutral-200/60'
                   }`
                 }
               >
-                {link.label}
+                {({ isActive }) => (
+                  <>
+                    {link.step && (
+                      <span
+                        className={`flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                          isActive ? 'bg-accent text-white' : 'bg-neutral-200/80 text-muted'
+                        }`}
+                      >
+                        {link.step}
+                      </span>
+                    )}
+                    {link.label}
+                  </>
+                )}
               </NavLink>
             ))}
           </div>

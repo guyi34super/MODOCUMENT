@@ -77,7 +77,7 @@ export default function ProfilePage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Profile' }]}
+        crumbs={[{ label: 'Profile' }]}
         title="Profile"
         subtitle="Account settings"
       />

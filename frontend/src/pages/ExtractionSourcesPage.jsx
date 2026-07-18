@@ -114,7 +114,7 @@ export default function ExtractionSourcesPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Extraction' }, { label: 'Sources' }]}
+        crumbs={[{ label: 'Extraction' }, { label: 'Sources' }]}
         title="Extraction Sources"
         subtitle="Websites, REST APIs and databases you extract data from"
         actions={

@@ -60,7 +60,7 @@ export default function ExtractionJobsPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Extraction' }, { label: 'Jobs' }]}
+        crumbs={[{ label: 'Extraction' }, { label: 'Jobs' }]}
         title="Extraction Jobs"
         subtitle="Crawl a source, collect records, then bridge them into the ingestion pipeline"
         actions={<Button variant="secondary" onClick={load}>Refresh</Button>}

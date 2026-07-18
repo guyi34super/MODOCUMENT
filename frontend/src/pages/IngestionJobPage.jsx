@@ -30,6 +30,10 @@ const ACTION_MESSAGES = {
   'db-export': { loading: 'Exporting to database…', success: 'Exported to database' },
 };
 
+function stepLabel(step) {
+  return step.charAt(0) + step.slice(1).toLowerCase();
+}
+
 function StepIndicator({ currentStep }) {
   const currentIndex = STEPS.indexOf(currentStep);
   return (
@@ -46,7 +50,8 @@ function StepIndicator({ currentStep }) {
                   : 'bg-neutral-100 text-muted'
             }`}
           >
-            {step}
+            {i < currentIndex ? '✓ ' : ''}
+            {stepLabel(step)}
           </span>
         </li>
       ))}
@@ -156,7 +161,7 @@ export default function IngestionJobPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'File Uploads', to: '/ingestion' }, { label: `Job #${id}` }]}
+        crumbs={[{ label: 'Upload & Process', to: '/ingestion' }, { label: `Job #${id}` }]}
         title={`Job #${id} — ${job.fileName || ''}`}
         subtitle="Parse → map → validate → save"
         actions={

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
 import { getAllFields } from '../api/templates';
 import {
@@ -29,6 +30,7 @@ const ruleTypeName = (value) =>
 
 export default function ValidationRulesPage() {
   const toast = useToast();
+  const [searchParams] = useSearchParams();
   const [templates, setTemplates] = useState([]);
   const [allFields, setAllFields] = useState([]);
   const [templateId, setTemplateId] = useState('');
@@ -51,8 +53,15 @@ export default function ValidationRulesPage() {
       .then(([tpl, fields]) => {
         setTemplates(tpl);
         setAllFields(fields);
+        // Deep link from the template editor / templates list: ?templateId=N
+        const preselected = searchParams.get('templateId');
+        if (preselected && tpl.some((t) => t.templateId === Number(preselected))) {
+          setTemplateId(preselected);
+          loadRules(preselected);
+        }
       })
       .catch((err) => setError(err.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const templateFields = allFields.filter((f) => f.templateId === Number(templateId));
@@ -134,9 +143,9 @@ export default function ValidationRulesPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Validation Rules' }]}
-        title="Fields Validation"
-        subtitle="Per-field rules that every ingested row is checked against"
+        crumbs={[{ label: 'Set Field Rules' }]}
+        title="Set Field Rules"
+        subtitle="Step 2 — per-field rules every processed row is checked against"
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
@@ -293,6 +302,13 @@ export default function ValidationRulesPage() {
               </div>
             )}
           </Card>
+
+          <p className="mt-5 text-sm text-muted">
+            Done with rules?{' '}
+            <Link to="/ingestion" className="text-accent hover:underline">
+              Next: upload &amp; process a file →
+            </Link>
+          </p>
         </>
       )}
     </div>

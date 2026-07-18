@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getTemplateDataTypes } from '../api/cache';
 import {
   createField,
@@ -129,7 +129,7 @@ export default function TemplateEditorPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Templates', to: '/templates' }, { label: isNew ? 'New' : name }]}
+        crumbs={[{ label: 'Design Templates', to: '/templates' }, { label: isNew ? 'New' : name }]}
         title={isNew ? 'New Template' : `Edit: ${name}`}
         subtitle={isNew ? 'Create a template together with its fields' : 'Update details and manage fields'}
       />
@@ -215,9 +215,14 @@ export default function TemplateEditorPage() {
             <Field label="Description">
               <input className={inputClass} value={description} onChange={(e) => setDescription(e.target.value)} />
             </Field>
-            <Button onClick={saveDetails} disabled={busy}>
-              {busy ? 'Saving…' : 'Save details'}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={saveDetails} disabled={busy}>
+                {busy ? 'Saving…' : 'Save details'}
+              </Button>
+              <Link to={`/validation?templateId=${id}`} className="text-sm text-accent hover:underline">
+                Next: set field rules →
+              </Link>
+            </div>
           </Card>
 
           <Card>

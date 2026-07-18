@@ -108,7 +108,7 @@ export default function ExtractionJobDetailPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Extraction Jobs', to: '/extraction/jobs' }, { label: job.id.slice(0, 12) }]}
+        crumbs={[{ label: 'Extraction Jobs', to: '/extraction/jobs' }, { label: job.id.slice(0, 12) }]}
         title="Extraction Job"
         subtitle={<span className="font-mono text-sm">{job.id}</span>}
         actions={
