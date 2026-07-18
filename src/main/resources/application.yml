@@ -36,6 +36,13 @@ spring:
         options:
           model: ${aifiles.openai.model-id:gpt-4o}
 
+modocument:
+  security:
+    jwt:
+      # HS256 signing key (must be at least 32 bytes). Override in production.
+      secret: ${MODOCUMENT_JWT_SECRET:modocument-local-dev-secret-change-in-production-0123456789}
+      ttl-hours: 24
+
 aifiles:
   openai:
     # Set via AIFILES_OPENAI_APIKEY env var or an application-local.yml

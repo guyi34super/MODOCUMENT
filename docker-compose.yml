@@ -1,4 +1,12 @@
 services:
+  # React frontend served by nginx, which also proxies API calls to the app.
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - app
+
   app:
     build: .
     ports:

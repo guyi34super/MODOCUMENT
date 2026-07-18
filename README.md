@@ -175,7 +175,44 @@ APP_PROFILES=local,scale docker compose --profile extraction up --build
 ```
 
 The API is on <http://localhost:8080> (Swagger UI: <http://localhost:8080/swagger-ui>),
-docling-serve on <http://localhost:5001>.
+docling-serve on <http://localhost:5001>, and the web frontend on
+<http://localhost:3000>.
+
+### Web frontend (React)
+
+A lightweight React UI lives in [`frontend/`](frontend): dashboard, template &
+field creation, validation rules, the file-upload pipeline (parse → map →
+validate → export), website data extraction, and profile/settings. It is served
+by nginx in Docker (`frontend` service, port 3000), or run it against a locally
+running backend with:
+
+```bash
+cd frontend
+npm install
+npm run dev          # http://localhost:3000, proxies API calls to :8080
+npm test             # unit tests (Vitest + React Testing Library)
+```
+
+### Authentication
+
+All API endpoints (except `/api/auth/login`, `/api/auth/register`, and Swagger)
+require a JWT Bearer token:
+
+```bash
+# demo user seeded on the local/H2 profiles
+curl -X POST http://localhost:8080/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"demo@modocument.local","password":"Demo123!"}'
+# -> { "token": "...", "user": { ... } }
+
+curl http://localhost:8080/Templates/GetAll -H "Authorization: Bearer <token>"
+```
+
+Endpoints: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`,
+`PUT /api/auth/profile`, `PUT /api/auth/password`. Logout is client-side (discard
+the token; it expires after `modocument.security.jwt.ttl-hours`, default 24h).
+Set `MODOCUMENT_JWT_SECRET` (≥32 chars) in production — the dev default in
+`application.yml` is not a secret.
 
 ### Build & test
 
