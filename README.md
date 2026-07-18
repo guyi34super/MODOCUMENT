@@ -462,6 +462,30 @@ instance's tasks once their leases expire. Scale out by running more app instanc
   from the JPA entities and seeded from `src/main/resources/data.sql`
   (data-type and process-step lookups only); Flyway is disabled there.
 
+### Hosted PostgreSQL (Supabase, RDS, Neon, …)
+
+Any hosted PostgreSQL works — point the `MODOCUMENT_DB_*` variables at it and
+the backend migrates the schema on first boot. Supabase example:
+
+```bash
+# Session pooler connection (Dashboard → Connect). Use the SESSION pooler on
+# port 5432 — it is IPv4-friendly and keeps prepared statements, which JDBC/
+# Hibernate/Flyway need. Do NOT use the transaction pooler (port 6543), and
+# note the direct db.<ref>.supabase.co host requires IPv6.
+export MODOCUMENT_DB_URL="jdbc:postgresql://aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require"
+export MODOCUMENT_DB_USERNAME="postgres.<project-ref>"
+export MODOCUMENT_DB_PASSWORD="<database password>"   # never commit this
+export MODOCUMENT_JWT_SECRET="$(openssl rand -base64 48)"
+
+mvn spring-boot:run
+```
+
+On the first boot the log shows Flyway applying `V1__baseline_schema`,
+`V2__lookup_seed` and `V3__foreign_key_indexes`, after which the tables are
+visible in Supabase's Table Editor; later boots print "Schema … is up to
+date." The same variables work for the Docker image and the compose `app`
+service (the bundled `postgres` service is then unnecessary).
+
 ## Docker
 
 - `Dockerfile` — multi-stage: Maven + Temurin 21 build, slim JRE 21 runtime image
