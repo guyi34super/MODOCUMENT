@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Button, ErrorBanner, Field, inputClass } from '../components/ui';
+import { Button, Field, inputClass } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 export default function LoginPage() {
   const { isAuthenticated, login } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   if (isAuthenticated) return <Navigate to="/" replace />;
@@ -16,12 +17,11 @@ export default function LoginPage() {
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
     try {
-      await login(email, password);
+      await toast.promise(login(email, password), { loading: 'Signing in…' });
       navigate('/');
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -42,7 +42,6 @@ export default function LoginPage() {
           </div>
         </div>
         <h1 className="mb-4 text-xl font-normal">Sign in</h1>
-        <ErrorBanner message={error} onDismiss={() => setError('')} />
         <form onSubmit={submit} className="space-y-4">
           <Field label="Email">
             <input

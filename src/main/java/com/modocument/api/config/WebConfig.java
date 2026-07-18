@@ -1,5 +1,6 @@
 package com.modocument.api.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
@@ -9,20 +10,16 @@ import org.springframework.web.util.pattern.PathPatternParser;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    /** Same origins as the original AllowReactApp CORS policy. */
-    private static final String[] ALLOWED_ORIGINS = {
-            "http://localhost:3000",
-            "http://localhost:8004",
-            "http://localhost:8080",
-            "https://localhost:3000",
-            "https://localhost:8004",
-            "https://localhost:8080"
-    };
+    private final String[] allowedOrigins;
+
+    public WebConfig(@Value("${modocument.cors.allowed-origins}") String[] allowedOrigins) {
+        this.allowedOrigins = allowedOrigins;
+    }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
-                .allowedOrigins(ALLOWED_ORIGINS)
+                .allowedOrigins(allowedOrigins)
                 .allowedMethods("*")
                 .allowedHeaders("*")
                 .allowCredentials(true);

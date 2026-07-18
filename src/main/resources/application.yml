@@ -10,13 +10,22 @@ spring:
     # Extraction work distribution. Only used when extraction.kafka.enabled=true.
     bootstrap-servers: ${EXTRACTION_KAFKA_SERVERS:localhost:9092}
   datasource:
-    # Same database the original backend targeted. Override via SPRING_DATASOURCE_* env vars.
-    url: jdbc:sqlserver://localhost;databaseName=MoDocument;integratedSecurity=true;trustServerCertificate=true
-    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    # Production database: PostgreSQL. Override via MODOCUMENT_DB_* (or the
+    # standard SPRING_DATASOURCE_* variables, which take precedence over any
+    # profile). MODOCUMENT_DB_* is ignored by the H2 local/test profiles.
+    url: ${MODOCUMENT_DB_URL:jdbc:postgresql://localhost:5432/modocument}
+    username: ${MODOCUMENT_DB_USERNAME:modocument}
+    password: ${MODOCUMENT_DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    # Flyway owns the schema in production (src/main/resources/db/migration);
+    # the H2 local/test profiles disable it and use ddl-auto: create instead.
+    enabled: true
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: none
+      # Flyway creates the schema; Hibernate only checks the mapping against it.
+      ddl-auto: validate
       naming:
         # Keep the exact PascalCase table/column names from the original schema.
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
@@ -39,9 +48,34 @@ spring:
 modocument:
   security:
     jwt:
-      # HS256 signing key (must be at least 32 bytes). Override in production.
-      secret: ${MODOCUMENT_JWT_SECRET:modocument-local-dev-secret-change-in-production-0123456789}
+      # HS256 signing key, at least 32 bytes. REQUIRED in production — the app
+      # refuses to start without it (generate one: openssl rand -base64 48).
+      # The local/test profiles set their own dev-only secret.
+      secret: ${MODOCUMENT_JWT_SECRET:}
       ttl-hours: 24
+    # Permits /swagger/**, /v3/api-docs/** and /h2-console/** without auth.
+    # Off in production; the local/test profiles turn it on.
+    permit-dev-paths: false
+  cors:
+    # Comma-separated list of origins allowed to call the API with credentials.
+    # Set to the deployed frontend origin(s) in production.
+    allowed-origins: ${MODOCUMENT_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8004,http://localhost:8080,https://localhost:3000,https://localhost:8004,https://localhost:8080}
+  storage:
+    # Root directory for uploaded files (<root>/uploads) and export copies
+    # (<root>/exports). Mount a volume here in containers.
+    root: ${MODOCUMENT_STORAGE_ROOT:wwwroot}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Health only — for container healthchecks and load-balancer probes.
+        include: health
+  health:
+    mongo:
+      # The default extraction store is in-memory, so an absent Mongo must not
+      # drag /actuator/health DOWN. The scale profile re-enables this check.
+      enabled: false
 
 aifiles:
   openai:
@@ -71,8 +105,9 @@ ocr:
 
 extraction:
   # Where extraction data (sources, jobs, tasks, raw/processed records, audit)
-  # lives: "mongo" for production scale, "memory" for local/test.
-  store: ${EXTRACTION_STORE:mongo}
+  # lives. "memory" keeps a single-node deployment free of extra services;
+  # set EXTRACTION_STORE=mongo (or the scale profile) for multi-instance runs.
+  store: ${EXTRACTION_STORE:memory}
   kafka:
     # When enabled, task-available events are published to Kafka so any
     # instance in the consumer group can claim the task from the store. When
@@ -101,7 +136,12 @@ extraction:
     max-depth-default: 2
 
 springdoc:
+  # API docs are a development tool — disabled in production, enabled by the
+  # local profile.
+  api-docs:
+    enabled: false
   swagger-ui:
+    enabled: false
     # Render the static, hand-maintained spec instead of a generated one.
     url: /swagger/spec.yaml
 

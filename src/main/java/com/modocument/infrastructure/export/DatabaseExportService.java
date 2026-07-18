@@ -42,7 +42,7 @@ public class DatabaseExportService {
                 throw new IllegalStateException(
                         "Table '" + tableName + "' does not exist in the target database.");
             }
-            jdbc.execute(createTableSql(jdbc, tableName, columns));
+            jdbc.execute(createTableSql(tableName, columns));
         }
 
         String insertSql = "INSERT INTO " + quote(tableName) + " ("
@@ -78,19 +78,13 @@ public class DatabaseExportService {
         }));
     }
 
-    private static String createTableSql(JdbcTemplate jdbc, String tableName, List<String> columns) {
-        String textType = isSqlServer(jdbc) ? "NVARCHAR(4000)" : "VARCHAR(4000)";
+    private static String createTableSql(String tableName, List<String> columns) {
+        // VARCHAR(4000) works on every supported target (PostgreSQL, H2).
         return "CREATE TABLE " + quote(tableName) + " ("
                 + columns.stream()
-                .map(c -> quote(c) + " " + textType)
+                .map(c -> quote(c) + " VARCHAR(4000)")
                 .collect(Collectors.joining(", "))
                 + ")";
-    }
-
-    private static boolean isSqlServer(JdbcTemplate jdbc) {
-        String product = jdbc.execute((Connection connection) ->
-                connection.getMetaData().getDatabaseProductName());
-        return product != null && product.toLowerCase(java.util.Locale.ROOT).contains("sql server");
     }
 
     private static String requireValidIdentifier(String value, String what) {

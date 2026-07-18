@@ -4,10 +4,12 @@ import { getTemplates } from '../api/cache';
 import { createJobFromFile, listJobs } from '../api/ingestion';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
-import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { Badge, Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 export default function IngestionListPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [templates, setTemplates] = useState([]);
   const [jobs, setJobs] = useState(null);
   const [error, setError] = useState('');
@@ -35,12 +37,14 @@ export default function IngestionListPage() {
     e.preventDefault();
     if (!file || !templateId) return;
     setUploading(true);
-    setError('');
     try {
-      const job = await createJobFromFile(file, Number(templateId), autoRun);
+      const job = await toast.promise(createJobFromFile(file, Number(templateId), autoRun), {
+        loading: 'Uploading & processing… this can take a moment for large or scanned files.',
+        success: 'File uploaded',
+      });
       navigate(`/ingestion/${job.ingestionJobId}`);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setUploading(false);
     }
@@ -49,9 +53,9 @@ export default function IngestionListPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'File Uploads' }]}
-        title="File Uploads"
-        subtitle="Upload a document, review the extracted table, validate and save"
+        crumbs={[{ label: 'Upload & Process' }]}
+        title="Upload & Process"
+        subtitle="Step 3 — upload a document, review the extracted table, validate and export"
         actions={<Button variant="secondary" onClick={load}>Refresh</Button>}
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
@@ -86,6 +90,15 @@ export default function IngestionListPage() {
                   </option>
                 ))}
               </select>
+              {templates.length === 0 && (
+                <p className="mt-1 text-xs text-muted">
+                  No templates yet —{' '}
+                  <Link to="/templates/new" className="text-accent hover:underline">
+                    design one first (step 1)
+                  </Link>
+                  .
+                </p>
+              )}
             </Field>
           </div>
           <label className="flex items-center gap-2 text-sm">
@@ -99,11 +112,6 @@ export default function IngestionListPage() {
           <Button type="submit" disabled={uploading || !file || !templateId}>
             {uploading ? 'Uploading & processing…' : 'Upload & process'}
           </Button>
-          {uploading && (
-            <Callout variant="info" title="Processing">
-              Parsing, mapping and validating can take a moment for large or scanned files.
-            </Callout>
-          )}
         </form>
       </Card>
 

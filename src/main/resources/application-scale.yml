@@ -1,6 +1,7 @@
-# Extraction at scale: combine with another profile (e.g. local or the default
-# SQL Server setup) as SPRING_PROFILES_ACTIVE=local,scale. Switches the
-# extraction store to MongoDB and distributes work over Kafka.
+# Extraction at scale: use alone (SPRING_PROFILES_ACTIVE=scale, on top of the
+# default PostgreSQL setup) or combine with local as
+# SPRING_PROFILES_ACTIVE=local,scale. Switches the extraction store to MongoDB
+# and distributes work over Kafka.
 spring:
   autoconfigure:
     # Re-enable the Mongo/Kafka auto-configuration a base profile may exclude.
@@ -10,3 +11,9 @@ extraction:
   store: mongo
   kafka:
     enabled: true
+
+management:
+  health:
+    mongo:
+      # Mongo is load-bearing on this profile — include it in /actuator/health.
+      enabled: true

@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Button, ErrorBanner, Field, inputClass } from '../components/ui';
+import { Button, Field, inputClass } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 export default function RegisterPage() {
   const { isAuthenticated, register } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   if (isAuthenticated) return <Navigate to="/" replace />;
@@ -17,12 +18,11 @@ export default function RegisterPage() {
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
     try {
-      await register(email, password, displayName);
+      await toast.promise(register(email, password, displayName), { loading: 'Creating your account…' });
       navigate('/');
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -32,7 +32,6 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center bg-sidebar px-4">
       <div className="w-full max-w-sm rounded-lg border border-line bg-white p-8">
         <h1 className="mb-4 text-xl font-normal">Create your account</h1>
-        <ErrorBanner message={error} onDismiss={() => setError('')} />
         <form onSubmit={submit} className="space-y-4">
           <Field label="Display name">
             <input

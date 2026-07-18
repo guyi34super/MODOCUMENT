@@ -7,9 +7,10 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "ImportDetails")
@@ -26,9 +27,9 @@ public class ImportDetails {
     @Column(name = "ProcessStepId")
     private int processStepId;
 
-    // Large-object mapping so H2 (ddl-auto: create) sizes the column for full
-    // JSON payloads; SQL Server's manual schema already uses NVARCHAR(MAX).
-    @Lob
+    // Unbounded string so full JSON payloads fit: text on PostgreSQL, CLOB on
+    // H2 (a plain @Lob would map to PostgreSQL's oid large-object type).
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "RawJson")
     private String rawJson;
 

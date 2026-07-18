@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '../context/AuthContext';
+import { ToastProvider } from '../context/ToastContext';
 import { getToken } from '../api/client';
 import LoginPage from './LoginPage';
 
@@ -17,10 +18,12 @@ function renderLogin() {
   return render(
     <MemoryRouter initialEntries={['/login']}>
       <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<div>DASHBOARD</div>} />
-        </Routes>
+        <ToastProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<div>DASHBOARD</div>} />
+          </Routes>
+        </ToastProvider>
       </AuthProvider>
     </MemoryRouter>
   );

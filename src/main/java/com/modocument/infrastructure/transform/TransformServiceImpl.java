@@ -8,6 +8,7 @@ import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.DocumentParser;
 import com.modocument.application.port.PromptStrategy;
 import com.modocument.application.port.TransformService;
+import com.modocument.infrastructure.file.StorageProperties;
 import com.modocument.infrastructure.prompt.PromptFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,19 +23,19 @@ public class TransformServiceImpl implements TransformService {
 
     private static final Logger log = LoggerFactory.getLogger(TransformServiceImpl.class);
 
-    /** Uploaded files live under ./wwwroot/uploads, same location the original backend used. */
-    public static final Path UPLOADS_DIR = Path.of("wwwroot", "uploads");
-
     private final PromptFactory promptFactory;
     private final AiFilesService aiFilesService;
     private final DocumentParser documentParser;
+    private final StorageProperties storage;
 
     public TransformServiceImpl(PromptFactory promptFactory,
                                 AiFilesService aiFilesService,
-                                DocumentParser documentParser) {
+                                DocumentParser documentParser,
+                                StorageProperties storage) {
         this.promptFactory = promptFactory;
         this.aiFilesService = aiFilesService;
         this.documentParser = documentParser;
+        this.storage = storage;
     }
 
     @Override
@@ -70,14 +71,14 @@ public class TransformServiceImpl implements TransformService {
         return classification;
     }
 
-    private static Path resolveUpload(TransformRequest request) {
+    private Path resolveUpload(TransformRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Request must be provided.");
         }
         if (request.getFileName() == null || request.getFileName().isBlank()) {
             throw new IllegalArgumentException("FileName must be provided.");
         }
-        return UPLOADS_DIR.resolve(request.getFileName());
+        return storage.uploadsDir().resolve(request.getFileName());
     }
 
     static String extractBetween(String input, String start, String end) {

@@ -5,8 +5,10 @@ import { createJob, listJobs, listSources } from '../api/extraction';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Badge, Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 export default function ExtractionJobsPage() {
+  const toast = useToast();
   const navigate = useNavigate();
   const [jobs, setJobs] = useState(null);
   const [sources, setSources] = useState([]);
@@ -37,17 +39,19 @@ export default function ExtractionJobsPage() {
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
     try {
-      const job = await createJob({
-        sourceId: form.sourceId,
-        templateId: form.templateId ? Number(form.templateId) : null,
-        dataSpec: form.dataSpec || null,
-        autoStart: form.autoStart,
-      });
+      const job = await toast.promise(
+        createJob({
+          sourceId: form.sourceId,
+          templateId: form.templateId ? Number(form.templateId) : null,
+          dataSpec: form.dataSpec || null,
+          autoStart: form.autoStart,
+        }),
+        { loading: 'Creating extraction job…', success: 'Extraction job created' }
+      );
       navigate(`/extraction/jobs/${job.id}`);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -56,7 +60,7 @@ export default function ExtractionJobsPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Extraction' }, { label: 'Jobs' }]}
+        crumbs={[{ label: 'Extraction' }, { label: 'Jobs' }]}
         title="Extraction Jobs"
         subtitle="Crawl a source, collect records, then bridge them into the ingestion pipeline"
         actions={<Button variant="secondary" onClick={load}>Refresh</Button>}

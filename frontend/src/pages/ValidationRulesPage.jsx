@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
 import { getAllFields } from '../api/templates';
 import {
@@ -10,7 +11,9 @@ import {
 } from '../api/validationRules';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
+import RegexBuilder from '../components/RegexBuilder';
 import { Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 const RULE_TYPE_NAMES = {
   0: 'CONDITIONAL_REQUIREMENT',
@@ -27,6 +30,8 @@ const ruleTypeName = (value) =>
   typeof value === 'number' ? (RULE_TYPE_NAMES[value] ?? value) : value;
 
 export default function ValidationRulesPage() {
+  const toast = useToast();
+  const [searchParams] = useSearchParams();
   const [templates, setTemplates] = useState([]);
   const [allFields, setAllFields] = useState([]);
   const [templateId, setTemplateId] = useState('');
@@ -38,7 +43,6 @@ export default function ValidationRulesPage() {
   const [ruleType, setRuleType] = useState('REQUIRED');
   const [configText, setConfigText] = useState('{}');
   const [pattern, setPattern] = useState('');
-  const [savedMessage, setSavedMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
   // Ad-hoc row test
@@ -50,8 +54,15 @@ export default function ValidationRulesPage() {
       .then(([tpl, fields]) => {
         setTemplates(tpl);
         setAllFields(fields);
+        // Deep link from the template editor / templates list: ?templateId=N
+        const preselected = searchParams.get('templateId');
+        if (preselected && tpl.some((t) => t.templateId === Number(preselected))) {
+          setTemplateId(preselected);
+          loadRules(preselected);
+        }
       })
       .catch((err) => setError(err.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const templateFields = allFields.filter((f) => f.templateId === Number(templateId));
@@ -70,7 +81,6 @@ export default function ValidationRulesPage() {
 
   const selectTemplate = (tid) => {
     setTemplateId(tid);
-    setSavedMessage('');
     setError('');
     loadRules(tid);
   };
@@ -78,8 +88,6 @@ export default function ValidationRulesPage() {
   const submitRule = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
-    setSavedMessage('');
     try {
       let config;
       if (ruleType === 'REGEX') {
@@ -88,14 +96,17 @@ export default function ValidationRulesPage() {
         try {
           config = configText.trim() ? JSON.parse(configText) : {};
         } catch {
-          throw new Error('Config must be valid JSON.');
+          toast.error('Config must be valid JSON.');
+          return;
         }
       }
-      await upsertRule(Number(templateId), fieldName, ruleType, config);
-      setSavedMessage(`Rule ${ruleType} saved for field "${fieldName}".`);
+      await toast.promise(upsertRule(Number(templateId), fieldName, ruleType, config), {
+        loading: 'Saving rule…',
+        success: `Rule ${ruleType} saved for field "${fieldName}"`,
+      });
       await loadRules(templateId);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -104,24 +115,27 @@ export default function ValidationRulesPage() {
   const removeRule = async (rule) => {
     const type = ruleTypeName(rule.ruleType);
     if (!window.confirm(`Delete ${type} rule on "${rule.fieldName}"?`)) return;
-    setError('');
     try {
-      await deleteRule(Number(templateId), rule.fieldName, type);
+      await toast.promise(deleteRule(Number(templateId), rule.fieldName, type), {
+        loading: 'Deleting rule…',
+        success: `${type} rule on "${rule.fieldName}" deleted`,
+      });
       await loadRules(templateId);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     }
   };
 
   const runTest = async (e) => {
     e.preventDefault();
-    setError('');
     setTestResults(null);
     try {
-      const results = await validateRows(Number(templateId), [testRow]);
+      const results = await toast.promise(validateRows(Number(templateId), [testRow]), {
+        loading: 'Validating row…',
+      });
       setTestResults(results);
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     }
   };
 
@@ -130,9 +144,9 @@ export default function ValidationRulesPage() {
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Validation Rules' }]}
-        title="Fields Validation"
-        subtitle="Per-field rules that every ingested row is checked against"
+        crumbs={[{ label: 'Set Field Rules' }]}
+        title="Set Field Rules"
+        subtitle="Step 2 — per-field rules every processed row is checked against"
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
@@ -187,12 +201,6 @@ export default function ValidationRulesPage() {
             />
           )}
 
-          {savedMessage && (
-            <div className="mt-4">
-              <Callout variant="success" title="Saved">{savedMessage}</Callout>
-            </div>
-          )}
-
           <Card className="mt-5">
             <h3 className="mb-3 text-lg font-normal">Add or update a rule</h3>
             <form onSubmit={submitRule} className="space-y-4">
@@ -227,14 +235,7 @@ export default function ValidationRulesPage() {
                 </Field>
               </div>
               {ruleType === 'REGEX' ? (
-                <Field label="Pattern" hint="Java regular expression, e.g. ^[A-Z]{2}\d{4}$">
-                  <input
-                    required
-                    className={`${inputClass} font-mono`}
-                    value={pattern}
-                    onChange={(e) => setPattern(e.target.value)}
-                  />
-                </Field>
+                <RegexBuilder pattern={pattern} onChange={setPattern} />
               ) : (
                 <Field label="Config (JSON)" hint='Rule-specific settings, e.g. {"Min": 0, "Max": 100}'>
                   <input
@@ -244,7 +245,7 @@ export default function ValidationRulesPage() {
                   />
                 </Field>
               )}
-              <Button type="submit" disabled={busy || !fieldName}>
+              <Button type="submit" disabled={busy || !fieldName || (ruleType === 'REGEX' && !pattern)}>
                 {busy ? 'Saving…' : 'Save rule'}
               </Button>
             </form>
@@ -295,6 +296,13 @@ export default function ValidationRulesPage() {
               </div>
             )}
           </Card>
+
+          <p className="mt-5 text-sm text-muted">
+            Done with rules?{' '}
+            <Link to="/ingestion" className="text-accent hover:underline">
+              Next: upload &amp; process a file →
+            </Link>
+          </p>
         </>
       )}
     </div>

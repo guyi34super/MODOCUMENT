@@ -8,6 +8,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "ValidationRules")
@@ -27,6 +29,7 @@ public class ValidationRule {
     @Column(name = "RuleType")
     private RuleType ruleType;
 
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "ConfigJson", nullable = false)
     private String configJson = "";
 

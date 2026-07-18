@@ -3,6 +3,7 @@ import { SOURCE_TYPES, createSource, deleteSource, listSources } from '../api/ex
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { useToast } from '../context/ToastContext';
 
 const emptyForm = {
   name: '',
@@ -54,6 +55,7 @@ function buildPayload(form) {
 }
 
 export default function ExtractionSourcesPage() {
+  const toast = useToast();
   const [sources, setSources] = useState(null);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -81,14 +83,16 @@ export default function ExtractionSourcesPage() {
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
-    setError('');
     try {
-      await createSource(buildPayload(form));
+      await toast.promise(createSource(buildPayload(form)), {
+        loading: 'Creating source…',
+        success: `Source "${form.name}" created`,
+      });
       setForm(emptyForm);
       setShowForm(false);
       await load();
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     } finally {
       setBusy(false);
     }
@@ -96,19 +100,21 @@ export default function ExtractionSourcesPage() {
 
   const remove = async (source) => {
     if (!window.confirm(`Delete source "${source.name}"?`)) return;
-    setError('');
     try {
-      await deleteSource(source.id);
+      await toast.promise(deleteSource(source.id), {
+        loading: 'Deleting source…',
+        success: `Source "${source.name}" deleted`,
+      });
       await load();
-    } catch (err) {
-      setError(err.message);
+    } catch {
+      // The error toast is already shown.
     }
   };
 
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Docs' }, { label: 'Extraction' }, { label: 'Sources' }]}
+        crumbs={[{ label: 'Extraction' }, { label: 'Sources' }]}
         title="Extraction Sources"
         subtitle="Websites, REST APIs and databases you extract data from"
         actions={

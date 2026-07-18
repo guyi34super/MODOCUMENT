@@ -4,8 +4,11 @@ import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.ProcessedRecordStore;
 import com.modocument.application.usecase.BridgeToTemplateUseCase;
+import com.modocument.application.usecase.CreateTemplateWithFieldsUseCase;
 import com.modocument.application.usecase.ExtractionJobUseCase;
 import com.modocument.application.usecase.ExtractionSourceUseCase;
+import com.modocument.application.dto.CreateTemplateFieldDto;
+import com.modocument.application.dto.CreateTemplateRequest;
 import com.modocument.application.dto.SaveExtractionSourceRequest;
 import com.modocument.domain.document.ExtractionJob;
 import com.modocument.domain.document.ExtractionSource;
@@ -53,6 +56,8 @@ class ExtractionEndToEndTest {
     private ExtractionJobUseCase jobs;
     @Autowired
     private BridgeToTemplateUseCase bridge;
+    @Autowired
+    private CreateTemplateWithFieldsUseCase createTemplate;
     @Autowired
     private ProcessedRecordStore processedRecords;
     @Autowired
@@ -137,9 +142,13 @@ class ExtractionEndToEndTest {
                 .allSatisfy(record -> assertThat(record.getFields().values())
                         .noneMatch(value -> value.contains("must never be fetched")));
 
-        // EmployeeNumber/FirstName match template 1's fields exactly, so the
+        // EmployeeNumber/FirstName match the template's fields exactly, so the
         // bridge needs no LLM.
-        BridgeToTemplateUseCase.BridgeResult result = bridge.bridge(jobId, 1, null, false);
+        int templateId = createTemplate.handle(new CreateTemplateRequest("Employee Extract", "E2E test template",
+                List.of(new CreateTemplateFieldDto("EmployeeNumber", "Number", List.of()),
+                        new CreateTemplateFieldDto("FirstName", "Text", List.of()))))
+                .templateId();
+        BridgeToTemplateUseCase.BridgeResult result = bridge.bridge(jobId, templateId, null, false);
         assertThat(result.rowsBridged()).isEqualTo(3);
         assertThat(result.ingestionJobId()).isPositive();
         assertThat(result.mapping()).containsEntry("EmployeeNumber", "EmployeeNumber");
