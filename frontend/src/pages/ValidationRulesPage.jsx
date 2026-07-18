@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
 import { getAllFields } from '../api/templates';
 import {
-  RULE_TYPES,
+  FIELD_REQUIREMENT_OPTIONS,
+  FORMAT_RULE_TYPE_OPTIONS,
+  buildRuleConfig,
   deleteRule,
+  formatRuleConfig,
+  formatRuleTypeLabel,
   getRulesByTemplate,
+  isFieldRequired,
+  loadRuleIntoFormState,
+  ruleTypeName,
   upsertRule,
   validateRows,
 } from '../api/validationRules';
@@ -15,22 +22,23 @@ import RegexBuilder from '../components/RegexBuilder';
 import { Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 
-const RULE_TYPE_NAMES = {
-  0: 'CONDITIONAL_REQUIREMENT',
-  1: 'DATE_FORMAT',
-  2: 'EXPIRY_DATE',
-  3: 'REQUIRED',
-  4: 'REGEX',
-  5: 'RANGE',
-  6: 'TYPE',
-  7: 'CUSTOM',
+const RULE_HINTS = {
+  DATE_FORMAT: 'The value must be a date in YYYY-MM-DD format (e.g. 2026-07-18).',
+  EXPIRY_DATE: 'When the value is a date, it must be in the future.',
 };
 
-const ruleTypeName = (value) =>
-  typeof value === 'number' ? (RULE_TYPE_NAMES[value] ?? value) : value;
+const EMPTY_FORM = {
+  fieldName: '',
+  fieldRequirement: 'optional',
+  ruleType: 'NONE',
+  pattern: '',
+  rangeMin: '',
+  rangeMax: '',
+};
 
 export default function ValidationRulesPage() {
   const toast = useToast();
+  const formRef = useRef(null);
   const [searchParams] = useSearchParams();
   const [templates, setTemplates] = useState([]);
   const [allFields, setAllFields] = useState([]);
@@ -38,14 +46,15 @@ export default function ValidationRulesPage() {
   const [rules, setRules] = useState(null);
   const [error, setError] = useState('');
 
-  // Upsert form
-  const [fieldName, setFieldName] = useState('');
-  const [ruleType, setRuleType] = useState('REQUIRED');
-  const [configText, setConfigText] = useState('{}');
-  const [pattern, setPattern] = useState('');
+  const [fieldName, setFieldName] = useState(EMPTY_FORM.fieldName);
+  const [fieldRequirement, setFieldRequirement] = useState(EMPTY_FORM.fieldRequirement);
+  const [ruleType, setRuleType] = useState(EMPTY_FORM.ruleType);
+  const [pattern, setPattern] = useState(EMPTY_FORM.pattern);
+  const [rangeMin, setRangeMin] = useState(EMPTY_FORM.rangeMin);
+  const [rangeMax, setRangeMax] = useState(EMPTY_FORM.rangeMax);
+  const [editingRule, setEditingRule] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // Ad-hoc row test
   const [testRow, setTestRow] = useState({});
   const [testResults, setTestResults] = useState(null);
 
@@ -54,7 +63,6 @@ export default function ValidationRulesPage() {
       .then(([tpl, fields]) => {
         setTemplates(tpl);
         setAllFields(fields);
-        // Deep link from the template editor / templates list: ?templateId=N
         const preselected = searchParams.get('templateId');
         if (preselected && tpl.some((t) => t.templateId === Number(preselected))) {
           setTemplateId(preselected);
@@ -82,28 +90,103 @@ export default function ValidationRulesPage() {
   const selectTemplate = (tid) => {
     setTemplateId(tid);
     setError('');
+    resetForm();
     loadRules(tid);
+  };
+
+  const resetForm = () => {
+    setFieldName(EMPTY_FORM.fieldName);
+    setFieldRequirement(EMPTY_FORM.fieldRequirement);
+    setRuleType(EMPTY_FORM.ruleType);
+    setPattern(EMPTY_FORM.pattern);
+    setRangeMin(EMPTY_FORM.rangeMin);
+    setRangeMax(EMPTY_FORM.rangeMax);
+    setEditingRule(null);
+  };
+
+  const changeRuleType = (nextType) => {
+    setRuleType(nextType);
+    setPattern('');
+    setRangeMin('');
+    setRangeMax('');
+  };
+
+  const loadRuleForEdit = (rule) => {
+    const loaded = loadRuleIntoFormState(rule, rules);
+    setFieldName(rule.fieldName);
+    setFieldRequirement(loaded.fieldRequirement);
+    setRuleType(loaded.ruleType);
+    setPattern(loaded.pattern);
+    setRangeMin(loaded.rangeMin);
+    setRangeMax(loaded.rangeMax);
+    setEditingRule({ fieldName: rule.fieldName, ruleType: ruleTypeName(rule.ruleType) });
+    formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
+
+  const validateFormatConfig = () => {
+    if (ruleType === 'REGEX' && !pattern.trim()) {
+      toast.error('Choose or enter a format pattern.');
+      return false;
+    }
+    if (ruleType === 'RANGE') {
+      if (rangeMin === '' || rangeMax === '') {
+        toast.error('Enter both a minimum and maximum value.');
+        return false;
+      }
+      const min = Number(rangeMin);
+      const max = Number(rangeMax);
+      if (Number.isNaN(min) || Number.isNaN(max)) {
+        toast.error('Minimum and maximum must be numbers.');
+        return false;
+      }
+      if (min > max) {
+        toast.error('Minimum must be less than or equal to maximum.');
+        return false;
+      }
+    }
+    return true;
   };
 
   const submitRule = async (e) => {
     e.preventDefault();
+    if (ruleType !== 'NONE' && !validateFormatConfig()) return;
+
     setBusy(true);
+    const tid = Number(templateId);
+    const loadingMessage = editingRule ? 'Updating rule…' : 'Saving rule…';
+    const successMessage = editingRule
+      ? `Rules updated for field "${fieldName}"`
+      : `Rules saved for field "${fieldName}"`;
+
     try {
-      let config;
-      if (ruleType === 'REGEX') {
-        config = { Pattern: pattern };
-      } else {
-        try {
-          config = configText.trim() ? JSON.parse(configText) : {};
-        } catch {
-          toast.error('Config must be valid JSON.');
-          return;
-        }
-      }
-      await toast.promise(upsertRule(Number(templateId), fieldName, ruleType, config), {
-        loading: 'Saving rule…',
-        success: `Rule ${ruleType} saved for field "${fieldName}"`,
-      });
+      await toast.promise(
+        (async () => {
+          if (fieldRequirement === 'required') {
+            await upsertRule(tid, fieldName, 'REQUIRED', {});
+          } else if (isFieldRequired(rules, fieldName)) {
+            await deleteRule(tid, fieldName, 'REQUIRED');
+          }
+
+          const editingFormatType =
+            editingRule && editingRule.ruleType !== 'REQUIRED' ? editingRule.ruleType : null;
+          const deleteField = editingRule?.fieldName ?? fieldName;
+
+          if (ruleType === 'NONE') {
+            if (editingFormatType) {
+              await deleteRule(tid, deleteField, editingFormatType);
+            }
+          } else {
+            if (editingFormatType && editingFormatType !== ruleType) {
+              await deleteRule(tid, deleteField, editingFormatType);
+            }
+            const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
+            await upsertRule(tid, fieldName, ruleType, config);
+          }
+        })(),
+        { loading: loadingMessage, success: successMessage }
+      );
+
+      resetForm();
       await loadRules(templateId);
     } catch {
       // The error toast is already shown.
@@ -114,12 +197,19 @@ export default function ValidationRulesPage() {
 
   const removeRule = async (rule) => {
     const type = ruleTypeName(rule.ruleType);
-    if (!window.confirm(`Delete ${type} rule on "${rule.fieldName}"?`)) return;
+    if (!window.confirm(`Delete ${formatRuleTypeLabel(rule)} on "${rule.fieldName}"?`)) return;
     try {
       await toast.promise(deleteRule(Number(templateId), rule.fieldName, type), {
         loading: 'Deleting rule…',
-        success: `${type} rule on "${rule.fieldName}" deleted`,
+        success: `Rule on "${rule.fieldName}" deleted`,
       });
+      if (
+        editingRule &&
+        editingRule.fieldName === rule.fieldName &&
+        editingRule.ruleType === type
+      ) {
+        resetForm();
+      }
       await loadRules(templateId);
     } catch {
       // The error toast is already shown.
@@ -140,6 +230,12 @@ export default function ValidationRulesPage() {
   };
 
   const testErrors = (testResults || []).filter((r) => r.errorMessage);
+  const ruleHint = RULE_HINTS[ruleType];
+  const saveDisabled =
+    busy ||
+    !fieldName ||
+    (ruleType === 'REGEX' && !pattern.trim()) ||
+    (ruleType === 'RANGE' && (rangeMin === '' || rangeMax === ''));
 
   return (
     <div>
@@ -176,19 +272,31 @@ export default function ValidationRulesPage() {
             <DataTable
               columns={[
                 { key: 'fieldName', label: 'Field' },
-                { key: 'ruleType', label: 'Rule', render: (row) => ruleTypeName(row.ruleType) },
                 {
-                  key: 'configJson',
-                  label: 'Config',
+                  key: 'required',
+                  label: 'Required',
+                  render: (row) => (isFieldRequired(rules, row.fieldName) ? 'Yes' : 'No'),
+                },
+                {
+                  key: 'ruleType',
+                  label: 'Rule',
+                  render: (row) => formatRuleTypeLabel(row),
+                },
+                {
+                  key: 'settings',
+                  label: 'Settings',
                   render: (row) => (
-                    <code className="text-xs">{row.configJson || JSON.stringify(row.config) || '{}'}</code>
+                    <span className="text-sm text-muted">{formatRuleConfig(row)}</span>
                   ),
                 },
                 {
                   key: 'actions',
                   label: '',
                   render: (row) => (
-                    <div className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="secondary" onClick={() => loadRuleForEdit(row)}>
+                        Update
+                      </Button>
                       <Button variant="danger" onClick={() => removeRule(row)}>
                         Delete
                       </Button>
@@ -201,10 +309,13 @@ export default function ValidationRulesPage() {
             />
           )}
 
+          <div ref={formRef}>
           <Card className="mt-5">
-            <h3 className="mb-3 text-lg font-normal">Add or update a rule</h3>
+            <h3 className="mb-3 text-lg font-normal">
+              {editingRule ? 'Update field rules' : 'Add field rules'}
+            </h3>
             <form onSubmit={submitRule} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Field label="Field">
                   <select
                     required
@@ -220,36 +331,82 @@ export default function ValidationRulesPage() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Rule type">
+                <Field label="Required or Optional">
+                  <select
+                    className={inputClass}
+                    value={fieldRequirement}
+                    onChange={(e) => setFieldRequirement(e.target.value)}
+                  >
+                    {FIELD_REQUIREMENT_OPTIONS.map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Format rule type">
                   <select
                     className={inputClass}
                     value={ruleType}
-                    onChange={(e) => setRuleType(e.target.value)}
+                    onChange={(e) => changeRuleType(e.target.value)}
                   >
-                    {RULE_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
+                    {FORMAT_RULE_TYPE_OPTIONS.map(({ value, label }) => (
+                      <option key={value} value={value}>
+                        {label}
                       </option>
                     ))}
                   </select>
                 </Field>
               </div>
-              {ruleType === 'REGEX' ? (
-                <RegexBuilder pattern={pattern} onChange={setPattern} />
-              ) : (
-                <Field label="Config (JSON)" hint='Rule-specific settings, e.g. {"Min": 0, "Max": 100}'>
-                  <input
-                    className={`${inputClass} font-mono`}
-                    value={configText}
-                    onChange={(e) => setConfigText(e.target.value)}
-                  />
-                </Field>
+
+              {fieldRequirement === 'required' && (
+                <p className="text-sm text-muted">
+                  The field must contain a value — empty cells fail validation.
+                </p>
               )}
-              <Button type="submit" disabled={busy || !fieldName || (ruleType === 'REGEX' && !pattern)}>
-                {busy ? 'Saving…' : 'Save rule'}
-              </Button>
+
+              {ruleHint && <p className="text-sm text-muted">{ruleHint}</p>}
+
+              {ruleType === 'REGEX' && (
+                <RegexBuilder pattern={pattern} onChange={setPattern} />
+              )}
+
+              {ruleType === 'RANGE' && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Minimum">
+                    <input
+                      type="number"
+                      required
+                      className={inputClass}
+                      value={rangeMin}
+                      onChange={(e) => setRangeMin(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Maximum">
+                    <input
+                      type="number"
+                      required
+                      className={inputClass}
+                      value={rangeMax}
+                      onChange={(e) => setRangeMax(e.target.value)}
+                    />
+                  </Field>
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" disabled={saveDisabled}>
+                  {busy ? 'Saving…' : editingRule ? 'Update rule' : 'Save rule'}
+                </Button>
+                {editingRule && (
+                  <Button type="button" variant="secondary" onClick={resetForm}>
+                    Cancel
+                  </Button>
+                )}
+              </div>
             </form>
           </Card>
+          </div>
 
           <Card className="mt-5">
             <h3 className="mb-1 text-lg font-normal">Test a row</h3>

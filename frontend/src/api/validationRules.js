@@ -1,15 +1,138 @@
 import { api } from './client';
 
-export const RULE_TYPES = [
-  'REQUIRED',
-  'REGEX',
-  'RANGE',
-  'TYPE',
-  'DATE_FORMAT',
-  'EXPIRY_DATE',
-  'CONDITIONAL_REQUIREMENT',
-  'CUSTOM',
+export const FIELD_REQUIREMENT_OPTIONS = [
+  { value: 'required', label: 'Required' },
+  { value: 'optional', label: 'Optional' },
 ];
+
+/** Format validation rules (REQUIRED is managed separately). */
+export const FORMAT_RULE_TYPE_OPTIONS = [
+  { value: 'NONE', label: 'None — no format check' },
+  { value: 'REGEX', label: 'Format pattern — match text rules' },
+  { value: 'RANGE', label: 'Number range — min and max' },
+  { value: 'DATE_FORMAT', label: 'Date format — YYYY-MM-DD' },
+  { value: 'EXPIRY_DATE', label: 'Expiry date — must be future' },
+];
+
+/** @deprecated Use FORMAT_RULE_TYPE_OPTIONS */
+export const RULE_TYPE_OPTIONS = [
+  { value: 'REQUIRED', label: 'Required — must not be empty' },
+  ...FORMAT_RULE_TYPE_OPTIONS.filter((o) => o.value !== 'NONE'),
+];
+
+/** @deprecated Use FORMAT_RULE_TYPE_OPTIONS */
+export const RULE_TYPES = RULE_TYPE_OPTIONS.map((o) => o.value);
+
+const RULE_TYPE_NAMES = {
+  0: 'CONDITIONAL_REQUIREMENT',
+  1: 'DATE_FORMAT',
+  2: 'EXPIRY_DATE',
+  3: 'REQUIRED',
+  4: 'REGEX',
+  5: 'RANGE',
+  6: 'TYPE',
+  7: 'CUSTOM',
+};
+
+const REQUIRED_RULE_LABEL = 'Required — must not be empty';
+
+export const ruleTypeName = (value) =>
+  typeof value === 'number' ? (RULE_TYPE_NAMES[value] ?? value) : value;
+
+export function parseRuleConfig(rule) {
+  if (rule.config && typeof rule.config === 'object') return rule.config;
+  if (rule.configJson) {
+    try {
+      return JSON.parse(rule.configJson);
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+export function isFieldRequired(rules, fieldName) {
+  if (!rules || !fieldName) return false;
+  return rules.some(
+    (r) => r.fieldName === fieldName && ruleTypeName(r.ruleType) === 'REQUIRED'
+  );
+}
+
+/** Friendly label for a rule row in the table. */
+export function formatRuleTypeLabel(rule) {
+  const name = ruleTypeName(rule.ruleType);
+  if (name === 'REQUIRED') return REQUIRED_RULE_LABEL;
+  const option = FORMAT_RULE_TYPE_OPTIONS.find((o) => o.value === name);
+  return option ? option.label : name;
+}
+
+/** Populate the form when the user clicks Update on a table row. */
+export function loadRuleIntoFormState(rule, rules) {
+  const type = ruleTypeName(rule.ruleType);
+  const config = parseRuleConfig(rule);
+
+  if (type === 'REQUIRED') {
+    return {
+      fieldRequirement: 'required',
+      ruleType: 'NONE',
+      pattern: '',
+      rangeMin: '',
+      rangeMax: '',
+    };
+  }
+
+  let pattern = '';
+  let rangeMin = '';
+  let rangeMax = '';
+
+  if (type === 'REGEX') {
+    pattern = String(config.Pattern ?? config.pattern ?? '');
+  } else if (type === 'RANGE') {
+    const min = config.Min ?? config.min;
+    const max = config.Max ?? config.max;
+    rangeMin = min != null ? String(min) : '';
+    rangeMax = max != null ? String(max) : '';
+  }
+
+  return {
+    fieldRequirement: isFieldRequired(rules, rule.fieldName) ? 'required' : 'optional',
+    ruleType: type,
+    pattern,
+    rangeMin,
+    rangeMax,
+  };
+}
+
+/** Human-readable settings for the rules table. */
+export function formatRuleConfig(rule) {
+  const type = ruleTypeName(rule.ruleType);
+  const config = parseRuleConfig(rule);
+
+  if (type === 'REQUIRED') {
+    return '—';
+  }
+  if (type === 'REGEX') {
+    const pattern = config.Pattern ?? config.pattern;
+    return pattern ? String(pattern) : '—';
+  }
+  if (type === 'RANGE') {
+    const min = config.Min ?? config.min;
+    const max = config.Max ?? config.max;
+    if (min != null && max != null) return `Between ${min} and ${max}`;
+  }
+  return '—';
+}
+
+/** Build the config payload sent to the API from form state. */
+export function buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax }) {
+  if (ruleType === 'REGEX') {
+    return { Pattern: pattern };
+  }
+  if (ruleType === 'RANGE') {
+    return { Min: Number(rangeMin), Max: Number(rangeMax) };
+  }
+  return {};
+}
 
 export const getRulesByTemplate = (templateId) =>
   api.get(`/ValidationRules/GetByTemplate/${templateId}`);
