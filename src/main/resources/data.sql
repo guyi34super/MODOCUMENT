@@ -1,5 +1,5 @@
--- Lookup/reference seed data for the H2 profiles (local/test) only —
--- PostgreSQL is seeded by Flyway (src/main/resources/db/migration), and
+-- Lookup/reference seed data for the H2 test profile only — every other
+-- profile runs PostgreSQL, seeded by Flyway (src/main/resources/db/migration);
 -- templates, fields, validation rules and users are created through the app.
 
 -- TemplateDataTypes

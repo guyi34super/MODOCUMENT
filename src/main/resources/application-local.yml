@@ -1,5 +1,9 @@
-# Local development without PostgreSQL: in-memory H2 with the seed data loaded.
-# Run with: SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
+# Local development: same PostgreSQL + Flyway setup as production (inherited
+# from application.yml — jdbc:postgresql://localhost:5432/modocument by
+# default, override via MODOCUMENT_DB_*), with dev conveniences layered on:
+# dev JWT secret, Swagger, in-memory extraction, no Mongo/Kafka.
+# Start a database first (docker compose up -d postgres), then run:
+#   SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 spring:
   autoconfigure:
     # No Mongo/Kafka needed locally: extraction uses in-memory adapters.
@@ -8,24 +12,6 @@ spring:
       - org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
       - org.springframework.boot.autoconfigure.data.mongo.MongoRepositoriesAutoConfiguration
       - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
-  datasource:
-    url: jdbc:h2:mem:modocument;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
-  flyway:
-    # Migrations are PostgreSQL-only; H2 gets its schema from ddl-auto: create.
-    enabled: false
-  jpa:
-    hibernate:
-      ddl-auto: create
-    defer-datasource-initialization: true
-  sql:
-    init:
-      mode: always
-  h2:
-    console:
-      enabled: true
 
 modocument:
   security:

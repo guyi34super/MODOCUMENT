@@ -6,7 +6,8 @@ per-field validation (including UI-supplied regex), AI-assisted extraction and m
 and resumable ingestion jobs checkpointed in SQL.
 
 Java 21 / Spring Boot 3.5 / Spring AI. PostgreSQL in production (schema managed by
-Flyway), in-memory H2 for local development and tests.
+Flyway migrations for both production and local development), in-memory H2 for
+the test suite.
 
 ## Features
 
@@ -137,24 +138,30 @@ Flyway), in-memory H2 for local development and tests.
   `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*`.
 - File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`).
 - **Swagger UI** at `/swagger-ui` (static contract at `/swagger/spec.yaml`).
-- H2 `local` profile with seeded lookup data — runs with zero external dependencies.
+- `local` profile: same PostgreSQL + Flyway as production, plus dev conveniences
+  (dev JWT secret, Swagger, in-memory extraction).
 - **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + PostgreSQL +
   docling-serve), non-root runtime image with a healthcheck.
 - CI: GitHub Actions runs `mvn -B verify` on every push/PR to `main`.
 
 ## Quick start
 
-### Run locally (no PostgreSQL, no OpenAI key needed)
+### Run locally (no OpenAI key needed)
 
 ```bash
+# start a database once (or point MODOCUMENT_DB_* at your own PostgreSQL)
+docker compose up -d postgres
+
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
 
-Boots on in-memory H2 seeded from `src/main/resources/data.sql` (lookup data only —
-users, templates, fields and validation rules are created through the app; register
-your first account via the UI or `POST /api/auth/register`). All CRUD, template,
-validation, job, and export endpoints work immediately; only LLM-dependent paths
-(unstructured extraction, automap leftovers, chat edit) need an API key:
+Runs against PostgreSQL exactly like production: Flyway creates and updates the
+schema on startup (`src/main/resources/db/migration`), lookup data is seeded by
+the migrations, and your data survives restarts. Users, templates, fields and
+validation rules are created through the app — register your first account via
+the UI or `POST /api/auth/register`. All CRUD, template, validation, job, and
+export endpoints work immediately; only LLM-dependent paths (unstructured
+extraction, automap leftovers, chat edit) need an API key:
 
 ```bash
 AIFILES_OPENAI_APIKEY=<your-openai-key> SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
@@ -171,7 +178,7 @@ docker compose up --build
 # with an OpenAI key for the LLM features
 AIFILES_OPENAI_APIKEY=<your-openai-key> docker compose up --build
 
-# zero-dependency dev mode instead (in-memory H2, dev JWT secret)
+# dev mode against the same PostgreSQL (dev JWT secret, Swagger enabled)
 APP_PROFILES=local docker compose up --build
 
 # extraction at scale: MongoDB store + Kafka work distribution
@@ -244,7 +251,7 @@ mvn -B verify
 | Database | `spring.datasource.url` / `MODOCUMENT_DB_URL` (+ `MODOCUMENT_DB_USERNAME`, `MODOCUMENT_DB_PASSWORD`) | PostgreSQL `localhost:5432/modocument` |
 | CORS origins | `modocument.cors.allowed-origins` / `MODOCUMENT_CORS_ALLOWED_ORIGINS` | localhost dev origins — set your frontend origin in production |
 | Storage root | `modocument.storage.root` / `MODOCUMENT_STORAGE_ROOT` | `wwwroot` (uploads + export copies; mount a volume) |
-| Profile | `SPRING_PROFILES_ACTIVE` | default (PostgreSQL); use `local` for H2, `scale` for Mongo+Kafka extraction |
+| Profile | `SPRING_PROFILES_ACTIVE` | default (PostgreSQL); `local` adds dev conveniences, `scale` adds Mongo+Kafka extraction |
 | Extraction store | `extraction.store` / `EXTRACTION_STORE` | `memory`; set `mongo` (or the `scale` profile) for multi-instance runs |
 | MongoDB URI | `spring.data.mongodb.uri` / `EXTRACTION_MONGO_URI` | `mongodb://localhost:27017/modocument` |
 | Kafka distribution | `extraction.kafka.enabled` / `EXTRACTION_KAFKA_ENABLED` | `false` (workers poll the store queue) |
@@ -445,9 +452,15 @@ instance's tasks once their leases expire. Scale out by running more app instanc
   `ddl-auto: validate` and only checks the mapping. Point the app at your server
   with `MODOCUMENT_DB_URL` / `MODOCUMENT_DB_USERNAME` / `MODOCUMENT_DB_PASSWORD`.
   Only lookup data is seeded — no accounts, templates, or rules.
-- **Local/tests (H2):** schema is auto-created from the JPA entities and seeded from
-  `src/main/resources/data.sql` (data-type and process-step lookups only); Flyway is
-  disabled on these profiles.
+- **Local development (PostgreSQL):** identical to production — the `local`
+  profile inherits the datasource and Flyway migrations, so schema changes are
+  exercised in dev exactly as they will run in prod. Ship a schema change as a
+  new `V<n>__description.sql` file under `src/main/resources/db/migration/`;
+  the backend applies pending migrations on the next start (see `V3__foreign_key_indexes.sql`
+  for an incremental example).
+- **Tests (H2):** the test suite keeps fast in-memory H2 — schema auto-created
+  from the JPA entities and seeded from `src/main/resources/data.sql`
+  (data-type and process-step lookups only); Flyway is disabled there.
 
 ## Docker
 
@@ -457,8 +470,8 @@ instance's tasks once their leases expire. Scale out by running more app instanc
   - `app`: this API on port 8080, wired to the `postgres` service by default.
     Requires `MODOCUMENT_JWT_SECRET` in your environment; pass
     `AIFILES_OPENAI_APIKEY` through for the LLM features. Uploads/exports are kept
-    in a named volume. Set `APP_PROFILES=local` for the zero-dependency in-memory
-    H2 dev mode.
+    in a named volume. `APP_PROFILES=local` runs the dev profile against the
+    same database.
   - `postgres`: PostgreSQL 17 with a named volume and a `pg_isready` healthcheck;
     the app waits for it to be healthy and Flyway migrates the schema on boot.
     Override `POSTGRES_USER`/`POSTGRES_PASSWORD` (the compose default is for local

@@ -13,13 +13,12 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Production-style by default: PostgreSQL (service below) + Flyway.
-      # Set APP_PROFILES=local for the zero-dependency in-memory H2 dev mode.
-      # For extraction at scale, run with APP_PROFILES=scale together with
+      # PostgreSQL (service below) + Flyway migrations in every mode.
+      # APP_PROFILES=local layers on dev conveniences (dev JWT secret,
+      # Swagger, in-memory extraction) against the same database. For
+      # extraction at scale, run with APP_PROFILES=scale together with
       # `--profile extraction` so Mongo + Kafka come up too.
       SPRING_PROFILES_ACTIVE: ${APP_PROFILES:-}
-      # MODOCUMENT_DB_* only applies to the default (PostgreSQL) profile, so
-      # APP_PROFILES=local keeps its in-memory H2 database untouched.
       MODOCUMENT_DB_URL: jdbc:postgresql://postgres:5432/modocument
       MODOCUMENT_DB_USERNAME: ${POSTGRES_USER:-modocument}
       MODOCUMENT_DB_PASSWORD: ${POSTGRES_PASSWORD:-modocument}
