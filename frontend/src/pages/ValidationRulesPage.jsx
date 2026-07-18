@@ -5,7 +5,9 @@ import { getAllFields } from '../api/templates';
 import {
   FIELD_REQUIREMENT_OPTIONS,
   FORMAT_RULE_TYPE_OPTIONS,
+  apiRuleType,
   buildRuleConfig,
+  createEditSnapshot,
   deleteRule,
   formatRuleConfig,
   formatRuleTypeLabel,
@@ -13,6 +15,7 @@ import {
   isFieldRequired,
   loadRuleIntoFormState,
   ruleTypeName,
+  shouldSyncRequired,
   upsertRule,
   validateRows,
 } from '../api/validationRules';
@@ -23,6 +26,7 @@ import { Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '
 import { useToast } from '../context/ToastContext';
 
 const RULE_HINTS = {
+  EMAIL: 'The value must be a valid email address (e.g. jane@acme.com).',
   DATE_FORMAT: 'The value must be a date in YYYY-MM-DD format (e.g. 2026-07-18).',
   EXPIRY_DATE: 'When the value is a date, it must be in the future.',
 };
@@ -111,6 +115,14 @@ export default function ValidationRulesPage() {
     setRangeMax('');
   };
 
+  const saveFormatRule = async (tid, saveFieldName, saveRuleType, config) => {
+    await upsertRule(tid, saveFieldName, apiRuleType(saveRuleType), config);
+  };
+
+  const deleteFormatRule = async (tid, deleteFieldName, deleteRuleType) => {
+    await deleteRule(tid, deleteFieldName, apiRuleType(deleteRuleType));
+  };
+
   const loadRuleForEdit = (rule) => {
     const loaded = loadRuleIntoFormState(rule, rules);
     setFieldName(rule.fieldName);
@@ -119,7 +131,7 @@ export default function ValidationRulesPage() {
     setPattern(loaded.pattern);
     setRangeMin(loaded.rangeMin);
     setRangeMax(loaded.rangeMax);
-    setEditingRule({ fieldName: rule.fieldName, ruleType: ruleTypeName(rule.ruleType) });
+    setEditingRule(createEditSnapshot(rule, rules));
     formRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   };
 
@@ -161,26 +173,44 @@ export default function ValidationRulesPage() {
     try {
       await toast.promise(
         (async () => {
-          if (fieldRequirement === 'required') {
-            await upsertRule(tid, fieldName, 'REQUIRED', {});
-          } else if (isFieldRequired(rules, fieldName)) {
-            await deleteRule(tid, fieldName, 'REQUIRED');
+          const isEditing = !!editingRule;
+          const isEditingRequiredRow = isEditing && editingRule.ruleType === 'REQUIRED';
+          const isEditingFormatRow = isEditing && editingRule.ruleType !== 'REQUIRED';
+
+          if (
+            !isEditing ||
+            shouldSyncRequired(fieldRequirement, editingRule.fieldRequirement)
+          ) {
+            if (fieldRequirement === 'required') {
+              await upsertRule(tid, fieldName, 'REQUIRED', {});
+            } else if (isFieldRequired(rules, fieldName)) {
+              await deleteRule(tid, fieldName, 'REQUIRED');
+            }
           }
 
-          const editingFormatType =
-            editingRule && editingRule.ruleType !== 'REQUIRED' ? editingRule.ruleType : null;
-          const deleteField = editingRule?.fieldName ?? fieldName;
+          if (isEditingFormatRow) {
+            const oldField = editingRule.fieldName;
+            const oldType = editingRule.ruleType;
 
-          if (ruleType === 'NONE') {
-            if (editingFormatType) {
-              await deleteRule(tid, deleteField, editingFormatType);
+            if (
+              oldType !== 'REQUIRED' &&
+              (oldField !== fieldName || oldType !== ruleType || ruleType === 'NONE')
+            ) {
+              await deleteFormatRule(tid, oldField, oldType);
             }
-          } else {
-            if (editingFormatType && editingFormatType !== ruleType) {
-              await deleteRule(tid, deleteField, editingFormatType);
+
+            if (ruleType !== 'NONE') {
+              const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
+              await saveFormatRule(tid, fieldName, ruleType, config);
             }
+          } else if (isEditingRequiredRow) {
+            if (ruleType !== 'NONE') {
+              const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
+              await saveFormatRule(tid, fieldName, ruleType, config);
+            }
+          } else if (ruleType !== 'NONE') {
             const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
-            await upsertRule(tid, fieldName, ruleType, config);
+            await saveFormatRule(tid, fieldName, ruleType, config);
           }
         })(),
         { loading: loadingMessage, success: successMessage }

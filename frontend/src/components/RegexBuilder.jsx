@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Field, inputClass } from './ui';
 
+import { EMAIL_PATTERN } from '../api/validationRules';
+
 /** Escapes a literal so it matches itself inside a regular expression. */
 export function escapeLiteral(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -45,7 +47,7 @@ export const PRESETS = [
   {
     key: 'email',
     label: 'Email address',
-    pattern: '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$',
+    pattern: EMAIL_PATTERN,
     example: 'jane@acme.com',
   },
   {

@@ -5,9 +5,13 @@ export const FIELD_REQUIREMENT_OPTIONS = [
   { value: 'optional', label: 'Optional' },
 ];
 
+/** Standard email pattern used by the Email format rule (stored as REGEX in the API). */
+export const EMAIL_PATTERN = '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$';
+
 /** Format validation rules (REQUIRED is managed separately). */
 export const FORMAT_RULE_TYPE_OPTIONS = [
   { value: 'NONE', label: 'None — no format check' },
+  { value: 'EMAIL', label: 'Email address — valid email format' },
   { value: 'REGEX', label: 'Format pattern — match text rules' },
   { value: 'RANGE', label: 'Number range — min and max' },
   { value: 'DATE_FORMAT', label: 'Date format — YYYY-MM-DD' },
@@ -58,12 +62,41 @@ export function isFieldRequired(rules, fieldName) {
   );
 }
 
+export function isEmailPattern(pattern) {
+  return String(pattern ?? '') === EMAIL_PATTERN;
+}
+
+/** Maps UI-only format types to the RuleType persisted by the API. */
+export function apiRuleType(ruleType) {
+  return ruleType === 'EMAIL' ? 'REGEX' : ruleType;
+}
+
 /** Friendly label for a rule row in the table. */
 export function formatRuleTypeLabel(rule) {
   const name = ruleTypeName(rule.ruleType);
   if (name === 'REQUIRED') return REQUIRED_RULE_LABEL;
+  if (name === 'REGEX' && isEmailPattern(parseRuleConfig(rule).Pattern ?? parseRuleConfig(rule).pattern)) {
+    const emailOption = FORMAT_RULE_TYPE_OPTIONS.find((o) => o.value === 'EMAIL');
+    return emailOption ? emailOption.label : name;
+  }
   const option = FORMAT_RULE_TYPE_OPTIONS.find((o) => o.value === name);
   return option ? option.label : name;
+}
+
+/** Full snapshot of form state when the user clicks Update on a table row. */
+export function createEditSnapshot(rule, rules) {
+  const form = loadRuleIntoFormState(rule, rules);
+  const dbType = ruleTypeName(rule.ruleType);
+  return {
+    ...form,
+    fieldName: rule.fieldName,
+    ruleType: dbType === 'REQUIRED' ? 'REQUIRED' : form.ruleType,
+  };
+}
+
+/** Whether the Required/Optional dropdown changed from the edit snapshot. */
+export function shouldSyncRequired(current, initial) {
+  return current !== initial;
 }
 
 /** Populate the form when the user clicks Update on a table row. */
@@ -87,6 +120,15 @@ export function loadRuleIntoFormState(rule, rules) {
 
   if (type === 'REGEX') {
     pattern = String(config.Pattern ?? config.pattern ?? '');
+    if (isEmailPattern(pattern)) {
+      return {
+        fieldRequirement: isFieldRequired(rules, rule.fieldName) ? 'required' : 'optional',
+        ruleType: 'EMAIL',
+        pattern: EMAIL_PATTERN,
+        rangeMin: '',
+        rangeMax: '',
+      };
+    }
   } else if (type === 'RANGE') {
     const min = config.Min ?? config.min;
     const max = config.Max ?? config.max;
@@ -113,6 +155,7 @@ export function formatRuleConfig(rule) {
   }
   if (type === 'REGEX') {
     const pattern = config.Pattern ?? config.pattern;
+    if (isEmailPattern(pattern)) return 'e.g. jane@acme.com';
     return pattern ? String(pattern) : '—';
   }
   if (type === 'RANGE') {
@@ -125,6 +168,9 @@ export function formatRuleConfig(rule) {
 
 /** Build the config payload sent to the API from form state. */
 export function buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax }) {
+  if (ruleType === 'EMAIL') {
+    return { Pattern: EMAIL_PATTERN };
+  }
   if (ruleType === 'REGEX') {
     return { Pattern: pattern };
   }

@@ -75,6 +75,21 @@ describe('ValidationRulesPage rule config UI', () => {
     expect(screen.getByRole('tab', { name: 'Common patterns' })).toBeInTheDocument();
   });
 
+  it('shows Email format rule type and saves as REGEX with email pattern', async () => {
+    await openRuleForm();
+    await userEvent.selectOptions(
+      screen.getByLabelText('Format rule type'),
+      'Email address — valid email format'
+    );
+    expect(screen.getByText(/valid email address/i)).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Common patterns' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save rule' }));
+
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Name', 'REGEX', {
+      Pattern: '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$',
+    });
+  });
+
   it('shows min and max inputs for RANGE format rules', async () => {
     await openRuleForm();
     await userEvent.selectOptions(
@@ -142,6 +157,98 @@ describe('ValidationRulesPage rule config UI', () => {
   });
 });
 
+describe('ValidationRulesPage update without duplicates', () => {
+  beforeEach(() => {
+    getTemplates.mockResolvedValue([{ templateId: 1, name: 'People' }]);
+    getAllFields.mockResolvedValue([
+      { templateFieldsId: 10, templateId: 1, fieldName: 'Name' },
+      { templateFieldsId: 11, templateId: 1, fieldName: 'Email' },
+    ]);
+    upsertRule.mockClear();
+    deleteRule.mockClear();
+  });
+
+  async function clickUpdateOnRegexRow() {
+    renderPage();
+    await screen.findByText('^\\d+$');
+    const updateButtons = screen.getAllByRole('button', { name: 'Update' });
+    await userEvent.click(updateButtons[updateButtons.length - 1]);
+  }
+
+  it('Update REGEX-only (optional) upserts format only, not REQUIRED', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Name', ruleType: 'REGEX', configJson: '{"Pattern":"^\\\\d+$"}' },
+    ]);
+
+    await clickUpdateOnRegexRow();
+    await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+
+    expect(upsertRule).toHaveBeenCalledTimes(1);
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Name', 'REGEX', { Pattern: '^\\d+$' });
+    expect(deleteRule).not.toHaveBeenCalled();
+  });
+
+  it('Update REGEX with unchanged Required does not upsert REQUIRED', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Name', ruleType: 'REQUIRED', configJson: '{}' },
+      { fieldName: 'Name', ruleType: 'REGEX', configJson: '{"Pattern":"^\\\\d+$"}' },
+    ]);
+
+    await clickUpdateOnRegexRow();
+    expect(screen.getByLabelText('Required or Optional')).toHaveValue('required');
+    await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+
+    expect(upsertRule).toHaveBeenCalledTimes(1);
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Name', 'REGEX', { Pattern: '^\\d+$' });
+    expect(upsertRule).not.toHaveBeenCalledWith(1, 'Name', 'REQUIRED', expect.anything());
+  });
+
+  it('Update REGEX with field rename deletes old key then upserts new field', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Name', ruleType: 'REGEX', configJson: '{"Pattern":"^\\\\d+$"}' },
+    ]);
+
+    await clickUpdateOnRegexRow();
+    await userEvent.selectOptions(screen.getByLabelText('Field'), 'Email');
+    await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+
+    expect(deleteRule).toHaveBeenCalledWith(1, 'Name', 'REGEX');
+    expect(upsertRule).toHaveBeenCalledTimes(1);
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Email', 'REGEX', { Pattern: '^\\d+$' });
+  });
+
+  it('Update REGEX to NONE deletes old format rule without upserting', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Name', ruleType: 'REGEX', configJson: '{"Pattern":"^\\\\d+$"}' },
+    ]);
+
+    await clickUpdateOnRegexRow();
+    await userEvent.selectOptions(
+      screen.getByLabelText('Format rule type'),
+      'None — no format check'
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+
+    expect(deleteRule).toHaveBeenCalledWith(1, 'Name', 'REGEX');
+    expect(upsertRule).not.toHaveBeenCalled();
+  });
+
+  it('Update REQUIRED row with format NONE does not upsert format rules', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Name', ruleType: 'REQUIRED', configJson: '{}' },
+    ]);
+
+    renderPage();
+    await screen.findByText('Required — must not be empty');
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+    expect(screen.getByLabelText('Format rule type')).toHaveValue('NONE');
+    await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+
+    expect(upsertRule).not.toHaveBeenCalled();
+    expect(deleteRule).not.toHaveBeenCalled();
+  });
+});
+
 describe('validationRules helpers', () => {
   it('formatRuleConfig and loadRuleIntoFormState work as expected', async () => {
     const {
@@ -149,6 +256,11 @@ describe('validationRules helpers', () => {
       buildRuleConfig,
       loadRuleIntoFormState,
       isFieldRequired,
+      createEditSnapshot,
+      shouldSyncRequired,
+      apiRuleType,
+      isEmailPattern,
+      EMAIL_PATTERN,
     } = await import('../api/validationRules');
 
     const rules = [
@@ -180,5 +292,30 @@ describe('validationRules helpers', () => {
       Min: 1,
       Max: 10,
     });
+
+    expect(createEditSnapshot(rules[1], rules)).toMatchObject({
+      fieldName: 'Name',
+      ruleType: 'REGEX',
+      fieldRequirement: 'required',
+      pattern: '^\\d+$',
+    });
+    expect(shouldSyncRequired('required', 'required')).toBe(false);
+    expect(shouldSyncRequired('optional', 'required')).toBe(true);
+
+    expect(apiRuleType('EMAIL')).toBe('REGEX');
+    expect(apiRuleType('REGEX')).toBe('REGEX');
+    expect(isEmailPattern(EMAIL_PATTERN)).toBe(true);
+    expect(buildRuleConfig('EMAIL', { pattern: '', rangeMin: '', rangeMax: '' })).toEqual({
+      Pattern: EMAIL_PATTERN,
+    });
+
+    const emailRule = {
+      fieldName: 'Email',
+      ruleType: 'REGEX',
+      config: { Pattern: EMAIL_PATTERN },
+    };
+    expect(loadRuleIntoFormState(emailRule, [])).toMatchObject({ ruleType: 'EMAIL' });
+    expect(formatRuleConfig(emailRule)).toBe('e.g. jane@acme.com');
+    expect(createEditSnapshot(emailRule, [])).toMatchObject({ ruleType: 'EMAIL' });
   });
 });
