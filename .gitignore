@@ -2,6 +2,7 @@
 target/
 
 # Local secrets (OpenAI key, local DB overrides) — never commit
+.env
 application-local-secrets.yml
 
 # Files created at runtime

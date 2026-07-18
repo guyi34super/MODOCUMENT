@@ -31,7 +31,9 @@ services:
       # Passed through from the host environment; empty keeps the app booting
       # with the LLM endpoints disabled.
       AIFILES_OPENAI_APIKEY: ${AIFILES_OPENAI_APIKEY:-}
-      AIFILES_OPENAI_MODELID: ${AIFILES_OPENAI_MODELID:-gpt-4o}
+      AIFILES_OPENAI_BASEURL: ${AIFILES_OPENAI_BASEURL:-https://openrouter.ai/api}
+      AIFILES_OPENAI_MODELID: ${AIFILES_OPENAI_MODELID:-moonshotai/kimi-k3}
+      OCR_VISION_MODEL: ${OCR_VISION_MODEL:-moonshotai/kimi-k3}
       # Only used when the scale profile is active.
       EXTRACTION_MONGO_URI: mongodb://mongodb:27017/modocument
       EXTRACTION_KAFKA_SERVERS: kafka:9092

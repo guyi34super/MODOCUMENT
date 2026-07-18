@@ -5,6 +5,8 @@
 # Start a database first (docker compose up -d postgres), then run:
 #   SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 spring:
+  config:
+    import: optional:file:./application-local-secrets.yml
   autoconfigure:
     # No Mongo/Kafka needed locally: extraction uses in-memory adapters.
     exclude:
