@@ -137,7 +137,7 @@ development and tests.
   `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*`.
 - File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`).
 - **Swagger UI** at `/swagger-ui` (static contract at `/swagger/spec.yaml`).
-- H2 `local` profile with seeded templates/rules — runs with zero external dependencies.
+- H2 `local` profile with seeded lookup data — runs with zero external dependencies.
 - **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + docling-serve,
   optional SQL Server).
 - CI: GitHub Actions runs `mvn -B verify` on every push/PR to `main`.
@@ -150,9 +150,11 @@ development and tests.
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
 
-Boots on in-memory H2 seeded from `src/main/resources/data.sql`. All CRUD, template,
-validation, job, and export endpoints work immediately; only LLM-dependent paths
-(unstructured extraction, automap leftovers, chat edit) need an API key:
+Boots on in-memory H2 seeded from `src/main/resources/data.sql` (lookup data and a
+demo user only — templates, fields and validation rules are created through the UI).
+All CRUD, template, validation, job, and export endpoints work immediately; only
+LLM-dependent paths (unstructured extraction, automap leftovers, chat edit) need an
+API key:
 
 ```bash
 AIFILES_OPENAI_APIKEY=<your-openai-key> SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
@@ -428,7 +430,8 @@ instance's tasks once their leases expire. Scale out by running more app instanc
 ## Database
 
 - **Local/tests (H2):** schema is auto-created from the JPA entities and seeded from
-  `src/main/resources/data.sql` (templates, fields, process steps, 64 validation rules).
+  `src/main/resources/data.sql` (data-type and process-step lookups plus a demo user;
+  templates, fields and validation rules start empty).
 - **Production (SQL Server):** create the `MoDocument` database, run `data.sql` once,
   and apply `src/main/resources/sql/sqlserver-additions.sql` once to create the
   `IngestionJob` table used by the resumable pipeline.
