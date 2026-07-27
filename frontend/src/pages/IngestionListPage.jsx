@@ -42,7 +42,7 @@ export default function IngestionListPage() {
         loading: 'Uploading & processing… this can take a moment for large or scanned files.',
         success: 'File uploaded',
       });
-      navigate(`/ingestion/${job.ingestionJobId}`);
+      navigate(`/ingestion/${job.ingestionJobId}?step=mapping`);
     } catch {
       // The error toast is already shown.
     } finally {

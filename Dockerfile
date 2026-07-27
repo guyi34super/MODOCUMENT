@@ -25,8 +25,10 @@ RUN apt-get update \
 RUN mkdir -p wwwroot/uploads wwwroot/exports && chown -R modocument:modocument /app
 
 COPY --from=build /build/target/modocument-*.jar app.jar
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
-USER modocument
+# Entrypoint runs as root to fix volume permissions, then drops to modocument.
 
 # Configuration comes from the environment, e.g.:
 #   MODOCUMENT_JWT_SECRET=...           (REQUIRED in production: `openssl rand -base64 48`)
@@ -41,4 +43,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://localhost:8080/actuator/health || exit 1
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["/docker-entrypoint.sh"]

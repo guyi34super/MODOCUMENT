@@ -89,6 +89,21 @@ class IngestionJobUseCaseTest {
     }
 
     @Test
+    void resumeUntilMappedStopsBeforeValidation() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        job = useCase.resume(job.getIngestionJobId(), JobStep.MAPPED);
+
+        assertThat(job.getCurrentStep()).isEqualTo(JobStep.MAPPED);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
+        assertThat(job.getMappedRowsJson()).contains("Ada");
+        assertThat(job.getValidationResultJson()).isNull();
+        verify(validateRows, times(0)).handle(any());
+    }
+
+    @Test
     void resumeRunsAllStagesAndPersistsCheckpoints() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
         when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));

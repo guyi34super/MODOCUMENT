@@ -6,6 +6,7 @@ public class CreateIngestionJobRequest {
     private String fileName;
     private int templateId;
     private Boolean autoRun;
+    private String runUntil;
 
     public CreateIngestionJobRequest() {
     }
@@ -38,5 +39,13 @@ public class CreateIngestionJobRequest {
 
     public void setAutoRun(Boolean autoRun) {
         this.autoRun = autoRun;
+    }
+
+    public String getRunUntil() {
+        return runUntil;
+    }
+
+    public void setRunUntil(String runUntil) {
+        this.runUntil = runUntil;
     }
 }

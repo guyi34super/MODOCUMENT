@@ -106,6 +106,15 @@ public class IngestionJobUseCase {
      * current step — creation with autoRun and /resume both land here.
      */
     public IngestionJob resume(int jobId) {
+        return resume(jobId, JobStep.VALIDATED);
+    }
+
+    /**
+     * Runs pipeline stages from the job's current step, stopping once
+     * {@code until} is reached (inclusive). Use MAPPED to pause for mapping
+     * review before validation.
+     */
+    public IngestionJob resume(int jobId, JobStep until) {
         IngestionJob job = get(jobId);
         requireActive(job);
 
@@ -117,11 +126,21 @@ public class IngestionJobUseCase {
             job = jobs.save(job);
         }
 
+        if (job.getCurrentStep().ordinal() >= until.ordinal()) {
+            return job;
+        }
+
         if (job.getCurrentStep() == JobStep.UPLOADED) {
             job = runStage(job, JobStep.PARSED, this::doParse);
+            if (job.getStatus() == JobStatus.FAILED || job.getCurrentStep() == until) {
+                return job;
+            }
         }
         if (job.getStatus() != JobStatus.FAILED && job.getCurrentStep() == JobStep.PARSED) {
             job = runStage(job, JobStep.MAPPED, this::doMap);
+            if (job.getStatus() == JobStatus.FAILED || job.getCurrentStep() == until) {
+                return job;
+            }
         }
         if (job.getStatus() != JobStatus.FAILED && job.getCurrentStep() == JobStep.MAPPED) {
             job = runStage(job, JobStep.VALIDATED, this::doValidate);

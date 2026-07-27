@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { downloadFile } from '../api/client';
 import { getAllFields } from '../api/templates';
+import { validationErrorRuleLabel } from '../api/validationRules';
 import {
   cancelJob,
   chatEdit,
@@ -15,10 +16,11 @@ import {
 } from '../api/ingestion';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
+import ValidationChatDrawer from '../components/ValidationChatDrawer';
 import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 
-const STEPS = ['UPLOADED', 'PARSED', 'MAPPED', 'VALIDATED', 'EXPORTED'];
+const WIZARD_STEPS = ['mapping', 'validation', 'export'];
 
 const ACTION_MESSAGES = {
   resume: { loading: 'Resuming pipeline…', success: 'Pipeline resumed' },
@@ -28,64 +30,574 @@ const ACTION_MESSAGES = {
   mapping: { loading: 'Saving mapping…', success: 'Mapping saved' },
   'chat-edit': { loading: 'Applying chat edit…', success: 'Chat edit applied' },
   'db-export': { loading: 'Exporting to database…', success: 'Exported to database' },
+  validate: { loading: 'Running validation…', success: 'Validation complete' },
 };
 
-function stepLabel(step) {
-  return step.charAt(0) + step.slice(1).toLowerCase();
+function defaultWizardStep(currentStep) {
+  if (currentStep === 'EXPORTED') return 'export';
+  if (currentStep === 'VALIDATED') return 'validation';
+  return 'mapping';
 }
 
-function StepIndicator({ currentStep }) {
-  const currentIndex = STEPS.indexOf(currentStep);
+function canVisitStep(step, job) {
+  if (!job) return step === 'mapping';
+  if (step === 'mapping') return true;
+  if (step === 'validation') {
+    return job.currentStep === 'VALIDATED' || job.currentStep === 'EXPORTED';
+  }
+  if (step === 'export') {
+    return Boolean(job.mappedRows);
+  }
+  return false;
+}
+
+function WizardStepIndicator({ activeStep, job, onSelect }) {
+  const labels = { mapping: 'Mapping', validation: 'Validation', export: 'Export' };
   return (
     <ol className="flex flex-wrap items-center gap-1 text-xs">
-      {STEPS.map((step, i) => (
-        <li key={step} className="flex items-center gap-1">
-          {i > 0 && <span className="text-line">──</span>}
-          <span
-            className={`rounded-full px-2.5 py-1 font-medium ${
-              i < currentIndex
-                ? 'bg-success-bg text-success-ink'
-                : i === currentIndex
+      {WIZARD_STEPS.map((step, i) => {
+        const enabled = canVisitStep(step, job);
+        const isActive = step === activeStep;
+        const isDone =
+          (step === 'mapping' && job?.mappedRows) ||
+          (step === 'validation' && job?.validationResults) ||
+          (step === 'export' && job?.exportInfo && Object.keys(job.exportInfo).length > 0);
+        return (
+          <li key={step} className="flex items-center gap-1">
+            {i > 0 && <span className="text-line">──</span>}
+            <button
+              type="button"
+              disabled={!enabled}
+              onClick={() => enabled && onSelect(step)}
+              className={`rounded-full px-2.5 py-1 font-medium ${
+                isActive
                   ? 'bg-accent text-white'
-                  : 'bg-neutral-100 text-muted'
-            }`}
-          >
-            {i < currentIndex ? '✓ ' : ''}
-            {stepLabel(step)}
-          </span>
-        </li>
-      ))}
+                  : isDone
+                    ? 'bg-success-bg text-success-ink'
+                    : enabled
+                      ? 'bg-neutral-100 text-ink hover:bg-pill'
+                      : 'bg-neutral-100 text-muted'
+              } ${enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+            >
+              {isDone && !isActive ? '✓ ' : ''}
+              {labels[step]}
+            </button>
+          </li>
+        );
+      })}
     </ol>
   );
 }
 
-function TablePreview({ table, maxRows = 15 }) {
-  if (!table || !table.columns?.length) return <p className="text-sm text-muted">No table data.</p>;
-  const rows = table.rows.slice(0, maxRows);
+function MappingPanel({ parsedTable, mappedRows, mapping, templateFields, onMappingChange }) {
+  const sourceColumns = parsedTable?.columns ?? [];
+  const firstParsedRow = parsedTable?.rows?.[0] ?? {};
+  const firstMappedRow = mappedRows?.rows?.[0] ?? {};
+
+  const reverseMapping = useMemo(() => {
+    const rev = {};
+    for (const [source, target] of Object.entries(mapping)) {
+      if (target) rev[target] = source;
+    }
+    return rev;
+  }, [mapping]);
+
+  if (!sourceColumns.length) {
+    return <p className="text-sm text-muted">No source columns to map.</p>;
+  }
+
   return (
-    <>
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="min-w-0 rounded-md border border-line p-3">
+        <h3 className="mb-3 text-sm font-medium text-muted">Source columns</h3>
+        <div className="space-y-3">
+          {sourceColumns.map((col) => (
+            <div key={col} className="space-y-1">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="w-1/3 truncate font-mono text-xs" title={col}>
+                  {col}
+                </span>
+                <select
+                  className={`${inputClass} flex-1`}
+                  value={mapping[col] ?? ''}
+                  onChange={(e) => onMappingChange(col, e.target.value || null)}
+                >
+                  <option value="">(unmapped)</option>
+                  {templateFields.map((f) => (
+                    <option key={f.templateFieldsId} value={f.fieldName}>
+                      {f.fieldName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {firstParsedRow[col] != null && firstParsedRow[col] !== '' && (
+                <p className="truncate pl-1 text-xs text-muted" title={String(firstParsedRow[col])}>
+                  Preview: {String(firstParsedRow[col])}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="min-w-0 rounded-md border border-line p-3">
+        <h3 className="mb-3 text-sm font-medium text-muted">Template fields</h3>
+        <div className="space-y-3">
+          {templateFields.map((field) => {
+            const sourceCol = reverseMapping[field.fieldName];
+            const mapped = Boolean(sourceCol);
+            return (
+              <div key={field.templateFieldsId} className="space-y-1">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium">{field.fieldName}</span>
+                  <span
+                    className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                      mapped ? 'bg-success-bg text-success-ink' : 'bg-neutral-100 text-muted'
+                    }`}
+                  >
+                    {mapped ? 'Mapped' : 'Unmapped'}
+                  </span>
+                </div>
+                <p className="text-xs text-muted">
+                  {mapped ? (
+                    <>
+                      Mapped from <span className="font-mono">{sourceCol}</span>
+                    </>
+                  ) : (
+                    'Not mapped'
+                  )}
+                </p>
+                {mapped && firstMappedRow[field.fieldName] != null && firstMappedRow[field.fieldName] !== '' && (
+                  <p
+                    className="truncate text-xs text-muted"
+                    title={String(firstMappedRow[field.fieldName])}
+                  >
+                    Preview: {String(firstMappedRow[field.fieldName])}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const PAGE_SIZE_OPTIONS = [5, 10, 15, 20];
+
+function buildValidationErrorMap(validationResults) {
+  const map = new Map();
+  for (const result of validationResults || []) {
+    if (result.errorMessage) {
+      map.set(`${result.row}-${result.fieldName}`, result);
+    }
+  }
+  return map;
+}
+
+function getSortedErrorRows(validationResults) {
+  return [
+    ...new Set(
+      (validationResults || [])
+        .filter((r) => r.errorMessage)
+        .map((r) => r.row)
+    ),
+  ].sort((a, b) => a - b);
+}
+
+function pageForRow(row, pageSize) {
+  return Math.floor((row - 1) / pageSize);
+}
+
+function ValidationErrorCell({ err, value }) {
+  const displayValue = value === '' || value == null ? '(empty)' : String(value);
+  return (
+    <div
+      className="rounded border border-danger-ink bg-danger-bg px-1.5 py-1"
+      title={err.errorMessage}
+    >
+      <div className="font-mono text-xs">{displayValue}</div>
+      <div className="mt-1 text-xs text-danger-ink">Fix: {err.errorMessage}</div>
+      {err.ruleType && (
+        <div className="text-xs text-muted">
+          Rule: {validationErrorRuleLabel(err.ruleType)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ValidatedDataTable({
+  mappedRows,
+  validationResults,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}) {
+  if (!mappedRows?.columns?.length) {
+    return <p className="text-sm text-muted">No mapped data.</p>;
+  }
+
+  const allRows = mappedRows.rows;
+  const totalRows = allRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const start = safePage * pageSize;
+  const end = Math.min(start + pageSize, totalRows);
+  const rows = allRows.slice(start, end);
+  const errorMap = buildValidationErrorMap(validationResults);
+  const errorRows = getSortedErrorRows(validationResults);
+  const pageEndRow = end;
+
+  const jumpToNextError = () => {
+    const next = errorRows.find((row) => row > pageEndRow) ?? errorRows[0];
+    if (next != null) {
+      onPageChange(pageForRow(next, pageSize));
+    }
+  };
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+        <label className="flex items-center gap-2">
+          <span className="text-muted">Rows per page</span>
+          <select
+            className={`${inputClass} w-20`}
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => onPageChange(Math.max(0, safePage - 1))}
+            disabled={safePage === 0}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => onPageChange(Math.min(totalPages - 1, safePage + 1))}
+            disabled={safePage >= totalPages - 1}
+          >
+            Next
+          </Button>
+        </div>
+        <span className="text-muted">
+          Rows {totalRows === 0 ? 0 : start + 1}–{end} of {totalRows}
+        </span>
+        <span className="text-muted">
+          Page {safePage + 1} of {totalPages}
+        </span>
+        {errorRows.length > 0 && (
+          <Button variant="secondary" onClick={jumpToNextError}>
+            Next error
+          </Button>
+        )}
+      </div>
+
       <DataTable
-        columns={table.columns.map((col) => ({ key: col, label: col, render: (row) => String(row[col] ?? '') }))}
+        columns={[
+          {
+            key: '_row',
+            label: 'Row',
+            render: (_row, i) => start + i + 1,
+          },
+          ...mappedRows.columns.map((col) => ({
+            key: col,
+            label: col,
+            render: (row, i) => {
+              const rowNum = start + i + 1;
+              const err = errorMap.get(`${rowNum}-${col}`);
+              if (err) {
+                return <ValidationErrorCell err={err} value={row[col]} />;
+              }
+              return String(row[col] ?? '');
+            },
+          })),
+        ]}
         rows={rows}
       />
-      {table.rows.length > maxRows && (
-        <p className="mt-2 text-xs text-muted">
-          Showing {maxRows} of {table.rows.length} rows.
+    </div>
+  );
+}
+
+function MappingStep({
+  job,
+  mapping,
+  mappingDraft,
+  templateFields,
+  busyAction,
+  onMappingChange,
+  onSaveMapping,
+  onDiscardMapping,
+  onRemap,
+  onContinue,
+}) {
+  const hasDraft = Boolean(mappingDraft);
+  return (
+    <Card>
+      <h2 className="mb-1 text-lg font-normal">Column mapping</h2>
+      <p className="mb-4 text-sm text-muted">
+        Review source columns mapped to template fields. Adjust mappings, then continue to validation.
+      </p>
+
+      {job.parsedTable && (
+        <div className="mb-5">
+          <MappingPanel
+            parsedTable={job.parsedTable}
+            mappedRows={job.mappedRows}
+            mapping={mapping}
+            templateFields={templateFields}
+            onMappingChange={onMappingChange}
+          />
+        </div>
+      )}
+
+      {!job.parsedTable && job.mapping && (
+        <p className="mb-4 text-sm text-muted">Parsed columns are not available for this job.</p>
+      )}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {hasDraft && (
+          <>
+            <Button onClick={onSaveMapping} disabled={Boolean(busyAction)}>
+              {busyAction === 'mapping' ? 'Saving…' : 'Save mapping'}
+            </Button>
+            <Button variant="secondary" onClick={onDiscardMapping}>
+              Discard changes
+            </Button>
+          </>
+        )}
+        <Button variant="secondary" onClick={onRemap} disabled={Boolean(busyAction)}>
+          {busyAction === 'remap' ? 'Remapping…' : 'Re-map automatically'}
+        </Button>
+        <Button
+          onClick={onContinue}
+          disabled={Boolean(busyAction) || hasDraft || job.currentStep !== 'MAPPED'}
+        >
+          {busyAction === 'validate' ? 'Validating…' : 'Continue to validation'}
+        </Button>
+      </div>
+      {hasDraft && (
+        <p className="mt-2 text-xs text-muted">Save or discard mapping changes before continuing.</p>
+      )}
+    </Card>
+  );
+}
+
+function ValidationStep({
+  job,
+  hasValidationResults,
+  validationErrors,
+  chatMessages,
+  chatOpen,
+  onChatOpenChange,
+  onChatSend,
+  busyAction,
+  onRevalidate,
+  onContinue,
+  canExport,
+}) {
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+
+  const handlePageSizeChange = (size) => {
+    setPageSize(size);
+    setPage(0);
+  };
+
+  return (
+    <>
+      <Card>
+        <h2 className="mb-1 text-lg font-normal">Validation</h2>
+        <p className="mb-4 text-sm text-muted">
+          Rows are checked against your template rules. Fix issues with the AI assistant, then
+          re-validate.
+        </p>
+
+        {!hasValidationResults ? (
+          <Callout variant="error" title="Validation not run yet">
+            Go back to mapping and click Continue to validation.
+          </Callout>
+        ) : (
+          <>
+            {validationErrors.length === 0 ? (
+              <Callout variant="success" title="All rows valid">
+                Every mapped row passed the template&apos;s validation rules.
+              </Callout>
+            ) : (
+              <div className="mb-3">
+                <Callout
+                  variant="error"
+                  title={`${validationErrors.length} validation error${validationErrors.length > 1 ? 's' : ''}`}
+                >
+                  Fix the highlighted cells below or use the AI assistant, then re-validate.
+                </Callout>
+              </div>
+            )}
+
+            {job.mappedRows && (
+              <div className="mb-5">
+                <h3 className="mb-2 text-sm font-medium text-muted">Mapped data</h3>
+                <ValidatedDataTable
+                  mappedRows={job.mappedRows}
+                  validationResults={job.validationResults ?? []}
+                  page={page}
+                  pageSize={pageSize}
+                  onPageChange={setPage}
+                  onPageSizeChange={handlePageSizeChange}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={onRevalidate} disabled={Boolean(busyAction)}>
+            {busyAction === 'revalidate' ? 'Validating…' : 'Re-validate'}
+          </Button>
+          <Button onClick={onContinue} disabled={!canExport || Boolean(busyAction)}>
+            Continue to export
+          </Button>
+        </div>
+      </Card>
+
+      <ValidationChatDrawer
+        open={chatOpen}
+        onOpenChange={onChatOpenChange}
+        messages={chatMessages}
+        onSend={onChatSend}
+        busy={busyAction === 'chat-edit'}
+        showQuickPrompts={validationErrors.length > 0}
+      />
+    </>
+  );
+}
+
+function ExportStep({
+  canExport,
+  exportFormat,
+  showDbExport,
+  dbForm,
+  busyAction,
+  exportInfo,
+  onFormatChange,
+  onDownload,
+  onToggleDbExport,
+  onDbFormChange,
+  onDbExport,
+}) {
+  return (
+    <Card>
+      <h2 className="mb-1 text-lg font-normal">Export</h2>
+      {!canExport ? (
+        <p className="mb-3 text-sm text-muted">Complete validation before exporting.</p>
+      ) : (
+        <p className="mb-3 text-sm text-muted">
+          Download the validated data as a file or push it to an external database.
         </p>
       )}
-    </>
+
+      {exportInfo && Object.keys(exportInfo).length > 0 && (
+        <div className="mb-4">
+          <Callout variant="success" title="Exported">
+            <code className="text-xs">{JSON.stringify(exportInfo)}</code>
+          </Callout>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          className={`${inputClass} w-28`}
+          value={exportFormat}
+          onChange={(e) => onFormatChange(e.target.value)}
+          disabled={!canExport}
+        >
+          <option value="csv">CSV</option>
+          <option value="json">JSON</option>
+          <option value="xlsx">XLSX</option>
+        </select>
+        <Button onClick={onDownload} disabled={!canExport || Boolean(busyAction)}>
+          {busyAction === 'download' ? 'Preparing…' : 'Download file'}
+        </Button>
+        <Button variant="secondary" onClick={onToggleDbExport} disabled={!canExport}>
+          {showDbExport ? 'Hide database export' : 'Export to database…'}
+        </Button>
+      </div>
+
+      {showDbExport && (
+        <form onSubmit={onDbExport} className="mt-4 space-y-3 border-t border-line pt-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="JDBC URL">
+              <input
+                required
+                className={inputClass}
+                placeholder="jdbc:sqlserver://host;databaseName=…"
+                value={dbForm.jdbcUrl}
+                onChange={(e) => onDbFormChange({ jdbcUrl: e.target.value })}
+              />
+            </Field>
+            <Field label="Table name">
+              <input
+                required
+                className={inputClass}
+                value={dbForm.tableName}
+                onChange={(e) => onDbFormChange({ tableName: e.target.value })}
+              />
+            </Field>
+            <Field label="Username">
+              <input
+                className={inputClass}
+                value={dbForm.username}
+                onChange={(e) => onDbFormChange({ username: e.target.value })}
+              />
+            </Field>
+            <Field label="Password" hint="Used once for the export; never stored.">
+              <input
+                type="password"
+                className={inputClass}
+                value={dbForm.password}
+                onChange={(e) => onDbFormChange({ password: e.target.value })}
+              />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={dbForm.createTableIfMissing}
+              onChange={(e) => onDbFormChange({ createTableIfMissing: e.target.checked })}
+            />
+            Create the table if it doesn&apos;t exist
+          </label>
+          <Button type="submit" disabled={Boolean(busyAction)}>
+            {busyAction === 'db-export' ? 'Exporting…' : 'Run database export'}
+          </Button>
+        </form>
+      )}
+    </Card>
   );
 }
 
 export default function IngestionJobPage() {
   const { id } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
   const [job, setJob] = useState(null);
   const [templateFields, setTemplateFields] = useState([]);
   const [error, setError] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const [mappingDraft, setMappingDraft] = useState(null);
-  const [instruction, setInstruction] = useState('');
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatOpen, setChatOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState('csv');
   const [showDbExport, setShowDbExport] = useState(false);
   const [dbForm, setDbForm] = useState({
@@ -95,6 +607,12 @@ export default function IngestionJobPage() {
     tableName: '',
     createTableIfMissing: true,
   });
+
+  const activeStep = useMemo(() => {
+    const requested = searchParams.get('step');
+    if (requested && WIZARD_STEPS.includes(requested)) return requested;
+    return job ? defaultWizardStep(job.currentStep) : 'mapping';
+  }, [searchParams, job]);
 
   const applyJob = useCallback((updated) => {
     setJob(updated);
@@ -112,78 +630,69 @@ export default function IngestionJobPage() {
       .catch((err) => setError(err.message));
   }, [id]);
 
+  useEffect(() => {
+    if (!job) return;
+    const requested = searchParams.get('step');
+    if (requested && WIZARD_STEPS.includes(requested) && !canVisitStep(requested, job)) {
+      setSearchParams({ step: defaultWizardStep(job.currentStep) });
+    }
+    // Only clamp invalid deep-links when the job payload loads — not on every step change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job]);
+
+  const setStep = (step, jobSnapshot = job) => {
+    if (canVisitStep(step, jobSnapshot)) {
+      setSearchParams({ step });
+    }
+  };
+
   const runAction = async (name, fn) => {
     setBusyAction(name);
     try {
-      applyJob(await toast.promise(fn, ACTION_MESSAGES[name] || { loading: 'Working…' }));
+      const result = await toast.promise(fn, ACTION_MESSAGES[name] || { loading: 'Working…' });
+      applyJob(result);
+      return result;
     } catch {
       // The error toast is already shown.
+      return null;
     } finally {
       setBusyAction('');
     }
   };
 
-  const saveMapping = () => runAction('mapping', () => updateMapping(id, mappingDraft));
-
-  const sendChatEdit = async (e) => {
-    e.preventDefault();
-    if (!instruction.trim()) return;
-    await runAction('chat-edit', () => chatEdit(id, instruction.trim()));
-    setInstruction('');
-  };
-
-  const download = async () => {
-    setBusyAction('download');
-    try {
-      await toast.promise(downloadFile(exportFilePath(id, exportFormat), `job-${id}.${exportFormat}`), {
-        loading: 'Preparing download…',
-        success: 'File downloaded',
-      });
-    } catch {
-      // The error toast is already shown.
-    } finally {
-      setBusyAction('');
-    }
-  };
-
-  const runDbExport = (e) => {
-    e.preventDefault();
-    runAction('db-export', () => exportToDatabase(id, dbForm));
-  };
+  const mapping = mappingDraft ?? job?.mapping ?? {};
+  const validationErrors = (job?.validationResults || []).filter((r) => r.errorMessage);
+  const isTerminal = job?.status === 'CANCELLED';
+  const canExport = job?.currentStep === 'VALIDATED' || job?.currentStep === 'EXPORTED';
 
   if (!job) return error ? <ErrorBanner message={error} /> : <Spinner label="Loading job…" />;
-
-  const mapping = mappingDraft ?? job.mapping ?? {};
-  const validationErrors = (job.validationResults || []).filter((r) => r.errorMessage);
-  const isTerminal = job.status === 'CANCELLED';
-  const canExport = job.currentStep === 'VALIDATED' || job.currentStep === 'EXPORTED';
 
   return (
     <div>
       <PageHeader
         crumbs={[{ label: 'Upload & Process', to: '/ingestion' }, { label: `Job #${id}` }]}
         title={`Job #${id} — ${job.fileName || ''}`}
-        subtitle="Parse → map → validate → save"
+        subtitle="Mapping → validation → export"
         actions={
           <>
             <Button
               variant="secondary"
-              onClick={() => runAction('resume', () => resumeJob(id))}
-              disabled={Boolean(busyAction) || isTerminal || job.status === 'COMPLETED'}
+              onClick={() => runAction('resume', () => resumeJob(id, 'MAPPED'))}
+              disabled={Boolean(busyAction) || isTerminal || activeStep !== 'mapping'}
             >
-              {busyAction === 'resume' ? 'Resuming…' : 'Resume'}
+              {busyAction === 'resume' ? 'Resuming…' : 'Resume parse/map'}
             </Button>
             <Button
               variant="secondary"
               onClick={() => runAction('remap', () => remapJob(id))}
-              disabled={Boolean(busyAction) || isTerminal}
+              disabled={Boolean(busyAction) || isTerminal || activeStep !== 'mapping'}
             >
               {busyAction === 'remap' ? 'Remapping…' : 'Re-map'}
             </Button>
             <Button
               variant="secondary"
               onClick={() => runAction('revalidate', () => revalidateJob(id))}
-              disabled={Boolean(busyAction) || isTerminal}
+              disabled={Boolean(busyAction) || isTerminal || activeStep !== 'validation'}
             >
               {busyAction === 'revalidate' ? 'Validating…' : 'Re-validate'}
             </Button>
@@ -200,202 +709,122 @@ export default function IngestionJobPage() {
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
       <div className="mb-5 flex flex-wrap items-center gap-4">
-        <StepIndicator currentStep={job.currentStep} />
+        <WizardStepIndicator activeStep={activeStep} job={job} onSelect={setStep} />
         <Badge status={job.status} />
       </div>
 
       {job.errorMessage && (
         <div className="mb-5">
           <Callout variant="error" title="Pipeline error">
-            {job.errorMessage} — fix the cause and press Resume to continue from the last good step.
+            {job.errorMessage} — fix the cause and use Resume or Re-map to continue.
           </Callout>
         </div>
       )}
 
-      {job.exportInfo && Object.keys(job.exportInfo).length > 0 && (
-        <div className="mb-5">
-          <Callout variant="success" title="Exported">
-            <code className="text-xs">{JSON.stringify(job.exportInfo)}</code>
-          </Callout>
-        </div>
+      {activeStep === 'mapping' && (
+        <MappingStep
+          job={job}
+          mapping={mapping}
+          mappingDraft={mappingDraft}
+          templateFields={templateFields}
+          busyAction={busyAction}
+          onMappingChange={(source, target) =>
+            setMappingDraft({ ...mapping, [source]: target })
+          }
+          onSaveMapping={() => runAction('mapping', () => updateMapping(id, mappingDraft))}
+          onDiscardMapping={() => setMappingDraft(null)}
+          onRemap={() => runAction('remap', () => remapJob(id))}
+          onContinue={async () => {
+            const updated = await runAction('validate', () => resumeJob(id, 'VALIDATED'));
+            if (updated) setStep('validation', updated);
+          }}
+        />
       )}
 
-      {job.parsedTable && (
-        <Card className="mb-5">
-          <h2 className="mb-3 text-lg font-normal">1. Parsed table</h2>
-          <TablePreview table={job.parsedTable} />
-        </Card>
+      {activeStep === 'validation' && (
+        <ValidationStep
+          job={job}
+          hasValidationResults={Boolean(job.validationResults)}
+          validationErrors={validationErrors}
+          chatMessages={chatMessages}
+          chatOpen={chatOpen}
+          onChatOpenChange={setChatOpen}
+          onChatSend={async (instruction) => {
+            const userMsg = {
+              id: `user-${Date.now()}`,
+              role: 'user',
+              text: instruction,
+              ts: Date.now(),
+            };
+            setChatMessages((msgs) => [...msgs, userMsg]);
+            setBusyAction('chat-edit');
+            try {
+              const result = await toast.promise(
+                chatEdit(id, instruction),
+                ACTION_MESSAGES['chat-edit']
+              );
+              applyJob(result);
+              setChatMessages((msgs) => [
+                ...msgs,
+                {
+                  id: `assistant-${Date.now()}`,
+                  role: 'assistant',
+                  text: 'Applied your changes. Click Re-validate to refresh validation errors.',
+                  ts: Date.now(),
+                },
+              ]);
+            } catch (err) {
+              const errText = err?.message || 'Something went wrong applying that edit.';
+              setChatMessages((msgs) => [
+                ...msgs,
+                {
+                  id: `assistant-${Date.now()}`,
+                  role: 'assistant',
+                  text: errText,
+                  ts: Date.now(),
+                },
+              ]);
+            } finally {
+              setBusyAction('');
+            }
+          }}
+          busyAction={busyAction}
+          onRevalidate={() => runAction('revalidate', () => revalidateJob(id))}
+          onContinue={() => setStep('export')}
+          canExport={canExport}
+        />
       )}
 
-      {job.mapping && (
-        <Card className="mb-5">
-          <h2 className="mb-1 text-lg font-normal">2. Column mapping</h2>
-          <p className="mb-3 text-sm text-muted">
-            Source column → template field. Change any mapping and save; validation is cleared and
-            must be re-run.
-          </p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {Object.entries(mapping).map(([source, target]) => (
-              <div key={source} className="flex items-center gap-2 text-sm">
-                <span className="w-1/2 truncate font-mono text-xs" title={source}>
-                  {source}
-                </span>
-                <span className="text-muted">→</span>
-                <select
-                  className={`${inputClass} flex-1`}
-                  value={target ?? ''}
-                  onChange={(e) =>
-                    setMappingDraft({ ...mapping, [source]: e.target.value || null })
-                  }
-                >
-                  <option value="">(unmapped)</option>
-                  {templateFields.map((f) => (
-                    <option key={f.templateFieldsId} value={f.fieldName}>
-                      {f.fieldName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
-          {mappingDraft && (
-            <div className="mt-3 flex gap-2">
-              <Button onClick={saveMapping} disabled={Boolean(busyAction)}>
-                {busyAction === 'mapping' ? 'Saving…' : 'Save mapping'}
-              </Button>
-              <Button variant="secondary" onClick={() => setMappingDraft(null)}>
-                Discard changes
-              </Button>
-            </div>
-          )}
-        </Card>
+      {activeStep === 'export' && (
+        <ExportStep
+          canExport={canExport}
+          exportFormat={exportFormat}
+          showDbExport={showDbExport}
+          dbForm={dbForm}
+          busyAction={busyAction}
+          exportInfo={job.exportInfo}
+          onFormatChange={setExportFormat}
+          onDownload={async () => {
+            setBusyAction('download');
+            try {
+              await toast.promise(
+                downloadFile(exportFilePath(id, exportFormat), `job-${id}.${exportFormat}`),
+                { loading: 'Preparing download…', success: 'File downloaded' }
+              );
+            } catch {
+              // The error toast is already shown.
+            } finally {
+              setBusyAction('');
+            }
+          }}
+          onToggleDbExport={() => setShowDbExport((v) => !v)}
+          onDbFormChange={(patch) => setDbForm((f) => ({ ...f, ...patch }))}
+          onDbExport={(e) => {
+            e.preventDefault();
+            runAction('db-export', () => exportToDatabase(id, dbForm));
+          }}
+        />
       )}
-
-      {job.mappedRows && (
-        <Card className="mb-5">
-          <h2 className="mb-3 text-lg font-normal">3. Mapped rows</h2>
-          <TablePreview table={job.mappedRows} />
-          <form onSubmit={sendChatEdit} className="mt-4 flex gap-2">
-            <input
-              className={inputClass}
-              placeholder='Edit with AI, e.g. "trim whitespace in all name columns"'
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-            />
-            <Button type="submit" variant="secondary" disabled={Boolean(busyAction)}>
-              {busyAction === 'chat-edit' ? 'Applying…' : 'Apply'}
-            </Button>
-          </form>
-        </Card>
-      )}
-
-      {job.validationResults && (
-        <Card className="mb-5">
-          <h2 className="mb-3 text-lg font-normal">4. Validation</h2>
-          {validationErrors.length === 0 ? (
-            <Callout variant="success" title="All rows valid">
-              Every mapped row passed the template's validation rules.
-            </Callout>
-          ) : (
-            <>
-              <div className="mb-3">
-                <Callout variant="error" title={`${validationErrors.length} validation error${validationErrors.length > 1 ? 's' : ''}`}>
-                  Fix the data (AI edit above or re-map) and re-validate.
-                </Callout>
-              </div>
-              <DataTable
-                columns={[
-                  { key: 'row', label: 'Row' },
-                  { key: 'fieldName', label: 'Field' },
-                  { key: 'rawValue', label: 'Value' },
-                  { key: 'errorMessage', label: 'Error' },
-                ]}
-                rows={validationErrors.slice(0, 50)}
-              />
-              {validationErrors.length > 50 && (
-                <p className="mt-2 text-xs text-muted">Showing 50 of {validationErrors.length} errors.</p>
-              )}
-            </>
-          )}
-        </Card>
-      )}
-
-      <Card>
-        <h2 className="mb-1 text-lg font-normal">5. Save / export</h2>
-        {!canExport && (
-          <p className="mb-3 text-sm text-muted">
-            Available once the job reaches the VALIDATED step.
-          </p>
-        )}
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            className={`${inputClass} w-28`}
-            value={exportFormat}
-            onChange={(e) => setExportFormat(e.target.value)}
-            disabled={!canExport}
-          >
-            <option value="csv">CSV</option>
-            <option value="json">JSON</option>
-            <option value="xlsx">XLSX</option>
-          </select>
-          <Button onClick={download} disabled={!canExport || Boolean(busyAction)}>
-            {busyAction === 'download' ? 'Preparing…' : 'Download file'}
-          </Button>
-          <Button variant="secondary" onClick={() => setShowDbExport((v) => !v)} disabled={!canExport}>
-            {showDbExport ? 'Hide database export' : 'Export to database…'}
-          </Button>
-        </div>
-
-        {showDbExport && (
-          <form onSubmit={runDbExport} className="mt-4 space-y-3 border-t border-line pt-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="JDBC URL">
-                <input
-                  required
-                  className={inputClass}
-                  placeholder="jdbc:sqlserver://host;databaseName=…"
-                  value={dbForm.jdbcUrl}
-                  onChange={(e) => setDbForm((f) => ({ ...f, jdbcUrl: e.target.value }))}
-                />
-              </Field>
-              <Field label="Table name">
-                <input
-                  required
-                  className={inputClass}
-                  value={dbForm.tableName}
-                  onChange={(e) => setDbForm((f) => ({ ...f, tableName: e.target.value }))}
-                />
-              </Field>
-              <Field label="Username">
-                <input
-                  className={inputClass}
-                  value={dbForm.username}
-                  onChange={(e) => setDbForm((f) => ({ ...f, username: e.target.value }))}
-                />
-              </Field>
-              <Field label="Password" hint="Used once for the export; never stored.">
-                <input
-                  type="password"
-                  className={inputClass}
-                  value={dbForm.password}
-                  onChange={(e) => setDbForm((f) => ({ ...f, password: e.target.value }))}
-                />
-              </Field>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={dbForm.createTableIfMissing}
-                onChange={(e) => setDbForm((f) => ({ ...f, createTableIfMissing: e.target.checked }))}
-              />
-              Create the table if it doesn't exist
-            </label>
-            <Button type="submit" disabled={Boolean(busyAction)}>
-              {busyAction === 'db-export' ? 'Exporting…' : 'Run database export'}
-            </Button>
-          </form>
-        )}
-      </Card>
     </div>
   );
 }

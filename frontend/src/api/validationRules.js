@@ -43,6 +43,25 @@ const REQUIRED_RULE_LABEL = 'Required — must not be empty';
 export const ruleTypeName = (value) =>
   typeof value === 'number' ? (RULE_TYPE_NAMES[value] ?? value) : value;
 
+const VALIDATION_ERROR_RULE_LABELS = {
+  REQUIRED: 'Required',
+  REGEX: 'Format pattern',
+  RANGE: 'Number range',
+  DATE_FORMAT: 'Date format',
+  EXPIRY_DATE: 'Expiry date',
+  EMAIL: 'Email',
+  CONDITIONAL_REQUIREMENT: 'Conditional requirement',
+  TYPE: 'Type',
+  CUSTOM: 'Custom',
+};
+
+/** Friendly label for a validation error's ruleType (API enum name). */
+export function validationErrorRuleLabel(ruleType) {
+  if (!ruleType) return '—';
+  const name = ruleTypeName(ruleType);
+  return VALIDATION_ERROR_RULE_LABELS[name] ?? name;
+}
+
 export function parseRuleConfig(rule) {
   if (rule.config && typeof rule.config === 'object') return rule.config;
   if (rule.configJson) {

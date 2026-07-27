@@ -54,6 +54,33 @@ class ValidateRowsUseCaseTest {
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).errorMessage()).isEqualTo("Value is required.");
+        assertThat(results.get(0).ruleType()).isEqualTo("REQUIRED");
+    }
+
+    @Test
+    void regexFailureIncludesRuleType() {
+        when(repo.getRulesByTemplate(1)).thenReturn(List.of(
+                new ValidationRule(1, "Gender", RuleType.REGEX, "{\"Pattern\":\"^(M|F|U)$\"}")));
+
+        List<RowValidationResult> results =
+                useCase.handle(new ValidationRequest(1, List.of(Map.of("Gender", "Q"))));
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).errorMessage()).isNotNull();
+        assertThat(results.get(0).ruleType()).isEqualTo("REGEX");
+    }
+
+    @Test
+    void validFieldHasNullRuleType() {
+        when(repo.getRulesByTemplate(1)).thenReturn(List.of(
+                new ValidationRule(1, "FirstName", RuleType.REQUIRED, "{}")));
+
+        List<RowValidationResult> results =
+                useCase.handle(new ValidationRequest(1, List.of(Map.of("FirstName", "Ada"))));
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).errorMessage()).isNull();
+        assertThat(results.get(0).ruleType()).isNull();
     }
 
     @Test

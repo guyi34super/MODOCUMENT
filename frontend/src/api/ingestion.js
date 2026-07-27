@@ -4,15 +4,17 @@ export const listJobs = () => api.get('/api/ingestion/jobs');
 
 export const getJob = (id) => api.get(`/api/ingestion/jobs/${id}`);
 
-export function createJobFromFile(file, templateId, autoRun = true) {
+export function createJobFromFile(file, templateId, autoRun = true, runUntil = 'MAPPED') {
   const form = new FormData();
   form.append('file', file);
   form.append('templateId', String(templateId));
   form.append('autoRun', String(autoRun));
+  form.append('runUntil', runUntil);
   return api.post('/api/ingestion/jobs', form);
 }
 
-export const resumeJob = (id) => api.post(`/api/ingestion/jobs/${id}/resume`);
+export const resumeJob = (id, until = 'VALIDATED') =>
+  api.post(`/api/ingestion/jobs/${id}/resume?until=${until}`);
 export const remapJob = (id) => api.post(`/api/ingestion/jobs/${id}/remap`);
 export const revalidateJob = (id) => api.post(`/api/ingestion/jobs/${id}/revalidate`);
 export const cancelJob = (id) => api.post(`/api/ingestion/jobs/${id}/cancel`);

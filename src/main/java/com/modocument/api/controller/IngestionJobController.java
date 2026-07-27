@@ -7,6 +7,7 @@ import com.modocument.application.dto.UpdateMappingRequest;
 import com.modocument.application.usecase.ChatEditTableUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
 import com.modocument.domain.entity.IngestionJob;
+import com.modocument.domain.model.JobStep;
 import com.modocument.infrastructure.file.UploadStorage;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -49,12 +50,14 @@ public class IngestionJobController {
     public ResponseEntity<?> createFromUpload(@RequestParam("file") MultipartFile file,
                                               @RequestParam("templateId") int templateId,
                                               @RequestParam(value = "autoRun", defaultValue = "true")
-                                              boolean autoRun) {
+                                              boolean autoRun,
+                                              @RequestParam(value = "runUntil", defaultValue = "MAPPED")
+                                              String runUntil) {
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "No file uploaded."));
         }
         String storedName = uploadStorage.store(file);
-        return created(create(storedName, templateId, autoRun));
+        return created(create(storedName, templateId, autoRun, parseUntil(runUntil)));
     }
 
     /** JSON creation for a file already stored via /api/fileupload/upload. */
@@ -64,7 +67,10 @@ public class IngestionJobController {
             return ResponseEntity.badRequest().body(Map.of("error", "fileName is required."));
         }
         boolean autoRun = request.getAutoRun() == null || request.getAutoRun();
-        return created(create(request.getFileName(), request.getTemplateId(), autoRun));
+        JobStep until = request.getRunUntil() == null || request.getRunUntil().isBlank()
+                ? JobStep.MAPPED
+                : parseUntil(request.getRunUntil());
+        return created(create(request.getFileName(), request.getTemplateId(), autoRun, until));
     }
 
     @GetMapping("/api/ingestion/jobs")
@@ -79,8 +85,10 @@ public class IngestionJobController {
 
     /** Continues the pipeline from the last completed step (also after FAILED). */
     @PostMapping("/api/ingestion/jobs/{id}/resume")
-    public ResponseEntity<?> resume(@PathVariable int id) {
-        return ResponseEntity.ok(IngestionJobDto.from(useCase.resume(id)));
+    public ResponseEntity<?> resume(@PathVariable int id,
+                                    @RequestParam(value = "until", defaultValue = "VALIDATED")
+                                    String until) {
+        return ResponseEntity.ok(IngestionJobDto.from(useCase.resume(id, parseUntil(until))));
     }
 
     @PostMapping("/api/ingestion/jobs/{id}/remap")
@@ -115,9 +123,23 @@ public class IngestionJobController {
         return ResponseEntity.ok(IngestionJobDto.from(useCase.updateMapping(id, request.getMapping())));
     }
 
-    private IngestionJob create(String fileName, int templateId, boolean autoRun) {
+    private IngestionJob create(String fileName, int templateId, boolean autoRun, JobStep runUntil) {
         IngestionJob job = useCase.create(fileName, templateId);
-        return autoRun ? useCase.resume(job.getIngestionJobId()) : job;
+        return autoRun ? useCase.resume(job.getIngestionJobId(), runUntil) : job;
+    }
+
+    private static JobStep parseUntil(String value) {
+        try {
+            JobStep step = JobStep.valueOf(value.trim().toUpperCase());
+            if (step == JobStep.UPLOADED || step == JobStep.EXPORTED) {
+                throw new IllegalArgumentException(
+                        "until must be one of PARSED, MAPPED, or VALIDATED.");
+            }
+            return step;
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Unknown pipeline step '" + value + "'; use PARSED, MAPPED, or VALIDATED.");
+        }
     }
 
     private static ResponseEntity<?> created(IngestionJob job) {

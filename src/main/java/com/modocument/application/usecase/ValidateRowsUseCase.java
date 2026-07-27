@@ -52,6 +52,7 @@ public class ValidateRowsUseCase {
                 }
 
                 String firstError = null;
+                String firstRuleType = null;
 
                 for (ValidationRule rule : fieldRules.getValue()) {
                     ValidationRuleValidator validator = findValidator(rule);
@@ -63,11 +64,12 @@ public class ValidateRowsUseCase {
                             validator.validate(rowNum, fieldName, rawValue, rule.getConfigJson());
                     if (error != null) {
                         firstError = error.errorMessage();
+                        firstRuleType = rule.getRuleType().name();
                         break; // Only keep first error for this field
                     }
                 }
 
-                results.add(new RowValidationResult(rowNum, fieldName, rawValue, firstError));
+                results.add(new RowValidationResult(rowNum, fieldName, rawValue, firstError, firstRuleType));
             }
         }
 
