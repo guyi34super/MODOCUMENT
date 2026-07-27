@@ -85,6 +85,7 @@ public class ChatEditTableUseCase {
         // Data changed: stale validation/export checkpoints no longer apply.
         job.setValidationResultJson(null);
         job.setExportInfoJson(null);
+        IngestionJobUseCase.clampWizardStep(job);
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
         return jobs.save(job);

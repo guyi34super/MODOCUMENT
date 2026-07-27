@@ -6,6 +6,7 @@ import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
+import com.modocument.domain.model.WizardStep;
 import com.modocument.infrastructure.prompt.ChatEditPrompt;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.ParameterizedTypeReference;
@@ -54,6 +55,18 @@ class ChatEditTableUseCaseTest {
         assertThat(result.getExportInfoJson()).isNull();
         assertThat(result.getCurrentStep()).isEqualTo(JobStep.MAPPED);
         assertThat(result.getStatus()).isEqualTo(JobStatus.COMPLETED);
+    }
+
+    @Test
+    void clampsWizardStepBackToMapping() {
+        IngestionJob job = jobWithMappedRows();
+        job.setWizardStep(WizardStep.VALIDATION);
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(new TableData(List.of("FirstName"), List.of(Map.of("FirstName", "Ada"))));
+
+        IngestionJob result = useCase.handle(7, "Capitalize all first names");
+
+        assertThat(result.getWizardStep()).isEqualTo(WizardStep.MAPPING);
     }
 
     @Test

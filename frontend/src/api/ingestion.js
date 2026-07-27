@@ -25,6 +25,9 @@ export const chatEdit = (id, instruction) =>
 export const updateMapping = (id, mapping) =>
   api.put(`/api/ingestion/jobs/${id}/mapping`, { mapping });
 
+export const setWizardStep = (id, step) =>
+  api.put(`/api/ingestion/jobs/${id}/wizard-step`, { wizardStep: step.toUpperCase() });
+
 export const exportFilePath = (id, format) =>
   `/api/ingestion/jobs/${id}/export/file?format=${format}`;
 

@@ -17,6 +17,7 @@ import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
+import com.modocument.domain.model.WizardStep;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -157,6 +158,7 @@ public class IngestionJobUseCase {
         }
         job.setCurrentStep(JobStep.PARSED);
         clearDownstream(job, JobStep.PARSED);
+        clampWizardStep(job);
         job = jobs.save(job);
         return runStage(job, JobStep.MAPPED, this::doMap);
     }
@@ -195,8 +197,25 @@ public class IngestionJobUseCase {
         job.setMappedRowsJson(toJson(applyMapping(parsed, mapping)));
         job.setCurrentStep(JobStep.MAPPED);
         clearDownstream(job, JobStep.MAPPED);
+        clampWizardStep(job);
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
+        return jobs.save(job);
+    }
+
+    /**
+     * Checkpoints the user's wizard position so reopening the job resumes the
+     * UI at the same pane. MAPPING is always allowed; VALIDATION and EXPORT
+     * only once the job has validated. Idempotent last-write-wins.
+     */
+    public IngestionJob setWizardStep(int jobId, WizardStep step) {
+        IngestionJob job = get(jobId);
+        if (step != WizardStep.MAPPING && !hasValidated(job)) {
+            throw new IllegalArgumentException(
+                    "Wizard step " + step + " is not reachable while the job is at "
+                            + job.getCurrentStep() + ".");
+        }
+        job.setWizardStep(step);
         return jobs.save(job);
     }
 
@@ -210,6 +229,7 @@ public class IngestionJobUseCase {
     public IngestionJob recordExport(IngestionJob job, Map<String, Object> exportInfo) {
         job.setExportInfoJson(toJson(exportInfo));
         job.setCurrentStep(JobStep.EXPORTED);
+        job.setWizardStep(WizardStep.EXPORT);
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
         return jobs.save(job);
@@ -273,6 +293,20 @@ public class IngestionJobUseCase {
     private void requireActive(IngestionJob job) {
         if (job.getStatus() == JobStatus.CANCELLED) {
             throw new IllegalStateException("Job " + job.getIngestionJobId() + " is cancelled.");
+        }
+    }
+
+    private static boolean hasValidated(IngestionJob job) {
+        return job.getCurrentStep() == JobStep.VALIDATED || job.getCurrentStep() == JobStep.EXPORTED;
+    }
+
+    /**
+     * Called after mutations that invalidate validation: a persisted wizard
+     * position past mapping no longer points at a usable pane.
+     */
+    static void clampWizardStep(IngestionJob job) {
+        if (job.getWizardStep() != null && job.getWizardStep() != WizardStep.MAPPING) {
+            job.setWizardStep(WizardStep.MAPPING);
         }
     }
 

@@ -14,6 +14,7 @@ import com.modocument.domain.entity.Template;
 import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
+import com.modocument.domain.model.WizardStep;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -205,6 +206,102 @@ class IngestionJobUseCaseTest {
         assertThatThrownBy(() -> useCase.resume(job.getIngestionJobId()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("cancelled");
+    }
+
+    @Test
+    void setWizardStepPersistsPosition() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(validateRows.handle(any())).thenReturn(List.of());
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        useCase.resume(job.getIngestionJobId());
+
+        job = useCase.setWizardStep(job.getIngestionJobId(), WizardStep.VALIDATION);
+        assertThat(job.getWizardStep()).isEqualTo(WizardStep.VALIDATION);
+        assertThat(jobs.getById(job.getIngestionJobId()).orElseThrow().getWizardStep())
+                .isEqualTo(WizardStep.VALIDATION);
+
+        // Idempotent last-write-wins.
+        job = useCase.setWizardStep(job.getIngestionJobId(), WizardStep.VALIDATION);
+        assertThat(job.getWizardStep()).isEqualTo(WizardStep.VALIDATION);
+    }
+
+    @Test
+    void setWizardStepRejectsUnreachableStep() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        int jobId = useCase.resume(job.getIngestionJobId(), JobStep.MAPPED).getIngestionJobId();
+
+        assertThatThrownBy(() -> useCase.setWizardStep(jobId, WizardStep.VALIDATION))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not reachable");
+
+        assertThat(useCase.setWizardStep(jobId, WizardStep.MAPPING).getWizardStep())
+                .isEqualTo(WizardStep.MAPPING);
+    }
+
+    @Test
+    void remapClampsWizardStepToMapping() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(validateRows.handle(any())).thenReturn(List.of());
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        useCase.resume(job.getIngestionJobId());
+        useCase.setWizardStep(job.getIngestionJobId(), WizardStep.VALIDATION);
+
+        job = useCase.remap(job.getIngestionJobId());
+
+        assertThat(job.getWizardStep()).isEqualTo(WizardStep.MAPPING);
+    }
+
+    @Test
+    void updateMappingClampsWizardStepToMapping() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(validateRows.handle(any())).thenReturn(List.of());
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        useCase.resume(job.getIngestionJobId());
+        useCase.setWizardStep(job.getIngestionJobId(), WizardStep.VALIDATION);
+
+        job = useCase.updateMapping(job.getIngestionJobId(), Map.of("first_name", "FirstName"));
+
+        assertThat(job.getWizardStep()).isEqualTo(WizardStep.MAPPING);
+    }
+
+    @Test
+    void revalidateKeepsWizardStep() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(validateRows.handle(any())).thenReturn(List.of());
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        useCase.resume(job.getIngestionJobId());
+        useCase.setWizardStep(job.getIngestionJobId(), WizardStep.VALIDATION);
+
+        job = useCase.revalidate(job.getIngestionJobId());
+
+        assertThat(job.getWizardStep()).isEqualTo(WizardStep.VALIDATION);
+        assertThat(job.getCurrentStep()).isEqualTo(JobStep.VALIDATED);
+    }
+
+    @Test
+    void recordExportSetsWizardStepExport() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(validateRows.handle(any())).thenReturn(List.of());
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        job = useCase.resume(job.getIngestionJobId());
+
+        job = useCase.recordExport(job, Map.of("format", "csv"));
+
+        assertThat(job.getWizardStep()).isEqualTo(WizardStep.EXPORT);
+        assertThat(job.getCurrentStep()).isEqualTo(JobStep.EXPORTED);
     }
 
     @Test

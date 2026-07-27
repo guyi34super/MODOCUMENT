@@ -47,6 +47,10 @@ the test suite.
   restart: `POST /api/ingestion/jobs/{id}/resume`.
 - Re-run individual stages (`.../remap`, `.../revalidate`), cancel jobs (`.../cancel`),
   and inspect everything (`GET /api/ingestion/jobs`, `GET /api/ingestion/jobs/{id}`).
+- **The wizard position is checkpointed too**: `PUT /api/ingestion/jobs/{id}/wizard-step`
+  records the pane the user reached (`MAPPING`/`VALIDATION`/`EXPORT`), so reopening a job
+  resumes the upload wizard at exactly that step. Mutations that invalidate validation
+  (remap, mapping override, chat edit) clamp it back to `MAPPING`.
 
 ### Field mapping (code first, AI for the rest)
 - Source columns are mapped to template fields by **exact name match**, then

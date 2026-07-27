@@ -4,10 +4,12 @@ import com.modocument.application.dto.ChatEditRequest;
 import com.modocument.application.dto.CreateIngestionJobRequest;
 import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.UpdateMappingRequest;
+import com.modocument.application.dto.UpdateWizardStepRequest;
 import com.modocument.application.usecase.ChatEditTableUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStep;
+import com.modocument.domain.model.WizardStep;
 import com.modocument.infrastructure.file.UploadStorage;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -123,6 +125,17 @@ public class IngestionJobController {
         return ResponseEntity.ok(IngestionJobDto.from(useCase.updateMapping(id, request.getMapping())));
     }
 
+    /** Checkpoints the user's wizard position so reopening the job resumes there. */
+    @PutMapping("/api/ingestion/jobs/{id}/wizard-step")
+    public ResponseEntity<?> updateWizardStep(@PathVariable int id,
+                                              @RequestBody UpdateWizardStepRequest request) {
+        if (request == null || request.getWizardStep() == null || request.getWizardStep().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "wizardStep is required."));
+        }
+        return ResponseEntity.ok(IngestionJobDto.from(
+                useCase.setWizardStep(id, parseWizardStep(request.getWizardStep()))));
+    }
+
     private IngestionJob create(String fileName, int templateId, boolean autoRun, JobStep runUntil) {
         IngestionJob job = useCase.create(fileName, templateId);
         return autoRun ? useCase.resume(job.getIngestionJobId(), runUntil) : job;
@@ -139,6 +152,15 @@ public class IngestionJobController {
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     "Unknown pipeline step '" + value + "'; use PARSED, MAPPED, or VALIDATED.");
+        }
+    }
+
+    private static WizardStep parseWizardStep(String value) {
+        try {
+            return WizardStep.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(
+                    "Unknown wizard step '" + value + "'; use MAPPING, VALIDATION, or EXPORT.");
         }
     }
 

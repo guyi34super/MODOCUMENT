@@ -6,7 +6,7 @@ import { ToastProvider } from '../context/ToastContext';
 import IngestionJobPage from './IngestionJobPage';
 
 import { getAllFields } from '../api/templates';
-import { chatEdit, getJob, resumeJob } from '../api/ingestion';
+import { chatEdit, getJob, resumeJob, setWizardStep } from '../api/ingestion';
 
 vi.mock('../api/templates', () => ({
   getAllFields: vi.fn(),
@@ -20,6 +20,7 @@ vi.mock('../api/ingestion', () => ({
   cancelJob: vi.fn(),
   chatEdit: vi.fn().mockResolvedValue({}),
   updateMapping: vi.fn().mockResolvedValue({}),
+  setWizardStep: vi.fn().mockResolvedValue({}),
   exportFilePath: vi.fn(),
   exportToDatabase: vi.fn(),
 }));
@@ -109,6 +110,55 @@ describe('IngestionJobPage wizard', () => {
     getJob.mockResolvedValue(mappedJob);
     resumeJob.mockClear();
     chatEdit.mockClear();
+    setWizardStep.mockReset();
+    setWizardStep.mockResolvedValue({});
+  });
+
+  it('reopening without ?step resumes at the persisted wizard step', async () => {
+    getJob.mockResolvedValue({ ...validatedJob, wizardStep: 'EXPORT' });
+    renderPage('/ingestion/7');
+    await screen.findByRole('heading', { name: 'Export' });
+    expect(screen.getByRole('button', { name: 'Download file' })).toBeEnabled();
+  });
+
+  it('stale persisted step falls back to the step inferred from currentStep', async () => {
+    // wizardStep VALIDATION is stale for a job knocked back to MAPPED.
+    getJob.mockResolvedValue({ ...mappedJob, wizardStep: 'VALIDATION' });
+    renderPage('/ingestion/7');
+    await screen.findByText('Column mapping');
+    expect(screen.queryByRole('heading', { name: 'Validation' })).not.toBeInTheDocument();
+  });
+
+  it('explicit ?step deep link beats the persisted wizard step', async () => {
+    getJob.mockResolvedValue({ ...validatedJob, wizardStep: 'EXPORT' });
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+  });
+
+  it('navigating steps checkpoints the position via setWizardStep', async () => {
+    getJob.mockResolvedValue(validatedJob);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+    await userEvent.click(screen.getByRole('button', { name: 'Continue to export' }));
+
+    expect(setWizardStep).toHaveBeenCalledWith('7', 'export');
+    expect(await screen.findByRole('heading', { name: 'Export' })).toBeInTheDocument();
+  });
+
+  it('unprocessed job shows a resume CTA that resumes parse/map', async () => {
+    getJob.mockResolvedValue({
+      ...mappedJob,
+      currentStep: 'UPLOADED',
+      status: 'PENDING',
+      parsedTable: null,
+      mapping: null,
+      mappedRows: null,
+    });
+    renderPage('/ingestion/7');
+    await screen.findByText('Processing not finished');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Resume processing' }));
+    expect(resumeJob).toHaveBeenCalledWith('7', 'MAPPED');
   });
 
   it('shows mapping step with source columns and template fields panel', async () => {

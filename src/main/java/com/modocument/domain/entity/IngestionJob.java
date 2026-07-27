@@ -2,6 +2,7 @@ package com.modocument.domain.entity;
 
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
+import com.modocument.domain.model.WizardStep;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -45,6 +46,10 @@ public class IngestionJob {
     @Enumerated(EnumType.STRING)
     @Column(name = "Status", length = 20)
     private JobStatus status = JobStatus.PENDING;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "WizardStep", length = 20)
+    private WizardStep wizardStep;
 
     @Column(name = "ErrorMessage", length = 2000)
     private String errorMessage;
@@ -124,6 +129,14 @@ public class IngestionJob {
 
     public void setStatus(JobStatus status) {
         this.status = status;
+    }
+
+    public WizardStep getWizardStep() {
+        return wizardStep;
+    }
+
+    public void setWizardStep(WizardStep wizardStep) {
+        this.wizardStep = wizardStep;
     }
 
     public String getErrorMessage() {

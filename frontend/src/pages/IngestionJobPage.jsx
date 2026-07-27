@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { downloadFile } from '../api/client';
 import { getAllFields } from '../api/templates';
@@ -12,6 +12,7 @@ import {
   remapJob,
   resumeJob,
   revalidateJob,
+  setWizardStep,
   updateMapping,
 } from '../api/ingestion';
 import PageHeader from '../components/PageHeader';
@@ -49,6 +50,17 @@ function canVisitStep(step, job) {
     return Boolean(job.mappedRows);
   }
   return false;
+}
+
+// The step checkpointed on the job wins over inference from currentStep, so a
+// reopened job resumes where the user left off (including the client-only
+// export step). Stale checkpoints degrade to the inferred step.
+function restoredWizardStep(job) {
+  const persisted = job?.wizardStep?.toLowerCase();
+  if (persisted && WIZARD_STEPS.includes(persisted) && canVisitStep(persisted, job)) {
+    return persisted;
+  }
+  return defaultWizardStep(job?.currentStep);
 }
 
 function WizardStepIndicator({ activeStep, job, onSelect }) {
@@ -340,15 +352,32 @@ function MappingStep({
   onSaveMapping,
   onDiscardMapping,
   onRemap,
+  onResume,
   onContinue,
 }) {
   const hasDraft = Boolean(mappingDraft);
+  const needsProcessing = job.currentStep === 'UPLOADED' || job.currentStep === 'PARSED';
   return (
     <Card>
       <h2 className="mb-1 text-lg font-normal">Column mapping</h2>
       <p className="mb-4 text-sm text-muted">
         Review source columns mapped to template fields. Adjust mappings, then continue to validation.
       </p>
+
+      {needsProcessing && (
+        <div className="mb-5">
+          <Callout variant="info" title="Processing not finished">
+            This upload hasn&apos;t been {job.currentStep === 'UPLOADED' ? 'parsed' : 'mapped'} yet.
+            Resume the pipeline to {job.currentStep === 'UPLOADED' ? 'parse the file and ' : ''}
+            auto-map its columns to your template.
+            <div className="mt-2">
+              <Button onClick={onResume} disabled={Boolean(busyAction) || job.status === 'CANCELLED'}>
+                {busyAction === 'resume' ? 'Resuming…' : 'Resume processing'}
+              </Button>
+            </div>
+          </Callout>
+        </div>
+      )}
 
       {job.parsedTable && (
         <div className="mb-5">
@@ -611,7 +640,7 @@ export default function IngestionJobPage() {
   const activeStep = useMemo(() => {
     const requested = searchParams.get('step');
     if (requested && WIZARD_STEPS.includes(requested)) return requested;
-    return job ? defaultWizardStep(job.currentStep) : 'mapping';
+    return job ? restoredWizardStep(job) : 'mapping';
   }, [searchParams, job]);
 
   const applyJob = useCallback((updated) => {
@@ -630,19 +659,26 @@ export default function IngestionJobPage() {
       .catch((err) => setError(err.message));
   }, [id]);
 
+  const clampedJobId = useRef(null);
   useEffect(() => {
-    if (!job) return;
+    if (!job || clampedJobId.current === id) return;
+    clampedJobId.current = id;
     const requested = searchParams.get('step');
     if (requested && WIZARD_STEPS.includes(requested) && !canVisitStep(requested, job)) {
-      setSearchParams({ step: defaultWizardStep(job.currentStep) });
+      setSearchParams({ step: restoredWizardStep(job) });
     }
-    // Only clamp invalid deep-links when the job payload loads — not on every step change.
+    // Only clamp invalid deep-links when the job payload first loads — job
+    // updates mid-session (e.g. a chat edit resetting currentStep) must not
+    // yank the user off the step they are working on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [job]);
+  }, [job, id]);
 
   const setStep = (step, jobSnapshot = job) => {
     if (canVisitStep(step, jobSnapshot)) {
       setSearchParams({ step });
+      // Best-effort checkpoint so reopening the job resumes on this step.
+      // The response is ignored: applying it would clobber local drafts.
+      setWizardStep(id, step).catch(() => {});
     }
   };
 
@@ -734,6 +770,7 @@ export default function IngestionJobPage() {
           onSaveMapping={() => runAction('mapping', () => updateMapping(id, mappingDraft))}
           onDiscardMapping={() => setMappingDraft(null)}
           onRemap={() => runAction('remap', () => remapJob(id))}
+          onResume={() => runAction('resume', () => resumeJob(id, 'MAPPED'))}
           onContinue={async () => {
             const updated = await runAction('validate', () => resumeJob(id, 'VALIDATED'));
             if (updated) setStep('validation', updated);
