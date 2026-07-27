@@ -4,6 +4,7 @@ import com.modocument.application.dto.ChatEditRequest;
 import com.modocument.application.dto.CreateIngestionJobRequest;
 import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.UpdateMappingRequest;
+import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
 import com.modocument.application.usecase.ChatEditTableUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
@@ -123,6 +124,16 @@ public class IngestionJobController {
             return ResponseEntity.badRequest().body(Map.of("error", "mapping is required."));
         }
         return ResponseEntity.ok(IngestionJobDto.from(useCase.updateMapping(id, request.getMapping())));
+    }
+
+    /** Persists user-edited row values; clears validation so it can be re-run. */
+    @PutMapping("/api/ingestion/jobs/{id}/rows")
+    public ResponseEntity<?> updateRows(@PathVariable int id,
+                                        @RequestBody UpdateRowsRequest request) {
+        if (request == null || request.getRows() == null || request.getRows().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "rows is required."));
+        }
+        return ResponseEntity.ok(IngestionJobDto.from(useCase.updateRows(id, request.getRows())));
     }
 
     /** Checkpoints the user's wizard position so reopening the job resumes there. */

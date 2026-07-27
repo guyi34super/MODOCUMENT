@@ -60,6 +60,9 @@ the test suite.
 - **Review and override** the mapping: `PUT /api/ingestion/jobs/{id}/mapping`
   (`{"mapping": {"source col": "TemplateField" | null}}`) — rebuilds the mapped rows and
   clears stale validation.
+- **Edit cell values directly** from the validation table (or via
+  `PUT /api/ingestion/jobs/{id}/rows` with the full edited row set) — persists the
+  edits and clears stale validation so it can be re-run.
 
 ### Validation
 - Mapped rows are validated against the template's rules (including your custom regex)

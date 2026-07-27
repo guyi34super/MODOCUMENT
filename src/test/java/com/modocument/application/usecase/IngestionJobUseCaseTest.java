@@ -290,6 +290,77 @@ class IngestionJobUseCaseTest {
     }
 
     @Test
+    void updateRowsPersistsEditsAndClearsValidation() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(validateRows.handle(any())).thenReturn(List.of());
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        useCase.resume(job.getIngestionJobId());
+        useCase.setWizardStep(job.getIngestionJobId(), WizardStep.VALIDATION);
+
+        job = useCase.updateRows(job.getIngestionJobId(), List.of(Map.of("FirstName", "Grace")));
+
+        assertThat(job.getMappedRowsJson()).contains("Grace");
+        assertThat(job.getCurrentStep()).isEqualTo(JobStep.MAPPED);
+        assertThat(job.getValidationResultJson()).isNull();
+        assertThat(job.getExportInfoJson()).isNull();
+        assertThat(job.getWizardStep()).isEqualTo(WizardStep.MAPPING);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
+        assertThat(job.getErrorMessage()).isNull();
+    }
+
+    @Test
+    void updateRowsRejectsUnknownColumnKey() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(validateRows.handle(any())).thenReturn(List.of());
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        int jobId = useCase.resume(job.getIngestionJobId()).getIngestionJobId();
+
+        assertThatThrownBy(() -> useCase.updateRows(jobId, List.of(Map.of("Nope", "x"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Nope");
+    }
+
+    @Test
+    void updateRowsRejectsRowCountMismatch() {
+        when(parseStep.parse(anyString())).thenReturn(PARSED);
+        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(validateRows.handle(any())).thenReturn(List.of());
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        int jobId = useCase.resume(job.getIngestionJobId()).getIngestionJobId();
+
+        assertThatThrownBy(() -> useCase.updateRows(jobId,
+                List.of(Map.of("FirstName", "Ada"), Map.of("FirstName", "Grace"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("rows");
+    }
+
+    @Test
+    void updateRowsRequiresMappedRows() {
+        IngestionJob job = useCase.create("people.csv", 1);
+
+        assertThatThrownBy(() -> useCase.updateRows(job.getIngestionJobId(),
+                List.of(Map.of("FirstName", "Ada"))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no mapped rows");
+    }
+
+    @Test
+    void updateRowsRejectsCancelledJob() {
+        IngestionJob job = useCase.create("people.csv", 1);
+        useCase.cancel(job.getIngestionJobId());
+
+        assertThatThrownBy(() -> useCase.updateRows(job.getIngestionJobId(),
+                List.of(Map.of("FirstName", "Ada"))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cancelled");
+    }
+
+    @Test
     void recordExportSetsWizardStepExport() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
         when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));

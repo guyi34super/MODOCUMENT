@@ -6,7 +6,14 @@ import { ToastProvider } from '../context/ToastContext';
 import IngestionJobPage from './IngestionJobPage';
 
 import { getAllFields } from '../api/templates';
-import { chatEdit, getJob, resumeJob, setWizardStep } from '../api/ingestion';
+import {
+  chatEdit,
+  getJob,
+  resumeJob,
+  revalidateJob,
+  setWizardStep,
+  updateRows,
+} from '../api/ingestion';
 
 vi.mock('../api/templates', () => ({
   getAllFields: vi.fn(),
@@ -20,6 +27,7 @@ vi.mock('../api/ingestion', () => ({
   cancelJob: vi.fn(),
   chatEdit: vi.fn().mockResolvedValue({}),
   updateMapping: vi.fn().mockResolvedValue({}),
+  updateRows: vi.fn().mockResolvedValue({}),
   setWizardStep: vi.fn().mockResolvedValue({}),
   exportFilePath: vi.fn(),
   exportToDatabase: vi.fn(),
@@ -112,6 +120,64 @@ describe('IngestionJobPage wizard', () => {
     chatEdit.mockClear();
     setWizardStep.mockReset();
     setWizardStep.mockResolvedValue({});
+    updateRows.mockReset();
+    updateRows.mockResolvedValue({});
+    revalidateJob.mockReset();
+    revalidateJob.mockResolvedValue({});
+  });
+
+  it('editing a cell marks it dirty and shows Save/Discard', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByText(/Fix: Value is required/));
+    const input = screen.getByDisplayValue('');
+    await userEvent.type(input, 'Ada{Enter}');
+
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Discard changes' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue to export' })).toBeDisabled();
+    // Both the header and the in-step Re-validate are blocked while dirty.
+    screen.getAllByRole('button', { name: 'Re-validate' }).forEach((button) => {
+      expect(button).toBeDisabled();
+    });
+  });
+
+  it('save sends edited rows, chains revalidate, and re-checkpoints the wizard step', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    revalidateJob.mockResolvedValueOnce(validatedJob);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByText(/Fix: Value is required/));
+    await userEvent.type(screen.getByDisplayValue(''), 'Ada{Enter}');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(updateRows).toHaveBeenCalledWith('7', [{ FirstName: 'Ada' }]);
+    expect(revalidateJob).toHaveBeenCalledWith('7');
+    expect(await screen.findByText('All rows valid')).toBeInTheDocument();
+    expect(setWizardStep).toHaveBeenCalledWith('7', 'validation');
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
+  });
+
+  it('discard restores the original values and clears the dirty state', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByText(/Fix: Value is required/));
+    await userEvent.type(screen.getByDisplayValue(''), 'Ada{Enter}');
+    expect(screen.getByText('Ada')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+
+    expect(screen.queryByText('Ada')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
+    screen.getAllByRole('button', { name: 'Re-validate' }).forEach((button) => {
+      expect(button).toBeEnabled();
+    });
+    expect(updateRows).not.toHaveBeenCalled();
   });
 
   it('reopening without ?step resumes at the persisted wizard step', async () => {

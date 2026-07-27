@@ -14,6 +14,7 @@ import {
   revalidateJob,
   setWizardStep,
   updateMapping,
+  updateRows,
 } from '../api/ingestion';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
@@ -32,6 +33,7 @@ const ACTION_MESSAGES = {
   'chat-edit': { loading: 'Applying chat edit…', success: 'Chat edit applied' },
   'db-export': { loading: 'Exporting to database…', success: 'Exported to database' },
   validate: { loading: 'Running validation…', success: 'Validation complete' },
+  rows: { loading: 'Saving edits…', success: 'Edits saved & re-validated' },
 };
 
 function defaultWizardStep(currentStep) {
@@ -240,6 +242,43 @@ function ValidationErrorCell({ err, value }) {
   );
 }
 
+function EditableCell({ value, err, dirty, editing, onStartEdit, onCommit, onCancel }) {
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        defaultValue={value ?? ''}
+        className={`${inputClass} w-full min-w-28`}
+        onBlur={(e) => onCommit(e.target.value)}
+        onKeyDown={(e) => {
+          // Commit lives solely in onBlur so Enter can't double-commit;
+          // Escape unmounts the input, so no blur fires after it.
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') onCancel();
+        }}
+      />
+    );
+  }
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      title="Click to edit"
+      onClick={onStartEdit}
+      onKeyDown={(e) => e.key === 'Enter' && onStartEdit()}
+      className={`min-h-5 cursor-text rounded ${dirty ? 'bg-pill/60 px-1 outline outline-1 outline-accent' : ''}`}
+    >
+      {err ? (
+        <ValidationErrorCell err={err} value={value} />
+      ) : value === '' || value == null ? (
+        ' '
+      ) : (
+        String(value)
+      )}
+    </div>
+  );
+}
+
 function ValidatedDataTable({
   mappedRows,
   validationResults,
@@ -247,7 +286,11 @@ function ValidatedDataTable({
   pageSize,
   onPageChange,
   onPageSizeChange,
+  rowEdits,
+  onEditCell,
 }) {
+  const [editingCell, setEditingCell] = useState(null);
+
   if (!mappedRows?.columns?.length) {
     return <p className="text-sm text-muted">No mapped data.</p>;
   }
@@ -327,12 +370,24 @@ function ValidatedDataTable({
             key: col,
             label: col,
             render: (row, i) => {
-              const rowNum = start + i + 1;
-              const err = errorMap.get(`${rowNum}-${col}`);
-              if (err) {
-                return <ValidationErrorCell err={err} value={row[col]} />;
-              }
-              return String(row[col] ?? '');
+              const rowIdx = start + i; // absolute 0-based index — drafts survive paging
+              const draftValue = rowEdits?.[`${rowIdx}-${col}`];
+              const err = errorMap.get(`${rowIdx + 1}-${col}`);
+              const editing = editingCell?.rowIdx === rowIdx && editingCell?.col === col;
+              return (
+                <EditableCell
+                  value={draftValue !== undefined ? draftValue : row[col]}
+                  err={err}
+                  dirty={draftValue !== undefined}
+                  editing={editing}
+                  onStartEdit={() => setEditingCell({ rowIdx, col })}
+                  onCommit={(v) => {
+                    setEditingCell(null);
+                    onEditCell(rowIdx, col, v);
+                  }}
+                  onCancel={() => setEditingCell(null)}
+                />
+              );
             },
           })),
         ]}
@@ -435,6 +490,11 @@ function ValidationStep({
   onRevalidate,
   onContinue,
   canExport,
+  rowEdits,
+  onEditCell,
+  rowsDirty,
+  onSaveRows,
+  onDiscardRows,
 }) {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
@@ -484,6 +544,8 @@ function ValidationStep({
                   pageSize={pageSize}
                   onPageChange={setPage}
                   onPageSizeChange={handlePageSizeChange}
+                  rowEdits={rowEdits}
+                  onEditCell={onEditCell}
                 />
               </div>
             )}
@@ -491,13 +553,30 @@ function ValidationStep({
         )}
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={onRevalidate} disabled={Boolean(busyAction)}>
+          {rowsDirty && (
+            <>
+              <Button onClick={onSaveRows} disabled={Boolean(busyAction)}>
+                {busyAction === 'rows' ? 'Saving…' : 'Save changes'}
+              </Button>
+              <Button variant="secondary" onClick={onDiscardRows} disabled={Boolean(busyAction)}>
+                Discard changes
+              </Button>
+            </>
+          )}
+          <Button
+            variant="secondary"
+            onClick={onRevalidate}
+            disabled={Boolean(busyAction) || rowsDirty}
+          >
             {busyAction === 'revalidate' ? 'Validating…' : 'Re-validate'}
           </Button>
-          <Button onClick={onContinue} disabled={!canExport || Boolean(busyAction)}>
+          <Button onClick={onContinue} disabled={!canExport || Boolean(busyAction) || rowsDirty}>
             Continue to export
           </Button>
         </div>
+        {rowsDirty && (
+          <p className="mt-2 text-xs text-muted">Save or discard row changes before continuing.</p>
+        )}
       </Card>
 
       <ValidationChatDrawer
@@ -505,7 +584,7 @@ function ValidationStep({
         onOpenChange={onChatOpenChange}
         messages={chatMessages}
         onSend={onChatSend}
-        busy={busyAction === 'chat-edit'}
+        busy={busyAction === 'chat-edit' || rowsDirty}
         showQuickPrompts={validationErrors.length > 0}
       />
     </>
@@ -625,6 +704,9 @@ export default function IngestionJobPage() {
   const [error, setError] = useState('');
   const [busyAction, setBusyAction] = useState('');
   const [mappingDraft, setMappingDraft] = useState(null);
+  // Sparse draft of directly-edited cells: { "<absRowIdx>-<col>": value }.
+  // Keyed by absolute row index so edits survive pagination and step flips.
+  const [rowEdits, setRowEdits] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState('csv');
@@ -646,6 +728,7 @@ export default function IngestionJobPage() {
   const applyJob = useCallback((updated) => {
     setJob(updated);
     setMappingDraft(null);
+    setRowEdits(null);
   }, []);
 
   useEffect(() => {
@@ -696,6 +779,44 @@ export default function IngestionJobPage() {
     }
   };
 
+  const rowsDirty = Boolean(rowEdits && Object.keys(rowEdits).length > 0);
+
+  const editRowCell = (rowIdx, col, value) => {
+    setRowEdits((prev) => {
+      const next = { ...(prev || {}) };
+      const key = `${rowIdx}-${col}`;
+      if (value === String(job?.mappedRows?.rows?.[rowIdx]?.[col] ?? '')) {
+        delete next[key]; // reverting to the original un-dirties the cell
+      } else {
+        next[key] = value;
+      }
+      return Object.keys(next).length ? next : null;
+    });
+  };
+
+  const saveRowEdits = async () => {
+    const { columns, rows } = job.mappedRows;
+    const editedRows = rows.map((row, i) => {
+      const out = { ...row };
+      for (const col of columns) {
+        const v = rowEdits?.[`${i}-${col}`];
+        if (v !== undefined) out[col] = v;
+      }
+      return out;
+    });
+    // If revalidate fails mid-chain the draft stays dirty and saving again
+    // simply re-PUTs the same rows — self-healing, no special handling.
+    const updated = await runAction('rows', async () => {
+      await updateRows(id, editedRows);
+      return revalidateJob(id);
+    });
+    if (updated) {
+      // updateRows clamps the persisted wizard step to MAPPING server-side;
+      // restore the resume checkpoint now that the job is validated again.
+      setWizardStep(id, 'validation').catch(() => {});
+    }
+  };
+
   const mapping = mappingDraft ?? job?.mapping ?? {};
   const validationErrors = (job?.validationResults || []).filter((r) => r.errorMessage);
   const isTerminal = job?.status === 'CANCELLED';
@@ -728,7 +849,7 @@ export default function IngestionJobPage() {
             <Button
               variant="secondary"
               onClick={() => runAction('revalidate', () => revalidateJob(id))}
-              disabled={Boolean(busyAction) || isTerminal || activeStep !== 'validation'}
+              disabled={Boolean(busyAction) || isTerminal || activeStep !== 'validation' || rowsDirty}
             >
               {busyAction === 'revalidate' ? 'Validating…' : 'Re-validate'}
             </Button>
@@ -829,6 +950,11 @@ export default function IngestionJobPage() {
           onRevalidate={() => runAction('revalidate', () => revalidateJob(id))}
           onContinue={() => setStep('export')}
           canExport={canExport}
+          rowEdits={rowEdits}
+          onEditCell={editRowCell}
+          rowsDirty={rowsDirty}
+          onSaveRows={saveRowEdits}
+          onDiscardRows={() => setRowEdits(null)}
         />
       )}
 

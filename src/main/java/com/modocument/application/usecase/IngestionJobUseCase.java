@@ -203,6 +203,37 @@ public class IngestionJobUseCase {
         return jobs.save(job);
     }
 
+    /** Persists directly-edited row values; downstream validation/export checkpoints are cleared. */
+    public IngestionJob updateRows(int jobId, List<Map<String, String>> rows) {
+        IngestionJob job = get(jobId);
+        requireActive(job);
+        if (job.getMappedRowsJson() == null) {
+            throw new IllegalStateException("Job has no mapped rows yet; run mapping first.");
+        }
+
+        TableData current = fromJson(job.getMappedRowsJson(), TableData.class);
+        if (rows.size() != current.getRows().size()) {
+            throw new IllegalArgumentException("Expected " + current.getRows().size()
+                    + " rows but got " + rows.size() + "; direct edits cannot add or remove rows.");
+        }
+        for (Map<String, String> row : rows) {
+            for (String key : row.keySet()) {
+                if (!current.getColumns().contains(key)) {
+                    throw new IllegalArgumentException(
+                            "'" + key + "' is not a column of the mapped table.");
+                }
+            }
+        }
+
+        job.setMappedRowsJson(toJson(new TableData(current.getColumns(), rows)));
+        job.setCurrentStep(JobStep.MAPPED);
+        clearDownstream(job, JobStep.MAPPED);
+        clampWizardStep(job);
+        job.setStatus(JobStatus.COMPLETED);
+        job.setErrorMessage(null);
+        return jobs.save(job);
+    }
+
     /**
      * Checkpoints the user's wizard position so reopening the job resumes the
      * UI at the same pane. MAPPING is always allowed; VALIDATION and EXPORT

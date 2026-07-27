@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import DataTable from './DataTable';
 
 const columns = [
@@ -29,5 +30,40 @@ describe('DataTable', () => {
     render(<DataTable columns={[{ key: 'name', label: 'Name' }]} rows={[{ name: null }]} />);
     const cell = screen.getAllByRole('cell')[0];
     expect(cell).toHaveTextContent('');
+  });
+
+  it('calls onRowClick with the row when a row is clicked', async () => {
+    const onRowClick = vi.fn();
+    render(
+      <DataTable
+        columns={columns}
+        rows={[{ name: 'Job 1', status: 'OK' }]}
+        onRowClick={onRowClick}
+      />
+    );
+    await userEvent.click(screen.getByText('Job 1'));
+    expect(onRowClick).toHaveBeenCalledWith({ name: 'Job 1', status: 'OK' }, 0);
+  });
+
+  it('does not call onRowClick when an interactive element inside a cell is clicked', async () => {
+    const onRowClick = vi.fn();
+    render(
+      <DataTable
+        columns={[
+          { key: 'name', label: 'Name' },
+          { key: 'open', label: 'Open', render: () => <button>Open</button> },
+        ]}
+        rows={[{ name: 'Job 1' }]}
+        onRowClick={onRowClick}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('rows without onRowClick stay clickable without crashing', async () => {
+    render(<DataTable columns={columns} rows={[{ name: 'Job 1', status: 'OK' }]} />);
+    await userEvent.click(screen.getByText('Job 1'));
+    expect(screen.getByText('Job 1').closest('tr').className).not.toContain('cursor-pointer');
   });
 });

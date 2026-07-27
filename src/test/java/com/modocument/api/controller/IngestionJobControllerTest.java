@@ -1,6 +1,7 @@
 package com.modocument.api.controller;
 
 import com.modocument.application.dto.IngestionJobDto;
+import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
 import com.modocument.application.usecase.ChatEditTableUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
@@ -12,6 +13,9 @@ import com.modocument.infrastructure.file.UploadStorage;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,6 +59,28 @@ class IngestionJobControllerTest {
                 controller.updateWizardStep(7, new UpdateWizardStepRequest("  "));
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void updateRowsDelegatesAndReturnsDto() {
+        List<Map<String, String>> rows = List.of(Map.of("FirstName", "Grace"));
+        IngestionJob job = validatedJob(null);
+        job.setCurrentStep(JobStep.MAPPED);
+        when(useCase.updateRows(7, rows)).thenReturn(job);
+
+        ResponseEntity<?> result = controller.updateRows(7, new UpdateRowsRequest(rows));
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        IngestionJobDto dto = (IngestionJobDto) result.getBody();
+        assertThat(dto.currentStep()).isEqualTo("MAPPED");
+    }
+
+    @Test
+    void updateRowsRejectsEmptyRows() {
+        assertThat(controller.updateRows(7, new UpdateRowsRequest(null)).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.updateRows(7, new UpdateRowsRequest(List.of())).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test

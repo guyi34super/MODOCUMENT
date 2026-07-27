@@ -148,6 +148,7 @@ export default function IngestionListPage() {
           ]}
           rows={jobs}
           emptyMessage="No ingestion jobs yet — upload a file above."
+          onRowClick={(row) => navigate(`/ingestion/${row.ingestionJobId}`)}
         />
       )}
     </div>
