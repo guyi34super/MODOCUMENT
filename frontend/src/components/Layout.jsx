@@ -32,7 +32,12 @@ const sections = [
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Open by default only on large screens; below lg the open sidebar overlays
+  // the content instead of pushing it aside.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () =>
+      typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 1024px)').matches
+  );
 
   const handleLogout = () => {
     logout();
@@ -127,8 +132,11 @@ export default function Layout() {
         ))}
       </aside>
 
-      <main className={`pt-14 transition-[margin] duration-200 ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
-        <div className="mx-auto max-w-4xl px-8 py-8">
+      {/* z-order contract: app bar z-20 > sidebar / sticky PageHeader z-10;
+          wizard toolbar z-30 sits above sticky headers; chat drawer/FAB z-40;
+          toasts z-50 above everything. Sticky in-page elements use top-14. */}
+      <main className={`pt-14 transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-64' : ''}`}>
+        <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
           <Outlet />
         </div>
       </main>

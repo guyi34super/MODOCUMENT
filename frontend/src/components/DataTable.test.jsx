@@ -66,4 +66,40 @@ describe('DataTable', () => {
     await userEvent.click(screen.getByText('Job 1'));
     expect(screen.getByText('Job 1').closest('tr').className).not.toContain('cursor-pointer');
   });
+
+  it('maxHeight caps the wrapper and enables internal vertical scroll', () => {
+    const { container } = render(
+      <DataTable columns={columns} rows={[{ name: 'Job 1', status: 'OK' }]} maxHeight="60vh" />
+    );
+    const wrapper = container.firstChild;
+    expect(wrapper).toHaveStyle({ maxHeight: '60vh' });
+    expect(wrapper.className).toContain('overflow-y-auto');
+    screen.getAllByRole('columnheader').forEach((th) => {
+      expect(th.className).toContain('sticky');
+    });
+  });
+
+  it('without maxHeight the header is not sticky and no height cap applies', () => {
+    const { container } = render(
+      <DataTable columns={columns} rows={[{ name: 'Job 1', status: 'OK' }]} />
+    );
+    expect(container.firstChild.className).not.toContain('overflow-y-auto');
+    screen.getAllByRole('columnheader').forEach((th) => {
+      expect(th.className).not.toContain('sticky');
+    });
+  });
+
+  it('onRowClick still fires with maxHeight set', async () => {
+    const onRowClick = vi.fn();
+    render(
+      <DataTable
+        columns={columns}
+        rows={[{ name: 'Job 1', status: 'OK' }]}
+        maxHeight="40vh"
+        onRowClick={onRowClick}
+      />
+    );
+    await userEvent.click(screen.getByText('Job 1'));
+    expect(onRowClick).toHaveBeenCalled();
+  });
 });

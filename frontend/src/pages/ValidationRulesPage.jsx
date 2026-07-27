@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
 import { getAllFields } from '../api/templates';
 import {
@@ -42,6 +42,7 @@ const EMPTY_FORM = {
 
 export default function ValidationRulesPage() {
   const toast = useToast();
+  const navigate = useNavigate();
   const formRef = useRef(null);
   const [searchParams] = useSearchParams();
   const [templates, setTemplates] = useState([]);
@@ -61,6 +62,7 @@ export default function ValidationRulesPage() {
 
   const [testRow, setTestRow] = useState({});
   const [testResults, setTestResults] = useState(null);
+  const [showTest, setShowTest] = useState(false);
 
   useEffect(() => {
     Promise.all([getTemplates(), getAllFields()])
@@ -95,6 +97,7 @@ export default function ValidationRulesPage() {
     setTemplateId(tid);
     setError('');
     resetForm();
+    setShowTest(false);
     loadRules(tid);
   };
 
@@ -266,17 +269,30 @@ export default function ValidationRulesPage() {
     !fieldName ||
     (ruleType === 'REGEX' && !pattern.trim()) ||
     (ruleType === 'RANGE' && (rangeMin === '' || rangeMax === ''));
+  // Missing field name is self-evident (the select still shows its prompt);
+  // explain only the non-obvious disabled cases inline.
+  const saveDisabledReason =
+    !busy && fieldName && ruleType === 'REGEX' && !pattern.trim()
+      ? 'Choose or enter a format pattern first.'
+      : !busy && fieldName && ruleType === 'RANGE' && (rangeMin === '' || rangeMax === '')
+        ? 'Enter both a minimum and maximum.'
+        : '';
 
   return (
     <div>
       <PageHeader
         crumbs={[{ label: 'Set Field Rules' }]}
         title="Set Field Rules"
-        subtitle="Step 2 — per-field rules every processed row is checked against"
+        subtitle="Per-field rules every processed row is checked against"
+        actions={
+          <Button variant="secondary" onClick={() => navigate('/ingestion')}>
+            Next: upload &amp; process →
+          </Button>
+        }
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
-      <Card className="mb-5">
+      <div className="mb-5 max-w-sm">
         <Field label="Template">
           <select
             className={inputClass}
@@ -291,56 +307,12 @@ export default function ValidationRulesPage() {
             ))}
           </select>
         </Field>
-      </Card>
+      </div>
 
       {templateId && (
         <>
-          <h2 className="mb-3 text-xl font-normal">Rules</h2>
-          {!rules ? (
-            <Spinner />
-          ) : (
-            <DataTable
-              columns={[
-                { key: 'fieldName', label: 'Field' },
-                {
-                  key: 'required',
-                  label: 'Required',
-                  render: (row) => (isFieldRequired(rules, row.fieldName) ? 'Yes' : 'No'),
-                },
-                {
-                  key: 'ruleType',
-                  label: 'Rule',
-                  render: (row) => formatRuleTypeLabel(row),
-                },
-                {
-                  key: 'settings',
-                  label: 'Settings',
-                  render: (row) => (
-                    <span className="text-sm text-muted">{formatRuleConfig(row)}</span>
-                  ),
-                },
-                {
-                  key: 'actions',
-                  label: '',
-                  render: (row) => (
-                    <div className="flex justify-end gap-2">
-                      <Button variant="secondary" onClick={() => loadRuleForEdit(row)}>
-                        Update
-                      </Button>
-                      <Button variant="danger" onClick={() => removeRule(row)}>
-                        Delete
-                      </Button>
-                    </div>
-                  ),
-                },
-              ]}
-              rows={rules}
-              emptyMessage="No rules for this template yet."
-            />
-          )}
-
           <div ref={formRef}>
-          <Card className="mt-5">
+          <Card className="mb-5">
             <h3 className="mb-3 text-lg font-normal">
               {editingRule ? 'Update field rules' : 'Add field rules'}
             </h3>
@@ -424,7 +396,7 @@ export default function ValidationRulesPage() {
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button type="submit" disabled={saveDisabled}>
                   {busy ? 'Saving…' : editingRule ? 'Update rule' : 'Save rule'}
                 </Button>
@@ -433,18 +405,73 @@ export default function ValidationRulesPage() {
                     Cancel
                   </Button>
                 )}
+                {saveDisabledReason && (
+                  <span className="text-xs text-muted">{saveDisabledReason}</span>
+                )}
               </div>
             </form>
           </Card>
           </div>
 
-          <Card className="mt-5">
+          <h2 className="mb-3 text-xl font-normal">Rules</h2>
+          {!rules ? (
+            <Spinner />
+          ) : (
+            <DataTable
+              maxHeight="45vh"
+              columns={[
+                { key: 'fieldName', label: 'Field' },
+                {
+                  key: 'required',
+                  label: 'Required',
+                  render: (row) => (isFieldRequired(rules, row.fieldName) ? 'Yes' : 'No'),
+                },
+                {
+                  key: 'ruleType',
+                  label: 'Rule',
+                  render: (row) => formatRuleTypeLabel(row),
+                },
+                {
+                  key: 'settings',
+                  label: 'Settings',
+                  render: (row) => (
+                    <span className="text-sm text-muted">{formatRuleConfig(row)}</span>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  label: '',
+                  render: (row) => (
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => loadRuleForEdit(row)}>
+                        Update
+                      </Button>
+                      <Button size="sm" variant="danger" onClick={() => removeRule(row)}>
+                        Delete
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+              rows={rules}
+              emptyMessage="No rules for this template yet."
+            />
+          )}
+
+          <div className="mt-5">
+            <Button variant="secondary" onClick={() => setShowTest((s) => !s)}>
+              {showTest ? 'Hide test row' : 'Test a sample row…'}
+            </Button>
+          </div>
+
+          {showTest && (
+          <Card className="mt-3">
             <h3 className="mb-1 text-lg font-normal">Test a row</h3>
             <p className="mb-3 text-sm text-muted">
               Enter sample values and run them through this template's rules.
             </p>
             <form onSubmit={runTest}>
-              <div className="mb-3 grid max-h-72 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+              <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {templateFields.map((f) => (
                   <Field key={f.templateFieldsId} label={f.fieldName}>
                     <input
@@ -483,13 +510,13 @@ export default function ValidationRulesPage() {
               </div>
             )}
           </Card>
+          )}
 
-          <p className="mt-5 text-sm text-muted">
-            Done with rules?{' '}
-            <Link to="/ingestion" className="text-accent hover:underline">
+          <div className="mt-5 flex justify-end">
+            <Button onClick={() => navigate('/ingestion')}>
               Next: upload &amp; process a file →
-            </Link>
-          </p>
+            </Button>
+          </div>
         </>
       )}
     </div>

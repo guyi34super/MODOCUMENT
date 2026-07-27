@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { getTemplateDataTypes } from '../api/cache';
 import {
   createField,
@@ -10,6 +10,7 @@ import {
   updateTemplate,
 } from '../api/templates';
 import PageHeader from '../components/PageHeader';
+import DataTable from '../components/DataTable';
 import { Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 
@@ -29,9 +30,11 @@ export default function TemplateEditorPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(!isNew);
+  const fieldNameRef = useRef(null);
 
+  // No setLoading(true) here: refetches after adding a field must update the
+  // table in place without unmounting (and de-focusing) the add-field form.
   const loadExisting = useCallback(async () => {
-    setLoading(true);
     try {
       const [template, allFields] = await Promise.all([getTemplate(id), getAllFields()]);
       setName(template.name || '');
@@ -104,6 +107,7 @@ export default function TemplateEditorPage() {
       );
       setNewField({ fieldName: '', templateDataTypeId: 1 });
       await loadExisting();
+      fieldNameRef.current?.focus();
     } catch {
       // The error toast is already shown.
     } finally {
@@ -124,18 +128,25 @@ export default function TemplateEditorPage() {
     }
   };
 
-  if (loading) return <Spinner />;
-
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Design Templates', to: '/templates' }, { label: isNew ? 'New' : name }]}
-        title={isNew ? 'New Template' : `Edit: ${name}`}
+        crumbs={[{ label: 'Design Templates', to: '/templates' }, { label: isNew ? 'New' : name || '…' }]}
+        title={isNew ? 'New Template' : name ? `Edit: ${name}` : 'Edit template'}
         subtitle={isNew ? 'Create a template together with its fields' : 'Update details and manage fields'}
+        actions={
+          !isNew && (
+            <Button variant="secondary" onClick={() => navigate(`/validation?templateId=${id}`)}>
+              Next: set field rules →
+            </Button>
+          )
+        }
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
-      {isNew ? (
+      {loading ? (
+        <Spinner />
+      ) : isNew ? (
         <form onSubmit={submitNew} className="space-y-5">
           <Card className="space-y-4">
             <Field label="Name">
@@ -219,40 +230,17 @@ export default function TemplateEditorPage() {
               <Button onClick={saveDetails} disabled={busy}>
                 {busy ? 'Saving…' : 'Save details'}
               </Button>
-              <Link to={`/validation?templateId=${id}`} className="text-sm text-accent hover:underline">
-                Next: set field rules →
-              </Link>
+              <span className="text-xs text-muted">
+                Applies to name and description only — field changes below save immediately.
+              </span>
             </div>
           </Card>
 
           <Card>
             <h2 className="mb-3 text-lg font-normal">Fields ({savedFields.length})</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="bg-sidebar text-left">
-                    <th className="border-b border-line px-3 py-2 font-medium text-muted">Field name</th>
-                    <th className="border-b border-line px-3 py-2 font-medium text-muted">Data type</th>
-                    <th className="border-b border-line px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {savedFields.map((field) => (
-                    <tr key={field.templateFieldsId} className="hover:bg-sidebar/60">
-                      <td className="border-b border-line px-3 py-2">{field.fieldName}</td>
-                      <td className="border-b border-line px-3 py-2">{typeName(field.templateDataTypeId)}</td>
-                      <td className="border-b border-line px-3 py-2 text-right">
-                        <Button variant="danger" onClick={() => removeField(field)}>
-                          Delete
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <form onSubmit={addField} className="mt-4 flex gap-2">
+            <form onSubmit={addField} className="mb-4 flex gap-2">
               <input
+                ref={fieldNameRef}
                 placeholder="New field name"
                 className={inputClass}
                 value={newField.fieldName}
@@ -273,7 +261,37 @@ export default function TemplateEditorPage() {
                 Add
               </Button>
             </form>
+            <DataTable
+              maxHeight="50vh"
+              columns={[
+                { key: 'fieldName', label: 'Field name' },
+                {
+                  key: 'dataType',
+                  label: 'Data type',
+                  render: (field) => typeName(field.templateDataTypeId),
+                },
+                {
+                  key: 'actions',
+                  label: '',
+                  render: (field) => (
+                    <div className="flex justify-end">
+                      <Button size="sm" variant="danger" onClick={() => removeField(field)}>
+                        Delete
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+              rows={savedFields}
+              emptyMessage="No fields yet — add the first one above."
+            />
           </Card>
+
+          <div className="flex justify-end">
+            <Button onClick={() => navigate(`/validation?templateId=${id}`)}>
+              Next: set field rules →
+            </Button>
+          </div>
         </div>
       )}
     </div>

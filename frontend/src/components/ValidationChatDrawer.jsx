@@ -12,10 +12,12 @@ export default function ValidationChatDrawer({
   messages,
   onSend,
   busy,
+  disabledNote = '',
   showQuickPrompts,
 }) {
   const [draft, setDraft] = useState('');
   const listRef = useRef(null);
+  const blocked = busy || Boolean(disabledNote);
 
   useEffect(() => {
     if (open && listRef.current) {
@@ -25,7 +27,7 @@ export default function ValidationChatDrawer({
 
   const submit = (text) => {
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed || blocked) return;
     onSend(trimmed);
     setDraft('');
   };
@@ -58,7 +60,7 @@ export default function ValidationChatDrawer({
 
       {open && (
         <div
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[70vh] flex-col rounded-t-xl border border-line bg-white shadow-2xl sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-[360px] sm:max-h-[50vh] sm:rounded-xl"
+          className="fixed inset-x-0 bottom-0 z-40 flex max-h-[70vh] flex-col rounded-t-xl border border-line bg-white shadow-2xl sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-[360px] sm:max-h-[45vh] sm:rounded-xl"
           role="dialog"
           aria-label="AI assistant"
         >
@@ -109,7 +111,7 @@ export default function ValidationChatDrawer({
                 <button
                   key={prompt}
                   type="button"
-                  disabled={busy}
+                  disabled={blocked}
                   onClick={() => submit(prompt)}
                   className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-ink hover:bg-pill disabled:opacity-50"
                 >
@@ -117,6 +119,12 @@ export default function ValidationChatDrawer({
                 </button>
               ))}
             </div>
+          )}
+
+          {disabledNote && (
+            <p className="border-t border-line bg-amber-100/60 px-4 py-2 text-xs text-amber-800">
+              {disabledNote}
+            </p>
           )}
 
           <form onSubmit={handleSubmit} className="border-t border-line p-3">
@@ -128,9 +136,9 @@ export default function ValidationChatDrawer({
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={busy}
+                disabled={blocked}
               />
-              <Button type="submit" disabled={busy || !draft.trim()}>
+              <Button type="submit" disabled={blocked || !draft.trim()}>
                 Send
               </Button>
             </div>

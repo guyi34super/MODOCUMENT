@@ -18,6 +18,9 @@ export default function IngestionListPage() {
   const [templateId, setTemplateId] = useState('');
   const [autoRun, setAutoRun] = useState(true);
   const [uploading, setUploading] = useState(false);
+  // null = "not decided by the user yet": auto-open only for first-time users.
+  const [showUpload, setShowUpload] = useState(null);
+  const uploadOpen = showUpload ?? (jobs !== null && jobs.length === 0);
 
   const load = useCallback(async () => {
     try {
@@ -53,18 +56,26 @@ export default function IngestionListPage() {
   return (
     <div>
       <PageHeader
+        sticky
         crumbs={[{ label: 'Upload & Process' }]}
         title="Upload & Process"
-        subtitle="Step 3 — upload a document, review the extracted table, validate and export"
-        actions={<Button variant="secondary" onClick={load}>Refresh</Button>}
+        subtitle="Upload a document, review the extracted table, validate and export"
+        actions={
+          <>
+            <Button variant="secondary" onClick={load}>Refresh</Button>
+            <Button onClick={() => setShowUpload(!uploadOpen)}>
+              {uploadOpen ? 'Close upload' : 'Upload a document'}
+            </Button>
+          </>
+        }
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
+      {uploadOpen && (
       <Card className="mb-6">
         <h2 className="mb-1 text-lg font-normal">Upload a document</h2>
         <p className="mb-4 text-sm text-muted">
-          Supported: xlsx, xls, csv, pdf, docx, doc and scanned images (png, jpg, tiff…). The
-          pipeline parses the file, auto-maps columns to your template and validates every row.
+          Accepts xlsx, xls, csv, pdf, docx, doc and scanned images.
         </p>
         <form onSubmit={upload} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -107,15 +118,16 @@ export default function IngestionListPage() {
               checked={autoRun}
               onChange={(e) => setAutoRun(e.target.checked)}
             />
-            Run the full pipeline immediately (parse → map → validate)
+            Start processing right away (pauses for you to review the column mapping)
           </label>
           <Button type="submit" disabled={uploading || !file || !templateId}>
             {uploading ? 'Uploading & processing…' : 'Upload & process'}
           </Button>
         </form>
       </Card>
+      )}
 
-      <h2 className="mb-3 text-xl font-normal">Jobs</h2>
+      <h2 className="mb-3 text-base font-medium">Jobs</h2>
       {!jobs ? (
         <Spinner />
       ) : (
@@ -147,7 +159,8 @@ export default function IngestionListPage() {
             },
           ]}
           rows={jobs}
-          emptyMessage="No ingestion jobs yet — upload a file above."
+          maxHeight="65vh"
+          emptyMessage="No jobs yet — click 'Upload a document' to get started."
           onRowClick={(row) => navigate(`/ingestion/${row.ingestionJobId}`)}
         />
       )}

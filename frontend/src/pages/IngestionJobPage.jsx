@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { downloadFile } from '../api/client';
 import { getAllFields } from '../api/templates';
 import { validationErrorRuleLabel } from '../api/validationRules';
@@ -68,7 +68,7 @@ function restoredWizardStep(job) {
 function WizardStepIndicator({ activeStep, job, onSelect }) {
   const labels = { mapping: 'Mapping', validation: 'Validation', export: 'Export' };
   return (
-    <ol className="flex flex-wrap items-center gap-1 text-xs">
+    <ol className="flex flex-wrap items-center gap-1 text-sm">
       {WIZARD_STEPS.map((step, i) => {
         const enabled = canVisitStep(step, job);
         const isActive = step === activeStep;
@@ -78,12 +78,12 @@ function WizardStepIndicator({ activeStep, job, onSelect }) {
           (step === 'export' && job?.exportInfo && Object.keys(job.exportInfo).length > 0);
         return (
           <li key={step} className="flex items-center gap-1">
-            {i > 0 && <span className="text-line">──</span>}
+            {i > 0 && <span className="text-muted">›</span>}
             <button
               type="button"
               disabled={!enabled}
               onClick={() => enabled && onSelect(step)}
-              className={`rounded-full px-2.5 py-1 font-medium ${
+              className={`rounded-full px-3 py-1.5 font-medium ${
                 isActive
                   ? 'bg-accent text-white'
                   : isDone
@@ -103,97 +103,223 @@ function WizardStepIndicator({ activeStep, job, onSelect }) {
   );
 }
 
-function MappingPanel({ parsedTable, mappedRows, mapping, templateFields, onMappingChange }) {
+/**
+ * Sticky wizard chrome: step pills, job status, and the contextual actions for
+ * the active step only — always visible, so the fix-and-save loops never
+ * require scrolling to reach a button.
+ */
+function WizardToolbar({
+  job,
+  activeStep,
+  onSelectStep,
+  busyAction,
+  isTerminal,
+  mappingDraft,
+  onSaveMapping,
+  onDiscardMapping,
+  onRemap,
+  onContinueValidation,
+  rowsDirty,
+  dirtyCount,
+  onSaveRows,
+  onDiscardRows,
+  onRevalidate,
+  onContinueExport,
+  canExport,
+  onCancel,
+}) {
+  const validationRun = job.currentStep === 'VALIDATED' || job.currentStep === 'EXPORTED';
+  return (
+    <div className="sticky top-14 z-30 -mx-4 mb-5 border-b border-line bg-white/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <WizardStepIndicator activeStep={activeStep} job={job} onSelect={onSelectStep} />
+        <Badge status={job.status} />
+        <span
+          className="hidden max-w-48 truncate text-xs text-muted lg:inline"
+          title={job.fileName}
+        >
+          {job.fileName}
+        </span>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {activeStep === 'mapping' && (
+            <>
+              {mappingDraft && (
+                <>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    Unsaved mapping
+                  </span>
+                  <Button onClick={onSaveMapping} disabled={Boolean(busyAction)}>
+                    {busyAction === 'mapping' ? 'Saving…' : 'Save mapping'}
+                  </Button>
+                  <Button variant="secondary" onClick={onDiscardMapping}>
+                    Discard changes
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="secondary"
+                onClick={onRemap}
+                disabled={Boolean(busyAction) || isTerminal}
+              >
+                {busyAction === 'remap' ? 'Remapping…' : 'Re-map automatically'}
+              </Button>
+              {validationRun && !mappingDraft ? (
+                <Button variant="secondary" onClick={() => onSelectStep('validation')}>
+                  Go to validation
+                </Button>
+              ) : (
+                <Button
+                  onClick={onContinueValidation}
+                  disabled={Boolean(busyAction) || Boolean(mappingDraft) || job.currentStep !== 'MAPPED'}
+                  title={
+                    mappingDraft
+                      ? 'Save or discard mapping changes first'
+                      : job.currentStep !== 'MAPPED'
+                        ? 'Resume processing first'
+                        : undefined
+                  }
+                >
+                  {busyAction === 'validate' ? 'Validating…' : 'Continue to validation'}
+                </Button>
+              )}
+            </>
+          )}
+
+          {activeStep === 'validation' && (
+            <>
+              {rowsDirty && (
+                <>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    {dirtyCount} unsaved edit{dirtyCount === 1 ? '' : 's'}
+                  </span>
+                  <Button onClick={onSaveRows} disabled={Boolean(busyAction)}>
+                    {busyAction === 'rows' ? 'Saving…' : 'Save changes'}
+                  </Button>
+                  <Button variant="secondary" onClick={onDiscardRows} disabled={Boolean(busyAction)}>
+                    Discard changes
+                  </Button>
+                </>
+              )}
+              <Button
+                variant="secondary"
+                onClick={onRevalidate}
+                disabled={Boolean(busyAction) || rowsDirty || isTerminal}
+              >
+                {busyAction === 'revalidate' ? 'Validating…' : 'Re-validate'}
+              </Button>
+              <Button
+                onClick={onContinueExport}
+                disabled={!canExport || Boolean(busyAction) || rowsDirty}
+              >
+                Continue to export
+              </Button>
+            </>
+          )}
+
+          {!isTerminal && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={Boolean(busyAction)}
+              className="ml-1 cursor-pointer text-xs text-danger-ink underline-offset-2 hover:underline disabled:opacity-50"
+            >
+              Cancel job
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MappingPanel({ parsedTable, mapping, templateFields, onMappingChange }) {
+  const [filter, setFilter] = useState('');
   const sourceColumns = parsedTable?.columns ?? [];
   const firstParsedRow = parsedTable?.rows?.[0] ?? {};
-  const firstMappedRow = mappedRows?.rows?.[0] ?? {};
-
-  const reverseMapping = useMemo(() => {
-    const rev = {};
-    for (const [source, target] of Object.entries(mapping)) {
-      if (target) rev[target] = source;
-    }
-    return rev;
-  }, [mapping]);
 
   if (!sourceColumns.length) {
     return <p className="text-sm text-muted">No source columns to map.</p>;
   }
 
+  const mappedCount = sourceColumns.filter((c) => mapping[c]).length;
+  const mappedTargets = new Set(Object.values(mapping).filter(Boolean));
+  const unmappedFields = templateFields.filter((f) => !mappedTargets.has(f.fieldName));
+  const visible = filter
+    ? sourceColumns.filter((c) => c.toLowerCase().includes(filter.toLowerCase()))
+    : sourceColumns;
+
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-      <div className="min-w-0 rounded-md border border-line p-3">
-        <h3 className="mb-3 text-sm font-medium text-muted">Source columns</h3>
-        <div className="space-y-3">
-          {sourceColumns.map((col) => (
-            <div key={col} className="space-y-1">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="w-1/3 truncate font-mono text-xs" title={col}>
-                  {col}
-                </span>
-                <select
-                  className={`${inputClass} flex-1`}
-                  value={mapping[col] ?? ''}
-                  onChange={(e) => onMappingChange(col, e.target.value || null)}
-                >
-                  <option value="">(unmapped)</option>
-                  {templateFields.map((f) => (
-                    <option key={f.templateFieldsId} value={f.fieldName}>
-                      {f.fieldName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {firstParsedRow[col] != null && firstParsedRow[col] !== '' && (
-                <p className="truncate pl-1 text-xs text-muted" title={String(firstParsedRow[col])}>
-                  Preview: {String(firstParsedRow[col])}
-                </p>
-              )}
-            </div>
+    <div className="max-h-[55vh] overflow-y-auto rounded-md border border-line">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-line bg-white px-3 py-2">
+        <h3 className="text-sm font-medium text-muted">Source columns</h3>
+        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-muted">
+          {mappedCount} of {sourceColumns.length} mapped
+        </span>
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter columns…"
+          aria-label="Filter columns"
+          className={`${inputClass} ml-auto w-44`}
+        />
+      </div>
+      {unmappedFields.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1 border-b border-line bg-sidebar/50 px-3 py-1.5 text-xs">
+          <span className="text-muted">Unmapped template fields:</span>
+          {unmappedFields.map((f) => (
+            <span key={f.templateFieldsId} className="rounded-full bg-neutral-100 px-2 py-0.5 text-muted">
+              {f.fieldName}
+            </span>
           ))}
         </div>
-      </div>
-
-      <div className="min-w-0 rounded-md border border-line p-3">
-        <h3 className="mb-3 text-sm font-medium text-muted">Template fields</h3>
-        <div className="space-y-3">
-          {templateFields.map((field) => {
-            const sourceCol = reverseMapping[field.fieldName];
-            const mapped = Boolean(sourceCol);
-            return (
-              <div key={field.templateFieldsId} className="space-y-1">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="font-medium">{field.fieldName}</span>
-                  <span
-                    className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                      mapped ? 'bg-success-bg text-success-ink' : 'bg-neutral-100 text-muted'
-                    }`}
-                  >
-                    {mapped ? 'Mapped' : 'Unmapped'}
-                  </span>
-                </div>
-                <p className="text-xs text-muted">
-                  {mapped ? (
-                    <>
-                      Mapped from <span className="font-mono">{sourceCol}</span>
-                    </>
-                  ) : (
-                    'Not mapped'
-                  )}
-                </p>
-                {mapped && firstMappedRow[field.fieldName] != null && firstMappedRow[field.fieldName] !== '' && (
-                  <p
-                    className="truncate text-xs text-muted"
-                    title={String(firstMappedRow[field.fieldName])}
-                  >
-                    Preview: {String(firstMappedRow[field.fieldName])}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      )}
+      <ul className="divide-y divide-line/60">
+        {visible.map((col) => {
+          const preview = firstParsedRow[col];
+          return (
+            <li
+              key={col}
+              className="grid grid-cols-[minmax(0,1fr)_auto_minmax(11rem,14rem)_minmax(0,1.2fr)] items-center gap-3 px-3 py-1.5"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  aria-hidden
+                  className={`size-2 shrink-0 rounded-full ${
+                    mapping[col] ? 'bg-success-ink' : 'bg-neutral-300'
+                  }`}
+                />
+                <span className="truncate font-mono text-xs" title={col}>
+                  {col}
+                </span>
+              </span>
+              <span aria-hidden className="text-muted">→</span>
+              <select
+                className={inputClass}
+                value={mapping[col] ?? ''}
+                aria-label={`Map ${col}`}
+                onChange={(e) => onMappingChange(col, e.target.value || null)}
+              >
+                <option value="">(unmapped)</option>
+                {templateFields.map((f) => (
+                  <option key={f.templateFieldsId} value={f.fieldName}>
+                    {f.fieldName}
+                  </option>
+                ))}
+              </select>
+              <span
+                className="hidden min-w-0 truncate text-xs text-muted md:inline"
+                title={preview != null ? String(preview) : undefined}
+              >
+                {preview != null && preview !== '' ? String(preview) : ''}
+              </span>
+            </li>
+          );
+        })}
+        {visible.length === 0 && (
+          <li className="px-3 py-3 text-sm text-muted">No columns match "{filter}".</li>
+        )}
+      </ul>
     </div>
   );
 }
@@ -224,37 +350,83 @@ function pageForRow(row, pageSize) {
   return Math.floor((row - 1) / pageSize);
 }
 
+// Compact single-line error marker: the value keeps its row at normal height;
+// the full message lives in the tooltip and the ErrorInspector strip above the
+// table, so it stays readable even while the cell is being edited.
 function ValidationErrorCell({ err, value }) {
   const displayValue = value === '' || value == null ? '(empty)' : String(value);
   return (
-    <div
-      className="rounded border border-danger-ink bg-danger-bg px-1.5 py-1"
-      title={err.errorMessage}
+    <span
+      className="inline-flex max-w-full items-center gap-1 rounded bg-danger-bg px-1 font-mono text-xs text-danger-ink"
+      title={`Fix: ${err.errorMessage}${
+        err.ruleType ? ` · Rule: ${validationErrorRuleLabel(err.ruleType)}` : ''
+      }`}
     >
-      <div className="font-mono text-xs">{displayValue}</div>
-      <div className="mt-1 text-xs text-danger-ink">Fix: {err.errorMessage}</div>
-      {err.ruleType && (
-        <div className="text-xs text-muted">
-          Rule: {validationErrorRuleLabel(err.ruleType)}
-        </div>
+      <span aria-hidden className="text-[10px]">⚠</span>
+      <span className="truncate underline decoration-danger-ink/70 decoration-wavy">
+        {displayValue}
+      </span>
+    </span>
+  );
+}
+
+// Fixed-height one-liner keeping the active error's message visible while the
+// cell editor is open (the compact cells only carry a tooltip).
+function ErrorInspector({ activeErr, pageFirstErr }) {
+  const err = activeErr ?? pageFirstErr;
+  return (
+    <div className="mb-2 flex min-h-7 items-center gap-2 overflow-hidden rounded border border-danger-ink/30 bg-danger-bg/60 px-2 py-1 text-xs">
+      {err ? (
+        <>
+          <span className="shrink-0 font-medium text-danger-ink">
+            Row {err.row} · {err.fieldName}
+          </span>
+          <span className="truncate text-danger-ink" title={err.errorMessage}>
+            Fix: {err.errorMessage}
+          </span>
+          {err.ruleType && (
+            <span className="shrink-0 text-muted">
+              Rule: {validationErrorRuleLabel(err.ruleType)}
+            </span>
+          )}
+        </>
+      ) : (
+        <span className="text-muted">No errors on this page — use Next error.</span>
       )}
     </div>
   );
 }
 
 function EditableCell({ value, err, dirty, editing, onStartEdit, onCommit, onCancel }) {
+  // Keyboard paths mark the commit handled so the fallback onBlur (fired by
+  // the focus move that follows) can't commit a second time.
+  const handledRef = useRef(false);
+  useEffect(() => {
+    if (editing) handledRef.current = false;
+  }, [editing]);
+
   if (editing) {
     return (
       <input
         autoFocus
         defaultValue={value ?? ''}
         className={`${inputClass} w-full min-w-28`}
-        onBlur={(e) => onCommit(e.target.value)}
+        onBlur={(e) => {
+          if (handledRef.current) return;
+          onCommit(e.target.value, null);
+        }}
         onKeyDown={(e) => {
-          // Commit lives solely in onBlur so Enter can't double-commit;
-          // Escape unmounts the input, so no blur fires after it.
-          if (e.key === 'Enter') e.currentTarget.blur();
-          if (e.key === 'Escape') onCancel();
+          if (e.key === 'Enter') {
+            handledRef.current = true;
+            onCommit(e.currentTarget.value, 'nextError');
+          } else if (e.key === 'Tab') {
+            e.preventDefault();
+            handledRef.current = true;
+            onCommit(e.currentTarget.value, e.shiftKey ? 'left' : 'right');
+          } else if (e.key === 'Escape') {
+            handledRef.current = true;
+            onCancel();
+          }
         }}
       />
     );
@@ -266,7 +438,7 @@ function EditableCell({ value, err, dirty, editing, onStartEdit, onCommit, onCan
       title="Click to edit"
       onClick={onStartEdit}
       onKeyDown={(e) => e.key === 'Enter' && onStartEdit()}
-      className={`min-h-5 cursor-text rounded ${dirty ? 'bg-pill/60 px-1 outline outline-1 outline-accent' : ''}`}
+      className={`min-h-5 min-w-28 cursor-text rounded ${dirty ? 'bg-pill/60 px-1 outline outline-1 outline-accent' : ''}`}
     >
       {err ? (
         <ValidationErrorCell err={err} value={value} />
@@ -290,6 +462,18 @@ function ValidatedDataTable({
   onEditCell,
 }) {
   const [editingCell, setEditingCell] = useState(null);
+  const [wrapHint, setWrapHint] = useState(false);
+
+  // Errored cells in document order (row asc, then column order) for the
+  // Enter-to-next-error traversal.
+  const errorCells = useMemo(() => {
+    const columns = mappedRows?.columns ?? [];
+    const colIdx = (c) => columns.indexOf(c);
+    return (validationResults || [])
+      .filter((r) => r.errorMessage)
+      .sort((a, b) => a.row - b.row || colIdx(a.fieldName) - colIdx(b.fieldName))
+      .map((r) => ({ rowIdx: r.row - 1, col: r.fieldName }));
+  }, [validationResults, mappedRows]);
 
   if (!mappedRows?.columns?.length) {
     return <p className="text-sm text-muted">No mapped data.</p>;
@@ -306,12 +490,59 @@ function ValidatedDataTable({
   const errorRows = getSortedErrorRows(validationResults);
   const pageEndRow = end;
 
+  const changePage = (nextPage) => {
+    setWrapHint(false);
+    onPageChange(nextPage);
+  };
+
   const jumpToNextError = () => {
-    const next = errorRows.find((row) => row > pageEndRow) ?? errorRows[0];
-    if (next != null) {
-      onPageChange(pageForRow(next, pageSize));
+    const next = errorRows.find((row) => row > pageEndRow);
+    const target = next ?? errorRows[0];
+    if (target == null) return;
+    setWrapHint(next == null);
+    onPageChange(pageForRow(target, pageSize));
+  };
+
+  // Commit the edited value, then move the editor: Enter → next errored cell
+  // (wrapping, jumping pages), Tab/Shift+Tab → adjacent column, blur → close.
+  const commitAndMove = (from, value, dir) => {
+    onEditCell(from.rowIdx, from.col, value);
+    let next = null;
+    if (dir === 'nextError' && errorCells.length) {
+      const columns = mappedRows.columns;
+      const colIdx = (c) => columns.indexOf(c);
+      const i = errorCells.findIndex(
+        (c) => c.rowIdx > from.rowIdx || (c.rowIdx === from.rowIdx && colIdx(c.col) > colIdx(from.col))
+      );
+      next = errorCells[i === -1 ? 0 : i];
+      if (next.rowIdx === from.rowIdx && next.col === from.col) next = null; // lone error: close
+    } else if (dir === 'right' || dir === 'left') {
+      const columns = mappedRows.columns;
+      const j = columns.indexOf(from.col) + (dir === 'right' ? 1 : -1);
+      if (j >= 0 && j < columns.length) next = { rowIdx: from.rowIdx, col: columns[j] };
+    }
+    if (next) {
+      const targetPage = pageForRow(next.rowIdx + 1, pageSize);
+      if (targetPage !== safePage) changePage(targetPage);
+      setEditingCell(next);
+    } else {
+      setEditingCell(null);
     }
   };
+
+  const activeErr = editingCell
+    ? errorMap.get(`${editingCell.rowIdx + 1}-${editingCell.col}`)
+    : null;
+  let pageFirstErr = null;
+  for (let rowNum = start + 1; rowNum <= end && !pageFirstErr; rowNum += 1) {
+    for (const col of mappedRows.columns) {
+      const found = errorMap.get(`${rowNum}-${col}`);
+      if (found) {
+        pageFirstErr = found;
+        break;
+      }
+    }
+  }
 
   return (
     <div>
@@ -321,7 +552,10 @@ function ValidatedDataTable({
           <select
             className={`${inputClass} w-20`}
             value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            onChange={(e) => {
+              setWrapHint(false);
+              onPageSizeChange(Number(e.target.value));
+            }}
           >
             {PAGE_SIZE_OPTIONS.map((size) => (
               <option key={size} value={size}>
@@ -333,14 +567,14 @@ function ValidatedDataTable({
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
-            onClick={() => onPageChange(Math.max(0, safePage - 1))}
+            onClick={() => changePage(Math.max(0, safePage - 1))}
             disabled={safePage === 0}
           >
             Previous
           </Button>
           <Button
             variant="secondary"
-            onClick={() => onPageChange(Math.min(totalPages - 1, safePage + 1))}
+            onClick={() => changePage(Math.min(totalPages - 1, safePage + 1))}
             disabled={safePage >= totalPages - 1}
           >
             Next
@@ -357,9 +591,17 @@ function ValidatedDataTable({
             Next error
           </Button>
         )}
+        {wrapHint && (
+          <span aria-live="polite" className="text-xs text-muted">
+            Wrapped to first error
+          </span>
+        )}
       </div>
 
+      {errorRows.length > 0 && <ErrorInspector activeErr={activeErr} pageFirstErr={pageFirstErr} />}
+
       <DataTable
+        maxHeight="min(55vh, 640px)"
         columns={[
           {
             key: '_row',
@@ -381,10 +623,7 @@ function ValidatedDataTable({
                   dirty={draftValue !== undefined}
                   editing={editing}
                   onStartEdit={() => setEditingCell({ rowIdx, col })}
-                  onCommit={(v) => {
-                    setEditingCell(null);
-                    onEditCell(rowIdx, col, v);
-                  }}
+                  onCommit={(v, dir) => commitAndMove({ rowIdx, col }, v, dir)}
                   onCancel={() => setEditingCell(null)}
                 />
               );
@@ -397,20 +636,7 @@ function ValidatedDataTable({
   );
 }
 
-function MappingStep({
-  job,
-  mapping,
-  mappingDraft,
-  templateFields,
-  busyAction,
-  onMappingChange,
-  onSaveMapping,
-  onDiscardMapping,
-  onRemap,
-  onResume,
-  onContinue,
-}) {
-  const hasDraft = Boolean(mappingDraft);
+function MappingStep({ job, mapping, templateFields, busyAction, onMappingChange, onResume }) {
   const needsProcessing = job.currentStep === 'UPLOADED' || job.currentStep === 'PARSED';
   return (
     <Card>
@@ -435,44 +661,16 @@ function MappingStep({
       )}
 
       {job.parsedTable && (
-        <div className="mb-5">
-          <MappingPanel
-            parsedTable={job.parsedTable}
-            mappedRows={job.mappedRows}
-            mapping={mapping}
-            templateFields={templateFields}
-            onMappingChange={onMappingChange}
-          />
-        </div>
+        <MappingPanel
+          parsedTable={job.parsedTable}
+          mapping={mapping}
+          templateFields={templateFields}
+          onMappingChange={onMappingChange}
+        />
       )}
 
       {!job.parsedTable && job.mapping && (
-        <p className="mb-4 text-sm text-muted">Parsed columns are not available for this job.</p>
-      )}
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        {hasDraft && (
-          <>
-            <Button onClick={onSaveMapping} disabled={Boolean(busyAction)}>
-              {busyAction === 'mapping' ? 'Saving…' : 'Save mapping'}
-            </Button>
-            <Button variant="secondary" onClick={onDiscardMapping}>
-              Discard changes
-            </Button>
-          </>
-        )}
-        <Button variant="secondary" onClick={onRemap} disabled={Boolean(busyAction)}>
-          {busyAction === 'remap' ? 'Remapping…' : 'Re-map automatically'}
-        </Button>
-        <Button
-          onClick={onContinue}
-          disabled={Boolean(busyAction) || hasDraft || job.currentStep !== 'MAPPED'}
-        >
-          {busyAction === 'validate' ? 'Validating…' : 'Continue to validation'}
-        </Button>
-      </div>
-      {hasDraft && (
-        <p className="mt-2 text-xs text-muted">Save or discard mapping changes before continuing.</p>
+        <p className="text-sm text-muted">Parsed columns are not available for this job.</p>
       )}
     </Card>
   );
@@ -487,14 +685,10 @@ function ValidationStep({
   onChatOpenChange,
   onChatSend,
   busyAction,
-  onRevalidate,
-  onContinue,
-  canExport,
+  onRunValidation,
   rowEdits,
   onEditCell,
   rowsDirty,
-  onSaveRows,
-  onDiscardRows,
 }) {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
@@ -504,18 +698,29 @@ function ValidationStep({
     setPage(0);
   };
 
+  // Keep the page in range when the page size or the row set changes.
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil((job.mappedRows?.rows?.length ?? 0) / pageSize));
+    setPage((p) => Math.min(p, totalPages - 1));
+  }, [pageSize, job.mappedRows]);
+
   return (
     <>
       <Card>
         <h2 className="mb-1 text-lg font-normal">Validation</h2>
         <p className="mb-4 text-sm text-muted">
-          Rows are checked against your template rules. Fix issues with the AI assistant, then
-          re-validate.
+          Rows are checked against your template rules. Edit cells directly or fix issues with the
+          AI assistant, then re-validate.
         </p>
 
         {!hasValidationResults ? (
-          <Callout variant="error" title="Validation not run yet">
-            Go back to mapping and click Continue to validation.
+          <Callout variant="info" title="Validation not run yet">
+            Run validation to check the mapped rows against your template rules.
+            <div className="mt-2">
+              <Button onClick={onRunValidation} disabled={Boolean(busyAction)}>
+                {busyAction === 'validate' ? 'Validating…' : 'Run validation'}
+              </Button>
+            </div>
           </Callout>
         ) : (
           <>
@@ -552,31 +757,6 @@ function ValidationStep({
           </>
         )}
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {rowsDirty && (
-            <>
-              <Button onClick={onSaveRows} disabled={Boolean(busyAction)}>
-                {busyAction === 'rows' ? 'Saving…' : 'Save changes'}
-              </Button>
-              <Button variant="secondary" onClick={onDiscardRows} disabled={Boolean(busyAction)}>
-                Discard changes
-              </Button>
-            </>
-          )}
-          <Button
-            variant="secondary"
-            onClick={onRevalidate}
-            disabled={Boolean(busyAction) || rowsDirty}
-          >
-            {busyAction === 'revalidate' ? 'Validating…' : 'Re-validate'}
-          </Button>
-          <Button onClick={onContinue} disabled={!canExport || Boolean(busyAction) || rowsDirty}>
-            Continue to export
-          </Button>
-        </div>
-        {rowsDirty && (
-          <p className="mt-2 text-xs text-muted">Save or discard row changes before continuing.</p>
-        )}
       </Card>
 
       <ValidationChatDrawer
@@ -584,7 +764,10 @@ function ValidationStep({
         onOpenChange={onChatOpenChange}
         messages={chatMessages}
         onSend={onChatSend}
-        busy={busyAction === 'chat-edit' || rowsDirty}
+        busy={busyAction === 'chat-edit'}
+        disabledNote={
+          rowsDirty ? 'Save or discard your table edits to use the assistant.' : ''
+        }
         showQuickPrompts={validationErrors.length > 0}
       />
     </>
@@ -617,8 +800,50 @@ function ExportStep({
 
       {exportInfo && Object.keys(exportInfo).length > 0 && (
         <div className="mb-4">
-          <Callout variant="success" title="Exported">
-            <code className="text-xs">{JSON.stringify(exportInfo)}</code>
+          <Callout variant="success" title="Export complete">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-0.5 text-sm">
+              <dt className="text-muted">Type</dt>
+              <dd>{exportInfo.type === 'database' ? 'Database' : 'File download'}</dd>
+              {exportInfo.fileName && (
+                <>
+                  <dt className="text-muted">File</dt>
+                  <dd className="truncate font-mono text-xs" title={exportInfo.fileName}>
+                    {exportInfo.fileName}
+                  </dd>
+                </>
+              )}
+              {exportInfo.format && (
+                <>
+                  <dt className="text-muted">Format</dt>
+                  <dd>{exportInfo.format}</dd>
+                </>
+              )}
+              {exportInfo.target && (
+                <>
+                  <dt className="text-muted">Target</dt>
+                  <dd className="truncate font-mono text-xs" title={exportInfo.target}>
+                    {exportInfo.target}
+                  </dd>
+                </>
+              )}
+              {exportInfo.tableName && (
+                <>
+                  <dt className="text-muted">Table</dt>
+                  <dd>{exportInfo.tableName}</dd>
+                </>
+              )}
+              {exportInfo.rowCount != null && (
+                <>
+                  <dt className="text-muted">Rows</dt>
+                  <dd>{exportInfo.rowCount}</dd>
+                </>
+              )}
+            </dl>
+            <div className="mt-3">
+              <Link to="/ingestion" className="text-sm font-medium text-accent hover:underline">
+                Process another file →
+              </Link>
+            </div>
           </Callout>
         </div>
       )}
@@ -817,58 +1042,76 @@ export default function IngestionJobPage() {
     }
   };
 
+  const handleRemap = () => {
+    if (
+      mappingDraft &&
+      !window.confirm('Re-mapping will discard your unsaved mapping changes. Continue?')
+    ) {
+      return;
+    }
+    runAction('remap', () => remapJob(id));
+  };
+
+  const handleCancel = () => {
+    if (!window.confirm('Cancel this job? This cannot be undone.')) return;
+    runAction('cancel', () => cancelJob(id));
+  };
+
   const mapping = mappingDraft ?? job?.mapping ?? {};
   const validationErrors = (job?.validationResults || []).filter((r) => r.errorMessage);
   const isTerminal = job?.status === 'CANCELLED';
   const canExport = job?.currentStep === 'VALIDATED' || job?.currentStep === 'EXPORTED';
+  const dirtyCount = rowEdits ? Object.keys(rowEdits).length : 0;
 
-  if (!job) return error ? <ErrorBanner message={error} /> : <Spinner label="Loading job…" />;
+  if (!job) {
+    return error ? (
+      <ErrorBanner message={error} />
+    ) : (
+      <div>
+        <PageHeader
+          crumbs={[{ label: 'Upload & Process', to: '/ingestion' }, { label: `Job #${id}` }]}
+          title={`Job #${id}`}
+        />
+        <Spinner label="Loading job…" />
+        <Card>
+          <div className="h-40 animate-pulse rounded bg-neutral-100" />
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>
       <PageHeader
         crumbs={[{ label: 'Upload & Process', to: '/ingestion' }, { label: `Job #${id}` }]}
-        title={`Job #${id} — ${job.fileName || ''}`}
-        subtitle="Mapping → validation → export"
-        actions={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => runAction('resume', () => resumeJob(id, 'MAPPED'))}
-              disabled={Boolean(busyAction) || isTerminal || activeStep !== 'mapping'}
-            >
-              {busyAction === 'resume' ? 'Resuming…' : 'Resume parse/map'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => runAction('remap', () => remapJob(id))}
-              disabled={Boolean(busyAction) || isTerminal || activeStep !== 'mapping'}
-            >
-              {busyAction === 'remap' ? 'Remapping…' : 'Re-map'}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => runAction('revalidate', () => revalidateJob(id))}
-              disabled={Boolean(busyAction) || isTerminal || activeStep !== 'validation' || rowsDirty}
-            >
-              {busyAction === 'revalidate' ? 'Validating…' : 'Re-validate'}
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => runAction('cancel', () => cancelJob(id))}
-              disabled={Boolean(busyAction) || isTerminal}
-            >
-              Cancel
-            </Button>
-          </>
-        }
+        title={`Job #${id}`}
+        subtitle={job.fileName || ''}
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
-      <div className="mb-5 flex flex-wrap items-center gap-4">
-        <WizardStepIndicator activeStep={activeStep} job={job} onSelect={setStep} />
-        <Badge status={job.status} />
-      </div>
+      <WizardToolbar
+        job={job}
+        activeStep={activeStep}
+        onSelectStep={setStep}
+        busyAction={busyAction}
+        isTerminal={isTerminal}
+        mappingDraft={mappingDraft}
+        onSaveMapping={() => runAction('mapping', () => updateMapping(id, mappingDraft))}
+        onDiscardMapping={() => setMappingDraft(null)}
+        onRemap={handleRemap}
+        onContinueValidation={async () => {
+          const updated = await runAction('validate', () => resumeJob(id, 'VALIDATED'));
+          if (updated) setStep('validation', updated);
+        }}
+        rowsDirty={rowsDirty}
+        dirtyCount={dirtyCount}
+        onSaveRows={saveRowEdits}
+        onDiscardRows={() => setRowEdits(null)}
+        onRevalidate={() => runAction('revalidate', () => revalidateJob(id))}
+        onContinueExport={() => setStep('export')}
+        canExport={canExport}
+        onCancel={handleCancel}
+      />
 
       {job.errorMessage && (
         <div className="mb-5">
@@ -882,20 +1125,12 @@ export default function IngestionJobPage() {
         <MappingStep
           job={job}
           mapping={mapping}
-          mappingDraft={mappingDraft}
           templateFields={templateFields}
           busyAction={busyAction}
           onMappingChange={(source, target) =>
             setMappingDraft({ ...mapping, [source]: target })
           }
-          onSaveMapping={() => runAction('mapping', () => updateMapping(id, mappingDraft))}
-          onDiscardMapping={() => setMappingDraft(null)}
-          onRemap={() => runAction('remap', () => remapJob(id))}
           onResume={() => runAction('resume', () => resumeJob(id, 'MAPPED'))}
-          onContinue={async () => {
-            const updated = await runAction('validate', () => resumeJob(id, 'VALIDATED'));
-            if (updated) setStep('validation', updated);
-          }}
         />
       )}
 
@@ -947,14 +1182,13 @@ export default function IngestionJobPage() {
             }
           }}
           busyAction={busyAction}
-          onRevalidate={() => runAction('revalidate', () => revalidateJob(id))}
-          onContinue={() => setStep('export')}
-          canExport={canExport}
+          onRunValidation={async () => {
+            const updated = await runAction('validate', () => resumeJob(id, 'VALIDATED'));
+            if (updated) setStep('validation', updated);
+          }}
           rowEdits={rowEdits}
           onEditCell={editRowCell}
           rowsDirty={rowsDirty}
-          onSaveRows={saveRowEdits}
-          onDiscardRows={() => setRowEdits(null)}
         />
       )}
 
@@ -974,6 +1208,9 @@ export default function IngestionJobPage() {
                 downloadFile(exportFilePath(id, exportFormat), `job-${id}.${exportFormat}`),
                 { loading: 'Preparing download…', success: 'File downloaded' }
               );
+              // The server records the export; refresh so the summary shows.
+              // setJob (not applyJob) so local drafts can never be clobbered.
+              getJob(id).then(setJob).catch(() => {});
             } catch {
               // The error toast is already shown.
             } finally {

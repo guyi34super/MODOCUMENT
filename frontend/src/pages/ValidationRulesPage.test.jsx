@@ -59,6 +59,25 @@ describe('ValidationRulesPage rule config UI', () => {
     deleteRule.mockClear();
   });
 
+  it('renders the rule form above the rules table', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Name', ruleType: 'REGEX', configJson: '{"Pattern":"^\\\\d+$"}' },
+    ]);
+    renderPage();
+    await screen.findByText('^\\d+$');
+    const heading = screen.getByRole('heading', { name: 'Add field rules' });
+    const table = screen.getByRole('table');
+    expect(heading.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('collapses Test a row behind a toggle', async () => {
+    renderPage();
+    await screen.findByText('No rules for this template yet.');
+    expect(screen.queryByRole('button', { name: 'Validate row' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Test a sample row…' }));
+    expect(screen.getByRole('button', { name: 'Validate row' })).toBeInTheDocument();
+  });
+
   it('shows Required/Optional and format rule type defaulting to None', async () => {
     await openRuleForm();
     expect(screen.getByLabelText('Required or Optional')).toHaveValue('optional');

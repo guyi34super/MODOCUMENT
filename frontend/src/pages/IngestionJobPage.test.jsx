@@ -9,6 +9,7 @@ import { getAllFields } from '../api/templates';
 import {
   chatEdit,
   getJob,
+  remapJob,
   resumeJob,
   revalidateJob,
   setWizardStep,
@@ -124,6 +125,8 @@ describe('IngestionJobPage wizard', () => {
     updateRows.mockResolvedValue({});
     revalidateJob.mockReset();
     revalidateJob.mockResolvedValue({});
+    remapJob.mockReset();
+    remapJob.mockResolvedValue({});
   });
 
   it('editing a cell marks it dirty and shows Save/Discard', async () => {
@@ -131,17 +134,15 @@ describe('IngestionJobPage wizard', () => {
     renderPage('/ingestion/7?step=validation');
     await screen.findByRole('heading', { name: 'Validation' });
 
-    await userEvent.click(screen.getByText(/Fix: Value is required/));
+    await userEvent.click(screen.getByText('(empty)'));
     const input = screen.getByDisplayValue('');
     await userEvent.type(input, 'Ada{Enter}');
 
+    expect(screen.getByText('1 unsaved edit')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Discard changes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue to export' })).toBeDisabled();
-    // Both the header and the in-step Re-validate are blocked while dirty.
-    screen.getAllByRole('button', { name: 'Re-validate' }).forEach((button) => {
-      expect(button).toBeDisabled();
-    });
+    expect(screen.getByRole('button', { name: 'Re-validate' })).toBeDisabled();
   });
 
   it('save sends edited rows, chains revalidate, and re-checkpoints the wizard step', async () => {
@@ -150,7 +151,7 @@ describe('IngestionJobPage wizard', () => {
     renderPage('/ingestion/7?step=validation');
     await screen.findByRole('heading', { name: 'Validation' });
 
-    await userEvent.click(screen.getByText(/Fix: Value is required/));
+    await userEvent.click(screen.getByText('(empty)'));
     await userEvent.type(screen.getByDisplayValue(''), 'Ada{Enter}');
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
@@ -166,7 +167,7 @@ describe('IngestionJobPage wizard', () => {
     renderPage('/ingestion/7?step=validation');
     await screen.findByRole('heading', { name: 'Validation' });
 
-    await userEvent.click(screen.getByText(/Fix: Value is required/));
+    await userEvent.click(screen.getByText('(empty)'));
     await userEvent.type(screen.getByDisplayValue(''), 'Ada{Enter}');
     expect(screen.getByText('Ada')).toBeInTheDocument();
 
@@ -174,9 +175,7 @@ describe('IngestionJobPage wizard', () => {
 
     expect(screen.queryByText('Ada')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
-    screen.getAllByRole('button', { name: 'Re-validate' }).forEach((button) => {
-      expect(button).toBeEnabled();
-    });
+    expect(screen.getByRole('button', { name: 'Re-validate' })).toBeEnabled();
     expect(updateRows).not.toHaveBeenCalled();
   });
 
@@ -227,14 +226,14 @@ describe('IngestionJobPage wizard', () => {
     expect(resumeJob).toHaveBeenCalledWith('7', 'MAPPED');
   });
 
-  it('shows mapping step with source columns and template fields panel', async () => {
+  it('shows mapping step with the mapped-count header and per-column selects', async () => {
     renderPage();
     await screen.findByText('Column mapping');
     expect(screen.getByText('Source columns')).toBeInTheDocument();
-    expect(screen.getByText('Template fields')).toBeInTheDocument();
+    expect(screen.getByText('1 of 1 mapped')).toBeInTheDocument();
     expect(screen.getAllByText('first_name').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('FirstName').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/Mapped from/)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Map first_name' })).toHaveValue('FirstName');
+    expect(screen.queryByText(/Unmapped template fields/)).not.toBeInTheDocument();
     expect(screen.queryByText('Source (parsed)')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue to validation' })).toBeInTheDocument();
   });
@@ -298,6 +297,176 @@ describe('IngestionJobPage wizard', () => {
     renderPage('/ingestion/7?step=validation');
     await screen.findByRole('heading', { name: 'Validation' });
     expect(screen.getByRole('button', { name: 'Open AI assistant' })).toBeInTheDocument();
+  });
+
+  it('shows only the active step actions in the toolbar', async () => {
+    getJob.mockResolvedValue(mappedJob);
+    renderPage('/ingestion/7?step=mapping');
+    await screen.findByText('Column mapping');
+    expect(screen.getByRole('button', { name: 'Re-map automatically' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue to validation' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Re-validate' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue to export' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel job' })).toBeInTheDocument();
+  });
+
+  it('shows only the cancel link on the export step toolbar', async () => {
+    getJob.mockResolvedValue(validatedJob);
+    renderPage('/ingestion/7?step=export');
+    await screen.findByRole('heading', { name: 'Export' });
+    expect(screen.queryByRole('button', { name: 'Re-map automatically' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Re-validate' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue to export' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel job' })).toBeInTheDocument();
+  });
+
+  it('offers Go to validation when returning to mapping from a later step', async () => {
+    getJob.mockResolvedValue(validatedJob);
+    renderPage('/ingestion/7?step=mapping');
+    await screen.findByText('Column mapping');
+
+    const goButton = screen.getByRole('button', { name: 'Go to validation' });
+    expect(goButton).toBeEnabled();
+    await userEvent.click(goButton);
+
+    expect(await screen.findByRole('heading', { name: 'Validation' })).toBeInTheDocument();
+    expect(resumeJob).not.toHaveBeenCalled();
+  });
+
+  it('asks for confirmation before re-mapping over unsaved mapping edits', async () => {
+    getJob.mockResolvedValue(mappedJob);
+    const confirmSpy = vi.spyOn(window, 'confirm');
+    renderPage('/ingestion/7?step=mapping');
+    await screen.findByText('Column mapping');
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Map first_name' }), '');
+    expect(screen.getByText('Unsaved mapping')).toBeInTheDocument();
+
+    confirmSpy.mockReturnValueOnce(false);
+    await userEvent.click(screen.getByRole('button', { name: 'Re-map automatically' }));
+    expect(remapJob).not.toHaveBeenCalled();
+
+    confirmSpy.mockReturnValueOnce(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Re-map automatically' }));
+    expect(remapJob).toHaveBeenCalledWith('7');
+  });
+
+  it('Enter commits and advances to the next errored cell', async () => {
+    getJob.mockResolvedValue({
+      ...mappedJob,
+      currentStep: 'VALIDATED',
+      mappedRows: {
+        columns: ['FirstName'],
+        rows: [{ FirstName: '' }, { FirstName: 'Bob' }, { FirstName: '' }],
+      },
+      validationResults: [
+        { row: 1, fieldName: 'FirstName', rawValue: '', errorMessage: 'Value is required.', ruleType: 'REQUIRED' },
+        { row: 3, fieldName: 'FirstName', rawValue: '', errorMessage: 'Value is required.', ruleType: 'REQUIRED' },
+      ],
+    });
+    revalidateJob.mockResolvedValueOnce(validatedJob);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getAllByText('(empty)')[0]);
+    await userEvent.type(screen.getByDisplayValue(''), 'Ada{Enter}');
+
+    // The editor moved to the second errored cell (row 3, still empty).
+    await userEvent.type(screen.getByDisplayValue(''), 'Eve{Enter}');
+    // Wrapped back to the first errored cell (now holding the draft) — close it.
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.getByText('2 unsaved edits')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(updateRows).toHaveBeenCalledWith('7', [
+      { FirstName: 'Ada' },
+      { FirstName: 'Bob' },
+      { FirstName: 'Eve' },
+    ]);
+  });
+
+  it('Escape cancels the editor without dirtying anything', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByText('(empty)'));
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Re-validate' })).toBeEnabled();
+  });
+
+  it('offers a Run validation button after a chat edit clears validation', async () => {
+    getJob.mockResolvedValue(validatedJob);
+    chatEdit.mockResolvedValueOnce({ ...mappedJob, currentStep: 'MAPPED', validationResults: null });
+    resumeJob.mockResolvedValueOnce(validatedJob);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open AI assistant' }));
+    const dialog = screen.getByRole('dialog', { name: 'AI assistant' });
+    await userEvent.type(within(dialog).getByPlaceholderText(/fill empty FirstName/i), 'fix it');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Send' }));
+
+    // The user stays on validation; the not-run state now offers a real CTA.
+    await userEvent.click(await screen.findByRole('button', { name: 'Run validation' }));
+    expect(resumeJob).toHaveBeenCalledWith('7', 'VALIDATED');
+  });
+
+  it('shows a friendly export summary instead of raw JSON', async () => {
+    getJob.mockResolvedValue({
+      ...validatedJob,
+      currentStep: 'EXPORTED',
+      exportInfo: { type: 'file', format: 'CSV', fileName: 'job-7.csv', rowCount: 25 },
+    });
+    renderPage('/ingestion/7?step=export');
+    const summaryTitle = await screen.findByText('Export complete');
+    const summary = within(summaryTitle.parentElement);
+
+    expect(summary.getByText('job-7.csv')).toBeInTheDocument();
+    expect(summary.getByText('CSV')).toBeInTheDocument();
+    expect(summary.getByText('25')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Process another file/ })).toHaveAttribute(
+      'href',
+      '/ingestion'
+    );
+    expect(screen.queryByText(/\{"type"/)).not.toBeInTheDocument();
+  });
+
+  it('explains why the chat assistant is blocked while edits are unsaved', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByText('(empty)'));
+    await userEvent.type(screen.getByDisplayValue(''), 'Ada{Enter}');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open AI assistant' }));
+    expect(
+      screen.getByText('Save or discard your table edits to use the assistant.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+  });
+
+  it('announces when Next error wraps back to the first error', async () => {
+    getJob.mockResolvedValue({
+      ...mappedJob,
+      currentStep: 'VALIDATED',
+      mappedRows: { columns: ['FirstName'], rows: makeRows(25) },
+      validationResults: [
+        { row: 1, fieldName: 'FirstName', rawValue: '', errorMessage: 'Value is required.', ruleType: 'REQUIRED' },
+      ],
+    });
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getByText('Rows 11–20 of 25')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next error' }));
+    expect(screen.getByText('Wrapped to first error')).toBeInTheDocument();
+    expect(screen.getByText('Rows 1–10 of 25')).toBeInTheDocument();
   });
 
   it('export step disables download until validated', async () => {

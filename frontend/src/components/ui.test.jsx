@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Badge, Button, Callout, ErrorBanner, StatCard } from './ui';
+import { Badge, Button, Callout, Card, ErrorBanner, StatCard } from './ui';
 
 describe('Callout', () => {
   it('renders title and children', () => {
@@ -72,6 +72,20 @@ describe('Button', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('supports a small size variant', () => {
+    render(<Button size="sm">Tiny</Button>);
+    expect(screen.getByRole('button', { name: 'Tiny' }).className).toContain('text-xs');
+  });
+});
+
+describe('Card', () => {
+  it('uses normal padding by default and compact when requested', () => {
+    const { container: normal } = render(<Card>content</Card>);
+    const { container: compact } = render(<Card padding="compact">content</Card>);
+    expect(normal.firstChild.className).toContain('p-5');
+    expect(compact.firstChild.className).toContain('p-3');
   });
 });
 
