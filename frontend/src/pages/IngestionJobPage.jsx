@@ -858,6 +858,8 @@ function ExportStep({
           <option value="csv">CSV</option>
           <option value="json">JSON</option>
           <option value="xlsx">XLSX</option>
+          <option value="tsv">TSV</option>
+          <option value="xml">XML</option>
         </select>
         <Button onClick={onDownload} disabled={!canExport || Boolean(busyAction)}>
           {busyAction === 'download' ? 'Preparing…' : 'Download file'}

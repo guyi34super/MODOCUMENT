@@ -47,7 +47,8 @@ public class RegexRule implements ValidationRuleValidator {
         // C#'s Regex.IsMatch is an unanchored search; the seeded patterns carry
         // their own ^...$ anchors, so find() reproduces the same semantics.
         if (!pattern.matcher(guarded).find()) {
-            return RegexValidationErrorMessages.getRegexValidationErrorMessage(row, fieldName, rawValue);
+            return RegexValidationErrorMessages.getRegexValidationErrorMessage(
+                    row, fieldName, rawValue, cfg.pattern());
         }
         return null;
     }

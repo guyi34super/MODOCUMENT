@@ -30,7 +30,8 @@ class ExpiryDateRuleTest {
         ValidationError error = rule.validate(1, "SINExpiryDate", "2020-01-01", "{}");
 
         assertThat(error).isNotNull();
-        assertThat(error.errorMessage()).isEqualTo("Expiry date must be in the future.");
+        assertThat(error.errorMessage())
+                .isEqualTo("Expiry date must be in the future, e.g. 2030-01-01.");
     }
 
     @Test

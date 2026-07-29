@@ -49,6 +49,16 @@ class RegexRuleTest {
     }
 
     @Test
+    void appendsExampleForKnownPresetPattern() {
+        ValidationError error = rule.validate(2, "SomeUnknownField", "not-an-email",
+                "{\"Pattern\":\"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,}$\"}");
+
+        assertThat(error).isNotNull();
+        assertThat(error.errorMessage())
+                .isEqualTo("Validation error for SomeUnknownField. e.g. jane@acme.com");
+    }
+
+    @Test
     void reportsInvalidConfiguration() {
         ValidationError error = rule.validate(1, "SIN", "123", "not-json");
 

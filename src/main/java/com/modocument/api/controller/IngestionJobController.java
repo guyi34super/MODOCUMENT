@@ -11,6 +11,7 @@ import com.modocument.application.usecase.IngestionJobUseCase;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
+import com.modocument.infrastructure.file.SupportedDocumentTypes;
 import com.modocument.infrastructure.file.UploadStorage;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -39,13 +40,16 @@ public class IngestionJobController {
     private final IngestionJobUseCase useCase;
     private final ChatEditTableUseCase chatEdit;
     private final UploadStorage uploadStorage;
+    private final SupportedDocumentTypes supportedTypes;
 
     public IngestionJobController(IngestionJobUseCase useCase,
                                   ChatEditTableUseCase chatEdit,
-                                  UploadStorage uploadStorage) {
+                                  UploadStorage uploadStorage,
+                                  SupportedDocumentTypes supportedTypes) {
         this.useCase = useCase;
         this.chatEdit = chatEdit;
         this.uploadStorage = uploadStorage;
+        this.supportedTypes = supportedTypes;
     }
 
     /** Multipart creation: uploads the file and (by default) runs the pipeline. */
@@ -59,6 +63,10 @@ public class IngestionJobController {
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "No file uploaded."));
         }
+        if (!supportedTypes.isSupported(file.getOriginalFilename())) {
+            return ResponseEntity.badRequest().body(Map.of("error",
+                    "Unsupported file type. Supported types: " + supportedTypes.describeSupported() + "."));
+        }
         String storedName = uploadStorage.store(file);
         return created(create(storedName, templateId, autoRun, parseUntil(runUntil)));
     }
@@ -68,6 +76,10 @@ public class IngestionJobController {
     public ResponseEntity<?> createFromExisting(@RequestBody CreateIngestionJobRequest request) {
         if (request.getFileName() == null || request.getFileName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "fileName is required."));
+        }
+        if (!supportedTypes.isSupported(request.getFileName())) {
+            return ResponseEntity.badRequest().body(Map.of("error",
+                    "Unsupported file type. Supported types: " + supportedTypes.describeSupported() + "."));
         }
         boolean autoRun = request.getAutoRun() == null || request.getAutoRun();
         JobStep until = request.getRunUntil() == null || request.getRunUntil().isBlank()

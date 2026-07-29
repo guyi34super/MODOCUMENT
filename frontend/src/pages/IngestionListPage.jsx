@@ -83,6 +83,7 @@ export default function IngestionListPage() {
               <input
                 type="file"
                 required
+                accept=".csv,.xlsx,.xls,.pdf,.docx,.doc,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.pptx,.html,.md,.webp"
                 className="block w-full text-sm text-muted file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-pill file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-accent"
                 onChange={(e) => setFile(e.target.files[0] || null)}
               />

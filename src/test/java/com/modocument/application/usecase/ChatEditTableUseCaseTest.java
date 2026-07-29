@@ -1,5 +1,7 @@
 package com.modocument.application.usecase;
 
+import com.modocument.application.dto.ChatEditPatchResponse;
+import com.modocument.application.dto.RowPatch;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.IngestionJobRepository;
@@ -7,8 +9,10 @@ import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
+import com.modocument.infrastructure.prompt.ChatEditPatchPrompt;
 import com.modocument.infrastructure.prompt.ChatEditPrompt;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.core.ParameterizedTypeReference;
 
 import java.util.List;
@@ -20,14 +24,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ChatEditTableUseCaseTest {
 
     private final IngestionJobRepository jobs = mock(IngestionJobRepository.class);
     private final AiFilesService ai = mock(AiFilesService.class);
-    private final ChatEditTableUseCase useCase =
-            new ChatEditTableUseCase(jobs, List.of(new ChatEditPrompt()), ai);
+    private final ChatEditTableUseCase useCase = new ChatEditTableUseCase(
+            jobs, List.of(new ChatEditPrompt(), new ChatEditPatchPrompt()), ai);
 
     private IngestionJob jobWithMappedRows() {
         IngestionJob job = new IngestionJob();
@@ -39,6 +44,18 @@ class ChatEditTableUseCaseTest {
         job.setExportInfoJson("{}");
         when(jobs.getById(7)).thenReturn(Optional.of(job));
         when(jobs.save(any(IngestionJob.class))).thenAnswer(inv -> inv.getArgument(0));
+        return job;
+    }
+
+    /** Three rows; rows 1 and 3 are valid, row 2 fails a REQUIRED check. */
+    private IngestionJob jobWithValidationErrors() {
+        IngestionJob job = jobWithMappedRows();
+        job.setMappedRowsJson("{\"columns\":[\"FirstName\"],\"rows\":["
+                + "{\"FirstName\":\"ada\"},{\"FirstName\":\"\"},{\"FirstName\":\"grace\"}]}");
+        job.setValidationResultJson("["
+                + "{\"row\":1,\"fieldName\":\"FirstName\",\"rawValue\":\"ada\",\"errorMessage\":null,\"ruleType\":null},"
+                + "{\"row\":2,\"fieldName\":\"FirstName\",\"rawValue\":\"\",\"errorMessage\":\"Value is required.\",\"ruleType\":\"REQUIRED\"},"
+                + "{\"row\":3,\"fieldName\":\"FirstName\",\"rawValue\":\"grace\",\"errorMessage\":null,\"ruleType\":null}]");
         return job;
     }
 
@@ -84,5 +101,84 @@ class ChatEditTableUseCaseTest {
         assertThatThrownBy(() -> useCase.handle(7, "Do something"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("empty table");
+    }
+
+    @Test
+    void chunkedPathSendsOnlyErrorRowsAndMergesThePatch() {
+        jobWithValidationErrors();
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(new ChatEditPatchResponse(
+                        List.of(new RowPatch(2, Map.of("FirstName", "Ada")))));
+
+        IngestionJob result = useCase.handle(7, "Fix the validation errors");
+
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        assertThat(prompt.getValue()).contains("patch mode");
+        assertThat(prompt.getValue()).contains("Value is required.");
+        assertThat(prompt.getValue()).contains("\"row\":2");
+        // Rows without errors never travel to the model.
+        assertThat(prompt.getValue()).doesNotContain("ada");
+        assertThat(prompt.getValue()).doesNotContain("grace");
+
+        assertThat(result.getMappedRowsJson()).contains("Ada").contains("ada").contains("grace");
+        assertThat(result.getValidationResultJson()).isNull();
+        assertThat(result.getCurrentStep()).isEqualTo(JobStep.MAPPED);
+    }
+
+    @Test
+    void fallsBackToFullTableWhenValidationHasNoErrors() {
+        IngestionJob job = jobWithMappedRows();
+        job.setValidationResultJson("["
+                + "{\"row\":1,\"fieldName\":\"FirstName\",\"rawValue\":\"ada\",\"errorMessage\":null,\"ruleType\":null}]");
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(new TableData(List.of("FirstName"), List.of(Map.of("FirstName", "Ada"))));
+
+        useCase.handle(7, "Capitalize all first names");
+
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        assertThat(prompt.getValue()).contains("return the FULL");
+    }
+
+    @Test
+    void rejectsPatchRowOutOfRange() {
+        IngestionJob job = jobWithValidationErrors();
+        String before = job.getMappedRowsJson();
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(new ChatEditPatchResponse(
+                        List.of(new RowPatch(99, Map.of("FirstName", "Ada")))));
+
+        assertThatThrownBy(() -> useCase.handle(7, "Fix the validation errors"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("outside the table");
+        assertThat(job.getMappedRowsJson()).isEqualTo(before);
+        assertThat(job.getValidationResultJson()).isNotNull();
+    }
+
+    @Test
+    void ignoresUnknownPatchColumns() {
+        jobWithValidationErrors();
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(new ChatEditPatchResponse(List.of(
+                        new RowPatch(2, Map.of("FirstName", "Ada", "Bogus", "x")))));
+
+        IngestionJob result = useCase.handle(7, "Fix the validation errors");
+
+        assertThat(result.getMappedRowsJson()).contains("Ada");
+        assertThat(result.getMappedRowsJson()).doesNotContain("Bogus");
+    }
+
+    @Test
+    void rejectsEmptyPatch() {
+        IngestionJob job = jobWithValidationErrors();
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(new ChatEditPatchResponse(List.of()));
+
+        assertThatThrownBy(() -> useCase.handle(7, "Fix the validation errors"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no row changes");
+        // Failing before persistence keeps the validation checkpoint intact.
+        assertThat(job.getValidationResultJson()).isNotNull();
     }
 }

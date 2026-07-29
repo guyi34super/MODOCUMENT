@@ -21,7 +21,7 @@ class RangeRuleTest {
         ValidationError error = rule.validate(1, "PayRate", "abc", "{\"Min\":0,\"Max\":10}");
 
         assertThat(error).isNotNull();
-        assertThat(error.errorMessage()).isEqualTo("Value is not a number.");
+        assertThat(error.errorMessage()).isEqualTo("Value is not a number, e.g. 5.");
     }
 
     @Test
@@ -29,7 +29,7 @@ class RangeRuleTest {
         ValidationError error = rule.validate(1, "PayRate", "11", "{\"Min\":0,\"Max\":10}");
 
         assertThat(error).isNotNull();
-        assertThat(error.errorMessage()).isEqualTo("Must be between 0 and 10.");
+        assertThat(error.errorMessage()).isEqualTo("Must be between 0 and 10, e.g. 5.");
     }
 
     @Test

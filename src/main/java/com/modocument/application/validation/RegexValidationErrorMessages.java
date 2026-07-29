@@ -12,7 +12,8 @@ public final class RegexValidationErrorMessages {
     private RegexValidationErrorMessages() {
     }
 
-    public static ValidationError getRegexValidationErrorMessage(int row, String fieldName, String rawValue) {
+    public static ValidationError getRegexValidationErrorMessage(int row, String fieldName, String rawValue,
+                                                                 String pattern) {
         String message = switch (fieldName) {
             case "DayforceBranchNo" ->
                     "Dayforce Branch Number must be one of PP1,PP2,PP3,PP4,PP7 or PP9.";
@@ -106,6 +107,10 @@ public final class RegexValidationErrorMessages {
                     "Sick Pay Accumulator Hours per pay must be in the format of 99.99. Not required if Sick Pay Accumulator Plan is X or if used for previous Vacation.";
             default -> "Validation error for " + fieldName + ".";
         };
-        return new ValidationError(row, fieldName, rawValue, message);
+        // Known preset patterns carry a concrete valid value the user can copy.
+        String example = RegexPatternExamples.exampleFor(pattern)
+                .map(e -> " e.g. " + e)
+                .orElse("");
+        return new ValidationError(row, fieldName, rawValue, message + example);
     }
 }

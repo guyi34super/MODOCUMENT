@@ -24,23 +24,27 @@ public class RangeRule implements ValidationRuleValidator {
 
     @Override
     public ValidationError validate(int row, String fieldName, String rawValue, String configJson) {
-        double value;
-        try {
-            value = Double.parseDouble(rawValue == null ? "" : rawValue.trim());
-        } catch (NumberFormatException e) {
-            return new ValidationError(row, fieldName, rawValue, "Value is not a number.");
-        }
-
         Config cfg;
         try {
             cfg = MAPPER.readValue(configJson, Config.class);
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid Range rule configuration: " + configJson, e);
         }
+        // A concrete in-range value makes the fix obvious to the user.
+        String example = formatBound(Math.floor((cfg.min() + cfg.max()) / 2));
+
+        double value;
+        try {
+            value = Double.parseDouble(rawValue == null ? "" : rawValue.trim());
+        } catch (NumberFormatException e) {
+            return new ValidationError(row, fieldName, rawValue,
+                    "Value is not a number, e.g. " + example + ".");
+        }
 
         if (value < cfg.min() || value > cfg.max()) {
             return new ValidationError(row, fieldName, rawValue,
-                    "Must be between " + formatBound(cfg.min()) + " and " + formatBound(cfg.max()) + ".");
+                    "Must be between " + formatBound(cfg.min()) + " and " + formatBound(cfg.max())
+                            + ", e.g. " + example + ".");
         }
         return null;
     }

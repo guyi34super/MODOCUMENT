@@ -405,6 +405,14 @@ public class IngestionJobUseCase {
         }
     }
 
+    static <T> T fromJson(String json, com.fasterxml.jackson.core.type.TypeReference<T> type) {
+        try {
+            return MAPPER.readValue(json, type);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Could not deserialize checkpoint payload.", e);
+        }
+    }
+
     private static String abbreviate(String message) {
         if (message == null) {
             return "Unknown error";

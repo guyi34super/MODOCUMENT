@@ -70,15 +70,17 @@ the test suite.
 
 ### Chat AI table editing
 - `POST /api/ingestion/jobs/{id}/chat-edit` with
-  `{"instruction": "Trim whitespace from all names"}` sends the current table plus your
-  instruction to the LLM and persists the returned **full modified table** (structured
-  output enforces the shape). Stale validation/export checkpoints are cleared so you
-  revalidate after editing.
+  `{"instruction": "Fix the validation errors"}` — when the job has validation errors,
+  **only the failing rows** (with their error messages) are sent to the LLM, which
+  returns a **patch of modified rows** merged back by row index (a fraction of the
+  tokens of a full-table round trip). With no validation errors it falls back to
+  sending the whole table. Structured output enforces the shape; stale
+  validation/export checkpoints are cleared so you revalidate after editing.
 
 ### Review & export anywhere
-- **Download** the validated rows as **CSV, JSON, or XLSX**:
-  `GET /api/ingestion/jobs/{id}/export/file?format=csv|json|xlsx` — a copy is archived
-  under `wwwroot/exports/`.
+- **Download** the validated rows as **CSV, JSON, XLSX, TSV, or XML**:
+  `GET /api/ingestion/jobs/{id}/export/file?format=csv|json|xlsx|tsv|xml` — a copy is
+  archived under `wwwroot/exports/`.
 - **Push directly to your own database**: `POST /api/ingestion/jobs/{id}/export/database`
   with `{jdbcUrl, username, password, tableName, createTableIfMissing}`. Supports
   `jdbc:postgresql:` and `jdbc:h2:` targets, auto-creates the table when asked, inserts
@@ -177,13 +179,14 @@ AIFILES_OPENAI_APIKEY=<your-openai-key> SPRING_PROFILES_ACTIVE=local mvn spring-
 ### Run with Docker
 
 ```bash
-# production-style stack: app + PostgreSQL (Flyway-managed schema) + docling-serve.
+# production-style stack: app + PostgreSQL (Flyway-managed schema).
 # The JWT signing secret is required — the app refuses to boot without one.
 export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
 docker compose up --build
 
-# with an OpenAI key for the LLM features
-AIFILES_OPENAI_APIKEY=<your-openai-key> docker compose up --build
+# with an API key for the LLM features (OpenRouter by default; any
+# OpenAI-compatible endpoint works via AIFILES_OPENAI_BASEURL)
+AIFILES_OPENAI_APIKEY=<your-key> docker compose up --build
 
 # dev mode against the same PostgreSQL (dev JWT secret, Swagger enabled)
 APP_PROFILES=local docker compose up --build
@@ -192,9 +195,8 @@ APP_PROFILES=local docker compose up --build
 APP_PROFILES=scale docker compose --profile extraction up --build
 ```
 
-The API is on <http://localhost:8080> (Swagger UI: <http://localhost:8080/swagger-ui>),
-docling-serve on <http://localhost:5001>, and the web frontend on
-<http://localhost:3000>.
+The API is on <http://localhost:8080> (Swagger UI: <http://localhost:8080/swagger-ui>)
+and the web frontend on <http://localhost:3000>.
 
 ### Web frontend (React)
 
@@ -305,7 +307,7 @@ contract at `/swagger/spec.yaml`. Summary:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/ingestion/jobs/{id}/export/file?format=csv\|json\|xlsx` | Download validated rows (copy archived in `wwwroot/exports/`) |
+| `GET /api/ingestion/jobs/{id}/export/file?format=csv\|json\|xlsx\|tsv\|xml` | Download validated rows (copy archived in `wwwroot/exports/`) |
 | `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied PostgreSQL/H2 database |
 
 ### Data extraction
@@ -507,8 +509,9 @@ service (the bundled `postgres` service is then unnecessary).
     the app waits for it to be healthy and Flyway migrates the schema on boot.
     Override `POSTGRES_USER`/`POSTGRES_PASSWORD` (the compose default is for local
     use only).
-  - `docling`: [docling-serve](https://github.com/docling-project/docling-serve) on
-    port 5001, pre-wired via `DOCLING_BASEURL` for rich layout-aware conversion. Note
+  - `docling` (optional, `--profile docling` + `DOCLING_BASEURL=http://docling:5001`):
+    [docling-serve](https://github.com/docling-project/docling-serve) on port 5001 for
+    rich layout-aware conversion — not needed for the standard flow. Note
     the slim app image has no native Tesseract, so the local OCR fallback silently
     disables itself there — but with `AIFILES_OPENAI_APIKEY` set the container still
     gets full-quality image/scan OCR via the vision model, even without docling.

@@ -51,9 +51,33 @@ class FileExportServiceTest {
     }
 
     @Test
+    void exportsTsvWithTabDelimiters() {
+        String tsv = new String(service.export(TABLE, FileExportService.Format.TSV),
+                StandardCharsets.UTF_8);
+
+        assertThat(tsv).startsWith("Name\tCity");
+        assertThat(tsv).contains("Ada\tLondon").contains("Grace\tArlington");
+    }
+
+    @Test
+    void exportsEscapedXmlWithColumnNameAttributes() {
+        TableData awkward = new TableData(
+                List.of("Full Name", "Note"),
+                List.of(Map.of("Full Name", "Ada <Lovelace>", "Note", "a & b")));
+
+        String xml = new String(service.export(awkward, FileExportService.Format.XML),
+                StandardCharsets.UTF_8);
+
+        assertThat(xml).startsWith("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        assertThat(xml).contains("<col name=\"Full Name\">Ada &lt;Lovelace&gt;</col>");
+        assertThat(xml).contains("<col name=\"Note\">a &amp; b</col>");
+        assertThat(xml).contains("<rows>").contains("</rows>");
+    }
+
+    @Test
     void parseRejectsUnknownFormat() {
         assertThatThrownBy(() -> FileExportService.Format.parse("pdf"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("csv, json, or xlsx");
+                .hasMessageContaining("csv, json, xlsx, tsv, or xml");
     }
 }

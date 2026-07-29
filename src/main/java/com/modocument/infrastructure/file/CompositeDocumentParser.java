@@ -43,6 +43,16 @@ public class CompositeDocumentParser implements DocumentParser {
                 || (doclingClient.isEnabled() && doclingClient.supports(ext));
     }
 
+    /** Every extension this parser can currently handle (docling-aware). */
+    public Set<String> supportedExtensions() {
+        if (!doclingClient.isEnabled()) {
+            return LOCAL_EXTENSIONS;
+        }
+        Set<String> union = new java.util.HashSet<>(LOCAL_EXTENSIONS);
+        union.addAll(doclingClient.supportedExtensions());
+        return union;
+    }
+
     @Override
     public String extractText(Path file) {
         String extension = extensionOf(file);

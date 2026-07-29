@@ -35,7 +35,7 @@ RUN chmod +x /docker-entrypoint.sh
 #   SPRING_DATASOURCE_URL=jdbc:postgresql://host:5432/modocument
 #   SPRING_DATASOURCE_USERNAME=... / SPRING_DATASOURCE_PASSWORD=...
 #   MODOCUMENT_CORS_ALLOWED_ORIGINS=https://your-frontend.example
-#   SPRING_PROFILES_ACTIVE=local        (in-memory H2 dev mode, zero dependencies)
+#   SPRING_PROFILES_ACTIVE=local        (dev conveniences; still needs PostgreSQL)
 #   AIFILES_OPENAI_APIKEY=...           (enables the LLM endpoints)
 #   DOCLING_BASEURL=http://docling:5001 (rich pdf/doc/image OCR conversion)
 EXPOSE 8080

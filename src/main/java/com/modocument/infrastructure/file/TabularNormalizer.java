@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Deterministic (no-LLM) normalization of structured files into {@link TableData}:
@@ -32,9 +33,15 @@ import java.util.Map;
 @Component
 public class TabularNormalizer {
 
+    private static final Set<String> EXTENSIONS = Set.of(".csv", ".xlsx", ".xls");
+
     public boolean supports(String extension) {
         String ext = extension == null ? "" : extension.toLowerCase(Locale.ROOT);
-        return ext.equals(".csv") || ext.equals(".xlsx") || ext.equals(".xls");
+        return EXTENSIONS.contains(ext);
+    }
+
+    public Set<String> supportedExtensions() {
+        return EXTENSIONS;
     }
 
     public TableData normalize(Path file) {

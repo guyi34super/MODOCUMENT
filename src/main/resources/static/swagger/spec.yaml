@@ -1002,7 +1002,7 @@ paths:
       - IngestionJobs
   /api/ingestion/jobs/{id}/export/file:
     get:
-      description: Download the validated (mapped) rows as csv, json, or xlsx;
+      description: Download the validated (mapped) rows as csv, json, xlsx, tsv, or xml;
         a copy is archived under wwwroot/exports
       operationId: exportIngestionJobFile
       parameters:
@@ -1017,7 +1017,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [csv, json, xlsx]
+            enum: [csv, json, xlsx, tsv, xml]
       responses:
         "200":
           description: File download
@@ -1029,7 +1029,7 @@ paths:
   /api/ingestion/jobs/{id}/export/database:
     post:
       description: Insert the validated (mapped) rows into a user-supplied
-        database over JDBC (sqlserver/h2 URL prefixes); identifiers are strictly
+        database over JDBC (postgresql/h2 URL prefixes); identifiers are strictly
         validated, values are bound parameters, credentials are never stored
       operationId: exportIngestionJobDatabase
       parameters:

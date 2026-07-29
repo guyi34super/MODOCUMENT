@@ -18,14 +18,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/** Serializes an ingested table to CSV, JSON, or XLSX bytes for download/archive. */
+/** Serializes an ingested table to CSV, JSON, XLSX, TSV, or XML bytes for download/archive. */
 @Service
 public class FileExportService {
 
     public enum Format {
         CSV("text/csv", ".csv"),
         JSON("application/json", ".json"),
-        XLSX("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx");
+        XLSX("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"),
+        TSV("text/tab-separated-values", ".tsv"),
+        XML("application/xml", ".xml");
 
         private final String contentType;
         private final String extension;
@@ -48,7 +50,7 @@ public class FileExportService {
                 return Format.valueOf(value == null ? "" : value.trim().toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException(
-                        "Unknown export format '" + value + "'; use csv, json, or xlsx.");
+                        "Unknown export format '" + value + "'; use csv, json, xlsx, tsv, or xml.");
             }
         }
     }
@@ -58,19 +60,21 @@ public class FileExportService {
     public byte[] export(TableData table, Format format) {
         try {
             return switch (format) {
-                case CSV -> toCsv(table);
+                case CSV -> toDelimited(table, CSVFormat.DEFAULT);
                 case JSON -> MAPPER.writerWithDefaultPrettyPrinter().writeValueAsBytes(table.getRows());
                 case XLSX -> toXlsx(table);
+                case TSV -> toDelimited(table, CSVFormat.TDF);
+                case XML -> toXml(table);
             };
         } catch (IOException e) {
             throw new UncheckedIOException("Could not serialize export.", e);
         }
     }
 
-    private static byte[] toCsv(TableData table) throws IOException {
+    private static byte[] toDelimited(TableData table, CSVFormat base) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         List<String> columns = table.getColumns();
-        CSVFormat format = CSVFormat.DEFAULT.builder()
+        CSVFormat format = base.builder()
                 .setHeader(columns.toArray(new String[0]))
                 .build();
         try (CSVPrinter printer = new CSVPrinter(
@@ -80,6 +84,35 @@ public class FileExportService {
             }
         }
         return out.toByteArray();
+    }
+
+    /**
+     * Columns become {@code <col name="...">} attributes rather than element
+     * names because column names may contain characters (spaces, slashes)
+     * that are not legal in XML element names.
+     */
+    private static byte[] toXml(TableData table) {
+        StringBuilder xml = new StringBuilder();
+        xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rows>\n");
+        for (Map<String, String> row : table.getRows()) {
+            xml.append("  <row>\n");
+            for (String column : table.getColumns()) {
+                xml.append("    <col name=\"").append(escapeAttr(column)).append("\">")
+                        .append(escapeText(row.getOrDefault(column, "")))
+                        .append("</col>\n");
+            }
+            xml.append("  </row>\n");
+        }
+        xml.append("</rows>\n");
+        return xml.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String escapeText(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+    }
+
+    private static String escapeAttr(String value) {
+        return escapeText(value).replace("\"", "&quot;");
     }
 
     private static byte[] toXlsx(TableData table) throws IOException {

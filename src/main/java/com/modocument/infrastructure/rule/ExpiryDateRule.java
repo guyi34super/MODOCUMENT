@@ -25,7 +25,8 @@ public class ExpiryDateRule implements ValidationRuleValidator {
     public ValidationError validate(int row, String fieldName, String rawValue, String configJson) {
         LocalDateTime value = tryParse(rawValue);
         if (value != null && !value.isAfter(LocalDateTime.now())) {
-            return new ValidationError(row, fieldName, rawValue, "Expiry date must be in the future.");
+            return new ValidationError(row, fieldName, rawValue,
+                    "Expiry date must be in the future, e.g. 2030-01-01.");
         }
         return null;
     }

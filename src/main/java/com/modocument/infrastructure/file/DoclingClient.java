@@ -50,6 +50,10 @@ public class DoclingClient {
                 && SUPPORTED_EXTENSIONS.contains(extension.toLowerCase(Locale.ROOT));
     }
 
+    public Set<String> supportedExtensions() {
+        return SUPPORTED_EXTENSIONS;
+    }
+
     /**
      * Converts the document to markdown. Throws on any transport/HTTP/JSON
      * problem — callers decide whether to fall back to the local readers.
