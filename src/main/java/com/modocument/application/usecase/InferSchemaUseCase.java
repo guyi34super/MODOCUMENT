@@ -7,6 +7,7 @@ import com.modocument.application.port.ExtractionAuditLog;
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ProcessedRecordStore;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.domain.document.ExtractionAuditEvent;
 import com.modocument.domain.document.ExtractionJob;
 import com.modocument.domain.document.ProcessedRecord;
@@ -33,15 +34,18 @@ public class InferSchemaUseCase {
     private final List<PromptStrategy> promptStrategies;
     private final AiFilesService aiFilesService;
     private final ExtractionAuditLog audit;
+    private final PiiTokenizer tokenizer;
 
     public InferSchemaUseCase(ExtractionJobStore jobs, ProcessedRecordStore processedRecords,
                               List<PromptStrategy> promptStrategies,
-                              AiFilesService aiFilesService, ExtractionAuditLog audit) {
+                              AiFilesService aiFilesService, ExtractionAuditLog audit,
+                              PiiTokenizer tokenizer) {
         this.jobs = jobs;
         this.processedRecords = processedRecords;
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
         this.audit = audit;
+        this.tokenizer = tokenizer;
     }
 
     public InferredSchema infer(String jobId) {
@@ -52,8 +56,12 @@ public class InferSchemaUseCase {
             throw new IllegalStateException(
                     "Extraction job " + jobId + " has no processed records to infer from.");
         }
+        // Sensitive sample values travel as placeholders; the inferred
+        // schema's example values are detokenized back below.
+        PiiTokenizer.Session session = tokenizer.newSession();
         List<Map<String, String>> sampleFields = sample.stream()
                 .map(ProcessedRecord::getFields)
+                .map(session::tokenizeRow)
                 .toList();
 
         PromptStrategy strategy = promptStrategies.stream()
@@ -68,6 +76,12 @@ public class InferSchemaUseCase {
                 });
         audit.add(ExtractionAuditEvent.of(jobId, job.getSourceId(), AuditAction.LLM_CALL, null,
                 "schema inference over " + sample.size() + " sample record(s)", null));
-        return schema;
+        if (schema == null || schema.fields() == null) {
+            return schema;
+        }
+        return new InferredSchema(schema.fields().stream()
+                .map(f -> new InferredSchema.InferredField(
+                        f.name(), f.dataType(), session.detokenize(f.example())))
+                .toList());
     }
 }

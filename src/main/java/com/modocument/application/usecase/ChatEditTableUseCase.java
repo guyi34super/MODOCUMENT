@@ -8,6 +8,7 @@ import com.modocument.application.dto.RowPatch;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.application.port.PromptStrategy;
 import com.modocument.domain.entity.IngestionJob;
@@ -44,13 +45,16 @@ public class ChatEditTableUseCase {
     private final IngestionJobRepository jobs;
     private final List<PromptStrategy> promptStrategies;
     private final AiFilesService aiFilesService;
+    private final PiiTokenizer tokenizer;
 
     public ChatEditTableUseCase(IngestionJobRepository jobs,
                                 List<PromptStrategy> promptStrategies,
-                                AiFilesService aiFilesService) {
+                                AiFilesService aiFilesService,
+                                PiiTokenizer tokenizer) {
         this.jobs = jobs;
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
+        this.tokenizer = tokenizer;
     }
 
     public IngestionJob handle(int jobId, String instruction) {
@@ -76,9 +80,12 @@ public class ChatEditTableUseCase {
                 editMapped ? readValidationResults(job.getValidationResultJson()) : List.of();
         List<Integer> errorRows = errorRowIndices(validation, current.getRows().size());
 
+        // Sensitive values travel to the model only as placeholders; the
+        // session holds the mapping and restores originals in the response.
+        PiiTokenizer.Session session = tokenizer.newSession();
         TableData modified = errorRows.isEmpty()
-                ? editFullTable(instruction, tableJson, current)
-                : editErrorRows(instruction, current, validation, errorRows);
+                ? editFullTable(instruction, current, session)
+                : editErrorRows(instruction, current, validation, errorRows, session);
 
         String modifiedJson = IngestionJobUseCase.toJson(modified);
         if (editMapped) {
@@ -97,27 +104,30 @@ public class ChatEditTableUseCase {
         return jobs.save(job);
     }
 
-    /** Original behavior: whole table in, whole table out. */
-    private TableData editFullTable(String instruction, String tableJson, TableData current) {
+    /** Original behavior: whole table in, whole table out (values tokenized in transit). */
+    private TableData editFullTable(String instruction, TableData current, PiiTokenizer.Session session) {
         if (current.getRows() != null && current.getRows().size() > MAX_ROWS) {
             throw new IllegalArgumentException(
                     "Table has more than " + MAX_ROWS + " rows; chat editing is limited to "
                             + MAX_ROWS + " rows.");
         }
+        String tokenizedJson = IngestionJobUseCase.toJson(
+                new TableData(current.getColumns(), session.tokenizeRows(current.getRows())));
         String prompt = strategy("ChatEdit")
-                .buildPrompt(new ChatEditPromptInput(instruction, tableJson));
+                .buildPrompt(new ChatEditPromptInput(instruction, tokenizedJson));
         TableData modified = aiFilesService.sendForObject(
                 prompt, new ParameterizedTypeReference<TableData>() {
                 });
         if (modified == null || modified.isEmpty()) {
             throw new IllegalStateException("The model returned an empty table; nothing was changed.");
         }
-        return modified;
+        return new TableData(modified.getColumns(), session.detokenizeRows(modified.getRows()));
     }
 
     /** Chunked behavior: only the failing rows go to the model; its patch is merged back. */
     private TableData editErrorRows(String instruction, TableData current,
-                                    List<RowValidationResult> validation, List<Integer> errorRows) {
+                                    List<RowValidationResult> validation, List<Integer> errorRows,
+                                    PiiTokenizer.Session session) {
         if (errorRows.size() > MAX_ROWS) {
             throw new IllegalArgumentException(
                     "Table has more than " + MAX_ROWS + " rows needing fixes; chat editing is limited to "
@@ -134,7 +144,7 @@ public class ChatEditTableUseCase {
             }
             payload.add(Map.of(
                     "row", rowNum,
-                    "values", current.getRows().get(rowNum - 1),
+                    "values", session.tokenizeRow(current.getRows().get(rowNum - 1)),
                     "errors", errors));
         }
 
@@ -148,7 +158,13 @@ public class ChatEditTableUseCase {
         if (patch == null || patch.rows() == null || patch.rows().isEmpty()) {
             throw new IllegalStateException("The model returned no row changes; nothing was changed.");
         }
-        return mergePatch(current, patch.rows());
+        // Restore real values before merging so range/column validation and
+        // the follow-up re-validation all operate on plaintext.
+        List<RowPatch> detokenized = patch.rows().stream()
+                .map(p -> new RowPatch(p.row(),
+                        p.values() == null ? null : session.detokenizeRow(p.values())))
+                .toList();
+        return mergePatch(current, detokenized);
     }
 
     /**

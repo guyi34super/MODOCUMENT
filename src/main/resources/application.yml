@@ -84,6 +84,18 @@ aifiles:
     # (gitignored). Intentionally not defaulted here so the spring.ai bridge
     # above falls back to its "unset" sentinel when no key is configured.
     model-id: gpt-4o
+  privacy:
+    # PII tokenization for the LLM chat/analysis features (chat table edits,
+    # schema inference, extraction summaries, LLM record cleaning, template
+    # classification). FAIL CLOSED: enabled by default — sensitive cell values
+    # are replaced with [NAME_1]/[EMAIL_2]-style placeholders before any
+    # prompt leaves the backend, and the placeholders are swapped back in the
+    # model's answer. Disable only if your LLM endpoint is trusted end to end.
+    tokenize-pii: ${AIFILES_PRIVACY_TOKENIZEPII:true}
+    # Extra column names to always treat as sensitive, matched case- and
+    # punctuation-insensitively as substrings (e.g. "badge" matches
+    # "BadgeNumber").
+    extra-sensitive-fields: []
 
 docling:
   # Optional docling-serve endpoint (e.g. http://localhost:5001). When empty,

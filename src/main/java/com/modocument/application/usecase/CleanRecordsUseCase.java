@@ -4,6 +4,7 @@ import com.modocument.application.dto.DataCleaningPromptInput;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.application.privacy.PiiTokenizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
@@ -28,11 +29,14 @@ public class CleanRecordsUseCase {
 
     private final List<PromptStrategy> promptStrategies;
     private final AiFilesService aiFilesService;
+    private final PiiTokenizer tokenizer;
 
     public CleanRecordsUseCase(List<PromptStrategy> promptStrategies,
-                               AiFilesService aiFilesService) {
+                               AiFilesService aiFilesService,
+                               PiiTokenizer tokenizer) {
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
+        this.tokenizer = tokenizer;
     }
 
     /**
@@ -46,19 +50,25 @@ public class CleanRecordsUseCase {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("DataCleaning prompt not registered."));
 
+        // One session for the whole run: tokens stay stable across batches.
+        // Sensitive cells travel as placeholders — the model cannot reformat
+        // them (it echoes the token back), which is the intended trade-off.
+        PiiTokenizer.Session session = tokenizer.newSession();
         List<Map<String, String>> cleaned = new ArrayList<>(rows.size());
         for (int from = 0; from < rows.size(); from += MAX_ROWS_PER_CALL) {
             List<Map<String, String>> batch =
                     rows.subList(from, Math.min(rows.size(), from + MAX_ROWS_PER_CALL));
             try {
                 String prompt = strategy.buildPrompt(new DataCleaningPromptInput(
-                        IngestionJobUseCase.toJson(new TableData(columns, batch)), dataSpec));
+                        IngestionJobUseCase.toJson(
+                                new TableData(columns, session.tokenizeRows(batch))),
+                        dataSpec));
                 TableData result = aiFilesService.sendForObject(prompt,
                         new ParameterizedTypeReference<TableData>() {
                         });
                 if (result != null && result.getRows() != null
                         && result.getRows().size() == batch.size()) {
-                    cleaned.addAll(result.getRows());
+                    cleaned.addAll(session.detokenizeRows(result.getRows()));
                     continue;
                 }
                 log.warn("LLM cleaning returned a mismatched batch; keeping original rows");

@@ -252,6 +252,8 @@ mvn -B verify
 | OpenAI API key | `aifiles.openai.api-key` / `AIFILES_OPENAI_APIKEY` | empty (LLM endpoints error until set) |
 | OpenAI model | `aifiles.openai.model-id` / `AIFILES_OPENAI_MODELID` | `gpt-4o` |
 | OpenAI base URL | `aifiles.openai.base-url` / `AIFILES_OPENAI_BASEURL` | `https://api.openai.com` (host root, no `/v1`) |
+| PII tokenization | `aifiles.privacy.tokenize-pii` / `AIFILES_PRIVACY_TOKENIZEPII` | `true` (fail closed) |
+| Extra sensitive fields | `aifiles.privacy.extra-sensitive-fields` | empty (substring match, case/punct-insensitive) |
 | docling-serve URL | `docling.base-url` / `DOCLING_BASEURL` | empty (built-in readers only) |
 | Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | `true` (active only when an OpenAI key is set) |
 | Vision OCR model | `ocr.vision.model` / `OCR_VISION_MODEL` | `gpt-4o` |
@@ -275,6 +277,29 @@ LLM calls go through [Spring AI](https://docs.spring.io/spring-ai/reference/); t
 legacy `aifiles.openai.*` keys are bridged into the Spring AI OpenAI auto-configuration,
 so existing environment variables keep working. Never commit real keys — pass them as
 environment variables.
+
+### Privacy: PII tokenization
+
+The LLM chat/analysis features manipulate your data **without seeing raw sensitive
+values**. Before a prompt leaves the backend, sensitive cells are replaced with stable
+placeholders (`[NAME_1]`, `[EMAIL_2]`, `[ID_1]`, …); only the backend holds the
+per-request mapping, and the placeholders are swapped back in the model's answer — the
+model edits structure and tokens, the backend re-substitutes reality (a blind-patch
+pipeline). Detection combines field-name heuristics (names, emails, phones, government
+IDs, addresses, birth dates, gender, pay — extendable via
+`aifiles.privacy.extra-sensitive-fields`) with value-shape patterns (email, phone,
+9-digit SIN/SSN, 13–19-digit card) for unlabeled columns. Applied to: chat table
+edits, LLM record cleaning, schema inference, extraction summaries, and (mask-only)
+the template-classification snippet. Plain numbers/dates in non-sensitive columns
+deliberately stay raw so format cleanup still works.
+
+Boundaries to know: document-to-table extraction (`TableExtraction` / `POST
+/Transform`), vision OCR, and the raw `POST /api/aifiles/send` passthrough inherently
+send document content to the LLM — finding values in raw text *is* their job.
+Tokenized cells cannot be content-reformatted by the model (it never sees them), and
+prose summaries may paraphrase a placeholder — which degrades to vagueness, never to a
+leak. Detection is heuristic, not NER: a bare name in an unlabeled free-text column
+with no recognizable shape passes through.
 
 ## API overview
 
