@@ -977,7 +977,8 @@ paths:
         "200":
           description: File download
         "409":
-          description: Job not validated yet
+          description: Job is not finished — cancelled, a template field still
+            unmapped, or rows still failing validation (the body says which)
       summary: Export to a file
       tags:
       - IngestionJobs
@@ -1011,8 +1012,15 @@ paths:
                 createTableIfMissing:
                   type: boolean
       responses:
-        default:
-          description: OK
+        "200":
+          description: Updated job
+        "400":
+          description: Rejected jdbcUrl, identifier, or target-database error
+        "409":
+          description: Job is not finished — cancelled, a template field still
+            unmapped, or rows still failing validation (the body says which)
+        "502":
+          description: Target database unreachable
       summary: Export to a custom database
       tags:
       - IngestionJobs
@@ -1107,7 +1115,11 @@ paths:
       - Ingestion
   /api/ingestion/jobs/{id}/wizard-step:
     put:
-      description: Checkpoint the wizard pane the user is on, so reopening resumes there
+      description: Checkpoint the wizard pane the user is on, so reopening resumes
+        there. Only a step the job has earned is accepted; every job payload carries
+        a reachableSteps list plus unmappedFields and validationErrorCount so a
+        client never has to guess. Mapping is finished when every template field has
+        a source column, validation when it has run with no failing rows.
       operationId: updateWizardStep
       parameters:
       - name: id
@@ -1120,7 +1132,9 @@ paths:
         "200":
           description: Updated job
         "400":
-          description: Step not reachable at the job's current stage
+          description: Step not reachable yet — the body names what is unfinished
+        "409":
+          description: Job is cancelled
       summary: Set wizard step
       tags:
       - Ingestion

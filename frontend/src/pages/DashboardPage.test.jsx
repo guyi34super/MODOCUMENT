@@ -57,6 +57,25 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Ready to review and validate')).toBeInTheDocument();
   });
 
+  it('says what a job is waiting on rather than only its stage', async () => {
+    mockEndpoints({
+      jobs: [
+        { ...inProgressJob, ingestionJobId: 7, unmappedFields: ['Email', 'Phone'] },
+        {
+          ...inProgressJob,
+          ingestionJobId: 8,
+          currentStep: 'VALIDATED',
+          unmappedFields: [],
+          validationErrorCount: 3,
+        },
+      ],
+    });
+    renderPage();
+
+    expect(await screen.findByText('2 fields still to map')).toBeInTheDocument();
+    expect(screen.getByText('3 rows to fix')).toBeInTheDocument();
+  });
+
   it('leaves out exported and cancelled jobs', async () => {
     mockEndpoints({
       jobs: [

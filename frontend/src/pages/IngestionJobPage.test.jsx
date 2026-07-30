@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ToastProvider } from '../context/ToastContext';
-import IngestionJobPage, { canVisitStep } from './IngestionJobPage';
+import IngestionJobPage, { canVisitStep, stepBlockReason } from './IngestionJobPage';
 
 import { getAllFields } from '../api/templates';
 import {
@@ -38,6 +38,9 @@ vi.mock('../api/client', () => ({
   downloadFile: vi.fn(),
 }));
 
+// The server answers which panes a job has earned (unmapped template fields and
+// failing rows are what close them), so fixtures carry that answer like a real
+// payload does.
 const mappedJob = {
   ingestionJobId: 7,
   templateId: 1,
@@ -54,6 +57,10 @@ const mappedJob = {
     rows: [{ FirstName: 'Ada' }],
   },
   validationResults: null,
+  validationErrorCount: null,
+  unmappedFields: [],
+  // Validation has not run yet.
+  reachableSteps: ['MAPPING'],
 };
 
 const validatedJobWithErrors = {
@@ -72,12 +79,24 @@ const validatedJobWithErrors = {
       ruleType: 'REQUIRED',
     },
   ],
+  validationErrorCount: 1,
+  // A failing row keeps Export shut.
+  reachableSteps: ['MAPPING', 'VALIDATION'],
 };
 
 const validatedJob = {
   ...mappedJob,
   currentStep: 'VALIDATED',
   validationResults: [{ row: 1, fieldName: 'FirstName', rawValue: 'Ada', errorMessage: null }],
+  validationErrorCount: 0,
+  reachableSteps: ['MAPPING', 'VALIDATION', 'EXPORT'],
+};
+
+/** A job whose mapping left a template field without a source column. */
+const partiallyMappedJob = {
+  ...mappedJob,
+  unmappedFields: ['Email'],
+  reachableSteps: ['MAPPING'],
 };
 
 function makeRows(count) {
@@ -87,6 +106,8 @@ function makeRows(count) {
 const validatedJobPaginated = {
   ...mappedJob,
   currentStep: 'VALIDATED',
+  validationErrorCount: 0,
+  reachableSteps: ['MAPPING', 'VALIDATION', 'EXPORT'],
   mappedRows: {
     columns: ['FirstName'],
     rows: makeRows(25),
@@ -550,33 +571,131 @@ describe('IngestionJobPage accessibility and failure states', () => {
   });
 });
 
-describe('wizard step reachability', () => {
-  // Must mirror IngestionJobUseCase.setWizardStep: MAPPING always, the other
-  // two only once the job has validated. A pill the backend then refuses to
-  // checkpoint is how the resume point silently stopped being saved.
-  const STEPS = ['mapping', 'validation', 'export'];
-  const BACKEND_ALLOWS = {
-    UPLOADED: ['mapping'],
-    PARSED: ['mapping'],
-    MAPPED: ['mapping'],
-    VALIDATED: ['mapping', 'validation', 'export'],
-    EXPORTED: ['mapping', 'validation', 'export'],
-  };
+describe('unfinished steps block the next one', () => {
+  beforeEach(() => {
+    getAllFields.mockResolvedValue([
+      { templateFieldsId: 1, templateId: 1, fieldName: 'FirstName' },
+      { templateFieldsId: 2, templateId: 1, fieldName: 'Email' },
+    ]);
+    setWizardStep.mockReset();
+    setWizardStep.mockResolvedValue({});
+    resumeJob.mockReset();
+  });
 
-  it('matches the backend rule for every step and stage', () => {
-    Object.entries(BACKEND_ALLOWS).forEach(([currentStep, allowed]) => {
+  it('will not continue to validation while a template field is unmapped', async () => {
+    getJob.mockResolvedValue(partiallyMappedJob);
+    renderPage('/ingestion/7?step=mapping');
+    await screen.findByText('Column mapping');
+
+    expect(screen.getByText('1 field still to map')).toBeInTheDocument();
+    expect(screen.getByText('Still to map (1):')).toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'Continue to validation' });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('title', expect.stringContaining('Email'));
+    expect(resumeJob).not.toHaveBeenCalled();
+  });
+
+  it('confirms the mapping is complete when every field has a column', async () => {
+    // The panel's checklist reflects the mapping on screen, so the template's
+    // fields have to match what this fixture maps.
+    getAllFields.mockResolvedValue([
+      { templateFieldsId: 1, templateId: 1, fieldName: 'FirstName' },
+    ]);
+    getJob.mockResolvedValue(mappedJob);
+    renderPage('/ingestion/7?step=mapping');
+    await screen.findByText('Column mapping');
+
+    expect(screen.getByText('✓ Every template field has a source column.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue to validation' })).toBeEnabled();
+  });
+
+  it('will not continue to export while rows fail validation', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    expect(screen.getByText('1 error to fix')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue to export' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
+    expect(screen.getByText(/Export stays locked until every row passes/)).toBeInTheDocument();
+  });
+
+  it('redirects an export deep link on a failing job back to validation', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    renderPage('/ingestion/7?step=export');
+
+    expect(await screen.findByRole('heading', { name: 'Validation' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Download file' })).not.toBeInTheDocument();
+    expect(setWizardStep).not.toHaveBeenCalledWith('7', 'export');
+  });
+
+  it('locks the export pane and points at the step that owns the work', async () => {
+    // Reachable payload for the pane, then a job whose rows regressed: the
+    // pane is open (the user is standing in it) but export itself is shut.
+    getJob.mockResolvedValue({
+      ...validatedJobWithErrors,
+      wizardStep: 'EXPORT',
+      reachableSteps: ['MAPPING', 'VALIDATION', 'EXPORT'],
+    });
+    const { unmount } = renderPage('/ingestion/7?step=export');
+    await screen.findByRole('heading', { name: 'Export' });
+    unmount();
+
+    getJob.mockResolvedValue({ ...validatedJobWithErrors, wizardStep: 'EXPORT' });
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+    expect(screen.getByRole('button', { name: 'Continue to export' })).toBeDisabled();
+  });
+
+  it('opens export only once nothing is left to fix', async () => {
+    getJob.mockResolvedValue(validatedJob);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    expect(screen.queryByText(/error to fix/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Continue to export' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeEnabled();
+  });
+});
+
+describe('wizard step reachability', () => {
+  const STEPS = ['mapping', 'validation', 'export'];
+
+  // The rule itself lives in IngestionJobUseCase.reachableSteps (its matrix is
+  // pinned in IngestionJobUseCaseTest); this page must not second-guess the
+  // answer it is given. A local copy drifting from the server's is what once
+  // made the Export pill offer a step the API then refused.
+  it('follows the server answer exactly, for every combination', () => {
+    [
+      ['MAPPING'],
+      ['MAPPING', 'VALIDATION'],
+      ['MAPPING', 'VALIDATION', 'EXPORT'],
+    ].forEach((reachableSteps) => {
       STEPS.forEach((step) => {
-        expect(canVisitStep(step, { currentStep, mappedRows: { columns: [], rows: [] } })).toBe(
-          allowed.includes(step)
+        expect(canVisitStep(step, { currentStep: 'VALIDATED', reachableSteps })).toBe(
+          reachableSteps.includes(step.toUpperCase())
         );
       });
     });
   });
 
-  it('offers only mapping before a job is loaded', () => {
+  it('never opens more than mapping when the payload says nothing', () => {
     expect(canVisitStep('mapping', null)).toBe(true);
     expect(canVisitStep('validation', null)).toBe(false);
     expect(canVisitStep('export', null)).toBe(false);
+    // A payload without the field (e.g. a stale cached response) is treated as
+    // "mapping only" rather than assumed permissive.
+    expect(canVisitStep('export', { currentStep: 'EXPORTED' })).toBe(false);
+  });
+
+  it('explains a closed step in the words the user needs', () => {
+    expect(stepBlockReason('validation', partiallyMappedJob)).toContain('Email');
+    expect(stepBlockReason('export', validatedJobWithErrors)).toContain(
+      '1 row still fails validation'
+    );
+    expect(stepBlockReason('export', mappedJob)).toBe('Run validation on the mapped rows first.');
+    // Nothing to say about a step that is open.
+    expect(stepBlockReason('export', validatedJob)).toBe('');
   });
 });
 

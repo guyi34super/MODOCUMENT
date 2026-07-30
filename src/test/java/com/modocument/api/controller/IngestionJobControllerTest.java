@@ -44,6 +44,15 @@ class IngestionJobControllerTest {
         return job;
     }
 
+    /**
+     * Views are built by the use case (it owns the step-reachability rule), so
+     * a controller test has to stub that call as well as the action itself.
+     */
+    private void stubView(IngestionJob job) {
+        when(useCase.view(job)).thenReturn(IngestionJobDto.from(
+                job, List.of(), List.of("MAPPING", "VALIDATION", "EXPORT")));
+    }
+
     @Test
     void rejectsUnsupportedUploadTypeWithSupportedList() {
         when(supportedTypes.isSupported("virus.exe")).thenReturn(false);
@@ -71,8 +80,9 @@ class IngestionJobControllerTest {
 
     @Test
     void updateWizardStepDelegatesWithParsedEnumAndReturnsDto() {
-        when(useCase.setWizardStep(7, WizardStep.VALIDATION))
-                .thenReturn(validatedJob(WizardStep.VALIDATION));
+        IngestionJob job = validatedJob(WizardStep.VALIDATION);
+        when(useCase.setWizardStep(7, WizardStep.VALIDATION)).thenReturn(job);
+        stubView(job);
 
         ResponseEntity<?> result =
                 controller.updateWizardStep(7, new UpdateWizardStepRequest("validation"));
@@ -96,6 +106,7 @@ class IngestionJobControllerTest {
         IngestionJob job = validatedJob(null);
         job.setCurrentStep(JobStep.MAPPED);
         when(useCase.updateRows(7, rows)).thenReturn(job);
+        stubView(job);
 
         ResponseEntity<?> result = controller.updateRows(7, new UpdateRowsRequest(rows));
 

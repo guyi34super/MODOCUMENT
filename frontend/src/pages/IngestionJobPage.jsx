@@ -44,22 +44,36 @@ function defaultWizardStep(currentStep) {
 }
 
 /**
- * Which wizard panes a job can show. Exported so a test can hold it against
- * the backend's own rule for accepting a wizard-step checkpoint — the two
- * drifting apart is what made the resume point silently unsavable.
+ * Which wizard panes a job can show — answered by the server (`reachableSteps`
+ * on the job payload), not re-derived here. A step you have not finished does
+ * not open the next one: mapping is finished when every template field has a
+ * source column, validation when it has run with no failing rows. Keeping the
+ * rule in one place is deliberate; a local copy drifting from the backend's is
+ * what once made the Export pill offer a step the API then refused.
  */
 export function canVisitStep(step, job) {
   if (!job) return step === 'mapping';
   if (step === 'mapping') return true;
-  if (step === 'validation') {
-    return job.currentStep === 'VALIDATED' || job.currentStep === 'EXPORTED';
+  return (job.reachableSteps || ['MAPPING']).includes(step.toUpperCase());
+}
+
+/** The sentence to show wherever a step is closed — pills, buttons, panes. */
+export function stepBlockReason(step, job) {
+  if (!job || canVisitStep(step, job)) return '';
+  const unmapped = job.unmappedFields || [];
+  if (unmapped.length > 0) {
+    return `Map every template field first — ${unmapped.length} still to map: ${unmapped.join(', ')}.`;
   }
-  if (step === 'export') {
-    // Must match the backend's own rule: it refuses to checkpoint or export a
-    // job that has not been validated, and that 400 used to be swallowed.
-    return job.currentStep === 'VALIDATED' || job.currentStep === 'EXPORTED';
+  if (!job.mappedRows?.columns?.length) {
+    return 'Map at least one column to a template field first.';
   }
-  return false;
+  const errors = job.validationErrorCount ?? 0;
+  if (step === 'export' && errors > 0) {
+    return errors === 1
+      ? '1 row still fails validation. Fix it on the Validation step before exporting.'
+      : `${errors} rows still fail validation. Fix them on the Validation step before exporting.`;
+  }
+  return 'Run validation on the mapped rows first.';
 }
 
 // The step checkpointed on the job wins over inference from currentStep, so a
@@ -81,6 +95,7 @@ function WizardStepIndicator({ activeStep, job, onSelect }) {
         // The step being worked on stays enabled even when an edit reset the
         // job's stage — otherwise a chat edit greys out the pane you are in.
         const enabled = step === activeStep || canVisitStep(step, job);
+        const blockedReason = stepBlockReason(step, job);
         const isActive = step === activeStep;
         const isDone =
           (step === 'mapping' && job?.mappedRows) ||
@@ -93,6 +108,8 @@ function WizardStepIndicator({ activeStep, job, onSelect }) {
               type="button"
               disabled={!enabled}
               onClick={() => enabled && onSelect(step)}
+              // A locked pill that says nothing is just a dead end.
+              title={blockedReason || undefined}
               className={`rounded-full px-3 py-1.5 font-medium ${
                 isActive
                   ? 'bg-accent text-white'
@@ -139,6 +156,8 @@ function WizardToolbar({
   onCancel,
 }) {
   const validationRun = job.currentStep === 'VALIDATED' || job.currentStep === 'EXPORTED';
+  const unmappedCount = job.unmappedFields?.length ?? 0;
+  const errorCount = job.validationErrorCount ?? 0;
   return (
     <div className="sticky top-14 z-30 -mx-4 mb-5 border-b border-line bg-white/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -174,7 +193,15 @@ function WizardToolbar({
               >
                 {busyAction === 'remap' ? 'Remapping…' : 'Re-map automatically'}
               </Button>
-              {validationRun && !mappingDraft ? (
+              {unmappedCount > 0 && (
+                <span
+                  className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+                  title={job.unmappedFields.join(', ')}
+                >
+                  {unmappedCount} field{unmappedCount === 1 ? '' : 's'} still to map
+                </span>
+              )}
+              {validationRun && !mappingDraft && unmappedCount === 0 ? (
                 <Button variant="secondary" onClick={() => onSelectStep('validation')}>
                   Go to validation
                 </Button>
@@ -185,6 +212,7 @@ function WizardToolbar({
                     Boolean(busyAction) ||
                     Boolean(mappingDraft) ||
                     isTerminal ||
+                    unmappedCount > 0 ||
                     job.currentStep !== 'MAPPED'
                   }
                   title={
@@ -192,9 +220,11 @@ function WizardToolbar({
                       ? 'This job is cancelled'
                       : mappingDraft
                         ? 'Save or discard mapping changes first'
-                        : job.currentStep !== 'MAPPED'
-                          ? 'Resume processing first'
-                          : undefined
+                        : unmappedCount > 0
+                          ? `Every template field needs a source column — still to map: ${job.unmappedFields.join(', ')}`
+                          : job.currentStep !== 'MAPPED'
+                            ? 'Resume processing first'
+                            : undefined
                   }
                 >
                   {busyAction === 'validate' ? 'Validating…' : 'Continue to validation'}
@@ -225,10 +255,21 @@ function WizardToolbar({
               >
                 {busyAction === 'revalidate' ? 'Validating…' : 'Re-validate'}
               </Button>
+              {errorCount > 0 && (
+                <span className="rounded-full bg-danger-bg px-2 py-0.5 text-xs font-medium text-danger-ink">
+                  {errorCount} error{errorCount === 1 ? '' : 's'} to fix
+                </span>
+              )}
               <Button
                 onClick={onContinueExport}
                 disabled={!canExport || Boolean(busyAction) || rowsDirty || isTerminal}
-                title={isTerminal ? 'This job is cancelled' : undefined}
+                title={
+                  isTerminal
+                    ? 'This job is cancelled'
+                    : rowsDirty
+                      ? 'Save or discard your cell edits first'
+                      : stepBlockReason('export', job) || undefined
+                }
               >
                 Continue to export
               </Button>
@@ -282,14 +323,25 @@ function MappingPanel({ parsedTable, mapping, templateFields, onMappingChange })
           className={`${inputClass} ml-auto w-44`}
         />
       </div>
-      {unmappedFields.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 border-b border-line bg-sidebar/50 px-3 py-1.5 text-xs">
-          <span className="text-muted">Unmapped template fields:</span>
+      {/* Not trivia: every one of these has to be mapped before the job can
+          move on, so the row reads as the remaining work. */}
+      {unmappedFields.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1 border-b border-line bg-amber-50 px-3 py-1.5 text-xs">
+          <span className="font-medium text-amber-800">
+            Still to map ({unmappedFields.length}):
+          </span>
           {unmappedFields.map((f) => (
-            <span key={f.templateFieldsId} className="rounded-full bg-neutral-100 px-2 py-0.5 text-muted">
+            <span
+              key={f.templateFieldsId}
+              className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800"
+            >
               {f.fieldName}
             </span>
           ))}
+        </div>
+      ) : (
+        <div className="border-b border-line bg-success-bg px-3 py-1.5 text-xs font-medium text-success-ink">
+          ✓ Every template field has a source column.
         </div>
       )}
       <ul className="divide-y divide-line/60">
@@ -801,6 +853,7 @@ function ValidationStep({
               title={`${validationErrors.length} validation error${validationErrors.length > 1 ? 's' : ''}`}
             >
               Fix the highlighted cells below or use the AI assistant, then re-validate.
+              Export stays locked until every row passes.
             </Callout>
           </div>
         )}
@@ -840,6 +893,7 @@ function ValidationStep({
 
 function ExportStep({
   canExport,
+  blockedReason,
   exportFormat,
   showDbExport,
   dbForm,
@@ -850,12 +904,25 @@ function ExportStep({
   onToggleDbExport,
   onDbFormChange,
   onDbExport,
+  onGoToBlockingStep,
+  blockingStepLabel,
 }) {
   return (
     <Card>
       <h2 className="mb-1 text-lg font-normal">Export</h2>
       {!canExport ? (
-        <p className="mb-3 text-sm text-muted">Complete validation before exporting.</p>
+        // Naming the blocker and offering the step that owns it beats a generic
+        // "complete validation" the user cannot act on.
+        <div className="mb-3">
+          <Callout variant="error" title="Export is locked">
+            {blockedReason || 'This job is not ready to export.'}
+            {onGoToBlockingStep && (
+              <div className="mt-2">
+                <Button onClick={onGoToBlockingStep}>Go to {blockingStepLabel}</Button>
+              </div>
+            )}
+          </Callout>
+        </div>
       ) : (
         <p className="mb-3 text-sm text-muted">
           Download the validated data as a file or push it to an external database.
@@ -1170,8 +1237,9 @@ export default function IngestionJobPage() {
   const mapping = mappingDraft ?? job?.mapping ?? {};
   const validationErrors = (job?.validationResults || []).filter((r) => r.errorMessage);
   const isTerminal = job?.status === 'CANCELLED';
-  const canExport =
-    !isTerminal && (job?.currentStep === 'VALIDATED' || job?.currentStep === 'EXPORTED');
+  // One expression for "may this job export": the same server answer that
+  // decides the Export pill, minus cancelled jobs.
+  const canExport = !isTerminal && canVisitStep('export', job);
   const dirtyCount = rowEdits ? Object.keys(rowEdits).length : 0;
 
   if (!job) {
@@ -1331,6 +1399,17 @@ export default function IngestionJobPage() {
       {activeStep === 'export' && (
         <ExportStep
           canExport={canExport}
+          blockedReason={
+            isTerminal ? 'This job is cancelled.' : stepBlockReason('export', job)
+          }
+          blockingStepLabel={
+            (job.unmappedFields?.length ?? 0) > 0 ? 'mapping' : 'validation'
+          }
+          onGoToBlockingStep={
+            isTerminal
+              ? undefined
+              : () => setStep((job.unmappedFields?.length ?? 0) > 0 ? 'mapping' : 'validation')
+          }
           exportFormat={exportFormat}
           showDbExport={showDbExport}
           dbForm={dbForm}

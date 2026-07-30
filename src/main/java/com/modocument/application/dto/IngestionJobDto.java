@@ -22,13 +22,23 @@ public record IngestionJobDto(int ingestionJobId,
                               TableData mappedRows,
                               List<RowValidationResult> validationResults,
                               Long validationErrorCount,
+                              List<String> unmappedFields,
+                              List<String> reachableSteps,
                               Map<String, Object> exportInfo,
                               LocalDateTime createdDate,
                               LocalDateTime updatedDate) {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    public static IngestionJobDto from(IngestionJob job) {
+    /**
+     * {@code unmappedFields} and {@code reachableSteps} are computed by
+     * {@link com.modocument.application.usecase.IngestionJobUseCase#reachableSteps}
+     * — this factory has no repository access, and the wizard rule must have
+     * exactly one home. Build views through {@code IngestionJobUseCase.view}.
+     */
+    public static IngestionJobDto from(IngestionJob job,
+                                       List<String> unmappedFields,
+                                       List<String> reachableSteps) {
         TableData parsed = read(job.getParsedTableJson(), new TypeReference<TableData>() {
         });
         Map<String, String> mapping = read(job.getMappingJson(), new TypeReference<Map<String, String>>() {
@@ -59,6 +69,8 @@ public record IngestionJobDto(int ingestionJobId,
                 mapped,
                 validation,
                 errorCount,
+                unmappedFields,
+                reachableSteps,
                 exportInfo,
                 job.getCreatedDate(),
                 job.getUpdatedDate());

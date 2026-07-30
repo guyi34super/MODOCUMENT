@@ -2,7 +2,6 @@ package com.modocument.api.controller;
 
 import com.modocument.application.dto.ChatEditRequest;
 import com.modocument.application.dto.CreateIngestionJobRequest;
-import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.UpdateMappingRequest;
 import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
@@ -103,12 +102,12 @@ public class IngestionJobController {
 
     @GetMapping("/api/ingestion/jobs")
     public ResponseEntity<?> list() {
-        return ResponseEntity.ok(useCase.list().stream().map(IngestionJobDto::from).toList());
+        return ResponseEntity.ok(useCase.views(useCase.list()));
     }
 
     @GetMapping("/api/ingestion/jobs/{id}")
     public ResponseEntity<?> get(@PathVariable int id) {
-        return ResponseEntity.ok(IngestionJobDto.from(useCase.get(id)));
+        return ResponseEntity.ok(useCase.view(useCase.get(id)));
     }
 
     /** Continues the pipeline from the last completed step (also after FAILED). */
@@ -116,28 +115,28 @@ public class IngestionJobController {
     public ResponseEntity<?> resume(@PathVariable int id,
                                     @RequestParam(value = "until", defaultValue = "VALIDATED")
                                     String until) {
-        return ResponseEntity.ok(IngestionJobDto.from(useCase.resume(id, parseUntil(until))));
+        return ResponseEntity.ok(useCase.view(useCase.resume(id, parseUntil(until))));
     }
 
     @PostMapping("/api/ingestion/jobs/{id}/remap")
     public ResponseEntity<?> remap(@PathVariable int id) {
-        return ResponseEntity.ok(IngestionJobDto.from(useCase.remap(id)));
+        return ResponseEntity.ok(useCase.view(useCase.remap(id)));
     }
 
     @PostMapping("/api/ingestion/jobs/{id}/revalidate")
     public ResponseEntity<?> revalidate(@PathVariable int id) {
-        return ResponseEntity.ok(IngestionJobDto.from(useCase.revalidate(id)));
+        return ResponseEntity.ok(useCase.view(useCase.revalidate(id)));
     }
 
     @PostMapping("/api/ingestion/jobs/{id}/cancel")
     public ResponseEntity<?> cancel(@PathVariable int id) {
-        return ResponseEntity.ok(IngestionJobDto.from(useCase.cancel(id)));
+        return ResponseEntity.ok(useCase.view(useCase.cancel(id)));
     }
 
     /** Modifies the job's current table via a natural-language instruction. */
     @PostMapping("/api/ingestion/jobs/{id}/chat-edit")
     public ResponseEntity<?> chatEdit(@PathVariable int id, @RequestBody ChatEditRequest request) {
-        return ResponseEntity.ok(IngestionJobDto.from(
+        return ResponseEntity.ok(useCase.view(
                 chatEdit.handle(id, request == null ? null : request.getInstruction())));
     }
 
@@ -148,7 +147,7 @@ public class IngestionJobController {
         if (request.getMapping() == null || request.getMapping().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "mapping is required."));
         }
-        return ResponseEntity.ok(IngestionJobDto.from(useCase.updateMapping(id, request.getMapping())));
+        return ResponseEntity.ok(useCase.view(useCase.updateMapping(id, request.getMapping())));
     }
 
     /** Persists user-edited row values; clears validation so it can be re-run. */
@@ -158,7 +157,7 @@ public class IngestionJobController {
         if (request == null || request.getRows() == null || request.getRows().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "rows is required."));
         }
-        return ResponseEntity.ok(IngestionJobDto.from(useCase.updateRows(id, request.getRows())));
+        return ResponseEntity.ok(useCase.view(useCase.updateRows(id, request.getRows())));
     }
 
     /** Checkpoints the user's wizard position so reopening the job resumes there. */
@@ -168,7 +167,7 @@ public class IngestionJobController {
         if (request == null || request.getWizardStep() == null || request.getWizardStep().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "wizardStep is required."));
         }
-        return ResponseEntity.ok(IngestionJobDto.from(
+        return ResponseEntity.ok(useCase.view(
                 useCase.setWizardStep(id, parseWizardStep(request.getWizardStep()))));
     }
 
@@ -200,10 +199,10 @@ public class IngestionJobController {
         }
     }
 
-    private static ResponseEntity<?> created(IngestionJob job) {
+    private ResponseEntity<?> created(IngestionJob job) {
         return ResponseEntity
                 .created(URI.create("/api/ingestion/jobs/" + job.getIngestionJobId()))
-                .body(IngestionJobDto.from(job));
+                .body(useCase.view(job));
     }
 
     @ExceptionHandler(NoSuchElementException.class)

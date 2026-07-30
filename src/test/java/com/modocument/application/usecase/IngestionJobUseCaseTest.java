@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -455,5 +456,176 @@ class IngestionJobUseCaseTest {
 
         assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
         assertThat(job.getErrorMessage()).contains("boom");
+    }
+
+    // ---- step completion ---------------------------------------------------
+
+    /** Template with two fields, so "every field mapped" can actually fail. */
+    private void templateWithTwoFields() {
+        TemplateFields firstName = new TemplateFields();
+        firstName.setFieldName("FirstName");
+        TemplateFields email = new TemplateFields();
+        email.setFieldName("Email");
+        when(templateFields.listByTemplateId(1)).thenReturn(List.of(firstName, email));
+    }
+
+    private IngestionJob jobAt(JobStep step, String mappedColumnsJson, String validationJson) {
+        // No explicit id: the in-memory repository assigns one, so several
+        // fixtures in a single test do not overwrite each other.
+        IngestionJob job = new IngestionJob();
+        job.setTemplateId(1);
+        job.setCurrentStep(step);
+        job.setMappedRowsJson(mappedColumnsJson);
+        job.setValidationResultJson(validationJson);
+        return jobs.save(job);
+    }
+
+    private static final String BOTH_FIELDS =
+            "{\"columns\":[\"FirstName\",\"Email\"],\"rows\":[{\"FirstName\":\"Ada\"}]}";
+    private static final String ONE_FIELD =
+            "{\"columns\":[\"FirstName\"],\"rows\":[{\"FirstName\":\"Ada\"}]}";
+    private static final String NO_ERRORS = "[]";
+    private static final String ONE_ERROR =
+            "[{\"row\":1,\"fieldName\":\"Email\",\"rawValue\":\"x\","
+                    + "\"errorMessage\":\"Email format is invalid.\",\"ruleType\":\"REGEX\"}]";
+
+    @Test
+    void unfinishedMappingOpensNothingBeyondMapping() {
+        templateWithTwoFields();
+
+        // Validation has run, but one template field never got a source column.
+        IngestionJob job = jobAt(JobStep.VALIDATED, ONE_FIELD, NO_ERRORS);
+
+        assertThat(useCase.unmappedFields(job)).containsExactly("Email");
+        assertThat(useCase.reachableSteps(job)).containsExactly(WizardStep.MAPPING);
+        assertThat(useCase.blockedReason(job, WizardStep.VALIDATION))
+                .contains("map every template field first")
+                .contains("Email");
+    }
+
+    @Test
+    void validationErrorsOpenValidationButNotExport() {
+        templateWithTwoFields();
+
+        IngestionJob job = jobAt(JobStep.VALIDATED, BOTH_FIELDS, ONE_ERROR);
+
+        assertThat(useCase.validationErrorCount(job)).isEqualTo(1);
+        assertThat(useCase.reachableSteps(job))
+                .containsExactly(WizardStep.MAPPING, WizardStep.VALIDATION);
+        assertThat(useCase.blockedReason(job, WizardStep.EXPORT))
+                .contains("1 row still fails validation");
+    }
+
+    @Test
+    void aCleanValidatedJobOpensEveryStep() {
+        templateWithTwoFields();
+
+        IngestionJob job = jobAt(JobStep.VALIDATED, BOTH_FIELDS, NO_ERRORS);
+
+        assertThat(useCase.reachableSteps(job))
+                .containsExactly(WizardStep.MAPPING, WizardStep.VALIDATION, WizardStep.EXPORT);
+        assertThat(useCase.unmappedFields(job)).isEmpty();
+    }
+
+    @Test
+    void validationNotRunYetOpensNothingBeyondMapping() {
+        templateWithTwoFields();
+
+        IngestionJob job = jobAt(JobStep.MAPPED, BOTH_FIELDS, null);
+
+        assertThat(useCase.reachableSteps(job)).containsExactly(WizardStep.MAPPING);
+        assertThat(useCase.blockedReason(job, WizardStep.VALIDATION))
+                .isEqualTo("run validation on the mapped rows first");
+    }
+
+    @Test
+    void nothingMappedAtAllOpensNothingBeyondMapping() {
+        templateWithTwoFields();
+
+        IngestionJob job = jobAt(JobStep.PARSED, null, null);
+
+        assertThat(useCase.reachableSteps(job)).containsExactly(WizardStep.MAPPING);
+        assertThat(useCase.unmappedFields(job)).containsExactly("FirstName", "Email");
+    }
+
+    @Test
+    void setWizardStepRefusesAStepTheJobHasNotEarned() {
+        templateWithTwoFields();
+        IngestionJob withErrors = jobAt(JobStep.VALIDATED, BOTH_FIELDS, ONE_ERROR);
+
+        assertThatThrownBy(() -> useCase.setWizardStep(withErrors.getIngestionJobId(),
+                WizardStep.EXPORT))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("1 row still fails validation");
+
+        // The step it HAS earned is still accepted.
+        assertThat(useCase.setWizardStep(withErrors.getIngestionJobId(), WizardStep.VALIDATION)
+                .getWizardStep()).isEqualTo(WizardStep.VALIDATION);
+    }
+
+    @Test
+    void setWizardStepRefusesValidationWhileAFieldIsUnmapped() {
+        templateWithTwoFields();
+        IngestionJob partial = jobAt(JobStep.VALIDATED, ONE_FIELD, NO_ERRORS);
+
+        assertThatThrownBy(() -> useCase.setWizardStep(partial.getIngestionJobId(),
+                WizardStep.VALIDATION))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Email");
+    }
+
+    @Test
+    void requireExportableNamesWhatIsBlockingTheExport() {
+        templateWithTwoFields();
+
+        assertThatThrownBy(() -> useCase.requireExportable(
+                jobAt(JobStep.VALIDATED, BOTH_FIELDS, ONE_ERROR)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("1 row still fails validation");
+
+        assertThatThrownBy(() -> useCase.requireExportable(
+                jobAt(JobStep.VALIDATED, ONE_FIELD, NO_ERRORS)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Email");
+
+        assertThatCode(() -> useCase.requireExportable(
+                jobAt(JobStep.VALIDATED, BOTH_FIELDS, NO_ERRORS)))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void requireExportableStillRefusesACancelledJob() {
+        templateWithTwoFields();
+        IngestionJob job = jobAt(JobStep.VALIDATED, BOTH_FIELDS, NO_ERRORS);
+        job.setStatus(JobStatus.CANCELLED);
+
+        assertThatThrownBy(() -> useCase.requireExportable(job))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("cancelled");
+    }
+
+    @Test
+    void viewCarriesTheGatesTheUiRenders() {
+        templateWithTwoFields();
+
+        var view = useCase.view(jobAt(JobStep.VALIDATED, ONE_FIELD, ONE_ERROR));
+
+        assertThat(view.unmappedFields()).containsExactly("Email");
+        assertThat(view.reachableSteps()).containsExactly("MAPPING");
+        assertThat(view.validationErrorCount()).isEqualTo(1);
+    }
+
+    @Test
+    void viewsLookUpEachTemplateOnce() {
+        templateWithTwoFields();
+        jobAt(JobStep.VALIDATED, BOTH_FIELDS, NO_ERRORS);
+        IngestionJob second = new IngestionJob();
+        second.setTemplateId(1);
+        second.setCurrentStep(JobStep.MAPPED);
+        second.setMappedRowsJson(ONE_FIELD);
+        jobs.save(second);
+
+        assertThat(useCase.views(jobs.list())).hasSize(2);
+        verify(templateFields, times(1)).listByTemplateId(1);
     }
 }

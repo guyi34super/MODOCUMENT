@@ -2,12 +2,9 @@ package com.modocument.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.DatabaseExportRequest;
-import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.usecase.IngestionJobUseCase;
 import com.modocument.domain.entity.IngestionJob;
-import com.modocument.domain.model.JobStatus;
-import com.modocument.domain.model.JobStep;
 import com.modocument.infrastructure.export.DatabaseExportService;
 import com.modocument.infrastructure.export.FileExportService;
 import com.modocument.infrastructure.file.StorageProperties;
@@ -102,19 +99,16 @@ public class IngestionExportController {
         exportInfo.put("rowCount", rowCount);
         IngestionJob updated = jobs.recordExport(job, exportInfo);
 
-        return ResponseEntity.ok(IngestionJobDto.from(updated));
+        return ResponseEntity.ok(jobs.view(updated));
     }
 
-    /** Exports operate on the mapped (post-review) rows of a validated, active job. */
-    private static TableData exportableTable(IngestionJob job) {
-        if (job.getStatus() == JobStatus.CANCELLED) {
-            throw new IllegalStateException("Job " + job.getIngestionJobId() + " is cancelled.");
-        }
-        if (job.getCurrentStep() != JobStep.VALIDATED && job.getCurrentStep() != JobStep.EXPORTED) {
-            throw new IllegalStateException(
-                    "Job " + job.getIngestionJobId() + " has not been validated yet "
-                            + "(current step: " + job.getCurrentStep() + ").");
-        }
+    /**
+     * Exports operate on finished work only: an active job whose every template
+     * field is mapped and whose rows all pass validation. The use case owns that
+     * rule, so a caller bypassing the UI hits the same wall.
+     */
+    private TableData exportableTable(IngestionJob job) {
+        jobs.requireExportable(job);
         String json = job.getMappedRowsJson();
         if (json == null) {
             throw new IllegalStateException("Job has no mapped rows to export.");

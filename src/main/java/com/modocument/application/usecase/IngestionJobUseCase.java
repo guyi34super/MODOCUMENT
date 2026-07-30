@@ -2,6 +2,7 @@ package com.modocument.application.usecase;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
@@ -257,16 +258,15 @@ public class IngestionJobUseCase {
 
     /**
      * Checkpoints the user's wizard position so reopening the job resumes the
-     * UI at the same pane. MAPPING is always allowed; VALIDATION and EXPORT
-     * only once the job has validated. Idempotent last-write-wins.
+     * UI at the same pane. Only a step the job has actually earned is accepted
+     * — see {@link #reachableSteps}. Idempotent last-write-wins.
      */
     public IngestionJob setWizardStep(int jobId, WizardStep step) {
         IngestionJob job = get(jobId);
         requireActive(job);
-        if (step != WizardStep.MAPPING && !hasValidated(job)) {
-            throw new IllegalArgumentException(
-                    "Wizard step " + step + " is not reachable while the job is at "
-                            + job.getCurrentStep() + ".");
+        if (!reachableSteps(job).contains(step)) {
+            throw new IllegalArgumentException("Wizard step " + step + " is not reachable yet: "
+                    + blockedReason(job, step));
         }
         job.setWizardStep(step);
         return jobs.save(job);
@@ -363,6 +363,145 @@ public class IngestionJobUseCase {
                 .toList();
         job.setValidationResultJson(toJson(problems));
         recordImportDetails(job, STEP_VALIDATING, job.getValidationResultJson());
+    }
+
+    // ---- step completion ---------------------------------------------------
+
+    /**
+     * Template fields that no source column feeds. The mapped table's columns
+     * ARE the mapped fields ({@link #applyMapping} builds them from the distinct
+     * mapping targets), so this is an exact answer; before mapping runs, every
+     * field counts as unmapped.
+     */
+    public List<String> unmappedFields(IngestionJob job) {
+        return unmappedFields(job, templateFieldNames(job.getTemplateId()));
+    }
+
+    private List<String> unmappedFields(IngestionJob job, List<String> templateFieldNames) {
+        List<String> mapped = mappedColumns(job);
+        return templateFieldNames.stream().filter(field -> !mapped.contains(field)).toList();
+    }
+
+    private List<String> mappedColumns(IngestionJob job) {
+        if (job.getMappedRowsJson() == null) {
+            return List.of();
+        }
+        try {
+            List<String> columns = fromJson(job.getMappedRowsJson(), TableData.class).getColumns();
+            return columns == null ? List.of() : columns;
+        } catch (Exception e) {
+            log.warn("Could not read mapped columns of job {}: {}",
+                    job.getIngestionJobId(), e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** Rows that still fail validation. Zero is what finishes the step. */
+    public long validationErrorCount(IngestionJob job) {
+        if (job.getValidationResultJson() == null || job.getValidationResultJson().isBlank()) {
+            return 0;
+        }
+        try {
+            // Only failures are persisted now, but jobs validated before that
+            // change also hold the passing entries — filter either way.
+            return readValidationResults(job).stream()
+                    .filter(result -> result.errorMessage() != null)
+                    .count();
+        } catch (Exception e) {
+            log.warn("Could not read validation results of job {}: {}",
+                    job.getIngestionJobId(), e.getMessage());
+            return 0;
+        }
+    }
+
+    private List<RowValidationResult> readValidationResults(IngestionJob job) {
+        return fromJson(job.getValidationResultJson(),
+                new com.fasterxml.jackson.core.type.TypeReference<List<RowValidationResult>>() {
+                });
+    }
+
+    /**
+     * The wizard panes this job has earned — the one rule the whole app defers
+     * to, exposed on {@link com.modocument.application.dto.IngestionJobDto} so
+     * the UI renders it instead of re-deriving it.
+     *
+     * <p>A step you have not finished does not open the next one: mapping is
+     * finished when every template field has a source column, validation when
+     * it has run with no failing rows.
+     *
+     * <p>Status plays no part: a cancelled job stays readable, and writing to
+     * one is refused by {@link #requireActive} instead.
+     */
+    public List<WizardStep> reachableSteps(IngestionJob job) {
+        return reachableSteps(job, unmappedFields(job));
+    }
+
+    private List<WizardStep> reachableSteps(IngestionJob job, List<String> unmappedFields) {
+        if (!mappingComplete(job, unmappedFields) || !hasValidated(job)) {
+            return List.of(WizardStep.MAPPING);
+        }
+        if (validationErrorCount(job) > 0) {
+            return List.of(WizardStep.MAPPING, WizardStep.VALIDATION);
+        }
+        return List.of(WizardStep.MAPPING, WizardStep.VALIDATION, WizardStep.EXPORT);
+    }
+
+    /** Why {@code step} is closed — phrased for the person who hit the wall. */
+    public String blockedReason(IngestionJob job, WizardStep step) {
+        List<String> unmapped = unmappedFields(job);
+        if (!unmapped.isEmpty()) {
+            return "map every template field first — " + unmapped.size() + " still unmapped ("
+                    + String.join(", ", unmapped) + ")";
+        }
+        if (!mappingComplete(job, unmapped)) {
+            return "map at least one column to a template field first";
+        }
+        if (!hasValidated(job)) {
+            return "run validation on the mapped rows first";
+        }
+        long errors = validationErrorCount(job);
+        if (step == WizardStep.EXPORT && errors > 0) {
+            return errors + (errors == 1
+                    ? " row still fails validation; fix it"
+                    : " rows still fail validation; fix them")
+                    + " on the validation step first";
+        }
+        return "the step is not available for this job";
+    }
+
+    /** API view of a job, carrying the step gates the UI renders. */
+    public IngestionJobDto view(IngestionJob job) {
+        return view(job, templateFieldNames(job.getTemplateId()));
+    }
+
+    /** Views for a whole list, looking each distinct template's fields up once. */
+    public List<IngestionJobDto> views(List<IngestionJob> list) {
+        Map<Integer, List<String>> fieldsByTemplate = new LinkedHashMap<>();
+        return list.stream()
+                .map(job -> view(job, fieldsByTemplate.computeIfAbsent(
+                        job.getTemplateId(), this::templateFieldNames)))
+                .toList();
+    }
+
+    private IngestionJobDto view(IngestionJob job, List<String> templateFieldNames) {
+        List<String> unmapped = unmappedFields(job, templateFieldNames);
+        List<String> reachable = reachableSteps(job, unmapped).stream()
+                .map(WizardStep::name)
+                .toList();
+        return IngestionJobDto.from(job, unmapped, reachable);
+    }
+
+    /** Exports operate on finished work only; the message names the blocker. */
+    public void requireExportable(IngestionJob job) {
+        requireActive(job);
+        if (!reachableSteps(job).contains(WizardStep.EXPORT)) {
+            throw new IllegalStateException("Job " + job.getIngestionJobId()
+                    + " cannot be exported yet: " + blockedReason(job, WizardStep.EXPORT) + ".");
+        }
+    }
+
+    private boolean mappingComplete(IngestionJob job, List<String> unmappedFields) {
+        return !mappedColumns(job).isEmpty() && unmappedFields.isEmpty();
     }
 
     // ---- helpers -----------------------------------------------------------

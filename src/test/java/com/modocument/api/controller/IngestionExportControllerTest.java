@@ -58,22 +58,40 @@ class IngestionExportControllerTest {
         assertThat(new String((byte[]) result.getBody())).contains("FirstName").contains("Ada");
     }
 
+    /**
+     * The rule for "may this job be exported" lives in the use case (see
+     * IngestionJobUseCaseTest for the matrix); the controller's job is to ask
+     * before doing anything and to turn the refusal into a 409.
+     */
     @Test
-    void refusesToExportACancelledJob() {
-        when(jobs.get(7)).thenReturn(job(JobStep.VALIDATED, JobStatus.CANCELLED, TABLE_JSON));
+    void asksTheUseCaseBeforeExportingAndPropagatesItsRefusal() {
+        IngestionJob unfinished = job(JobStep.MAPPED, JobStatus.COMPLETED, TABLE_JSON);
+        when(jobs.get(7)).thenReturn(unfinished);
+        org.mockito.Mockito.doThrow(new IllegalStateException(
+                        "Job 7 cannot be exported yet: 2 rows still fail validation."))
+                .when(jobs).requireExportable(unfinished);
 
         assertThatThrownBy(() -> controller().exportFile(7, "csv"))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("cancelled");
+                .hasMessageContaining("still fail validation");
+        org.mockito.Mockito.verify(jobs, org.mockito.Mockito.never())
+                .recordExport(org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.anyMap());
     }
 
     @Test
-    void refusesToExportBeforeValidation() {
-        when(jobs.get(7)).thenReturn(job(JobStep.MAPPED, JobStatus.COMPLETED, TABLE_JSON));
+    void databaseExportIsGatedByTheSameRule() {
+        IngestionJob unfinished = job(JobStep.MAPPED, JobStatus.COMPLETED, TABLE_JSON);
+        when(jobs.get(7)).thenReturn(unfinished);
+        org.mockito.Mockito.doThrow(new IllegalStateException(
+                        "Job 7 cannot be exported yet: map every template field first."))
+                .when(jobs).requireExportable(unfinished);
 
-        assertThatThrownBy(() -> controller().exportFile(7, "csv"))
+        assertThatThrownBy(() -> controller().exportDatabase(7,
+                new com.modocument.application.dto.DatabaseExportRequest()))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("has not been validated");
+                .hasMessageContaining("map every template field");
+        org.mockito.Mockito.verifyNoInteractions(databaseExport);
     }
 
     @Test

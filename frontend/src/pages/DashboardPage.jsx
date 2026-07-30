@@ -52,6 +52,19 @@ const STEP_LABELS = {
   VALIDATED: 'Ready to export',
 };
 
+/** What this job is actually waiting on, using the gates the server reports. */
+function waitingOn(job) {
+  const unmapped = job.unmappedFields?.length ?? 0;
+  if (unmapped > 0) {
+    return `${unmapped} field${unmapped === 1 ? '' : 's'} still to map`;
+  }
+  const errors = job.validationErrorCount ?? 0;
+  if (errors > 0) {
+    return `${errors} row${errors === 1 ? '' : 's'} to fix`;
+  }
+  return STEP_LABELS[job.currentStep] || '';
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -152,7 +165,7 @@ export default function DashboardPage() {
                     </Link>
                     <span className="truncate text-muted">{job.fileName}</span>
                     <span className="hidden truncate text-xs text-muted sm:block">
-                      {STEP_LABELS[job.currentStep] || ''}
+                      {waitingOn(job)}
                     </span>
                     <span className="ml-auto flex items-center gap-2">
                       <Badge status={job.currentStep} />
