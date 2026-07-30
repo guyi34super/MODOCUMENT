@@ -18,4 +18,7 @@ public interface ImportHistoryRepository {
     void delete(int id);
 
     Optional<ImportHistory> getByFileName(String fileName);
+
+    /** Imports referencing a template — used before deleting the template. */
+    int countByTemplateId(int templateId);
 }

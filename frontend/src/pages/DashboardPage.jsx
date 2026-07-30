@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { getTemplates } from '../api/cache';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
-import { Badge, Button, Callout, Card, ErrorBanner, Spinner } from '../components/ui';
+import { Badge, Button, Callout, Card, Spinner } from '../components/ui';
 
 function countBy(list, key) {
   return list.reduce((acc, item) => {
@@ -38,26 +38,53 @@ function StepCard({ step, title, stat, to, cta, highlight }) {
   );
 }
 
-const OPEN_JOB = (job) =>
-  job.status !== 'CANCELLED' && job.status !== 'COMPLETED' && job.currentStep !== 'EXPORTED';
+/**
+ * A job worth reopening: not cancelled and not finished with an export. Status
+ * is deliberately not part of this — every successful stage leaves the job
+ * COMPLETED, so testing for it hid every normal in-progress upload.
+ */
+const OPEN_JOB = (job) => job.status !== 'CANCELLED' && job.currentStep !== 'EXPORTED';
+
+const STEP_LABELS = {
+  UPLOADED: 'Waiting to be parsed',
+  PARSED: 'Ready to map columns',
+  MAPPED: 'Ready to review and validate',
+  VALIDATED: 'Ready to export',
+};
 
 export default function DashboardPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
+  /**
+   * Partial results beat a blank page: one failing endpoint used to leave the
+   * whole dashboard on a spinner forever, so each panel falls back to empty and
+   * the banner names what could not be loaded.
+   */
   const load = useCallback(async () => {
-    setError('');
-    try {
-      const [templates, ingestionJobs, extractionJobs, imports] = await Promise.all([
-        getTemplates(),
-        api.get('/api/ingestion/jobs'),
-        api.get('/api/extraction/jobs'),
-        api.get('/ImportHistory/GetAll'),
-      ]);
-      setData({ templates, ingestionJobs, extractionJobs, imports });
-    } catch (err) {
-      setError(err.message);
-    }
+    setLoading(true);
+    const sources = [
+      ['templates', () => getTemplates()],
+      ['ingestionJobs', () => api.get('/api/ingestion/jobs')],
+      ['extractionJobs', () => api.get('/api/extraction/jobs')],
+      ['imports', () => api.get('/ImportHistory/GetAll')],
+    ];
+    const settled = await Promise.allSettled(sources.map(([, fetcher]) => fetcher()));
+    const loaded = {};
+    const failures = [];
+    settled.forEach((result, i) => {
+      const [key] = sources[i];
+      if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+        loaded[key] = result.value;
+      } else {
+        loaded[key] = [];
+        failures.push(`${key} (${result.reason?.message || 'failed'})`);
+      }
+    });
+    setData(loaded);
+    setError(failures.length ? `Could not load ${failures.join(', ')}.` : '');
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -75,14 +102,16 @@ export default function DashboardPage() {
   const openJobs = data
     ? data.ingestionJobs.filter(OPEN_JOB).sort((a, b) => b.ingestionJobId - a.ingestionJobId).slice(0, 3)
     : [];
-  // Highlight the first step the user hasn't done yet.
-  const highlightStep = data
-    ? data.templates.length === 0
+  // Highlight the first step the user hasn't done yet. With templates but no
+  // uploads, rules are the natural next stop — step 3 only once something has
+  // been uploaded before.
+  const highlightStep = !data
+    ? 0
+    : data.templates.length === 0
       ? 1
       : data.ingestionJobs.length === 0
-        ? 3
-        : 0
-    : 0;
+        ? 2
+        : 0;
 
   return (
     <div>
@@ -90,9 +119,20 @@ export default function DashboardPage() {
         crumbs={[{ label: 'Home' }]}
         title="Home"
         subtitle="Design a template, add rules, then upload and process files"
-        actions={<Button variant="secondary" onClick={load}>Refresh</Button>}
+        actions={
+          <Button variant="secondary" onClick={load} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        }
       />
-      <ErrorBanner message={error} onDismiss={() => setError('')} />
+      {error && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-md bg-danger-bg px-4 py-3 text-sm text-danger-ink">
+          <span>{error}</span>
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
+            Retry
+          </Button>
+        </div>
+      )}
 
       {!data ? (
         <Spinner label="Loading your workspace…" />
@@ -111,6 +151,9 @@ export default function DashboardPage() {
                       Job #{job.ingestionJobId}
                     </Link>
                     <span className="truncate text-muted">{job.fileName}</span>
+                    <span className="hidden truncate text-xs text-muted sm:block">
+                      {STEP_LABELS[job.currentStep] || ''}
+                    </span>
                     <span className="ml-auto flex items-center gap-2">
                       <Badge status={job.currentStep} />
                       <Badge status={job.status} />

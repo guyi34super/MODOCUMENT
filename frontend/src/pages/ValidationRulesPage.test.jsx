@@ -207,7 +207,7 @@ describe('ValidationRulesPage update without duplicates', () => {
     expect(deleteRule).not.toHaveBeenCalled();
   });
 
-  it('Update REGEX with unchanged Required does not upsert REQUIRED', async () => {
+  it('Update REGEX on a required field re-asserts both rules', async () => {
     getRulesByTemplate.mockResolvedValue([
       { fieldName: 'Name', ruleType: 'REQUIRED', configJson: '{}' },
       { fieldName: 'Name', ruleType: 'REGEX', configJson: '{"Pattern":"^\\\\d+$"}' },
@@ -217,9 +217,11 @@ describe('ValidationRulesPage update without duplicates', () => {
     expect(screen.getByLabelText('Required or Optional')).toHaveValue('required');
     await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
 
-    expect(upsertRule).toHaveBeenCalledTimes(1);
+    // Both writes are idempotent upserts: what the form shows is what gets
+    // persisted, so a save can never silently do nothing.
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Name', 'REQUIRED', {});
     expect(upsertRule).toHaveBeenCalledWith(1, 'Name', 'REGEX', { Pattern: '^\\d+$' });
-    expect(upsertRule).not.toHaveBeenCalledWith(1, 'Name', 'REQUIRED', expect.anything());
+    expect(deleteRule).not.toHaveBeenCalled();
   });
 
   it('Update REGEX with field rename deletes old key then upserts new field', async () => {
@@ -252,7 +254,7 @@ describe('ValidationRulesPage update without duplicates', () => {
     expect(upsertRule).not.toHaveBeenCalled();
   });
 
-  it('Update REQUIRED row with format NONE does not upsert format rules', async () => {
+  it('Update REQUIRED row with format NONE writes only the REQUIRED rule', async () => {
     getRulesByTemplate.mockResolvedValue([
       { fieldName: 'Name', ruleType: 'REQUIRED', configJson: '{}' },
     ]);
@@ -263,8 +265,34 @@ describe('ValidationRulesPage update without duplicates', () => {
     expect(screen.getByLabelText('Format rule type')).toHaveValue('NONE');
     await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
 
-    expect(upsertRule).not.toHaveBeenCalled();
+    expect(upsertRule).toHaveBeenCalledTimes(1);
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Name', 'REQUIRED', {});
     expect(deleteRule).not.toHaveBeenCalled();
+  });
+
+  it('Renaming the field on a REQUIRED row moves the rule to the new field', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Name', ruleType: 'REQUIRED', configJson: '{}' },
+    ]);
+
+    renderPage();
+    await screen.findByText('Required — must not be empty');
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+    await userEvent.selectOptions(screen.getByLabelText('Field'), 'Email');
+    await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+
+    expect(deleteRule).toHaveBeenCalledWith(1, 'Name', 'REQUIRED');
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Email', 'REQUIRED', {});
+  });
+
+  it('Optional with no format rule cannot be saved as a no-op', async () => {
+    getRulesByTemplate.mockResolvedValue([]);
+
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText('Field'), 'Name');
+
+    expect(screen.getByRole('button', { name: 'Save rule' })).toBeDisabled();
+    expect(screen.getByText(/nothing to save yet/)).toBeInTheDocument();
   });
 });
 

@@ -88,6 +88,19 @@ public class IngestionJobController {
         return created(create(request.getFileName(), request.getTemplateId(), autoRun, until));
     }
 
+    /**
+     * What this build can actually parse. The file picker reads it so it never
+     * offers a format the upload would reject (docling formats appear only
+     * when a docling endpoint is configured).
+     */
+    @GetMapping("/api/ingestion/supported-types")
+    public ResponseEntity<?> supportedTypes() {
+        return ResponseEntity.ok(Map.of(
+                "extensions", supportedTypes.supportedExtensions(),
+                "accept", String.join(",", supportedTypes.supportedExtensions()),
+                "description", supportedTypes.describeSupported()));
+    }
+
     @GetMapping("/api/ingestion/jobs")
     public ResponseEntity<?> list() {
         return ResponseEntity.ok(useCase.list().stream().map(IngestionJobDto::from).toList());

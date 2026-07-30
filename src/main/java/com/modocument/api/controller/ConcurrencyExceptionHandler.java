@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,7 @@ import java.util.Map;
  * only safe advice is "reload and redo".
  */
 @ControllerAdvice
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public class ConcurrencyExceptionHandler {
 
     @ExceptionHandler(OptimisticLockingFailureException.class)

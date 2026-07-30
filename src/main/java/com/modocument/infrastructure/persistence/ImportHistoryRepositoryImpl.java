@@ -61,4 +61,9 @@ public class ImportHistoryRepositoryImpl implements ImportHistoryRepository {
     public Optional<ImportHistory> getByFileName(String fileName) {
         return jpa.findFirstByFileNameIgnoreCase(fileName);
     }
+
+    @Override
+    public int countByTemplateId(int templateId) {
+        return (int) jpa.countByTemplateId(templateId);
+    }
 }

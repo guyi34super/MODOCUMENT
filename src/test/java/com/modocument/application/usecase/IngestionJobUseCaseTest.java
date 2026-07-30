@@ -72,6 +72,13 @@ class IngestionJobUseCaseTest {
                     .map(IngestionJob::getMappingJson)
                     .toList();
         }
+
+        @Override
+        public int countByTemplateId(int templateId) {
+            return (int) store.values().stream()
+                    .filter(j -> j.getTemplateId() == templateId)
+                    .count();
+        }
     }
 
     private final InMemoryJobs jobs = new InMemoryJobs();

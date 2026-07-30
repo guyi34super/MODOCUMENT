@@ -131,6 +131,16 @@ public class AutoMapUseCase {
         Map<String, String> historyVotes = historyVotes(context.templateId());
         Map<String, List<ValidationRule>> rulesByField = shapeScorer.rulesByField(context.templateId());
 
+        // Shape scoring is the expensive tier (samples × rules per pair), so it
+        // gets a budget: a 60-column file against a 40-field template must not
+        // turn one upload into tens of thousands of regex evaluations.
+        int shapeBudget = properties.getShapePairBudget();
+        int pairs = unresolved.size() * pool.size();
+        if (pairs > shapeBudget) {
+            log.info("Value-shape tier limited to {} of {} column/field pairs; "
+                    + "name, history and LLM tiers still apply.", shapeBudget, pairs);
+        }
+
         List<Candidate> candidates = new ArrayList<>();
         for (String column : unresolved) {
             List<String> samples = samplesFor(column, context.sampleRows());
@@ -139,8 +149,12 @@ public class AutoMapUseCase {
                 double history = field.equals(votedField) ? HISTORY_SCORE : 0;
                 double name = ColumnNameSimilarity.score(column, field, properties.getAliases());
                 double base = Math.max(history, name);
-                OptionalDouble shape = shapeScorer.score(
-                        fieldsByName.get(field), rulesByField.get(field), samples);
+                OptionalDouble shape = OptionalDouble.empty();
+                if (shapeBudget > 0) {
+                    shapeBudget--;
+                    shape = shapeScorer.score(
+                            fieldsByName.get(field), rulesByField.get(field), samples);
+                }
 
                 double score;
                 String tier;

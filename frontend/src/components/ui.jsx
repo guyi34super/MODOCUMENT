@@ -68,10 +68,14 @@ export function Badge({ status }) {
   );
 }
 
-export function Spinner({ label = 'Loading…' }) {
+/**
+ * `inline` drops the block padding and the default label, for the spinner that
+ * sits inside a toast or a button rather than standing in for a whole panel.
+ */
+export function Spinner({ label = 'Loading…', inline = false }) {
   return (
-    <div className="flex items-center gap-2 py-8 text-sm text-muted">
-      <span className="size-4 animate-spin rounded-full border-2 border-line border-t-accent" />
+    <div className={`flex items-center gap-2 text-sm text-muted ${inline ? '' : 'py-8'}`}>
+      <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent" />
       {label}
     </div>
   );

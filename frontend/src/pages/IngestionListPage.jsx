@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
-import { createJobFromFile, listJobs } from '../api/ingestion';
+import { createJobFromFile, getSupportedTypes, listJobs } from '../api/ingestion';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Badge, Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
@@ -13,6 +13,10 @@ export default function IngestionListPage() {
   const [templates, setTemplates] = useState([]);
   const [jobs, setJobs] = useState(null);
   const [error, setError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  // Asked for once: the picker must offer exactly what this build can parse
+  // (docling formats appear only when a docling endpoint is configured).
+  const [supported, setSupported] = useState(null);
 
   const [file, setFile] = useState(null);
   const [templateId, setTemplateId] = useState('');
@@ -23,18 +27,37 @@ export default function IngestionListPage() {
   const uploadOpen = showUpload ?? (jobs !== null && jobs.length === 0);
 
   const load = useCallback(async () => {
+    setRefreshing(true);
     try {
       const [tpl, jobList] = await Promise.all([getTemplates(), listJobs()]);
       setTemplates(tpl);
       setJobs(jobList.sort((a, b) => b.ingestionJobId - a.ingestionJobId));
+      // A stale banner outliving the problem reads as a broken page.
+      setError('');
     } catch (err) {
       setError(err.message);
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    getSupportedTypes()
+      .then((types) => {
+        if (active) setSupported(types);
+      })
+      .catch(() => {
+        /* the upload itself still validates the type */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const upload = async (e) => {
     e.preventDefault();
@@ -62,7 +85,9 @@ export default function IngestionListPage() {
         subtitle="Upload a document, review the extracted table, validate and export"
         actions={
           <>
-            <Button variant="secondary" onClick={load}>Refresh</Button>
+            <Button variant="secondary" onClick={load} disabled={refreshing}>
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </Button>
             <Button onClick={() => setShowUpload(!uploadOpen)}>
               {uploadOpen ? 'Close upload' : 'Upload a document'}
             </Button>
@@ -75,7 +100,9 @@ export default function IngestionListPage() {
       <Card className="mb-6">
         <h2 className="mb-1 text-lg font-normal">Upload a document</h2>
         <p className="mb-4 text-sm text-muted">
-          Accepts xlsx, xls, csv, pdf, docx, doc and scanned images.
+          {supported?.description
+            ? `Accepts ${supported.description}.`
+            : 'Accepts spreadsheets, csv, pdf, Word documents and scanned images.'}
         </p>
         <form onSubmit={upload} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -83,7 +110,7 @@ export default function IngestionListPage() {
               <input
                 type="file"
                 required
-                accept=".csv,.xlsx,.xls,.pdf,.docx,.doc,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.pptx,.html,.md,.webp"
+                accept={supported?.accept || '.csv,.xlsx,.xls,.pdf,.docx,.doc,.png,.jpg,.jpeg,.tif,.tiff,.bmp'}
                 className="block w-full text-sm text-muted file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-pill file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-accent"
                 onChange={(e) => setFile(e.target.files[0] || null)}
               />

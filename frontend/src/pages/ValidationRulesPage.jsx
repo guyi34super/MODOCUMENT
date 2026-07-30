@@ -15,7 +15,6 @@ import {
   isFieldRequired,
   loadRuleIntoFormState,
   ruleTypeName,
-  shouldSyncRequired,
   upsertRule,
   validateRows,
 } from '../api/validationRules';
@@ -177,43 +176,38 @@ export default function ValidationRulesPage() {
       await toast.promise(
         (async () => {
           const isEditing = !!editingRule;
-          const isEditingRequiredRow = isEditing && editingRule.ruleType === 'REQUIRED';
-          const isEditingFormatRow = isEditing && editingRule.ruleType !== 'REQUIRED';
+          const renamedField = isEditing && editingRule.fieldName !== fieldName;
+          const oldFormatType =
+            isEditing && editingRule.ruleType !== 'REQUIRED' ? editingRule.ruleType : null;
 
-          if (
-            !isEditing ||
-            shouldSyncRequired(fieldRequirement, editingRule.fieldRequirement)
-          ) {
-            if (fieldRequirement === 'required') {
-              await upsertRule(tid, fieldName, 'REQUIRED', {});
-            } else if (isFieldRequired(rules, fieldName)) {
-              await deleteRule(tid, fieldName, 'REQUIRED');
-            }
+          // Required marker: it belongs to the field, so a rename has to move
+          // it. Writing it unconditionally (the endpoint is an upsert) also
+          // means "rename a required field" can never end up doing nothing.
+          if (renamedField && editingRule.fieldRequirement === 'required') {
+            await deleteRule(tid, editingRule.fieldName, 'REQUIRED');
+          }
+          if (fieldRequirement === 'required') {
+            await upsertRule(tid, fieldName, 'REQUIRED', {});
+          } else if (isFieldRequired(rules, fieldName)) {
+            await deleteRule(tid, fieldName, 'REQUIRED');
           }
 
-          if (isEditingFormatRow) {
-            const oldField = editingRule.fieldName;
-            const oldType = editingRule.ruleType;
-
-            if (
-              oldType !== 'REQUIRED' &&
-              (oldField !== fieldName || oldType !== ruleType || ruleType === 'NONE')
-            ) {
-              await deleteFormatRule(tid, oldField, oldType);
-            }
-
-            if (ruleType !== 'NONE') {
-              const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
-              await saveFormatRule(tid, fieldName, ruleType, config);
-            }
-          } else if (isEditingRequiredRow) {
-            if (ruleType !== 'NONE') {
-              const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
-              await saveFormatRule(tid, fieldName, ruleType, config);
-            }
-          } else if (ruleType !== 'NONE') {
-            const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
-            await saveFormatRule(tid, fieldName, ruleType, config);
+          // Format rule: drop the row being edited whenever its key changes
+          // (field or type) or the user chose no format check at all.
+          if (
+            oldFormatType &&
+            oldFormatType !== 'NONE' &&
+            (renamedField || oldFormatType !== ruleType || ruleType === 'NONE')
+          ) {
+            await deleteFormatRule(tid, editingRule.fieldName, oldFormatType);
+          }
+          if (ruleType !== 'NONE') {
+            await saveFormatRule(
+              tid,
+              fieldName,
+              ruleType,
+              buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax })
+            );
           }
         })(),
         { loading: loadingMessage, success: successMessage }
@@ -264,9 +258,18 @@ export default function ValidationRulesPage() {
 
   const testErrors = (testResults || []).filter((r) => r.errorMessage);
   const ruleHint = RULE_HINTS[ruleType];
+  // Optional + no format check, with nothing existing to remove, would save
+  // nothing at all — and used to answer with a success toast anyway.
+  const editingFormatRow = !!editingRule && editingRule.ruleType !== 'REQUIRED';
+  const nothingToSave =
+    ruleType === 'NONE' &&
+    fieldRequirement === 'optional' &&
+    !isFieldRequired(rules, fieldName) &&
+    !editingFormatRow;
   const saveDisabled =
     busy ||
     !fieldName ||
+    nothingToSave ||
     (ruleType === 'REGEX' && !pattern.trim()) ||
     (ruleType === 'RANGE' && (rangeMin === '' || rangeMax === ''));
   // Missing field name is self-evident (the select still shows its prompt);
@@ -276,7 +279,9 @@ export default function ValidationRulesPage() {
       ? 'Choose or enter a format pattern first.'
       : !busy && fieldName && ruleType === 'RANGE' && (rangeMin === '' || rangeMax === '')
         ? 'Enter both a minimum and maximum.'
-        : '';
+        : !busy && fieldName && nothingToSave
+          ? 'Mark the field Required or pick a format rule — there is nothing to save yet.'
+          : '';
 
   return (
     <div>

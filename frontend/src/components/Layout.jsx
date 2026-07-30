@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 // Nav mirrors the product journey: Home, then the numbered document flow,
@@ -29,15 +29,48 @@ const sections = [
   },
 ];
 
+const DESKTOP = '(min-width: 1024px)';
+
+function isDesktopWidth() {
+  return typeof window.matchMedia !== 'function' || window.matchMedia(DESKTOP).matches;
+}
+
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  // Open by default only on large screens; below lg the open sidebar overlays
-  // the content instead of pushing it aside.
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () =>
-      typeof window.matchMedia !== 'function' || window.matchMedia('(min-width: 1024px)').matches
-  );
+  const location = useLocation();
+  // On large screens the sidebar is a permanent column that pushes the content
+  // aside; below lg it is a modal drawer over the content, so it starts closed
+  // and behaves like a dialog (backdrop, Escape, closes on navigation).
+  const [desktop, setDesktop] = useState(isDesktopWidth);
+  const [sidebarOpen, setSidebarOpen] = useState(isDesktopWidth);
+  const drawer = sidebarOpen && !desktop;
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined;
+    const query = window.matchMedia(DESKTOP);
+    const onChange = (event) => {
+      setDesktop(event.matches);
+      setSidebarOpen(event.matches);
+    };
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
+  // A drawer that stays open over the page the user just navigated to hides
+  // the very thing they asked for.
+  useEffect(() => {
+    if (!desktop) setSidebarOpen(false);
+  }, [location.pathname, desktop]);
+
+  useEffect(() => {
+    if (!drawer) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setSidebarOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [drawer]);
 
   const handleLogout = () => {
     logout();
@@ -87,10 +120,22 @@ export default function Layout() {
         </div>
       </header>
 
+      {drawer && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 top-14 z-40 cursor-default bg-ink/30 lg:hidden"
+        />
+      )}
+
       <aside
-        className={`fixed top-14 bottom-0 left-0 z-10 w-64 overflow-y-auto border-r border-line bg-sidebar px-4 py-5 transition-transform duration-200 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        aria-label="Main navigation"
+        // Hidden off-canvas, its links must not stay in the tab order.
+        inert={!sidebarOpen}
+        className={`fixed top-14 bottom-0 left-0 w-64 overflow-y-auto border-r border-line bg-sidebar px-4 py-5 transition-transform duration-200 ${
+          drawer ? 'z-[45] shadow-xl' : 'z-10'
+        } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         {sections.map((section, i) => (
           <div key={section.label || i} className="mb-5">
@@ -132,9 +177,10 @@ export default function Layout() {
         ))}
       </aside>
 
-      {/* z-order contract: app bar z-20 > sidebar / sticky PageHeader z-10;
-          wizard toolbar z-30 sits above sticky headers; chat drawer/FAB z-40;
-          toasts z-50 above everything. Sticky in-page elements use top-14. */}
+      {/* z-order contract: sticky PageHeader z-10 < docked sidebar z-10 <
+          app bar z-20 < wizard toolbar z-30 < chat drawer/FAB z-40 <
+          mobile sidebar backdrop z-40 and drawer z-[45] < toasts z-50.
+          Sticky in-page elements use top-14 (below the app bar). */}
       <main className={`pt-14 transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-64' : ''}`}>
         <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
           <Outlet />

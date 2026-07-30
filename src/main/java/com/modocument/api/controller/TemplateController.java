@@ -1,7 +1,9 @@
 package com.modocument.api.controller;
 
 import com.modocument.application.port.TemplateRepository;
+import com.modocument.application.usecase.DeleteTemplateUseCase;
 import com.modocument.domain.entity.Template;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,15 +14,19 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 @RestController
 public class TemplateController {
 
     private final TemplateRepository repo;
+    private final DeleteTemplateUseCase deleteTemplate;
 
-    public TemplateController(TemplateRepository repo) {
+    public TemplateController(TemplateRepository repo, DeleteTemplateUseCase deleteTemplate) {
         this.repo = repo;
+        this.deleteTemplate = deleteTemplate;
     }
 
     @GetMapping("/Templates/GetAll")
@@ -32,7 +38,7 @@ public class TemplateController {
     public ResponseEntity<?> getTemplateById(@PathVariable int id) {
         Optional<Template> item = repo.getById(id);
         if (item.isEmpty()) {
-            return ResponseEntity.notFound().build();
+            return notFound(id);
         }
         Template dto = new Template(item.get().getTemplateId(), item.get().getName(),
                 item.get().getDescription());
@@ -52,7 +58,7 @@ public class TemplateController {
     public ResponseEntity<?> update(@RequestBody Template dto) {
         Optional<Template> existingOpt = repo.getById(dto.getTemplateId());
         if (existingOpt.isEmpty()) {
-            return ResponseEntity.notFound().build();
+            return notFound(dto.getTemplateId());
         }
         Template existing = existingOpt.get();
         existing.setName(dto.getName());
@@ -70,11 +76,23 @@ public class TemplateController {
 
     @DeleteMapping("/Templates/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
-        Optional<Template> existing = repo.getById(id);
-        if (existing.isEmpty()) {
-            return ResponseEntity.notFound().build();
+        try {
+            deleteTemplate.handle(id);
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            // Something still references the template; without this the
+            // foreign key turns the delete into an unexplained 500.
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", e.getMessage()));
         }
-        repo.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** A body the frontend can render; an empty 404 degrades to "Request failed (404)". */
+    private static ResponseEntity<?> notFound(int id) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Template " + id + " not found."));
     }
 }

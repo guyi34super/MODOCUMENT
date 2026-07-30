@@ -30,6 +30,19 @@ public class SupportedDocumentTypes {
         return tabularNormalizer.supports(extension) || documentParser.supports(extension);
     }
 
+    /**
+     * Sorted extensions with their leading dot, e.g. {@code [".csv", ".pdf"]} —
+     * exactly what a file input's {@code accept} attribute needs, so the
+     * picker can never offer a format this build would reject.
+     */
+    public Set<String> supportedExtensions() {
+        Set<String> extensions = new TreeSet<>(tabularNormalizer.supportedExtensions());
+        extensions.addAll(documentParser.supportedExtensions());
+        return extensions.stream()
+                .map(ext -> ext.startsWith(".") ? ext : "." + ext)
+                .collect(Collectors.toCollection(TreeSet::new));
+    }
+
     /** Sorted, dot-less list for error messages, e.g. "csv, doc, docx, …". */
     public String describeSupported() {
         Set<String> extensions = new TreeSet<>(tabularNormalizer.supportedExtensions());

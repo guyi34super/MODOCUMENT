@@ -39,6 +39,11 @@ public class IngestionJobRepositoryImpl implements IngestionJobRepository {
     }
 
     @Override
+    public int countByTemplateId(int templateId) {
+        return (int) jpa.countByTemplateId(templateId);
+    }
+
+    @Override
     public List<String> listRecentMappingJson(int templateId, int limit) {
         return jpa.findRecentMappingJson(templateId,
                 List.of(JobStep.VALIDATED, JobStep.EXPORTED), PageRequest.of(0, limit));

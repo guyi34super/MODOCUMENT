@@ -16,6 +16,8 @@ export default function TemplatesPage() {
   const load = useCallback(async () => {
     try {
       setTemplates(await getTemplates());
+      // A banner that survives a successful reload reads as a broken page.
+      setError('');
     } catch (err) {
       setError(err.message);
     }

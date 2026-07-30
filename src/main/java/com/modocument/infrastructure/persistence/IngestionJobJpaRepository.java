@@ -22,4 +22,6 @@ public interface IngestionJobJpaRepository extends JpaRepository<IngestionJob, I
     List<String> findRecentMappingJson(@Param("templateId") int templateId,
                                        @Param("steps") Collection<JobStep> steps,
                                        Pageable pageable);
+
+    long countByTemplateId(int templateId);
 }

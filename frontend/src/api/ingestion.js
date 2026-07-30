@@ -2,6 +2,9 @@ import { api } from './client';
 
 export const listJobs = () => api.get('/api/ingestion/jobs');
 
+/** What this build can parse — drives the file picker's accept list. */
+export const getSupportedTypes = () => api.get('/api/ingestion/supported-types');
+
 export const getJob = (id) => api.get(`/api/ingestion/jobs/${id}`);
 
 export function createJobFromFile(file, templateId, autoRun = true, runUntil = 'MAPPED') {

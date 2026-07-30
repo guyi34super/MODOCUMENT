@@ -30,6 +30,15 @@ public class MappingProperties {
     private int historyJobs = 25;
 
     /**
+     * Ceiling on column × field pairs the value-shape tier may evaluate. Shape
+     * scoring runs every sample through every rule of a field, so a wide file
+     * against a wide template grows multiplicatively inside the upload
+     * request; beyond this budget shape is simply no signal and the name,
+     * history and LLM tiers carry the mapping.
+     */
+    private int shapePairBudget = 400;
+
+    /**
      * Extra header aliases (token -> canonical token), merged with the
      * built-in table; matched on normalized tokens (e.g. "matricule: employeenumber").
      */
@@ -65,6 +74,14 @@ public class MappingProperties {
 
     public void setHistoryJobs(int historyJobs) {
         this.historyJobs = historyJobs;
+    }
+
+    public int getShapePairBudget() {
+        return shapePairBudget;
+    }
+
+    public void setShapePairBudget(int shapePairBudget) {
+        this.shapePairBudget = shapePairBudget;
     }
 
     public Map<String, String> getAliases() {

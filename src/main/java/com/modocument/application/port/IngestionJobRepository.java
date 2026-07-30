@@ -18,4 +18,7 @@ public interface IngestionJobRepository {
      * VALIDATED or EXPORTED — the learned-mappings signal for auto-mapping.
      */
     List<String> listRecentMappingJson(int templateId, int limit);
+
+    /** Jobs referencing a template — used before deleting the template. */
+    int countByTemplateId(int templateId);
 }

@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ToastProvider } from '../context/ToastContext';
-import IngestionJobPage from './IngestionJobPage';
+import IngestionJobPage, { canVisitStep } from './IngestionJobPage';
 
 import { getAllFields } from '../api/templates';
 import {
@@ -288,7 +288,7 @@ describe('IngestionJobPage wizard', () => {
 
     expect(chatEdit).toHaveBeenCalledWith('7', 'trim whitespace');
     expect(
-      await screen.findByText(/Applied your changes. Click Re-validate/i)
+      await screen.findByText(/Applied your changes. Use Re-validate in the toolbar/i)
     ).toBeInTheDocument();
   });
 
@@ -469,11 +469,14 @@ describe('IngestionJobPage wizard', () => {
     expect(screen.getByText('Rows 1–10 of 25')).toBeInTheDocument();
   });
 
-  it('export step disables download until validated', async () => {
+  it('export deep link on an unvalidated job lands on mapping instead', async () => {
+    // The backend refuses to export (or checkpoint) a job that has not been
+    // validated, so the wizard must not offer the step either.
     getJob.mockResolvedValue(mappedJob);
     renderPage('/ingestion/7?step=export');
-    await screen.findByRole('heading', { name: 'Export' });
-    expect(screen.getByRole('button', { name: 'Download file' })).toBeDisabled();
+    await screen.findByText('Column mapping');
+    expect(screen.queryByRole('heading', { name: 'Export' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();
   });
 
   it('export step enables download when validated', async () => {
@@ -481,5 +484,72 @@ describe('IngestionJobPage wizard', () => {
     renderPage('/ingestion/7?step=export');
     await screen.findByRole('heading', { name: 'Export' });
     expect(screen.getByRole('button', { name: 'Download file' })).toBeEnabled();
+  });
+});
+
+describe('wizard step reachability', () => {
+  // Must mirror IngestionJobUseCase.setWizardStep: MAPPING always, the other
+  // two only once the job has validated. A pill the backend then refuses to
+  // checkpoint is how the resume point silently stopped being saved.
+  const STEPS = ['mapping', 'validation', 'export'];
+  const BACKEND_ALLOWS = {
+    UPLOADED: ['mapping'],
+    PARSED: ['mapping'],
+    MAPPED: ['mapping'],
+    VALIDATED: ['mapping', 'validation', 'export'],
+    EXPORTED: ['mapping', 'validation', 'export'],
+  };
+
+  it('matches the backend rule for every step and stage', () => {
+    Object.entries(BACKEND_ALLOWS).forEach(([currentStep, allowed]) => {
+      STEPS.forEach((step) => {
+        expect(canVisitStep(step, { currentStep, mappedRows: { columns: [], rows: [] } })).toBe(
+          allowed.includes(step)
+        );
+      });
+    });
+  });
+
+  it('offers only mapping before a job is loaded', () => {
+    expect(canVisitStep('mapping', null)).toBe(true);
+    expect(canVisitStep('validation', null)).toBe(false);
+    expect(canVisitStep('export', null)).toBe(false);
+  });
+});
+
+describe('IngestionJobPage without an explicit ?step', () => {
+  beforeEach(() => {
+    getAllFields.mockResolvedValue([
+      { templateFieldsId: 1, templateId: 1, fieldName: 'FirstName' },
+    ]);
+    setWizardStep.mockReset();
+    setWizardStep.mockResolvedValue({});
+    updateRows.mockReset();
+    updateRows.mockResolvedValue({});
+    revalidateJob.mockReset();
+  });
+
+  it('keeps the validation pane after saving edits, even if the job reports MAPPED', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    // The server clamps the job back to MAPPED while saving rows; the pane the
+    // user is working in must not follow it.
+    revalidateJob.mockResolvedValue({ ...validatedJobWithErrors, currentStep: 'MAPPED' });
+    renderPage('/ingestion/7');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByText('(empty)'));
+    await userEvent.type(screen.getByDisplayValue(''), 'Ada{Enter}');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(updateRows).toHaveBeenCalledWith('7', [{ FirstName: 'Ada' }]);
+    expect(screen.getByRole('heading', { name: 'Validation' })).toBeInTheDocument();
+    expect(screen.queryByText('Column mapping')).not.toBeInTheDocument();
+  });
+
+  it('resolves the inferred step into the URL so later updates cannot move it', async () => {
+    getJob.mockResolvedValue(validatedJob);
+    renderPage('/ingestion/7');
+    await screen.findByRole('heading', { name: 'Validation' });
+    expect(setWizardStep).not.toHaveBeenCalled();
   });
 });

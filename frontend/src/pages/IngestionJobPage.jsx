@@ -21,6 +21,7 @@ import DataTable from '../components/DataTable';
 import ValidationChatDrawer from '../components/ValidationChatDrawer';
 import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
+import useUnsavedGuard from '../hooks/useUnsavedGuard';
 
 const WIZARD_STEPS = ['mapping', 'validation', 'export'];
 
@@ -42,14 +43,21 @@ function defaultWizardStep(currentStep) {
   return 'mapping';
 }
 
-function canVisitStep(step, job) {
+/**
+ * Which wizard panes a job can show. Exported so a test can hold it against
+ * the backend's own rule for accepting a wizard-step checkpoint — the two
+ * drifting apart is what made the resume point silently unsavable.
+ */
+export function canVisitStep(step, job) {
   if (!job) return step === 'mapping';
   if (step === 'mapping') return true;
   if (step === 'validation') {
     return job.currentStep === 'VALIDATED' || job.currentStep === 'EXPORTED';
   }
   if (step === 'export') {
-    return Boolean(job.mappedRows);
+    // Must match the backend's own rule: it refuses to checkpoint or export a
+    // job that has not been validated, and that 400 used to be swallowed.
+    return job.currentStep === 'VALIDATED' || job.currentStep === 'EXPORTED';
   }
   return false;
 }
@@ -70,7 +78,9 @@ function WizardStepIndicator({ activeStep, job, onSelect }) {
   return (
     <ol className="flex flex-wrap items-center gap-1 text-sm">
       {WIZARD_STEPS.map((step, i) => {
-        const enabled = canVisitStep(step, job);
+        // The step being worked on stays enabled even when an edit reset the
+        // job's stage — otherwise a chat edit greys out the pane you are in.
+        const enabled = step === activeStep || canVisitStep(step, job);
         const isActive = step === activeStep;
         const isDone =
           (step === 'mapping' && job?.mappedRows) ||
@@ -171,13 +181,20 @@ function WizardToolbar({
               ) : (
                 <Button
                   onClick={onContinueValidation}
-                  disabled={Boolean(busyAction) || Boolean(mappingDraft) || job.currentStep !== 'MAPPED'}
+                  disabled={
+                    Boolean(busyAction) ||
+                    Boolean(mappingDraft) ||
+                    isTerminal ||
+                    job.currentStep !== 'MAPPED'
+                  }
                   title={
-                    mappingDraft
-                      ? 'Save or discard mapping changes first'
-                      : job.currentStep !== 'MAPPED'
-                        ? 'Resume processing first'
-                        : undefined
+                    isTerminal
+                      ? 'This job is cancelled'
+                      : mappingDraft
+                        ? 'Save or discard mapping changes first'
+                        : job.currentStep !== 'MAPPED'
+                          ? 'Resume processing first'
+                          : undefined
                   }
                 >
                   {busyAction === 'validate' ? 'Validating…' : 'Continue to validation'}
@@ -210,7 +227,8 @@ function WizardToolbar({
               </Button>
               <Button
                 onClick={onContinueExport}
-                disabled={!canExport || Boolean(busyAction) || rowsDirty}
+                disabled={!canExport || Boolean(busyAction) || rowsDirty || isTerminal}
+                title={isTerminal ? 'This job is cancelled' : undefined}
               >
                 Continue to export
               </Button>
@@ -713,48 +731,52 @@ function ValidationStep({
           AI assistant, then re-validate.
         </p>
 
+        {/* The table stays on screen whether or not validation has run: after an
+            edit (yours or the assistant's) the results are cleared, and hiding
+            the data at that exact moment is how the fix-then-check loop used to
+            dead-end. */}
         {!hasValidationResults ? (
-          <Callout variant="info" title="Validation not run yet">
-            Run validation to check the mapped rows against your template rules.
-            <div className="mt-2">
-              <Button onClick={onRunValidation} disabled={Boolean(busyAction)}>
-                {busyAction === 'validate' ? 'Validating…' : 'Run validation'}
-              </Button>
-            </div>
-          </Callout>
+          <div className="mb-3">
+            <Callout variant="info" title="Validation has not run on these rows">
+              Check the mapped rows against your template rules to see what still needs fixing.
+              <div className="mt-2">
+                <Button onClick={onRunValidation} disabled={Boolean(busyAction) || rowsDirty}>
+                  {busyAction === 'validate' ? 'Validating…' : 'Run validation'}
+                </Button>
+              </div>
+            </Callout>
+          </div>
+        ) : validationErrors.length === 0 ? (
+          <div className="mb-3">
+            <Callout variant="success" title="All rows valid">
+              Every mapped row passed the template&apos;s validation rules.
+            </Callout>
+          </div>
         ) : (
-          <>
-            {validationErrors.length === 0 ? (
-              <Callout variant="success" title="All rows valid">
-                Every mapped row passed the template&apos;s validation rules.
-              </Callout>
-            ) : (
-              <div className="mb-3">
-                <Callout
-                  variant="error"
-                  title={`${validationErrors.length} validation error${validationErrors.length > 1 ? 's' : ''}`}
-                >
-                  Fix the highlighted cells below or use the AI assistant, then re-validate.
-                </Callout>
-              </div>
-            )}
+          <div className="mb-3">
+            <Callout
+              variant="error"
+              title={`${validationErrors.length} validation error${validationErrors.length > 1 ? 's' : ''}`}
+            >
+              Fix the highlighted cells below or use the AI assistant, then re-validate.
+            </Callout>
+          </div>
+        )}
 
-            {job.mappedRows && (
-              <div className="mb-5">
-                <h3 className="mb-2 text-sm font-medium text-muted">Mapped data</h3>
-                <ValidatedDataTable
-                  mappedRows={job.mappedRows}
-                  validationResults={job.validationResults ?? []}
-                  page={page}
-                  pageSize={pageSize}
-                  onPageChange={setPage}
-                  onPageSizeChange={handlePageSizeChange}
-                  rowEdits={rowEdits}
-                  onEditCell={onEditCell}
-                />
-              </div>
-            )}
-          </>
+        {job.mappedRows && (
+          <div className="mb-5">
+            <h3 className="mb-2 text-sm font-medium text-muted">Mapped data</h3>
+            <ValidatedDataTable
+              mappedRows={job.mappedRows}
+              validationResults={job.validationResults ?? []}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={handlePageSizeChange}
+              rowEdits={rowEdits}
+              onEditCell={onEditCell}
+            />
+          </div>
         )}
 
       </Card>
@@ -974,22 +996,30 @@ export default function IngestionJobPage() {
     if (!job || clampedJobId.current === id) return;
     clampedJobId.current = id;
     const requested = searchParams.get('step');
-    if (requested && WIZARD_STEPS.includes(requested) && !canVisitStep(requested, job)) {
-      setSearchParams({ step: restoredWizardStep(job) });
-    }
-    // Only clamp invalid deep-links when the job payload first loads — job
-    // updates mid-session (e.g. a chat edit resetting currentStep) must not
-    // yank the user off the step they are working on.
+    const target =
+      requested && WIZARD_STEPS.includes(requested) && canVisitStep(requested, job)
+        ? requested
+        : restoredWizardStep(job);
+    // Write the resolved step into the URL once, when the job first loads:
+    // from then on the URL is the only thing that decides which pane is shown,
+    // so a save or a chat edit that resets the job's stage can no longer throw
+    // the user back to Mapping mid-task. Invalid deep-links are clamped here
+    // too, and only here — re-clamping on every job update would do the same
+    // yanking in reverse.
+    if (target !== requested) setSearchParams({ step: target }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job, id]);
 
   const setStep = (step, jobSnapshot = job) => {
-    if (canVisitStep(step, jobSnapshot)) {
-      setSearchParams({ step });
-      // Best-effort checkpoint so reopening the job resumes on this step.
-      // The response is ignored: applying it would clobber local drafts.
-      setWizardStep(id, step).catch(() => {});
-    }
+    if (!canVisitStep(step, jobSnapshot)) return;
+    setSearchParams({ step });
+    // Checkpoint so reopening the job resumes on this step. The response is
+    // ignored (applying it would clobber local drafts) but a failure is not:
+    // silently losing the resume point is exactly the bug this replaced.
+    setWizardStep(id, step).catch((err) => {
+      console.warn('Could not save the resume point for job', id, err);
+      setError(`This step could not be saved as the resume point: ${err.message}`);
+    });
   };
 
   const runAction = async (name, fn) => {
@@ -1040,7 +1070,7 @@ export default function IngestionJobPage() {
     if (updated) {
       // updateRows clamps the persisted wizard step to MAPPING server-side;
       // restore the resume checkpoint now that the job is validated again.
-      setWizardStep(id, 'validation').catch(() => {});
+      setStep('validation', updated);
     }
   };
 
@@ -1059,10 +1089,18 @@ export default function IngestionJobPage() {
     runAction('cancel', () => cancelJob(id));
   };
 
+  useUnsavedGuard(
+    Boolean(mappingDraft) || rowsDirty,
+    mappingDraft
+      ? 'Your mapping changes have not been saved. Leave and discard them?'
+      : 'Your cell edits have not been saved. Leave and discard them?'
+  );
+
   const mapping = mappingDraft ?? job?.mapping ?? {};
   const validationErrors = (job?.validationResults || []).filter((r) => r.errorMessage);
   const isTerminal = job?.status === 'CANCELLED';
-  const canExport = job?.currentStep === 'VALIDATED' || job?.currentStep === 'EXPORTED';
+  const canExport =
+    !isTerminal && (job?.currentStep === 'VALIDATED' || job?.currentStep === 'EXPORTED');
   const dirtyCount = rowEdits ? Object.keys(rowEdits).length : 0;
 
   if (!job) {
@@ -1129,9 +1167,17 @@ export default function IngestionJobPage() {
           mapping={mapping}
           templateFields={templateFields}
           busyAction={busyAction}
-          onMappingChange={(source, target) =>
-            setMappingDraft({ ...mapping, [source]: target })
-          }
+          onMappingChange={(source, target) => {
+            const next = { ...mapping, [source]: target };
+            const original = job.mapping || {};
+            const columns = new Set([...Object.keys(next), ...Object.keys(original)]);
+            const changed = [...columns].some(
+              (col) => (next[col] ?? null) !== (original[col] ?? null)
+            );
+            // Undoing your own edits must clear "Unsaved mapping" — otherwise
+            // Continue stays disabled with nothing left to save.
+            setMappingDraft(changed ? next : null);
+          }}
           onResume={() => runAction('resume', () => resumeJob(id, 'MAPPED'))}
         />
       )}
@@ -1164,7 +1210,9 @@ export default function IngestionJobPage() {
                 {
                   id: `assistant-${Date.now()}`,
                   role: 'assistant',
-                  text: 'Applied your changes. Click Re-validate to refresh validation errors.',
+                  text:
+                    'Applied your changes. Use Re-validate in the toolbar above to check ' +
+                    'the rows again.',
                   ts: Date.now(),
                 },
               ]);

@@ -8,4 +8,6 @@ import java.util.Optional;
 public interface ImportHistoryJpaRepository extends JpaRepository<ImportHistory, Integer> {
 
     Optional<ImportHistory> findFirstByFileNameIgnoreCase(String fileName);
+
+    long countByTemplateId(int templateId);
 }
