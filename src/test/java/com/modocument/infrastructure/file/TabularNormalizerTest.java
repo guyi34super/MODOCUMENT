@@ -42,6 +42,41 @@ class TabularNormalizerTest {
     }
 
     @Test
+    void repeatedHeaderKeepsBothColumns() throws Exception {
+        Path csv = tempDir.resolve("duplicates.csv");
+        Files.writeString(csv, "Email,Email\nwork@x.com,home@x.com\n");
+
+        TableData table = normalizer.normalize(csv);
+
+        assertThat(table.getColumns()).containsExactly("Email", "Email (2)");
+        assertThat(table.getRows().get(0))
+                .containsEntry("Email", "work@x.com")
+                .containsEntry("Email (2)", "home@x.com");
+    }
+
+    @Test
+    void blankHeaderGetsAPositionalName() throws Exception {
+        Path csv = tempDir.resolve("blank-header.csv");
+        Files.writeString(csv, "Name,\nAda,36\n");
+
+        TableData table = normalizer.normalize(csv);
+
+        assertThat(table.getColumns()).containsExactly("Name", "Column2");
+        assertThat(table.getRows().get(0)).containsEntry("Column2", "36");
+    }
+
+    @Test
+    void stripsByteOrderMarkFromTheFirstColumnName() throws Exception {
+        Path csv = tempDir.resolve("bom.csv");
+        Files.writeString(csv, "﻿FirstName,LastName\nAda,Lovelace\n");
+
+        TableData table = normalizer.normalize(csv);
+
+        assertThat(table.getColumns()).containsExactly("FirstName", "LastName");
+        assertThat(table.getRows().get(0)).containsEntry("FirstName", "Ada");
+    }
+
+    @Test
     void normalizesXlsxFirstSheetWithHeaderRow() throws Exception {
         Path xlsx = tempDir.resolve("people.xlsx");
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {

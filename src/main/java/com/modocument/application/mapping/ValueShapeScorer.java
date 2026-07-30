@@ -75,6 +75,9 @@ public class ValueShapeScorer {
                     }
                 }
             }
+            // Score over the judged samples only, and require the same minimum
+            // there — a handful of technically-evaluated values must not stand
+            // in for a full sample.
             return judged >= MIN_SAMPLES
                     ? OptionalDouble.of((double) passes / judged)
                     : OptionalDouble.empty();
@@ -83,9 +86,12 @@ public class ValueShapeScorer {
         return dataTypeScore(field, samples);
     }
 
-    /** null = no signal for this sample (every rule call failed technically). */
+    /**
+     * TRUE only when every scorable rule actually ran and accepted the value;
+     * null when any rule could not be evaluated, so a partially-checked
+     * sample is never counted as a clean pass.
+     */
     private Boolean passesAll(String sample, List<ValidationRule> scorable, String fieldName) {
-        boolean judged = false;
         for (ValidationRule rule : scorable) {
             ValidationRuleValidator validator = findValidator(rule.getRuleType());
             try {
@@ -95,12 +101,11 @@ public class ValueShapeScorer {
                 if (validator.validate(0, fieldName, sample, rule.getConfigJson()) != null) {
                     return false;
                 }
-                judged = true;
             } catch (Exception e) {
-                // skip this rule for this sample
+                return null;
             }
         }
-        return judged ? Boolean.TRUE : null;
+        return Boolean.TRUE;
     }
 
     private OptionalDouble dataTypeScore(TemplateFields field, List<String> samples) {

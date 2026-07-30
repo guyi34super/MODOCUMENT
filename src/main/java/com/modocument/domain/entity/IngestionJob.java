@@ -11,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -73,6 +74,16 @@ public class IngestionJob {
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "ExportInfoJson")
     private String exportInfoJson;
+
+    /**
+     * Optimistic-lock guard. Two requests editing the same job (a resume run
+     * and a cell-edit save, say) both write the whole checkpoint set, so the
+     * slower writer would otherwise silently revert the other's work. The
+     * loser's UPDATE now matches no row and fails with a 409 instead.
+     */
+    @Version
+    @Column(name = "RowVersion")
+    private long rowVersion;
 
     @Column(name = "CreatedDate")
     private LocalDateTime createdDate;
@@ -185,6 +196,14 @@ public class IngestionJob {
 
     public void setExportInfoJson(String exportInfoJson) {
         this.exportInfoJson = exportInfoJson;
+    }
+
+    public long getRowVersion() {
+        return rowVersion;
+    }
+
+    public void setRowVersion(long rowVersion) {
+        this.rowVersion = rowVersion;
     }
 
     public LocalDateTime getCreatedDate() {

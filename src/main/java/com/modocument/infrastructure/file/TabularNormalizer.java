@@ -60,16 +60,26 @@ public class TabularNormalizer {
                 "TabularNormalizer does not handle '" + name + "'.");
     }
 
+    /**
+     * The first record is taken as the header by hand rather than through
+     * {@code CSVFormat.setHeader()}: commons-csv rejects a blank header name
+     * outright, which turns an otherwise readable export into a cryptic parse
+     * failure. Naming those columns is {@link #uniqueColumns}'s job.
+     */
     private static TableData readCsv(Path file) throws IOException {
-        CSVFormat format = CSVFormat.DEFAULT.builder()
-                .setHeader()
-                .setSkipHeaderRecord(true)
-                .build();
         try (Reader reader = Files.newBufferedReader(file);
-             CSVParser parser = CSVParser.parse(reader, format)) {
-            List<String> columns = new ArrayList<>(parser.getHeaderNames());
+             CSVParser parser = CSVParser.parse(reader, CSVFormat.DEFAULT)) {
+            List<String> columns = List.of();
             List<Map<String, String>> rows = new ArrayList<>();
+            boolean headerSeen = false;
             for (CSVRecord record : parser) {
+                if (!headerSeen) {
+                    headerSeen = true;
+                    List<String> rawHeaders = new ArrayList<>(record.size());
+                    record.forEach(rawHeaders::add);
+                    columns = uniqueColumns(rawHeaders);
+                    continue;
+                }
                 Map<String, String> row = new LinkedHashMap<>();
                 for (int i = 0; i < columns.size(); i++) {
                     row.put(columns.get(i), i < record.size() ? record.get(i) : "");
@@ -78,6 +88,31 @@ public class TabularNormalizer {
             }
             return new TableData(columns, rows);
         }
+    }
+
+    /**
+     * Rows are keyed by column name, so repeated headers would collapse onto
+     * one key and silently drop a column's data. A leading byte-order mark
+     * (Excel writes one by default) is stripped for the same reason: it makes
+     * the first column name look identical while never matching a template
+     * field.
+     */
+    private static List<String> uniqueColumns(List<String> headers) {
+        List<String> columns = new ArrayList<>(headers.size());
+        Map<String, Integer> seen = new LinkedHashMap<>();
+        for (int i = 0; i < headers.size(); i++) {
+            String header = headers.get(i) == null ? "" : headers.get(i);
+            if (i == 0) {
+                header = header.replace("﻿", "");
+            }
+            header = header.trim();
+            if (header.isBlank()) {
+                header = "Column" + (i + 1);
+            }
+            int count = seen.merge(header, 1, Integer::sum);
+            columns.add(count == 1 ? header : header + " (" + count + ")");
+        }
+        return columns;
     }
 
     private static TableData readExcel(Path file) throws IOException {
@@ -92,11 +127,12 @@ public class TabularNormalizer {
                 return new TableData(columns, rows);
             }
             int lastCell = headerRow.getLastCellNum();
+            List<String> rawHeaders = new ArrayList<>();
             for (int c = 0; c < lastCell; c++) {
                 Cell cell = headerRow.getCell(c);
-                String header = cell == null ? "" : formatter.formatCellValue(cell).trim();
-                columns.add(header.isEmpty() ? "Column" + (c + 1) : header);
+                rawHeaders.add(cell == null ? "" : formatter.formatCellValue(cell).trim());
             }
+            columns.addAll(uniqueColumns(rawHeaders));
 
             for (int r = sheet.getFirstRowNum() + 1; r <= sheet.getLastRowNum(); r++) {
                 Row row = sheet.getRow(r);

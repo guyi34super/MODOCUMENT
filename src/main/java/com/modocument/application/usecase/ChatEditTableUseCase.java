@@ -121,7 +121,43 @@ public class ChatEditTableUseCase {
         if (modified == null || modified.isEmpty()) {
             throw new IllegalStateException("The model returned an empty table; nothing was changed.");
         }
-        return new TableData(modified.getColumns(), session.detokenizeRows(modified.getRows()));
+        return applyFullTable(current, modified, session);
+    }
+
+    /**
+     * Rebuilds the table from the model's answer while keeping the schema and
+     * the row count under our control: the persisted columns are the ones we
+     * sent, values are copied only for keys we recognize, and a row count that
+     * does not match means the model lost track of the table (dropped or
+     * invented rows) — reject the whole edit rather than persist it.
+     */
+    private static TableData applyFullTable(TableData current, TableData modified,
+                                            PiiTokenizer.Session session) {
+        List<Map<String, String>> incoming = modified.getRows();
+        if (incoming.size() != current.getRows().size()) {
+            throw new IllegalStateException("The model returned " + incoming.size()
+                    + " rows but the table has " + current.getRows().size()
+                    + "; nothing was changed.");
+        }
+        // detokenizeRow walks a row's entries, so a JSON null row would NPE.
+        List<Map<String, String>> sanitized = incoming.stream()
+                .map(row -> row == null ? Map.<String, String>of() : row)
+                .toList();
+        List<Map<String, String>> restored = session.detokenizeRows(sanitized);
+
+        List<Map<String, String>> rows = new ArrayList<>(restored.size());
+        for (int i = 0; i < restored.size(); i++) {
+            Map<String, String> answer = restored.get(i);
+            Map<String, String> row = new LinkedHashMap<>(current.getRows().get(i));
+            for (String column : current.getColumns()) {
+                if (answer.containsKey(column)) {
+                    String value = answer.get(column);
+                    row.put(column, value == null ? "" : value);
+                }
+            }
+            rows.add(row);
+        }
+        return new TableData(current.getColumns(), rows);
     }
 
     /** Chunked behavior: only the failing rows go to the model; its patch is merged back. */

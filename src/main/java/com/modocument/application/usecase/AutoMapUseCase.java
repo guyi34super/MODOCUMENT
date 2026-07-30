@@ -82,18 +82,23 @@ public class AutoMapUseCase {
         for (String field : fieldNames) {
             normalizedFields.putIfAbsent(normalize(field), field);
         }
+        // Exact matches claim their field before normalized ones, so a column
+        // named exactly like a field never loses it to a fuzzier neighbour.
         List<String> unresolved = new ArrayList<>();
         for (String column : context.columns()) {
-            String target = pool.contains(column) ? column : null;
-            if (target == null) {
-                String byNormalizedName = normalizedFields.get(normalize(column));
-                if (byNormalizedName != null && pool.contains(byNormalizedName)) {
-                    target = byNormalizedName;
-                }
+            if (!mapping.containsKey(column) && pool.contains(column)) {
+                mapping.put(column, column);
+                pool.remove(column);
             }
-            if (target != null) {
-                mapping.put(column, target);
-                pool.remove(target);
+        }
+        for (String column : context.columns()) {
+            if (mapping.containsKey(column)) {
+                continue;
+            }
+            String byNormalizedName = normalizedFields.get(normalize(column));
+            if (byNormalizedName != null && pool.contains(byNormalizedName)) {
+                mapping.put(column, byNormalizedName);
+                pool.remove(byNormalizedName);
             } else {
                 unresolved.add(column);
             }
@@ -110,8 +115,9 @@ public class AutoMapUseCase {
         }
 
         // Unresolved columns keep explicit null entries (existing contract:
-        // serialized into MappingJson; applyMapping skips them).
-        unresolved.forEach(column -> mapping.put(column, null));
+        // serialized into MappingJson; applyMapping skips them). putIfAbsent
+        // because a repeated column name must not erase its own assignment.
+        unresolved.forEach(column -> mapping.putIfAbsent(column, null));
         return mapping;
     }
 
@@ -198,8 +204,11 @@ public class AutoMapUseCase {
             }
         }
         Map<String, String> majority = new HashMap<>();
+        // Tie-break by field name so identical history yields identical
+        // mappings run to run.
         votes.forEach((column, fieldVotes) -> fieldVotes.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
+                .max(Map.Entry.<String, Integer>comparingByValue()
+                        .thenComparing(Map.Entry.comparingByKey(java.util.Comparator.reverseOrder())))
                 .ifPresent(winner -> majority.put(column, winner.getKey())));
         return majority;
     }

@@ -259,6 +259,13 @@ public class IngestionJobUseCase {
 
     /** Marks the export stage complete; called by the export endpoints. */
     public IngestionJob recordExport(IngestionJob job, Map<String, Object> exportInfo) {
+        // A cancelled job must never be revived by an export: flipping status
+        // back to COMPLETED here would undo the cancellation and wipe the
+        // recorded reason.
+        if (job.getStatus() == JobStatus.CANCELLED) {
+            throw new IllegalStateException(
+                    "Job " + job.getIngestionJobId() + " is cancelled and cannot be exported.");
+        }
         job.setExportInfoJson(toJson(exportInfo));
         job.setCurrentStep(JobStep.EXPORTED);
         job.setWizardStep(WizardStep.EXPORT);

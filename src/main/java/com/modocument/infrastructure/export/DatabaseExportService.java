@@ -3,8 +3,10 @@ package com.modocument.infrastructure.export;
 import com.modocument.application.dto.DatabaseExportRequest;
 import com.modocument.application.dto.TableData;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -33,17 +35,9 @@ public class DatabaseExportService {
             requireValidIdentifier(column, "column");
         }
 
-        JdbcTemplate jdbc = new JdbcTemplate(dataSourceFor(request));
+        SimpleDriverDataSource dataSource = dataSourceFor(request);
         boolean createIfMissing = request.getCreateTableIfMissing() == null
                 || request.getCreateTableIfMissing();
-
-        if (!tableExists(jdbc, tableName)) {
-            if (!createIfMissing) {
-                throw new IllegalStateException(
-                        "Table '" + tableName + "' does not exist in the target database.");
-            }
-            jdbc.execute(createTableSql(tableName, columns));
-        }
 
         String insertSql = "INSERT INTO " + quote(tableName) + " ("
                 + columns.stream().map(DatabaseExportService::quote).collect(Collectors.joining(", "))
@@ -52,7 +46,22 @@ public class DatabaseExportService {
         List<Object[]> batch = table.getRows().stream()
                 .map(row -> columns.stream().map(c -> (Object) row.getOrDefault(c, "")).toArray())
                 .toList();
-        jdbc.batchUpdate(insertSql, batch);
+
+        // All-or-nothing: a constraint violation halfway through a batch must
+        // not leave the target table holding a partial export that a retry
+        // would then duplicate.
+        DataSourceTransactionManager transactions = new DataSourceTransactionManager(dataSource);
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            if (!tableExists(jdbc, tableName)) {
+                if (!createIfMissing) {
+                    throw new IllegalStateException(
+                            "Table '" + tableName + "' does not exist in the target database.");
+                }
+                jdbc.execute(createTableSql(tableName, columns));
+            }
+            jdbc.batchUpdate(insertSql, batch);
+        });
         return batch.size();
     }
 

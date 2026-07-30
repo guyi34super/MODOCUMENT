@@ -181,6 +181,34 @@ class ChatEditTableUseCaseTest {
     }
 
     @Test
+    void fullTableKeepsOurColumnsAndIgnoresInventedOnes() {
+        jobWithMappedRows(); // columns: ["FirstName"]
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(new TableData(List.of("FirstName", "Ssn"),
+                        List.of(Map.of("FirstName", "Ada", "Ssn", "123-45-6789"))));
+
+        IngestionJob result = useCase.handle(7, "Capitalize all first names");
+
+        assertThat(result.getMappedRowsJson()).contains("Ada");
+        assertThat(result.getMappedRowsJson()).doesNotContain("Ssn");
+        assertThat(result.getMappedRowsJson()).doesNotContain("123-45-6789");
+    }
+
+    @Test
+    void fullTableRejectsARowCountChange() {
+        IngestionJob job = jobWithMappedRows(); // one row
+        String before = job.getMappedRowsJson();
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(new TableData(List.of("FirstName"),
+                        List.of(Map.of("FirstName", "Ada"), Map.of("FirstName", "Grace"))));
+
+        assertThatThrownBy(() -> useCase.handle(7, "Capitalize all first names"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("2 rows but the table has 1");
+        assertThat(job.getMappedRowsJson()).isEqualTo(before);
+    }
+
+    @Test
     void rejectsPatchRowOutOfRange() {
         IngestionJob job = jobWithValidationErrors();
         String before = job.getMappedRowsJson();
