@@ -20,6 +20,10 @@ public class UploadStorage {
 
     private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
+    /** Leaves room for "_yyyyMMddHHmmss" and the extension inside varchar(255). */
+    static final int MAX_BASE_NAME_LENGTH = 200;
+    static final int MAX_EXTENSION_LENGTH = 20;
+
     private final Path uploadsDir;
 
     public UploadStorage(StorageProperties storage) {
@@ -33,7 +37,9 @@ public class UploadStorage {
 
             String originalName = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
             // Keep only the last path segment; browsers/clients may send paths.
-            originalName = Path.of(originalName).getFileName().toString();
+            // getFileName() is null for a bare "/" or "C:\\", hence the fallback.
+            Path lastSegment = Path.of(originalName).getFileName();
+            originalName = lastSegment == null ? "file" : lastSegment.toString();
             String baseName = originalName;
             String extension = "";
             int dot = originalName.lastIndexOf('.');
@@ -41,6 +47,14 @@ public class UploadStorage {
                 baseName = originalName.substring(0, dot);
                 extension = originalName.substring(dot);
             }
+            if (baseName.isBlank()) {
+                baseName = "file";
+            }
+            // FileName is a varchar(255) in every table that records it, and the
+            // suffix plus extension has to fit too — truncating here beats an
+            // insert failing after the bytes are already on disk.
+            baseName = truncate(baseName, MAX_BASE_NAME_LENGTH);
+            extension = truncate(extension, MAX_EXTENSION_LENGTH);
 
             String storedName = baseName + "_" + LocalDateTime.now().format(TIMESTAMP) + extension;
             file.transferTo(uploadsDir.resolve(storedName).toAbsolutePath());
@@ -48,6 +62,10 @@ public class UploadStorage {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not store uploaded file.", e);
         }
+    }
+
+    private static String truncate(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max);
     }
 
     /** Resolves a previously stored file name inside the uploads folder (no traversal). */

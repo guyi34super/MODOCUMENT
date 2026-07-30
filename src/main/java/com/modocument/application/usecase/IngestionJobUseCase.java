@@ -120,16 +120,18 @@ public class IngestionJobUseCase {
         IngestionJob job = get(jobId);
         requireActive(job);
 
+        // Nothing to run: return before touching anything, so a no-op resume
+        // cannot erase the recorded failure of an earlier one.
+        if (job.getCurrentStep().ordinal() >= until.ordinal()) {
+            return job;
+        }
+
         // A previously failed job is resumable: clear the failure marker so the
         // per-stage guards below only react to failures from THIS run.
         if (job.getStatus() == JobStatus.FAILED) {
             job.setStatus(JobStatus.PENDING);
             job.setErrorMessage(null);
             job = jobs.save(job);
-        }
-
-        if (job.getCurrentStep().ordinal() >= until.ordinal()) {
-            return job;
         }
 
         if (job.getCurrentStep() == JobStep.UPLOADED) {
@@ -173,6 +175,12 @@ public class IngestionJobUseCase {
         }
         job.setCurrentStep(JobStep.MAPPED);
         clearDownstream(job, JobStep.MAPPED);
+        // Re-validation ends validated, so the Validation pane stays valid —
+        // but the export it had is gone, and reopening on a stale Export pane
+        // would offer a download of data that no longer exists.
+        if (job.getWizardStep() == WizardStep.EXPORT) {
+            job.setWizardStep(WizardStep.VALIDATION);
+        }
         job = jobs.save(job);
         return runStage(job, JobStep.VALIDATED, this::doValidate);
     }
@@ -186,10 +194,22 @@ public class IngestionJobUseCase {
         }
 
         List<String> fieldNames = templateFieldNames(job.getTemplateId());
+        Map<String, String> claimedBy = new LinkedHashMap<>();
         for (Map.Entry<String, String> entry : mapping.entrySet()) {
-            if (entry.getValue() != null && !fieldNames.contains(entry.getValue())) {
+            if (entry.getValue() == null) {
+                continue;
+            }
+            if (!fieldNames.contains(entry.getValue())) {
                 throw new IllegalArgumentException(
                         "'" + entry.getValue() + "' is not a field of template " + job.getTemplateId() + ".");
+            }
+            // applyMapping writes one column per field, so a second claim used
+            // to drop a column's data with no warning at all.
+            String previous = claimedBy.putIfAbsent(entry.getValue(), entry.getKey());
+            if (previous != null) {
+                throw new IllegalArgumentException("Both '" + previous + "' and '" + entry.getKey()
+                        + "' are mapped to '" + entry.getValue()
+                        + "'; each template field can take only one source column.");
             }
         }
 
@@ -242,6 +262,7 @@ public class IngestionJobUseCase {
      */
     public IngestionJob setWizardStep(int jobId, WizardStep step) {
         IngestionJob job = get(jobId);
+        requireActive(job);
         if (step != WizardStep.MAPPING && !hasValidated(job)) {
             throw new IllegalArgumentException(
                     "Wizard step " + step + " is not reachable while the job is at "
@@ -300,6 +321,12 @@ public class IngestionJobUseCase {
 
     private void doParse(IngestionJob job) {
         TableData table = parseStep.parse(job.getFileName());
+        if (table != null && table.getColumns() != null && !table.getColumns().isEmpty()
+                && (table.getRows() == null || table.getRows().isEmpty())) {
+            // The file was read fine — it just has nothing under the header.
+            throw new IllegalStateException("'" + job.getFileName()
+                    + "' has column headers but no data rows.");
+        }
         if (table == null || table.isEmpty()) {
             throw new IllegalStateException(
                     "No tabular data could be extracted from '" + job.getFileName()
@@ -327,7 +354,14 @@ public class IngestionJobUseCase {
         TableData mapped = fromJson(job.getMappedRowsJson(), TableData.class);
         List<RowValidationResult> results =
                 validateRows.handle(new ValidationRequest(job.getTemplateId(), mapped.getRows()));
-        job.setValidationResultJson(toJson(results));
+        // Only the problems are checkpointed. The engine reports one result per
+        // field per row, which for a 10k-row file against a 40-field template is
+        // 400k objects written into one column and shipped to the browser on
+        // every job read — while nothing consumes the passing entries.
+        List<RowValidationResult> problems = results.stream()
+                .filter(result -> result.errorMessage() != null)
+                .toList();
+        job.setValidationResultJson(toJson(problems));
         recordImportDetails(job, STEP_VALIDATING, job.getValidationResultJson());
     }
 

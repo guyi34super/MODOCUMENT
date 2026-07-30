@@ -43,7 +43,10 @@ public class AiFilesServiceImpl implements AiFilesService {
         // and only the LLM endpoints fail when it is missing.
         String apiKey = properties.getApiKey();
         if (apiKey == null || apiKey.isBlank() || UNSET_API_KEY.equals(apiKey)) {
-            throw new IllegalStateException("aifiles.openai.api-key must be configured.");
+            throw new AiNotConfiguredException(
+                    "The AI assistant is not configured on this server. "
+                            + "Set AIFILES_OPENAI_APIKEY and restart, or continue without AI "
+                            + "features (mapping, validation and export all work without them).");
         }
     }
 }

@@ -415,12 +415,32 @@ function ErrorInspector({ activeErr, pageFirstErr }) {
   );
 }
 
-function EditableCell({ value, err, dirty, editing, onStartEdit, onCommit, onCancel }) {
+function EditableCell({
+  value,
+  err,
+  dirty,
+  editing,
+  column,
+  rowNumber,
+  onStartEdit,
+  onCommit,
+  onCancel,
+}) {
   // Keyboard paths mark the commit handled so the fallback onBlur (fired by
   // the focus move that follows) can't commit a second time.
   const handledRef = useRef(false);
+  const buttonRef = useRef(null);
+  const wasEditing = useRef(false);
   useEffect(() => {
     if (editing) handledRef.current = false;
+  }, [editing]);
+  useEffect(() => {
+    // Committing used to leave focus on the removed input, i.e. on <body>:
+    // the keyboard user lost their place in the table entirely. Only reclaim it
+    // when it actually fell through — Enter and Tab hand it to the next cell.
+    const lost = !document.activeElement || document.activeElement === document.body;
+    if (wasEditing.current && !editing && lost) buttonRef.current?.focus();
+    wasEditing.current = editing;
   }, [editing]);
 
   if (editing) {
@@ -449,13 +469,26 @@ function EditableCell({ value, err, dirty, editing, onStartEdit, onCommit, onCan
       />
     );
   }
+  const valueText = value === '' || value == null ? 'empty' : String(value);
+  const problem = err?.errorMessage ? ` ${err.errorMessage}` : '';
+  const description = `${column}, row ${rowNumber}: ${valueText}.${problem} Edit`;
   return (
     <div
+      ref={buttonRef}
       role="button"
       tabIndex={0}
+      // Announce which cell this is and what is wrong with it — "Click to edit"
+      // told a screen-reader user nothing about where they were.
+      aria-label={description}
       title="Click to edit"
       onClick={onStartEdit}
-      onKeyDown={(e) => e.key === 'Enter' && onStartEdit()}
+      onKeyDown={(e) => {
+        // A role="button" must answer Space as well as Enter.
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onStartEdit();
+        }
+      }}
       className={`min-h-5 min-w-28 cursor-text rounded ${dirty ? 'bg-pill/60 px-1 outline outline-1 outline-accent' : ''}`}
     >
       {err ? (
@@ -640,6 +673,8 @@ function ValidatedDataTable({
                   err={err}
                   dirty={draftValue !== undefined}
                   editing={editing}
+                  column={col}
+                  rowNumber={rowIdx + 1}
                   onStartEdit={() => setEditingCell({ rowIdx, col })}
                   onCommit={(v, dir) => commitAndMove({ rowIdx, col }, v, dir)}
                   onCancel={() => setEditingCell(null)}
@@ -744,6 +779,13 @@ function ValidationStep({
                   {busyAction === 'validate' ? 'Validating…' : 'Run validation'}
                 </Button>
               </div>
+            </Callout>
+          </div>
+        ) : !job.mappedRows?.columns?.length ? (
+          <div className="mb-3">
+            <Callout variant="info" title="No mapped data to check">
+              Nothing was mapped to a template field, so there is nothing to validate. Go back to
+              Mapping and point at least one source column at a field.
             </Callout>
           </div>
         ) : validationErrors.length === 0 ? (
@@ -957,6 +999,9 @@ export default function IngestionJobPage() {
   // Keyed by absolute row index so edits survive pagination and step flips.
   const [rowEdits, setRowEdits] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
+  // Date.now() collides when a reply lands in the same millisecond as the
+  // question, and React then reuses the wrong bubble.
+  const nextChatId = useRef(1);
   const [chatOpen, setChatOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState('csv');
   const [showDbExport, setShowDbExport] = useState(false);
@@ -980,17 +1025,39 @@ export default function IngestionJobPage() {
     setRowEdits(null);
   }, []);
 
+  const [reloadKey, setReloadKey] = useState(0);
   useEffect(() => {
+    let active = true;
+    // Clear the previous job before fetching: rendering A's table under B's id
+    // showed the wrong data and let A's wizard step be checkpointed onto B.
+    setJob(null);
+    setMappingDraft(null);
+    setRowEdits(null);
+    setChatMessages([]);
     getJob(id)
       .then((loaded) => {
+        if (!active) return null;
         setJob(loaded);
-        return getAllFields().then((fields) =>
-          setTemplateFields(fields.filter((f) => f.templateId === loaded.templateId))
-        );
+        setError('');
+        // Field names drive every mapping select, so their absence is worth
+        // saying out loud rather than silently emptying the dropdowns.
+        return getAllFields(loaded.templateId)
+          .then((fields) => {
+            if (active) setTemplateFields(fields);
+          })
+          .catch((err) =>
+            setError(`Template fields could not be loaded: ${err.message}`)
+          );
       })
-      .catch((err) => setError(err.message));
-  }, [id]);
+      .catch((err) => {
+        if (active) setError(err.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, reloadKey]);
 
+  const lastStepWrite = useRef(0);
   const clampedJobId = useRef(null);
   useEffect(() => {
     if (!job || clampedJobId.current === id) return;
@@ -1016,7 +1083,11 @@ export default function IngestionJobPage() {
     // Checkpoint so reopening the job resumes on this step. The response is
     // ignored (applying it would clobber local drafts) but a failure is not:
     // silently losing the resume point is exactly the bug this replaced.
+    // Only the newest request may report anything — two quick step changes can
+    // otherwise land out of order and blame the wrong one.
+    const seq = ++lastStepWrite.current;
     setWizardStep(id, step).catch((err) => {
+      if (seq !== lastStepWrite.current) return;
       console.warn('Could not save the resume point for job', id, err);
       setError(`This step could not be saved as the resume point: ${err.message}`);
     });
@@ -1104,18 +1175,33 @@ export default function IngestionJobPage() {
   const dirtyCount = rowEdits ? Object.keys(rowEdits).length : 0;
 
   if (!job) {
-    return error ? (
-      <ErrorBanner message={error} />
-    ) : (
+    return (
       <div>
         <PageHeader
           crumbs={[{ label: 'Upload & Process', to: '/ingestion' }, { label: `Job #${id}` }]}
           title={`Job #${id}`}
         />
-        <Spinner label="Loading job…" />
-        <Card>
-          <div className="h-40 animate-pulse rounded bg-neutral-100" />
-        </Card>
+        {error ? (
+          <Callout variant="error" title="This job could not be loaded">
+            {error}
+            <div className="mt-2 flex gap-2">
+              <Button onClick={() => setReloadKey((k) => k + 1)}>Try again</Button>
+              <Link
+                to="/ingestion"
+                className="inline-flex items-center rounded border border-line px-4 py-1.5 text-sm text-accent hover:bg-pill/50"
+              >
+                Back to uploads
+              </Link>
+            </div>
+          </Callout>
+        ) : (
+          <>
+            <Spinner label="Loading job…" />
+            <Card>
+              <div className="h-40 animate-pulse rounded bg-neutral-100" />
+            </Card>
+          </>
+        )}
       </div>
     );
   }
@@ -1192,7 +1278,7 @@ export default function IngestionJobPage() {
           onChatOpenChange={setChatOpen}
           onChatSend={async (instruction) => {
             const userMsg = {
-              id: `user-${Date.now()}`,
+              id: `user-${nextChatId.current++}`,
               role: 'user',
               text: instruction,
               ts: Date.now(),
@@ -1208,7 +1294,7 @@ export default function IngestionJobPage() {
               setChatMessages((msgs) => [
                 ...msgs,
                 {
-                  id: `assistant-${Date.now()}`,
+                  id: `assistant-${nextChatId.current++}`,
                   role: 'assistant',
                   text:
                     'Applied your changes. Use Re-validate in the toolbar above to check ' +
@@ -1221,7 +1307,7 @@ export default function IngestionJobPage() {
               setChatMessages((msgs) => [
                 ...msgs,
                 {
-                  id: `assistant-${Date.now()}`,
+                  id: `assistant-${nextChatId.current++}`,
                   role: 'assistant',
                   text: errText,
                   ts: Date.now(),

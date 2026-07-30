@@ -41,7 +41,9 @@ export default function DataTable({ columns, rows, emptyMessage = 'No data.', on
         <tbody>
           {rows.map((row, i) => (
             <tr
-              key={row.id ?? i}
+              // Index, not row.id: mapped data can contain its own "id" column,
+              // and duplicate values there made React reuse the wrong row.
+              key={i}
               className={`hover:bg-sidebar/60 ${onRowClick ? 'cursor-pointer' : ''}`}
               onClick={
                 onRowClick

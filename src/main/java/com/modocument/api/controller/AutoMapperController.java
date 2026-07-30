@@ -23,6 +23,9 @@ public class AutoMapperController {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** Upper bound on the column list a caller may hand to the prompt. */
+    static final int MAX_EXTRACTED_FIELDS_LENGTH = 4000;
+
     private final ImportHistoryRepository importHistoryRepository;
     private final TemplateFieldsRepository templateFieldsRepository;
     private final PromptFactory promptFactory;
@@ -44,12 +47,21 @@ public class AutoMapperController {
             throws JsonProcessingException {
         if (extractedFields == null || extractedFields.isBlank()
                 || filename == null || filename.isBlank()) {
-            return ResponseEntity.badRequest().body("Both extractedFields and filename are required.");
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Both extractedFields and filename are required."));
+        }
+        // The parameter is spliced into a prompt, so it is bounded here rather
+        // than letting a caller send an unlimited payload to the provider.
+        if (extractedFields.length() > MAX_EXTRACTED_FIELDS_LENGTH) {
+            return ResponseEntity.badRequest().body(Map.of("error",
+                    "extractedFields is longer than " + MAX_EXTRACTED_FIELDS_LENGTH
+                            + " characters."));
         }
 
         Optional<ImportHistory> importHistory = importHistoryRepository.getByFileName(filename);
         if (importHistory.isEmpty()) {
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "No import history for file '" + filename + "'."));
         }
 
         List<String> fieldNames = templateFieldsRepository.list().stream()

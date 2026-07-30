@@ -487,6 +487,69 @@ describe('IngestionJobPage wizard', () => {
   });
 });
 
+describe('IngestionJobPage accessibility and failure states', () => {
+  beforeEach(() => {
+    getAllFields.mockResolvedValue([
+      { templateFieldsId: 1, templateId: 1, fieldName: 'FirstName' },
+    ]);
+    setWizardStep.mockReset();
+    setWizardStep.mockResolvedValue({});
+  });
+
+  it('names the cell and its problem, and opens the editor on Space', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    const cell = screen.getByRole('button', {
+      name: 'FirstName, row 1: empty. Value is required. Edit',
+    });
+    cell.focus();
+    await userEvent.keyboard(' ');
+
+    expect(screen.getByDisplayValue('')).toBeInTheDocument();
+  });
+
+  it('returns focus to the cell after Escape instead of dropping it on the body', async () => {
+    getJob.mockResolvedValue(validatedJobWithErrors);
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByText('(empty)'));
+    await userEvent.keyboard('{Escape}');
+
+    expect(document.activeElement).toHaveAttribute('role', 'button');
+    expect(document.activeElement.getAttribute('aria-label')).toContain('FirstName, row 1');
+  });
+
+  it('offers a retry when the job cannot be loaded', async () => {
+    getJob.mockRejectedValueOnce(new Error('Ingestion job 7 not found.'));
+    renderPage('/ingestion/7?step=mapping');
+
+    expect(await screen.findByText('This job could not be loaded')).toBeInTheDocument();
+    // The page keeps its shell so the user can get back out.
+    expect(screen.getByRole('link', { name: 'Back to uploads' })).toBeInTheDocument();
+
+    getJob.mockResolvedValue(mappedJob);
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByText('Column mapping')).toBeInTheDocument();
+  });
+
+  it('says there is nothing to validate when no column was mapped', async () => {
+    getJob.mockResolvedValue({
+      ...validatedJob,
+      mapping: {},
+      mappedRows: { columns: [], rows: [] },
+      validationResults: [],
+    });
+    renderPage('/ingestion/7?step=validation');
+
+    expect(await screen.findByText('No mapped data to check')).toBeInTheDocument();
+    expect(screen.queryByText('All rows valid')).not.toBeInTheDocument();
+  });
+});
+
 describe('wizard step reachability', () => {
   // Must mirror IngestionJobUseCase.setWizardStep: MAPPING always, the other
   // two only once the job has validated. A pill the backend then refuses to

@@ -30,8 +30,7 @@ public class RangeRule implements ValidationRuleValidator {
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid Range rule configuration: " + configJson, e);
         }
-        // A concrete in-range value makes the fix obvious to the user.
-        String example = formatBound(Math.floor((cfg.min() + cfg.max()) / 2));
+        String example = exampleWithin(cfg.min(), cfg.max());
 
         double value;
         try {
@@ -47,6 +46,17 @@ public class RangeRule implements ValidationRuleValidator {
                             + ", e.g. " + example + ".");
         }
         return null;
+    }
+
+    /**
+     * A concrete acceptable value, so the fix is obvious. The midpoint is
+     * rounded down only when that keeps it inside the range — with Min=0.1 and
+     * Max=0.4 flooring produced "e.g. 0", an example the rule itself rejects.
+     */
+    private static String exampleWithin(double min, double max) {
+        double midpoint = (min + max) / 2;
+        double rounded = Math.floor(midpoint);
+        return formatBound(rounded >= min && rounded <= max ? rounded : midpoint);
     }
 
     /** Render whole-number bounds without a trailing ".0", matching the original message text. */

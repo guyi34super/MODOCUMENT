@@ -33,10 +33,20 @@ class TemplateFieldsControllerTest {
                 templateFields(1, 1, "FirstName"),
                 templateFields(2, 1, "LastName")));
 
-        ResponseEntity<?> result = controller.getAll();
+        ResponseEntity<?> result = controller.getAll(null);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat((List<?>) result.getBody()).hasSize(2);
+    }
+
+    @Test
+    void getAllScopesToATemplateWhenAsked() {
+        when(repo.listByTemplateId(1)).thenReturn(List.of(templateFields(1, 1, "FirstName")));
+
+        ResponseEntity<?> result = controller.getAll(1);
+
+        assertThat((List<?>) result.getBody()).hasSize(1);
+        org.mockito.Mockito.verify(repo, org.mockito.Mockito.never()).list();
     }
 
     @Test

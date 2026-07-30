@@ -205,8 +205,13 @@ export const getRulesByTemplate = (templateId) =>
 export const upsertRule = (templateId, fieldName, ruleType, config) =>
   api.put('/ValidationRules/Upsert', { templateId, fieldName, ruleType, config });
 
+// Query parameters, not path segments: a field named "Province/State" cannot
+// be expressed as a path segment (the encoded slash is rejected outright).
 export const deleteRule = (templateId, fieldName, ruleType) =>
-  api.del(`/ValidationRules/${templateId}/${encodeURIComponent(fieldName)}/${ruleType}`);
+  api.del(
+    `/ValidationRules?templateId=${templateId}` +
+      `&fieldName=${encodeURIComponent(fieldName)}&ruleType=${ruleType}`
+  );
 
 export const validateRows = (templateId, rows) =>
   api.post('/Validation/validate', { templateId, rows });

@@ -129,8 +129,9 @@ class IngestionJobUseCaseTest {
     void resumeRunsAllStagesAndPersistsCheckpoints() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
         when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
-        when(validateRows.handle(any())).thenReturn(
-                List.of(new RowValidationResult(1, "FirstName", "Ada")));
+        when(validateRows.handle(any())).thenReturn(List.of(
+                new RowValidationResult(1, "FirstName", "Ada"),
+                new RowValidationResult(2, "FirstName", "", "Value is required.", "REQUIRED")));
 
         IngestionJob job = useCase.create("people.csv", 1);
         assertThat(job.getCurrentStep()).isEqualTo(JobStep.UPLOADED);
@@ -143,7 +144,9 @@ class IngestionJobUseCaseTest {
         assertThat(job.getParsedTableJson()).contains("first_name");
         assertThat(job.getMappingJson()).contains("FirstName");
         assertThat(job.getMappedRowsJson()).contains("Ada");
-        assertThat(job.getValidationResultJson()).contains("FirstName");
+        // Only the failing entries are checkpointed; the passing one is dropped.
+        assertThat(job.getValidationResultJson()).contains("Value is required.");
+        assertThat(job.getValidationResultJson()).doesNotContain("Ada");
         // One ImportDetails record per stage (Tansforming/Mapping/Validating).
         verify(importDetails, times(3)).add(any());
     }
@@ -405,5 +408,52 @@ class IngestionJobUseCaseTest {
 
         assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
         assertThat(job.getErrorMessage()).contains("No tabular data");
+    }
+
+    @Test
+    void updateMappingRefusesTwoColumnsOnTheSameField() {
+        when(parseStep.parse(anyString())).thenReturn(new TableData(
+                List.of("first_name", "fname"),
+                List.of(Map.of("first_name", "Ada", "fname", "Ada"))));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of());
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        useCase.resume(job.getIngestionJobId(), JobStep.MAPPED);
+
+        Map<String, String> mapping = new java.util.LinkedHashMap<>();
+        mapping.put("first_name", "FirstName");
+        mapping.put("fname", "FirstName");
+
+        assertThatThrownBy(() -> useCase.updateMapping(job.getIngestionJobId(), mapping))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("only one source column");
+    }
+
+    @Test
+    void headerOnlyFileSaysSoInsteadOfBlamingOcr() {
+        when(parseStep.parse(anyString()))
+                .thenReturn(new TableData(List.of("FirstName"), List.of()));
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        job = useCase.resume(job.getIngestionJobId(), JobStep.MAPPED);
+
+        assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
+        assertThat(job.getErrorMessage()).contains("no data rows").doesNotContain("OCR");
+    }
+
+    @Test
+    void aResumeWithNothingToDoKeepsTheRecordedFailure() {
+        when(parseStep.parse(anyString())).thenThrow(new IllegalStateException("boom"));
+
+        IngestionJob job = useCase.create("people.csv", 1);
+        job = useCase.resume(job.getIngestionJobId(), JobStep.VALIDATED);
+        assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
+
+        // UPLOADED is already >= UPLOADED, so this resume runs no stage at all
+        // and must not quietly erase why the last one failed.
+        job = useCase.resume(job.getIngestionJobId(), JobStep.UPLOADED);
+
+        assertThat(job.getStatus()).isEqualTo(JobStatus.FAILED);
+        assertThat(job.getErrorMessage()).contains("boom");
     }
 }

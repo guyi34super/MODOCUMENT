@@ -144,12 +144,35 @@ class PiiTokenizerTest {
     }
 
     @Test
-    void rawValuesShapedLikeTokensAreLeftAlone() {
+    void rawValuesShapedLikeTokensRoundTripAsLiterals() {
         PiiTokenizer.Session session = defaultTokenizer.newSession();
 
         String tokenized = session.tokenizeValue("Email", "[EMAIL_1]");
-        assertThat(tokenized).isEqualTo("[EMAIL_1]");
-        // Nothing was recorded, so detokenization cannot corrupt it either.
-        assertThat(session.detokenize("[EMAIL_1]")).isEqualTo("[EMAIL_1]");
+        assertThat(tokenized).isEqualTo("[LITERAL_1]");
+        assertThat(session.detokenize(tokenized)).isEqualTo("[EMAIL_1]");
+    }
+
+    @Test
+    void aCellContainingATokenNeverBecomesAnotherRowsValue() {
+        PiiTokenizer.Session session = defaultTokenizer.newSession();
+
+        List<Map<String, String>> tokenized = session.tokenizeRows(List.of(
+                Map.of("Email", "ada@example.com"),
+                Map.of("Email", "[EMAIL_1]")));
+
+        List<Map<String, String>> restored = session.detokenizeRows(tokenized);
+
+        assertThat(restored.get(0)).containsEntry("Email", "ada@example.com");
+        assertThat(restored.get(1)).containsEntry("Email", "[EMAIL_1]");
+    }
+
+    @Test
+    void veryLongDigitRunsAreTokenized() {
+        PiiTokenizer.Session session = defaultTokenizer.newSession();
+
+        // 20 digits: too long for a card, too long for a phone — it used to
+        // fall through every pattern and reach the model verbatim.
+        assertThat(session.tokenizeValue("Reference", "12345678901234567890"))
+                .isEqualTo("[ID_1]");
     }
 }

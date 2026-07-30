@@ -60,4 +60,23 @@ class ValidationRuleControllerTest {
         assertThat(controller.delete(1, "PostalCode", "REGEX").getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
+
+    @Test
+    void deletesByQueryParametersSoSlashesInFieldNamesWork() {
+        when(repo.delete(1, "Province/State", RuleType.REQUIRED)).thenReturn(true);
+
+        ResponseEntity<?> result = controller.delete(1, "Province/State", "REQUIRED");
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void missingRuleDeleteExplainsWhatWasNotFound() {
+        when(repo.delete(1, "Email", RuleType.REGEX)).thenReturn(false);
+
+        ResponseEntity<?> result = controller.delete(1, "Email", "REGEX");
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(result.getBody().toString()).contains("Email");
+    }
 }

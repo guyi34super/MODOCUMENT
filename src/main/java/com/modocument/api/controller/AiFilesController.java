@@ -1,7 +1,6 @@
 package com.modocument.api.controller;
 
 import com.modocument.application.port.AiFilesService;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -9,8 +8,17 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
+/**
+ * Raw prompt passthrough, kept for diagnostics. It is a paid provider call
+ * behind an authenticated endpoint, so the prompt is length-bounded and
+ * provider failures are left to {@link AiExceptionHandler} rather than being
+ * echoed back verbatim.
+ */
 @RestController
 public class AiFilesController {
+
+    /** Enough for a diagnostic prompt, far short of a way to burn credits. */
+    static final int MAX_PROMPT_LENGTH = 8000;
 
     private final AiFilesService aiFilesService;
 
@@ -28,15 +36,12 @@ public class AiFilesController {
     @PostMapping("/api/aifiles/send")
     public ResponseEntity<?> sendPrompt(@RequestBody(required = false) PromptRequest body) {
         if (body == null || body.prompt() == null || body.prompt().isBlank()) {
-            return ResponseEntity.badRequest().body("Prompt must not be empty.");
+            return ResponseEntity.badRequest().body(Map.of("error", "Prompt must not be empty."));
         }
-
-        try {
-            String aiResponse = aiFilesService.sendPrompt(body.prompt());
-            return ResponseEntity.ok(Map.of("response", aiResponse));
-        } catch (Exception ex) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error calling LLM: " + ex.getMessage());
+        if (body.prompt().length() > MAX_PROMPT_LENGTH) {
+            return ResponseEntity.badRequest().body(Map.of("error",
+                    "Prompt is longer than " + MAX_PROMPT_LENGTH + " characters."));
         }
+        return ResponseEntity.ok(Map.of("response", aiFilesService.sendPrompt(body.prompt())));
     }
 }

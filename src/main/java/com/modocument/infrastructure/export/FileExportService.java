@@ -58,6 +58,10 @@ public class FileExportService {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public byte[] export(TableData table, Format format) {
+        if (table == null || table.getColumns() == null || table.getColumns().isEmpty()) {
+            throw new IllegalStateException(
+                    "There are no columns to export; map at least one column to a template field.");
+        }
         try {
             return switch (format) {
                 case CSV -> toDelimited(table, CSVFormat.DEFAULT);
@@ -75,15 +79,33 @@ public class FileExportService {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         List<String> columns = table.getColumns();
         CSVFormat format = base.builder()
-                .setHeader(columns.toArray(new String[0]))
+                .setHeader(columns.stream().map(FileExportService::neutralizeFormula)
+                        .toArray(String[]::new))
                 .build();
         try (CSVPrinter printer = new CSVPrinter(
                 new OutputStreamWriter(out, StandardCharsets.UTF_8), format)) {
             for (Map<String, String> row : table.getRows()) {
-                printer.printRecord(columns.stream().map(c -> row.getOrDefault(c, "")).toList());
+                printer.printRecord(columns.stream()
+                        .map(c -> neutralizeFormula(row.getOrDefault(c, "")))
+                        .toList());
             }
         }
         return out.toByteArray();
+    }
+
+    /**
+     * Excel and Sheets execute a cell that starts with = + - or @, so an
+     * ingested value like {@code =HYPERLINK(...)} would run when the exported
+     * file is opened. A leading apostrophe makes it text again.
+     */
+    static String neutralizeFormula(String value) {
+        if (value == null || value.isEmpty()) {
+            return value == null ? "" : value;
+        }
+        return switch (value.charAt(0)) {
+            case '=', '+', '-', '@', '\t', '\r' -> "'" + value;
+            default -> value;
+        };
     }
 
     /**
@@ -107,12 +129,42 @@ public class FileExportService {
         return xml.toString().getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * Escapes markup and drops the characters XML 1.0 simply cannot carry
+     * (control codes other than tab/newline), which otherwise produced a file
+     * no parser would accept. CR is escaped rather than dropped because an
+     * unescaped one is silently normalized to LF on re-read.
+     */
     private static String escapeText(String value) {
-        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '&' -> escaped.append("&amp;");
+                case '<' -> escaped.append("&lt;");
+                case '>' -> escaped.append("&gt;");
+                case '\r' -> escaped.append("&#13;");
+                case '\n', '\t' -> escaped.append(c);
+                default -> {
+                    if (c >= 0x20 || Character.isHighSurrogate(c) || Character.isLowSurrogate(c)) {
+                        escaped.append(c);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
     }
 
+    /**
+     * Attribute values additionally need the quote escaped, and newlines/tabs
+     * spelled out — a literal one is normalized to a space when the attribute
+     * is read back, so a column name containing it would come out different.
+     */
     private static String escapeAttr(String value) {
-        return escapeText(value).replace("\"", "&quot;");
+        return escapeText(value)
+                .replace("\"", "&quot;")
+                .replace("\n", "&#10;")
+                .replace("\t", "&#9;");
     }
 
     private static byte[] toXlsx(TableData table) throws IOException {

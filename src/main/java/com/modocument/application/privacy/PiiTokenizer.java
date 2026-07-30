@@ -48,8 +48,14 @@ public class PiiTokenizer {
 
     private static final Pattern EMAIL = Pattern.compile(
             "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
+    /**
+     * 13 or more digits (optionally spaced/dashed): card numbers, but also the
+     * long account and reference numbers that carry the same risk. Unbounded on
+     * purpose — a 20-digit run used to fall through every pattern here and go
+     * to the model verbatim.
+     */
     private static final Pattern CARD = Pattern.compile(
-            "\\b\\d(?:[ -]?\\d){12,18}\\b");
+            "\\b\\d(?:[ -]?\\d){12,}(?!\\d)");
     private static final Pattern NINE_DIGIT_ID = Pattern.compile(
             "\\b\\d{3}[- ]?\\d{3}[- ]?\\d{3}\\b|\\b\\d{3}[- ]?\\d{2}[- ]?\\d{4}\\b");
     private static final Pattern PHONE_LIKE = Pattern.compile(
@@ -129,13 +135,14 @@ public class PiiTokenizer {
             if (!enabled || value == null || value.isBlank()) {
                 return value;
             }
-            // A raw value that already looks like one of our tokens is left
-            // alone: recording it would let detokenization corrupt it into
-            // another row's real value, and it discloses nothing real.
+            // A raw value that already looks like one of our tokens gets a
+            // token of its own. Sending it as-is would make detokenization
+            // hand back another row's real value in its place; LITERAL round
+            // trips it back to exactly what the cell contained.
             if (TOKEN.matcher(value.trim()).matches()) {
-                log.debug("Value in field '{}' already matches the token grammar; leaving it raw.",
+                log.debug("Value in field '{}' matches the token grammar; passing it as a literal.",
                         fieldName);
-                return value;
+                return tokenFor("LITERAL", value);
             }
 
             String category = categoryForField(fieldName);
@@ -163,6 +170,20 @@ public class PiiTokenizer {
 
         public List<Map<String, String>> tokenizeRows(List<Map<String, String>> rows) {
             return enabled ? rows.stream().map(this::tokenizeRow).toList() : rows;
+        }
+
+        /**
+         * Reversible masking for free text (a document's extracted content),
+         * where there are no field names to reason about: the value-shape
+         * patterns are applied in place and the tokens can be swapped back in
+         * the model's answer. Names and addresses in prose carry no detectable
+         * shape and still travel — see the class comment.
+         */
+        public String tokenizeText(String text) {
+            if (!enabled || text == null || text.isBlank()) {
+                return text;
+            }
+            return replaceEmbedded(text);
         }
 
         /** Single pass: restored values are never re-scanned; unknown tokens stay verbatim. */
@@ -237,7 +258,7 @@ public class PiiTokenizer {
         }
 
         private String tokenFor(String category, String value) {
-            return valueToToken.computeIfAbsent(category + ' ' + value, key -> {
+            return valueToToken.computeIfAbsent(category + '\0' + value, key -> {
                 int n = counters.merge(category, 1, Integer::sum);
                 String token = "[" + category + "_" + n + "]";
                 tokenToValue.put(token, value);

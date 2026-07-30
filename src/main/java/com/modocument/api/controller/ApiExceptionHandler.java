@@ -18,6 +18,7 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.io.UncheckedIOException;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 /**
  * Last-resort translation of infrastructure failures into answers a user can
@@ -33,6 +34,26 @@ import java.util.Map;
 public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    /**
+     * The three exception types the use cases throw. Controllers that map them
+     * locally still win; this is for the endpoints that had no handler at all
+     * and answered 500 to what was really a bad request.
+     */
+    @ExceptionHandler(NoSuchElementException.class)
+    public ResponseEntity<?> notFound(NoSuchElementException e) {
+        return error(HttpStatus.NOT_FOUND, message(e, "Not found."));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<?> badRequest(IllegalArgumentException e) {
+        return error(HttpStatus.BAD_REQUEST, message(e, "The request could not be processed."));
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<?> conflict(IllegalStateException e) {
+        return error(HttpStatus.CONFLICT, message(e, "The request conflicts with the current state."));
+    }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<?> tooLarge(MaxUploadSizeExceededException e) {
@@ -84,6 +105,10 @@ public class ApiExceptionHandler {
         log.error("Unhandled failure", e);
         return error(HttpStatus.INTERNAL_SERVER_ERROR,
                 "Something went wrong: " + rootMessage(e));
+    }
+
+    private static String message(Throwable e, String fallback) {
+        return e.getMessage() == null || e.getMessage().isBlank() ? fallback : e.getMessage();
     }
 
     private static ResponseEntity<?> error(HttpStatus status, String message) {

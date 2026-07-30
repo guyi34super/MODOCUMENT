@@ -80,4 +80,39 @@ class FileExportServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("csv, json, xlsx, tsv, or xml");
     }
+
+    @Test
+    void neutralizesValuesSpreadsheetsWouldExecute() {
+        TableData table = new TableData(List.of("Note"),
+                List.of(Map.of("Note", "=HYPERLINK(\"http://evil\",\"click\")")));
+
+        String csv = new String(service.export(table, FileExportService.Format.CSV),
+                java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(csv).contains("'=HYPERLINK");
+    }
+
+    @Test
+    void xmlStaysParseableWithControlCharactersAndCarriageReturns() throws Exception {
+        TableData table = new TableData(List.of("Note"),
+                List.of(Map.of("Note", "line1\r\nline2\u0001 <b>&")));
+
+        byte[] xml = service.export(table, FileExportService.Format.XML);
+
+        javax.xml.parsers.DocumentBuilderFactory factory =
+                javax.xml.parsers.DocumentBuilderFactory.newInstance();
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        org.w3c.dom.Document parsed = factory.newDocumentBuilder()
+                .parse(new java.io.ByteArrayInputStream(xml));
+        String text = parsed.getElementsByTagName("col").item(0).getTextContent();
+        assertThat(text).contains("line1").contains("line2").doesNotContain("\u0001");
+    }
+
+    @Test
+    void refusesToExportATableWithNoColumns() {
+        assertThatThrownBy(() -> service.export(new TableData(List.of(), List.of()),
+                FileExportService.Format.CSV))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no columns to export");
+    }
 }

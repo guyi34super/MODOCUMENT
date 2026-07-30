@@ -60,10 +60,12 @@ class AiFilesServiceImplTest {
 
     @Test
     void rejectsMissingOrSentinelApiKey() {
+        // The message is read by end users, so it names the environment
+        // variable an operator sets — not the internal property key.
         assertThatThrownBy(() -> serviceWithKey("").sendPrompt("hi"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("api-key");
+                .isInstanceOf(AiNotConfiguredException.class)
+                .hasMessageContaining("AIFILES_OPENAI_APIKEY");
         assertThatThrownBy(() -> serviceWithKey(AiFilesServiceImpl.UNSET_API_KEY).sendPrompt("hi"))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(AiNotConfiguredException.class);
     }
 }

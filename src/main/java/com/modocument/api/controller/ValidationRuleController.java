@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -67,10 +68,27 @@ public class ValidationRuleController {
         return ResponseEntity.ok(saved);
     }
 
+    /**
+     * Field name travels as a query parameter: a name like "Province/State"
+     * cannot be expressed as a path segment (Spring's firewall rejects the
+     * encoded slash), which made the rule undeletable through the UI.
+     */
+    @DeleteMapping("/ValidationRules")
+    public ResponseEntity<?> delete(@RequestParam int templateId,
+                                    @RequestParam String fieldName,
+                                    @RequestParam String ruleType) {
+        return deleteRule(templateId, fieldName, ruleType);
+    }
+
+    /** Original path form, kept for callers that already use it. */
     @DeleteMapping("/ValidationRules/{templateId}/{fieldName}/{ruleType}")
-    public ResponseEntity<?> delete(@PathVariable int templateId,
-                                    @PathVariable String fieldName,
-                                    @PathVariable String ruleType) {
+    public ResponseEntity<?> deleteByPath(@PathVariable int templateId,
+                                          @PathVariable String fieldName,
+                                          @PathVariable String ruleType) {
+        return deleteRule(templateId, fieldName, ruleType);
+    }
+
+    private ResponseEntity<?> deleteRule(int templateId, String fieldName, String ruleType) {
         Optional<RuleType> parsed = CreateTemplateWithFieldsUseCase.parseRuleType(ruleType);
         if (parsed.isEmpty()) {
             return ResponseEntity.badRequest()
@@ -78,6 +96,8 @@ public class ValidationRuleController {
         }
         return repo.delete(templateId, fieldName, parsed.get())
                 ? ResponseEntity.noContent().build()
-                : ResponseEntity.notFound().build();
+                : ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)
+                        .body(Map.of("error", "No " + parsed.get() + " rule on field '"
+                                + fieldName + "' for template " + templateId + "."));
     }
 }

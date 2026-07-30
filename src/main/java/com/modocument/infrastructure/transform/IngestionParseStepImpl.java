@@ -6,6 +6,7 @@ import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.DocumentParser;
 import com.modocument.application.port.IngestionParseStep;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.infrastructure.file.TabularNormalizer;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.prompt.PromptFactory;
@@ -30,17 +31,20 @@ public class IngestionParseStepImpl implements IngestionParseStep {
     private final DocumentParser documentParser;
     private final PromptFactory promptFactory;
     private final AiFilesService aiFilesService;
+    private final PiiTokenizer tokenizer;
 
     public IngestionParseStepImpl(UploadStorage uploadStorage,
                                   TabularNormalizer tabularNormalizer,
                                   DocumentParser documentParser,
                                   PromptFactory promptFactory,
-                                  AiFilesService aiFilesService) {
+                                  AiFilesService aiFilesService,
+                                  PiiTokenizer tokenizer) {
         this.uploadStorage = uploadStorage;
         this.tabularNormalizer = tabularNormalizer;
         this.documentParser = documentParser;
         this.promptFactory = promptFactory;
         this.aiFilesService = aiFilesService;
+        this.tokenizer = tokenizer;
     }
 
     @Override
@@ -62,10 +66,20 @@ public class IngestionParseStepImpl implements IngestionParseStep {
                     "No text could be extracted from '" + fileName + "'.");
         }
 
+        // The document's own text is the largest PII egress in the app, so the
+        // shapes we can recognize (emails, phone numbers, long IDs, card
+        // numbers) travel as placeholders and are restored in the answer.
+        PiiTokenizer.Session session = tokenizer.newSession();
         PromptStrategy strategy = promptFactory.getPrompt("TableExtraction");
-        String prompt = strategy.buildPrompt(new TableExtractionPromptInput(text));
-        return aiFilesService.sendForObject(prompt, new ParameterizedTypeReference<TableData>() {
-        });
+        String prompt = strategy.buildPrompt(
+                new TableExtractionPromptInput(session.tokenizeText(text)));
+        TableData extracted = aiFilesService.sendForObject(
+                prompt, new ParameterizedTypeReference<TableData>() {
+                });
+        if (extracted == null || extracted.getRows() == null) {
+            return extracted;
+        }
+        return new TableData(extracted.getColumns(), session.detokenizeRows(extracted.getRows()));
     }
 
     private static String extensionOf(String fileName) {

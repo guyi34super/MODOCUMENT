@@ -29,8 +29,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -44,7 +42,6 @@ import java.util.NoSuchElementException;
 public class IngestionExportController {
 
     private static final Logger log = LoggerFactory.getLogger(IngestionExportController.class);
-    private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final IngestionJobUseCase jobs;
@@ -70,8 +67,10 @@ public class IngestionExportController {
         FileExportService.Format exportFormat = FileExportService.Format.parse(format);
 
         byte[] bytes = fileExport.export(table, exportFormat);
-        String exportName = "job" + job.getIngestionJobId() + "_"
-                + LocalDateTime.now().format(TIMESTAMP) + exportFormat.extension();
+        // Downloading is a GET, so browsers prefetch it and users double-click
+        // it: a timestamped name piled up a new archive copy every time. One
+        // copy per job and format, overwritten, is the useful artifact.
+        String exportName = "job" + job.getIngestionJobId() + exportFormat.extension();
         archiveCopy(exportName, bytes);
 
         Map<String, Object> exportInfo = new LinkedHashMap<>();

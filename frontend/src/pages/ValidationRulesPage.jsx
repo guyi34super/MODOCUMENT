@@ -45,7 +45,7 @@ export default function ValidationRulesPage() {
   const formRef = useRef(null);
   const [searchParams] = useSearchParams();
   const [templates, setTemplates] = useState([]);
-  const [allFields, setAllFields] = useState([]);
+  const [templateFields, setTemplateFields] = useState([]);
   const [templateId, setTemplateId] = useState('');
   const [rules, setRules] = useState(null);
   const [error, setError] = useState('');
@@ -64,21 +64,32 @@ export default function ValidationRulesPage() {
   const [showTest, setShowTest] = useState(false);
 
   useEffect(() => {
-    Promise.all([getTemplates(), getAllFields()])
-      .then(([tpl, fields]) => {
+    getTemplates()
+      .then((tpl) => {
         setTemplates(tpl);
-        setAllFields(fields);
         const preselected = searchParams.get('templateId');
         if (preselected && tpl.some((t) => t.templateId === Number(preselected))) {
           setTemplateId(preselected);
-          loadRules(preselected);
+          selectTemplate(preselected);
         }
       })
       .catch((err) => setError(err.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const templateFields = allFields.filter((f) => f.templateId === Number(templateId));
+  // Fields are fetched per template rather than fetching every template's
+  // fields and filtering here.
+  const loadFields = useCallback(async (tid) => {
+    if (!tid) {
+      setTemplateFields([]);
+      return;
+    }
+    try {
+      setTemplateFields(await getAllFields(tid));
+    } catch (err) {
+      setError(err.message);
+    }
+  }, []);
 
   const loadRules = useCallback(async (tid) => {
     setRules(null);
@@ -97,6 +108,7 @@ export default function ValidationRulesPage() {
     setError('');
     resetForm();
     setShowTest(false);
+    loadFields(tid);
     loadRules(tid);
   };
 

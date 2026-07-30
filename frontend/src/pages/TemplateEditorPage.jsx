@@ -31,15 +31,23 @@ export default function TemplateEditorPage() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(!isNew);
   const fieldNameRef = useRef(null);
+  // What the server currently holds, so "Next" knows whether the name or
+  // description on screen still needs saving.
+  const savedDetails = useRef({ name: '', description: '' });
 
   // No setLoading(true) here: refetches after adding a field must update the
   // table in place without unmounting (and de-focusing) the add-field form.
   const loadExisting = useCallback(async () => {
     try {
-      const [template, allFields] = await Promise.all([getTemplate(id), getAllFields()]);
+      const [template, fields] = await Promise.all([getTemplate(id), getAllFields(id)]);
       setName(template.name || '');
       setDescription(template.description || '');
-      setSavedFields(allFields.filter((f) => f.templateId === Number(id)));
+      savedDetails.current = {
+        name: template.name || '',
+        description: template.description || '',
+      };
+      setSavedFields(fields);
+      setError('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -47,10 +55,23 @@ export default function TemplateEditorPage() {
     }
   }, [id]);
 
+  const loadDataTypes = useCallback(() => {
+    getTemplateDataTypes()
+      .then(setDataTypes)
+      .catch((err) => setError(`Field data types could not be loaded: ${err.message}`));
+  }, []);
+
   useEffect(() => {
-    getTemplateDataTypes().then(setDataTypes).catch((err) => setError(err.message));
-    if (!isNew) loadExisting();
-  }, [isNew, loadExisting]);
+    loadDataTypes();
+    // setLoading(true) here (not in loadExisting): opening a different template
+    // reuses this component, and without it the previous template's fields —
+    // or an empty "No fields yet" — flash before the new ones arrive. Refetches
+    // after adding a field still update in place.
+    if (!isNew) {
+      setLoading(true);
+      loadExisting();
+    }
+  }, [isNew, loadExisting, loadDataTypes]);
 
   const typeName = (typeId) =>
     dataTypes.find((t) => t.templateDataTypeId === typeId)?.dataType ?? typeId;
@@ -78,6 +99,21 @@ export default function TemplateEditorPage() {
     }
   };
 
+  /**
+   * Leaving for the rules page used to drop an edited name or description on
+   * the floor, so the edit is committed first.
+   */
+  const goToRules = async () => {
+    const dirty =
+      name !== savedDetails.current.name || description !== savedDetails.current.description;
+    if (dirty) {
+      const saved = await saveDetails();
+      if (!saved) return;
+    }
+    navigate(`/validation?templateId=${id}`);
+  };
+
+  /** Returns true when the details were persisted. */
   const saveDetails = async () => {
     setBusy(true);
     try {
@@ -85,8 +121,11 @@ export default function TemplateEditorPage() {
         loading: 'Saving template…',
         success: 'Template details saved',
       });
+      savedDetails.current = { name, description };
+      return true;
     } catch {
       // The error toast is already shown.
+      return false;
     } finally {
       setBusy(false);
     }
@@ -136,13 +175,24 @@ export default function TemplateEditorPage() {
         subtitle={isNew ? 'Create a template together with its fields' : 'Update details and manage fields'}
         actions={
           !isNew && (
-            <Button variant="secondary" onClick={() => navigate(`/validation?templateId=${id}`)}>
+            <Button variant="secondary" onClick={goToRules}>
               Next: set field rules →
             </Button>
           )
         }
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
+
+      {dataTypes.length === 0 && !loading && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-md bg-danger-bg px-4 py-3 text-sm text-danger-ink">
+          <span>
+            Field data types are unavailable, so fields cannot be created right now.
+          </span>
+          <Button variant="secondary" size="sm" onClick={loadDataTypes}>
+            Retry
+          </Button>
+        </div>
+      )}
 
       {loading ? (
         <Spinner />
@@ -288,7 +338,7 @@ export default function TemplateEditorPage() {
           </Card>
 
           <div className="flex justify-end">
-            <Button onClick={() => navigate(`/validation?templateId=${id}`)}>
+            <Button onClick={goToRules}>
               Next: set field rules →
             </Button>
           </div>

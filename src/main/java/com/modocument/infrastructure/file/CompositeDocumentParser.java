@@ -60,6 +60,13 @@ public class CompositeDocumentParser implements DocumentParser {
             try {
                 return doclingClient.convertToMarkdown(file);
             } catch (Exception e) {
+                if (!LOCAL_EXTENSIONS.contains(extension)) {
+                    // No local reader handles this format, so "not supported"
+                    // would be the wrong story: docling is what failed.
+                    throw new IllegalStateException("'" + file.getFileName()
+                            + "' can only be read through docling, and that conversion failed: "
+                            + e.getMessage(), e);
+                }
                 log.warn("docling conversion failed for {}, falling back to local readers: {}",
                         file.getFileName(), e.getMessage());
             }
