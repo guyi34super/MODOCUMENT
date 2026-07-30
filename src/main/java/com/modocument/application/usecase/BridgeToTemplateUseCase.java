@@ -3,6 +3,7 @@ package com.modocument.application.usecase;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
+import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.port.ExtractionAuditLog;
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ImportDetailsRepository;
@@ -137,12 +138,11 @@ public class BridgeToTemplateUseCase {
                     null));
         }
 
-        List<String> fieldNames = templateFields.listByTemplateId(templateId).stream()
-                .map(TemplateFields::getFieldName)
-                .toList();
-        Map<String, String> mapping = autoMap.map(columnList, fieldNames);
-
+        List<TemplateFields> fields = templateFields.listByTemplateId(templateId);
         TableData parsed = new TableData(columnList, rows);
+        Map<String, String> mapping = autoMap.map(
+                new MappingContext(columnList, fields, rows, templateId));
+
         TableData mapped = IngestionJobUseCase.applyMapping(parsed, mapping);
         List<RowValidationResult> results =
                 validateRows.handle(new ValidationRequest(templateId, mapped.getRows()));

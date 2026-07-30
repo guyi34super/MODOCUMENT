@@ -2,6 +2,7 @@ package com.modocument.application.usecase;
 
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
+import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.IngestionJobRepository;
@@ -58,6 +59,19 @@ class IngestionJobUseCaseTest {
             store.put(job.getIngestionJobId(), job);
             return job;
         }
+
+        @Override
+        public List<String> listRecentMappingJson(int templateId, int limit) {
+            return store.values().stream()
+                    .filter(j -> j.getTemplateId() == templateId)
+                    .filter(j -> j.getCurrentStep() == JobStep.VALIDATED
+                            || j.getCurrentStep() == JobStep.EXPORTED)
+                    .filter(j -> j.getMappingJson() != null)
+                    .sorted((a, b) -> Integer.compare(b.getIngestionJobId(), a.getIngestionJobId()))
+                    .limit(limit)
+                    .map(IngestionJob::getMappingJson)
+                    .toList();
+        }
     }
 
     private final InMemoryJobs jobs = new InMemoryJobs();
@@ -92,7 +106,7 @@ class IngestionJobUseCaseTest {
     @Test
     void resumeUntilMappedStopsBeforeValidation() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
 
         IngestionJob job = useCase.create("people.csv", 1);
         job = useCase.resume(job.getIngestionJobId(), JobStep.MAPPED);
@@ -107,7 +121,7 @@ class IngestionJobUseCaseTest {
     @Test
     void resumeRunsAllStagesAndPersistsCheckpoints() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(
                 List.of(new RowValidationResult(1, "FirstName", "Ada")));
 
@@ -132,7 +146,7 @@ class IngestionJobUseCaseTest {
         when(parseStep.parse(anyString()))
                 .thenThrow(new IllegalStateException("boom"))
                 .thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -150,7 +164,7 @@ class IngestionJobUseCaseTest {
     @Test
     void mapFailureKeepsParsedCheckpointAndResumeSkipsParse() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList()))
+        when(autoMap.map(any(MappingContext.class)))
                 .thenThrow(new IllegalStateException("llm down"))
                 .thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
@@ -170,7 +184,7 @@ class IngestionJobUseCaseTest {
     @Test
     void updateMappingRebuildsRowsAndClearsValidation() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -187,7 +201,7 @@ class IngestionJobUseCaseTest {
     @Test
     void updateMappingRejectsUnknownTemplateField() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -211,7 +225,7 @@ class IngestionJobUseCaseTest {
     @Test
     void setWizardStepPersistsPosition() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -230,7 +244,7 @@ class IngestionJobUseCaseTest {
     @Test
     void setWizardStepRejectsUnreachableStep() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
 
         IngestionJob job = useCase.create("people.csv", 1);
         int jobId = useCase.resume(job.getIngestionJobId(), JobStep.MAPPED).getIngestionJobId();
@@ -246,7 +260,7 @@ class IngestionJobUseCaseTest {
     @Test
     void remapClampsWizardStepToMapping() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -261,7 +275,7 @@ class IngestionJobUseCaseTest {
     @Test
     void updateMappingClampsWizardStepToMapping() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -276,7 +290,7 @@ class IngestionJobUseCaseTest {
     @Test
     void revalidateKeepsWizardStep() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -292,7 +306,7 @@ class IngestionJobUseCaseTest {
     @Test
     void updateRowsPersistsEditsAndClearsValidation() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -313,7 +327,7 @@ class IngestionJobUseCaseTest {
     @Test
     void updateRowsRejectsUnknownColumnKey() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -327,7 +341,7 @@ class IngestionJobUseCaseTest {
     @Test
     void updateRowsRejectsRowCountMismatch() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);
@@ -363,7 +377,7 @@ class IngestionJobUseCaseTest {
     @Test
     void recordExportSetsWizardStepExport() {
         when(parseStep.parse(anyString())).thenReturn(PARSED);
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("first_name", "FirstName"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("first_name", "FirstName"));
         when(validateRows.handle(any())).thenReturn(List.of());
 
         IngestionJob job = useCase.create("people.csv", 1);

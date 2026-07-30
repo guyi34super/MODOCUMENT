@@ -97,6 +97,26 @@ aifiles:
     # "BadgeNumber").
     extra-sensitive-fields: []
 
+mapping:
+  # Tiered column mapping. Deterministic code tiers always run first:
+  # exact name -> normalized name -> aliases/token similarity -> value-shape
+  # scoring through the template's own validation rules and data types ->
+  # mappings learned from this template's past completed jobs -> threshold-
+  # gated unique assignment. The LLM is asked only about columns those tiers
+  # leave unresolved, and its prompt carries column/field NAMES only — never
+  # data values. Set to false for a fully code-only mapping flow.
+  llm-fallback-enabled: ${MAPPING_LLMFALLBACK_ENABLED:true}
+  # Minimum candidate score (0-1) for a code-tier match to be accepted;
+  # anything below stays unmapped for review in the mapping step.
+  confidence-threshold: 0.7
+  # Non-blank sample values per column examined by the value-shape tier.
+  sample-size: 20
+  # Recent completed jobs consulted by the learned-mappings tier.
+  history-jobs: 25
+  # Extra header aliases (normalized token -> canonical token), merged with
+  # the built-in table, e.g. { matricule: employeenumber }.
+  aliases: {}
+
 docling:
   # Optional docling-serve endpoint (e.g. http://localhost:5001). When empty,
   # documents are parsed with the built-in readers (POI/CSV/PDFBox + OCR).

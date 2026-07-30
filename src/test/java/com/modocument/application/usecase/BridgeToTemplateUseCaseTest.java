@@ -1,6 +1,7 @@
 package com.modocument.application.usecase;
 
 import com.modocument.application.dto.RowValidationResult;
+import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.IngestionJobRepository;
@@ -69,7 +70,7 @@ class BridgeToTemplateUseCaseTest {
         TemplateFields nameField = mock(TemplateFields.class);
         when(nameField.getFieldName()).thenReturn("Name");
         when(templateFields.listByTemplateId(1)).thenReturn(List.of(nameField));
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("Name", "Name"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("Name", "Name"));
         when(validateRows.handle(any())).thenReturn(
                 List.of(new RowValidationResult(0, "Name", "Ada", null),
                         new RowValidationResult(1, "Name", "", "Required")));

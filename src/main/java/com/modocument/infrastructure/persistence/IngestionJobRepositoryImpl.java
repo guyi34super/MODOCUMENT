@@ -2,6 +2,8 @@ package com.modocument.infrastructure.persistence;
 
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.domain.entity.IngestionJob;
+import com.modocument.domain.model.JobStep;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -34,5 +36,11 @@ public class IngestionJobRepositoryImpl implements IngestionJobRepository {
         }
         job.setUpdatedDate(LocalDateTime.now());
         return jpa.save(job);
+    }
+
+    @Override
+    public List<String> listRecentMappingJson(int templateId, int limit) {
+        return jpa.findRecentMappingJson(templateId,
+                List.of(JobStep.VALIDATED, JobStep.EXPORTED), PageRequest.of(0, limit));
     }
 }

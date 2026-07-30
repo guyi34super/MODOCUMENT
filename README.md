@@ -52,11 +52,21 @@ the test suite.
   resumes the upload wizard at exactly that step. Mutations that invalidate validation
   (remap, mapping override, chat edit) clamp it back to `MAPPING`.
 
-### Field mapping (code first, AI for the rest)
-- Source columns are mapped to template fields by **exact name match**, then
-  **normalized match** (case/punctuation-insensitive) — all in code, no tokens spent.
-- Only unresolved columns go to the **LLM automapper**; targets it invents that aren't
-  real template fields are discarded.
+### Field mapping (code first, AI only when needed)
+- Source columns are mapped to template fields by a **tiered, deterministic code
+  pipeline**: exact name match → normalized match (case/punctuation-insensitive) →
+  **alias & token similarity** (`fname`, `Surname`, `DOB`… — extendable via
+  `mapping.aliases`) → **value-shape scoring** that runs sample values through the
+  target field's own validation rules and data type (an email regex rule doubles as an
+  email detector; samples never leave the backend) → **learned mappings** replayed from
+  this template's past completed jobs (your manual corrections become training data).
+- Candidates are combined into a **threshold-gated unique assignment**
+  (`mapping.confidence-threshold`): each template field is used at most once, and
+  low-confidence columns stay unmapped for review instead of being guessed.
+- Only the columns code cannot resolve go to the **LLM automapper** (column/field
+  names only, never data; disable entirely with `mapping.llm-fallback-enabled=false`);
+  invented targets are discarded, and an LLM outage degrades to "left unmapped"
+  instead of failing the mapping stage.
 - **Review and override** the mapping: `PUT /api/ingestion/jobs/{id}/mapping`
   (`{"mapping": {"source col": "TemplateField" | null}}`) — rebuilds the mapped rows and
   clears stale validation.
@@ -253,6 +263,8 @@ mvn -B verify
 | OpenAI model | `aifiles.openai.model-id` / `AIFILES_OPENAI_MODELID` | `gpt-4o` |
 | OpenAI base URL | `aifiles.openai.base-url` / `AIFILES_OPENAI_BASEURL` | `https://api.openai.com` (host root, no `/v1`) |
 | PII tokenization | `aifiles.privacy.tokenize-pii` / `AIFILES_PRIVACY_TOKENIZEPII` | `true` (fail closed) |
+| Mapping LLM fallback | `mapping.llm-fallback-enabled` / `MAPPING_LLMFALLBACK_ENABLED` | `true` (code tiers always run first) |
+| Mapping confidence | `mapping.confidence-threshold` (+ `sample-size`, `history-jobs`, `aliases`) | `0.7`, 20 samples, 25 jobs |
 | Extra sensitive fields | `aifiles.privacy.extra-sensitive-fields` | empty (substring match, case/punct-insensitive) |
 | docling-serve URL | `docling.base-url` / `DOCLING_BASEURL` | empty (built-in readers only) |
 | Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | `true` (active only when an OpenAI key is set) |

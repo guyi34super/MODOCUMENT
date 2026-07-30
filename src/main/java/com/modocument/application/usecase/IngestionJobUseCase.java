@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
+import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.IngestionParseStep;
 import com.modocument.application.port.ImportHistoryRepository;
@@ -304,7 +305,11 @@ public class IngestionJobUseCase {
 
     private void doMap(IngestionJob job) {
         TableData parsed = fromJson(job.getParsedTableJson(), TableData.class);
-        Map<String, String> mapping = autoMap.map(parsed.getColumns(), templateFieldNames(job.getTemplateId()));
+        Map<String, String> mapping = autoMap.map(new MappingContext(
+                parsed.getColumns(),
+                templateFields.listByTemplateId(job.getTemplateId()),
+                parsed.getRows(),
+                job.getTemplateId()));
         job.setMappingJson(toJson(mapping));
         job.setMappedRowsJson(toJson(applyMapping(parsed, mapping)));
         clearDownstream(job, JobStep.MAPPED);

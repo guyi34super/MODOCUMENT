@@ -12,4 +12,10 @@ public interface IngestionJobRepository {
     List<IngestionJob> list();
 
     IngestionJob save(IngestionJob job);
+
+    /**
+     * MappingJson of the most recent jobs for a template that reached
+     * VALIDATED or EXPORTED — the learned-mappings signal for auto-mapping.
+     */
+    List<String> listRecentMappingJson(int templateId, int limit);
 }
