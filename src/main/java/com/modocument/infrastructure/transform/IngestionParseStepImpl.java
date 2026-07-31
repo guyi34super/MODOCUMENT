@@ -7,6 +7,7 @@ import com.modocument.application.port.DocumentParser;
 import com.modocument.application.port.IngestionParseStep;
 import com.modocument.application.port.PromptStrategy;
 import com.modocument.application.privacy.PiiTokenizer;
+import com.modocument.infrastructure.file.ExcelParsingProperties;
 import com.modocument.infrastructure.file.TabularNormalizer;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.prompt.PromptFactory;
@@ -19,9 +20,12 @@ import java.util.Locale;
 import java.util.NoSuchElementException;
 
 /**
- * Parse stage of the ingestion pipeline: csv/xlsx go straight to a table via
- * code; every other supported format is extracted to text (docling/PDFBox/
- * OCR/POI) and tabularized by the LLM with structured output.
+ * Parse stage of the ingestion pipeline. CSV goes straight to a table via code
+ * (flat and reliable); every other supported format — Excel, pdf, Word, txt,
+ * images — is extracted to text through its own flow (POI serialization /
+ * docling / PDFBox / OCR) and tabularized by the LLM with structured output, so
+ * they all return the same {@link TableData} JSON. Excel can be forced back onto
+ * the deterministic parser with {@code modocument.parsing.excel.llm-enabled=false}.
  */
 @Service
 public class IngestionParseStepImpl implements IngestionParseStep {
@@ -32,19 +36,22 @@ public class IngestionParseStepImpl implements IngestionParseStep {
     private final PromptFactory promptFactory;
     private final AiFilesService aiFilesService;
     private final PiiTokenizer tokenizer;
+    private final ExcelParsingProperties excelParsing;
 
     public IngestionParseStepImpl(UploadStorage uploadStorage,
                                   TabularNormalizer tabularNormalizer,
                                   DocumentParser documentParser,
                                   PromptFactory promptFactory,
                                   AiFilesService aiFilesService,
-                                  PiiTokenizer tokenizer) {
+                                  PiiTokenizer tokenizer,
+                                  ExcelParsingProperties excelParsing) {
         this.uploadStorage = uploadStorage;
         this.tabularNormalizer = tabularNormalizer;
         this.documentParser = documentParser;
         this.promptFactory = promptFactory;
         this.aiFilesService = aiFilesService;
         this.tokenizer = tokenizer;
+        this.excelParsing = excelParsing;
     }
 
     @Override
@@ -56,7 +63,9 @@ public class IngestionParseStepImpl implements IngestionParseStep {
         }
 
         String extension = extensionOf(fileName);
-        if (tabularNormalizer.supports(extension)) {
+        // CSV is always parsed deterministically; Excel only when the LLM route
+        // is disabled. Everything else falls through to the LLM extraction below.
+        if (extension.equals(".csv") || (isExcel(extension) && !excelParsing.isLlmEnabled())) {
             return tabularNormalizer.normalize(file);
         }
 
@@ -80,6 +89,10 @@ public class IngestionParseStepImpl implements IngestionParseStep {
             return extracted;
         }
         return new TableData(extracted.getColumns(), session.detokenizeRows(extracted.getRows()));
+    }
+
+    private static boolean isExcel(String extension) {
+        return extension.equals(".xlsx") || extension.equals(".xls") || extension.equals(".xlsm");
     }
 
     private static String extensionOf(String fileName) {

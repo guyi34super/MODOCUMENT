@@ -12,10 +12,12 @@ import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.FormulaEvaluator;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.poi.hwpf.HWPFDocument;
 import org.apache.poi.hwpf.extractor.WordExtractor;
@@ -32,7 +34,9 @@ import java.io.Reader;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Reads xlsx/csv/pdf/doc(x) files and standalone images into plain text for
@@ -56,8 +60,9 @@ public class FileTextReader {
         String extension = extensionOf(path);
         try {
             return switch (extension) {
-                case ".xlsx", ".xls" -> readExcel(path, Integer.MAX_VALUE, Integer.MAX_VALUE);
+                case ".xlsx", ".xls", ".xlsm" -> readExcel(path, Integer.MAX_VALUE, Integer.MAX_VALUE);
                 case ".csv" -> Files.readString(Path.of(path));
+                case ".txt", ".text" -> Files.readString(Path.of(path));
                 case ".pdf" -> readPdf(path, Integer.MAX_VALUE);
                 case ".docx" -> readDocx(path);
                 case ".doc" -> readDoc(path);
@@ -76,8 +81,9 @@ public class FileTextReader {
         String text;
         try {
             text = switch (extension) {
-                case ".xlsx", ".xls" -> readExcel(path, 5, 10);
+                case ".xlsx", ".xls", ".xlsm" -> readExcel(path, 5, 10);
                 case ".csv" -> readCsvSnippet(path, 5);
+                case ".txt", ".text" -> Files.readString(Path.of(path));
                 case ".pdf" -> readPdf(path, 2);
                 case ".docx" -> readDocx(path);
                 case ".doc" -> readDoc(path);
@@ -97,27 +103,106 @@ public class FileTextReader {
         return dot < 0 ? "" : name.substring(dot).toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * Serializes a workbook into a row-numbered grid for the LLM. Unlike the
+     * deterministic {@code TabularNormalizer}, this keeps the full width, fills
+     * merged regions (so multi-column/merged headers and label cells carry their
+     * value across every covered cell), and evaluates formulas (so formula
+     * columns show their computed value, not a cached/blank string). The LLM
+     * then locates the real header among any title/blank rows.
+     */
     private static String readExcel(String path, int maxRows, int maxCellsPerRow) throws IOException {
         StringBuilder sb = new StringBuilder();
         DataFormatter formatter = new DataFormatter();
         try (Workbook workbook = WorkbookFactory.create(new File(path), null, true)) {
-            Sheet sheet = workbook.getSheetAt(0);
-            int rows = 0;
-            for (Row row : sheet) {
-                if (rows++ >= maxRows) {
-                    break;
+            Sheet sheet = primarySheet(workbook);
+            if (sheet == null) {
+                return "";
+            }
+            FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+            Map<Long, String> merged = mergedRegionValues(sheet, formatter, evaluator);
+
+            int first = sheet.getFirstRowNum();
+            int last = sheet.getLastRowNum();
+            int width = 0;
+            for (int r = first; r <= last; r++) {
+                Row row = sheet.getRow(r);
+                if (row != null) {
+                    width = Math.max(width, row.getLastCellNum());
                 }
-                int cells = 0;
-                for (Cell cell : row) {
-                    if (cells++ >= maxCellsPerRow) {
-                        break;
+            }
+            width = Math.min(width, maxCellsPerRow);
+
+            int emitted = 0;
+            for (int r = first; r <= last && emitted < maxRows; r++, emitted++) {
+                Row row = sheet.getRow(r);
+                sb.append("Row ").append(r + 1).append(": ");
+                for (int c = 0; c < width; c++) {
+                    String value = merged.get(cellKey(r, c));
+                    if (value == null) {
+                        value = cellText(row == null ? null : row.getCell(c), formatter, evaluator);
                     }
-                    sb.append(formatter.formatCellValue(cell)).append('\t');
+                    sb.append(value);
+                    if (c < width - 1) {
+                        sb.append('\t');
+                    }
                 }
                 sb.append(System.lineSeparator());
             }
         }
         return sb.toString();
+    }
+
+    /** The sheet with the most rows — the data table, rather than blindly sheet 0. */
+    private static Sheet primarySheet(Workbook workbook) {
+        Sheet best = null;
+        int bestRows = -1;
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            Sheet sheet = workbook.getSheetAt(i);
+            int rows = sheet.getPhysicalNumberOfRows();
+            if (rows > bestRows) {
+                bestRows = rows;
+                best = sheet;
+            }
+        }
+        return best;
+    }
+
+    /** Maps every cell covered by a merged region to that region's top-left value. */
+    private static Map<Long, String> mergedRegionValues(Sheet sheet, DataFormatter formatter,
+                                                        FormulaEvaluator evaluator) {
+        Map<Long, String> values = new HashMap<>();
+        for (CellRangeAddress region : sheet.getMergedRegions()) {
+            Row topRow = sheet.getRow(region.getFirstRow());
+            String value = cellText(topRow == null ? null : topRow.getCell(region.getFirstColumn()),
+                    formatter, evaluator);
+            if (value.isBlank()) {
+                continue;
+            }
+            for (int r = region.getFirstRow(); r <= region.getLastRow(); r++) {
+                for (int c = region.getFirstColumn(); c <= region.getLastColumn(); c++) {
+                    values.put(cellKey(r, c), value);
+                }
+            }
+        }
+        return values;
+    }
+
+    /** Formatted cell value with formulas evaluated; falls back to the cached value on error. */
+    private static String cellText(Cell cell, DataFormatter formatter, FormulaEvaluator evaluator) {
+        if (cell == null) {
+            return "";
+        }
+        try {
+            return formatter.formatCellValue(cell, evaluator);
+        } catch (RuntimeException e) {
+            // Unsupported/broken formula: use POI's cached display value instead.
+            return formatter.formatCellValue(cell);
+        }
+    }
+
+    private static long cellKey(int row, int column) {
+        return ((long) row << 20) | (column & 0xFFFFF);
     }
 
     private static String readCsvSnippet(String path, int maxRecords) throws IOException {

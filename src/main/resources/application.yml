@@ -65,6 +65,14 @@ modocument:
     # Root directory for uploaded files (<root>/uploads) and export copies
     # (<root>/exports). Mount a volume here in containers.
     root: ${MODOCUMENT_STORAGE_ROOT:wwwroot}
+  parsing:
+    excel:
+      # When true, Excel workbooks (.xlsx/.xls/.xlsm) are serialized (formulas
+      # evaluated, merged cells filled) and extracted by the LLM, exactly like
+      # pdf/doc/txt, so every format returns the same TableData JSON. This needs
+      # an OpenAI key (see aifiles.openai); set false to fall back to the
+      # deterministic POI parser for keyless/offline runs.
+      llm-enabled: ${EXCEL_LLM_ENABLED:true}
 
 management:
   endpoints:

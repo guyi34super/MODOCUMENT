@@ -33,7 +33,7 @@ import java.util.Set;
 @Component
 public class TabularNormalizer {
 
-    private static final Set<String> EXTENSIONS = Set.of(".csv", ".xlsx", ".xls");
+    private static final Set<String> EXTENSIONS = Set.of(".csv", ".xlsx", ".xls", ".xlsm");
 
     public boolean supports(String extension) {
         String ext = extension == null ? "" : extension.toLowerCase(Locale.ROOT);
@@ -50,7 +50,7 @@ public class TabularNormalizer {
             if (name.endsWith(".csv")) {
                 return readCsv(file);
             }
-            if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+            if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".xlsm")) {
                 return readExcel(file);
             }
         } catch (IOException e) {

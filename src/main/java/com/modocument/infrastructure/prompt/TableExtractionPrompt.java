@@ -6,9 +6,12 @@ import com.modocument.application.port.PromptStrategy;
 import org.springframework.stereotype.Component;
 
 /**
- * Asks the LLM to normalize unstructured document text (from docling/OCR/pdf
- * extraction) into the TableData shape; the caller enforces the JSON contract
- * via structured output.
+ * The single extraction prompt for every document flow — spreadsheets (serialized
+ * as a row-numbered grid), OCR/pdf text, Word and plain text — normalized into the
+ * one {@code TableData} shape the UI understands. The caller enforces the JSON
+ * contract via structured output, so the output is identical regardless of source
+ * format. The guidance below is written to survive the messy realities those flows
+ * produce (title banners, multi-row/merged headers, page furniture).
  */
 @Component
 public class TableExtractionPrompt implements PromptStrategy {
@@ -25,15 +28,22 @@ public class TableExtractionPrompt implements PromptStrategy {
         }
 
         StringBuilder prompt = new StringBuilder();
-        prompt.append("You are a data extraction engine.").append(System.lineSeparator());
-        prompt.append("Extract the tabular data contained in the following document text.")
-                .append(System.lineSeparator());
-        prompt.append("Identify the column names and every data row. ")
-                .append("Use the document's own labels as column names where possible. ")
-                .append("All cell values must be strings; use \"\" for missing values. ")
-                .append("Do not invent data that is not present in the document.")
-                .append(System.lineSeparator());
-        prompt.append("Document text:").append(System.lineSeparator());
+        String nl = System.lineSeparator();
+        prompt.append("You are a data extraction engine. Extract the single main table from the ")
+                .append("document below and return its column names and every data row.").append(nl);
+        prompt.append("Rules:").append(nl);
+        prompt.append("- Find the real header row. Ignore title banners, blank leading rows, ")
+                .append("page headers/footers and any notes above or below the table.").append(nl);
+        prompt.append("- If the header spans multiple rows, flatten it into one clear name per ")
+                .append("column. Use the document's own labels where possible.").append(nl);
+        prompt.append("- A value repeated across a merged/spanned region applies to every ")
+                .append("row or column it covers; carry it down or across accordingly.").append(nl);
+        prompt.append("- Capture every data row. Keep the original column order. ")
+                .append("All cell values must be strings; use \"\" for missing values.").append(nl);
+        prompt.append("- Do not invent, merge, drop, or reorder data that is not present.").append(nl);
+        prompt.append("(Spreadsheet input is given as \"Row N: <tab-separated cells>\"; ")
+                .append("the row numbers are context only and must not become a column.)").append(nl);
+        prompt.append("Document:").append(nl);
         prompt.append(tableInput.getDocumentText());
         return prompt.toString();
     }

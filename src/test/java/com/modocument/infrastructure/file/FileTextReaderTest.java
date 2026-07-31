@@ -6,6 +6,10 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -14,6 +18,8 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -113,5 +119,50 @@ class FileTextReaderTest {
         assertThat(reader.readAsText(textPdf())).contains("Plain text page");
         verify(visionOcrService, never()).extractText(any());
         verify(ocrService, never()).extractText(any());
+    }
+
+    /**
+     * The rich Excel serialization is the whole point of routing spreadsheets
+     * through the LLM: a merged label must be filled across every covered cell,
+     * and a formula must surface its computed value — the two things the
+     * deterministic parser gets wrong.
+     */
+    @Test
+    void excelFillsMergedCellsAndEvaluatesFormulas() throws IOException {
+        Path xlsx = tempDir.resolve("report.xlsx");
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet();
+            sheet.createRow(0).createCell(0).setCellValue("Quarterly Report"); // title banner
+
+            Row header = sheet.createRow(1);
+            header.createCell(0).setCellValue("Person");
+            header.createCell(2).setCellValue("Score");
+            // "Person" is merged across the first two columns of the header row.
+            sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, 1));
+
+            Row data = sheet.createRow(2);
+            data.createCell(0).setCellValue("Ada");
+            data.createCell(1).setCellValue("Lovelace");
+            data.createCell(2).setCellFormula("1+2");
+
+            try (OutputStream out = Files.newOutputStream(xlsx)) {
+                workbook.write(out);
+            }
+        }
+
+        String text = reader.readAsText(xlsx.toString());
+
+        assertThat(text).contains("Quarterly Report");     // title row preserved for the LLM
+        assertThat(text).contains("Person\tPerson\tScore"); // merged label filled across both cells
+        assertThat(text).contains("Ada\tLovelace\t3");      // formula evaluated, not "1+2"
+        assertThat(text).doesNotContain("1+2");
+    }
+
+    @Test
+    void readsPlainTextFiles() throws IOException {
+        Path txt = tempDir.resolve("notes.txt");
+        Files.writeString(txt, "Name\tCity\nAda\tLondon\n");
+
+        assertThat(reader.readAsText(txt.toString())).contains("Ada").contains("London");
     }
 }

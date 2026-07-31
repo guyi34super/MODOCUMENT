@@ -21,6 +21,8 @@ class SupportedDocumentTypesTest {
 
         assertThat(types.isSupported("people.csv")).isTrue();
         assertThat(types.isSupported("REPORT.XLSX")).isTrue();
+        assertThat(types.isSupported("macros.xlsm")).isTrue();
+        assertThat(types.isSupported("notes.txt")).isTrue();
         assertThat(types.isSupported("scan.pdf")).isTrue();
         assertThat(types.isSupported("photo.jpeg")).isTrue();
     }

@@ -25,7 +25,7 @@ public class CompositeDocumentParser implements DocumentParser {
 
     /** Formats the built-in FileTextReader can handle. */
     private static final Set<String> LOCAL_EXTENSIONS = Set.of(
-            ".xlsx", ".xls", ".csv", ".pdf", ".docx", ".doc",
+            ".xlsx", ".xls", ".xlsm", ".csv", ".txt", ".pdf", ".docx", ".doc",
             ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp");
 
     private final DoclingClient doclingClient;

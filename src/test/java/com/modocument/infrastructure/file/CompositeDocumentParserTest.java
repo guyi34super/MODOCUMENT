@@ -54,6 +54,8 @@ class CompositeDocumentParserTest {
 
         assertThat(parser.supports(".docx")).isTrue();
         assertThat(parser.supports(".png")).isTrue();
+        assertThat(parser.supports(".txt")).isTrue();
+        assertThat(parser.supports(".xlsm")).isTrue();
         assertThat(parser.supports(".zip")).isFalse();
     }
 }
