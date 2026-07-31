@@ -150,6 +150,7 @@ public class ExtractionJobController {
     /** Hands the extracted records to the document pipeline. */
     @PostMapping("/api/extraction/jobs/{id}/bridge")
     public ResponseEntity<?> bridge(@PathVariable String id, @RequestBody BridgeRequest request) {
+        jobs.get(id); // owner gate: 404 before the pipeline reads another user's job
         return ResponseEntity.ok(bridge.bridge(id, request.getTemplateId(),
                 request.getMaxRows(), request.isLlmClean()));
     }
@@ -157,12 +158,14 @@ public class ExtractionJobController {
     /** LLM: suggest a template schema from sample records. */
     @PostMapping("/api/extraction/jobs/{id}/infer-schema")
     public ResponseEntity<?> inferSchema(@PathVariable String id) {
+        jobs.get(id); // owner gate: 404 before the LLM reads another user's records
         return ResponseEntity.ok(inferSchema.infer(id));
     }
 
     /** LLM: short human summary of the run. */
     @GetMapping("/api/extraction/jobs/{id}/summary")
     public ResponseEntity<?> summary(@PathVariable String id) {
+        jobs.get(id); // owner gate: 404 before summarizing another user's job
         return ResponseEntity.ok(Map.of("summary", summarize.summarize(id)));
     }
 

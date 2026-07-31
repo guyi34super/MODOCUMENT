@@ -5,6 +5,7 @@ import com.modocument.domain.document.ExtractionSource;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Component;
 
@@ -37,8 +38,22 @@ public class MongoExtractionSourceStore implements ExtractionSourceStore {
     }
 
     @Override
+    public Optional<ExtractionSource> getByIdAndOwner(String id, int ownerUserId) {
+        return Optional.ofNullable(mongo.findOne(
+                new Query(Criteria.where("_id").is(id).and("ownerUserId").is(ownerUserId)),
+                ExtractionSource.class));
+    }
+
+    @Override
     public List<ExtractionSource> list() {
         return mongo.find(new Query().with(Sort.by("createdDate")), ExtractionSource.class);
+    }
+
+    @Override
+    public List<ExtractionSource> listByOwner(int ownerUserId) {
+        return mongo.find(
+                new Query(Criteria.where("ownerUserId").is(ownerUserId)).with(Sort.by("createdDate")),
+                ExtractionSource.class);
     }
 
     @Override

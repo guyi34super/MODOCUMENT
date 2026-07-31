@@ -39,13 +39,16 @@ class ExtractionJobUseCaseTest {
     private ExtractionJobUseCase useCase;
     private ExtractionSource source;
 
+    private static final int USER = 1;
+
     @BeforeEach
     void setUp() {
         when(connector.type()).thenReturn(SourceType.WEBSITE);
         useCase = new ExtractionJobUseCase(sources, jobs, queue, eventBus,
-                new InMemoryConnectorStateStore(), secrets, List.of(connector));
+                new InMemoryConnectorStateStore(), secrets, List.of(connector), () -> USER);
 
         source = new ExtractionSource();
+        source.setOwnerUserId(USER);
         source.setType(SourceType.WEBSITE);
         source.setTermsAcknowledged(true);
         source = sources.save(source);

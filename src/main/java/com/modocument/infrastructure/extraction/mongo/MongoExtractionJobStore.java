@@ -39,8 +39,22 @@ public class MongoExtractionJobStore implements ExtractionJobStore {
     }
 
     @Override
+    public Optional<ExtractionJob> getByIdAndOwner(String id, int ownerUserId) {
+        return Optional.ofNullable(mongo.findOne(
+                new Query(Criteria.where("_id").is(id).and("ownerUserId").is(ownerUserId)),
+                ExtractionJob.class));
+    }
+
+    @Override
     public List<ExtractionJob> list() {
         return mongo.find(new Query().with(Sort.by("createdDate")), ExtractionJob.class);
+    }
+
+    @Override
+    public List<ExtractionJob> listByOwner(int ownerUserId) {
+        return mongo.find(
+                new Query(Criteria.where("ownerUserId").is(ownerUserId)).with(Sort.by("createdDate")),
+                ExtractionJob.class);
     }
 
     @Override

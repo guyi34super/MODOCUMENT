@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ExtractionSourceControllerTest {
 
     private final ExtractionSourceController controller = new ExtractionSourceController(
-            new ExtractionSourceUseCase(new InMemoryExtractionSourceStore()));
+            new ExtractionSourceUseCase(new InMemoryExtractionSourceStore(), () -> 1));
 
     private SaveExtractionSourceRequest websiteRequest(boolean termsAcknowledged) {
         SaveExtractionSourceRequest request = new SaveExtractionSourceRequest();

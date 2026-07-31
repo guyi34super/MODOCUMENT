@@ -1,5 +1,6 @@
 package com.modocument.domain.document;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.modocument.domain.model.SourceType;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -16,6 +17,8 @@ public class ExtractionSource {
 
     @Id
     private String id;
+    /** The AppUser who owns this source — every read/write is scoped to it. */
+    private int ownerUserId;
     private String name;
     private SourceType type;
     /** Caller's confirmation that access to this source is authorized. */
@@ -36,6 +39,15 @@ public class ExtractionSource {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    @JsonIgnore
+    public int getOwnerUserId() {
+        return ownerUserId;
+    }
+
+    public void setOwnerUserId(int ownerUserId) {
+        this.ownerUserId = ownerUserId;
     }
 
     public String getName() {
