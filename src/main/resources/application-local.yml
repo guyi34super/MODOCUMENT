@@ -18,8 +18,12 @@ spring:
 modocument:
   security:
     jwt:
-      # Dev-only signing key; production requires MODOCUMENT_JWT_SECRET.
-      secret: modocument-local-dev-secret-change-in-production-0123456789
+      # No signing key is committed. Provide one via the MODOCUMENT_JWT_SECRET
+      # environment variable, or drop it into the gitignored
+      # application-local-secrets.yml (imported above). Generate one with:
+      #   openssl rand -base64 48
+      # See application-local-secrets.yml.example for the shape.
+      secret: ${MODOCUMENT_JWT_SECRET:}
     permit-dev-paths: true
 
 springdoc:

@@ -9,6 +9,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.dao.InvalidDataAccessResourceUsageException;
+import com.modocument.infrastructure.ratelimit.TooManyRequestsException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.ErrorResponse;
@@ -53,6 +54,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<?> conflict(IllegalStateException e) {
         return error(HttpStatus.CONFLICT, message(e, "The request conflicts with the current state."));
+    }
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<?> tooManyRequests(TooManyRequestsException e) {
+        return error(HttpStatus.TOO_MANY_REQUESTS,
+                message(e, "Too many requests. Please slow down and try again."));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)

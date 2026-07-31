@@ -158,7 +158,8 @@ the test suite.
 - File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`).
 - **Swagger UI** at `/swagger-ui` (static contract at `/swagger/spec.yaml`).
 - `local` profile: same PostgreSQL + Flyway as production, plus dev conveniences
-  (dev JWT secret, Swagger, in-memory extraction).
+  (Swagger, in-memory extraction). The JWT signing key is **not** committed —
+  supply `MODOCUMENT_JWT_SECRET` or a gitignored `application-local-secrets.yml`.
 - **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + PostgreSQL +
   docling-serve), non-root runtime image with a healthcheck.
 - CI: GitHub Actions runs `mvn -B verify` on every push/PR to `main`.
@@ -170,6 +171,11 @@ the test suite.
 ```bash
 # start a database once (or point MODOCUMENT_DB_* at your own PostgreSQL)
 docker compose up -d postgres
+
+# provide a JWT signing key — no secret is committed, even for local dev.
+# (Alternatively, copy application-local-secrets.yml.example to
+# application-local-secrets.yml and put the key there; it is gitignored.)
+export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
 
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
@@ -246,8 +252,15 @@ Endpoints: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`
 `PUT /api/auth/profile`, `PUT /api/auth/password`. Logout is client-side (discard
 the token; it expires after `modocument.security.jwt.ttl-hours`, default 24h).
 `MODOCUMENT_JWT_SECRET` (≥32 bytes, e.g. `openssl rand -base64 48`) is **required**
-in production — the app fails fast at startup if it is missing, too short, or set
-to the old dev default. The `local`/`test` profiles ship their own dev-only secret.
+in production and on `local` — the app fails fast at startup if it is missing, too
+short, or (in production) set to the old dev default. No secret is committed for
+`local`; set the env var or the gitignored `application-local-secrets.yml`. Only
+the `test` profile ships a fixed dev-only key, so the suite is deterministic.
+
+Both open auth endpoints are rate-limited per IP and per email
+(`modocument.security.rate-limit.auth.*`), and the LLM-backed endpoints
+(`/api/aifiles/send`, `/api/automapper/generate`, chat-edit) carry a per-user
+quota (`modocument.security.rate-limit.llm.*`); exceeding either returns `429`.
 
 ### Build & test
 
@@ -270,7 +283,9 @@ mvn -B verify
 | Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | `true` (active only when an OpenAI key is set) |
 | Vision OCR model | `ocr.vision.model` / `OCR_VISION_MODEL` | `gpt-4o` |
 | Vision OCR page budget | `ocr.vision.max-pages` / `OCR_VISION_MAXPAGES` (+ `dpi`, `max-dimension`) | 20 pages/PDF, 200 DPI, 2048px longest edge |
-| JWT signing secret | `modocument.security.jwt.secret` / `MODOCUMENT_JWT_SECRET` | **required** in production (≥32 bytes); dev secret on `local`/`test` |
+| JWT signing secret | `modocument.security.jwt.secret` / `MODOCUMENT_JWT_SECRET` | **required** in production and `local` (≥32 bytes; not committed); fixed dev secret on `test` only |
+| Auth rate limit | `modocument.security.rate-limit.auth.*` (`per-ip-max`, `per-email-max`, `window-millis`) | 30/IP, 10/email per 15 min → `429` |
+| LLM quota | `modocument.security.rate-limit.llm.*` (`per-user-max`, `window-millis`) | 60/user per hour → `429` |
 | Database | `spring.datasource.url` / `MODOCUMENT_DB_URL` (+ `MODOCUMENT_DB_USERNAME`, `MODOCUMENT_DB_PASSWORD`) | PostgreSQL `localhost:5432/modocument` |
 | CORS origins | `modocument.cors.allowed-origins` / `MODOCUMENT_CORS_ALLOWED_ORIGINS` | localhost dev origins — set your frontend origin in production |
 | Storage root | `modocument.storage.root` / `MODOCUMENT_STORAGE_ROOT` | `wwwroot` (uploads + export copies; mount a volume) |
