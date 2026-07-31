@@ -7,6 +7,7 @@ import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
 import com.modocument.application.mapping.MappingContext;
+import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.IngestionParseStep;
 import com.modocument.application.port.ImportHistoryRepository;
@@ -56,6 +57,7 @@ public class IngestionJobUseCase {
     private final IngestionParseStep parseStep;
     private final AutoMapUseCase autoMap;
     private final ValidateRowsUseCase validateRows;
+    private final CurrentUserProvider currentUser;
 
     public IngestionJobUseCase(IngestionJobRepository jobs,
                                TemplateRepository templates,
@@ -64,7 +66,8 @@ public class IngestionJobUseCase {
                                ImportDetailsRepository importDetails,
                                IngestionParseStep parseStep,
                                AutoMapUseCase autoMap,
-                               ValidateRowsUseCase validateRows) {
+                               ValidateRowsUseCase validateRows,
+                               CurrentUserProvider currentUser) {
         this.jobs = jobs;
         this.templates = templates;
         this.templateFields = templateFields;
@@ -73,20 +76,25 @@ public class IngestionJobUseCase {
         this.parseStep = parseStep;
         this.autoMap = autoMap;
         this.validateRows = validateRows;
+        this.currentUser = currentUser;
     }
 
     public IngestionJob create(String fileName, int templateId) {
-        templates.getById(templateId).orElseThrow(
+        int owner = currentUser.requireUserId();
+        // The template must exist AND belong to the caller — otherwise a user
+        // could stamp their own jobs against someone else's template.
+        templates.getByIdAndOwner(templateId, owner).orElseThrow(
                 () -> new NoSuchElementException("Template " + templateId + " not found."));
 
         ImportHistory history = new ImportHistory();
-        history.setCompanyId(1000);
+        history.setOwnerUserId(owner);
         history.setFileName(fileName);
         history.setTemplateId(templateId);
         history.setImportDate(LocalDateTime.now(ZoneOffset.UTC));
         ImportHistory savedHistory = importHistory.add(history);
 
         IngestionJob job = new IngestionJob();
+        job.setOwnerUserId(owner);
         job.setFileName(fileName);
         job.setTemplateId(templateId);
         job.setImportHistoryId(savedHistory.getImportHistoryId());
@@ -95,13 +103,18 @@ public class IngestionJobUseCase {
         return jobs.save(job);
     }
 
+    /**
+     * Owner-scoped fetch: a job the caller does not own is indistinguishable
+     * from one that does not exist (404), never readable or mutable. Every
+     * id-taking operation routes through here, so they all inherit the check.
+     */
     public IngestionJob get(int jobId) {
-        return jobs.getById(jobId).orElseThrow(
+        return jobs.getByIdAndOwner(jobId, currentUser.requireUserId()).orElseThrow(
                 () -> new NoSuchElementException("Ingestion job " + jobId + " not found."));
     }
 
     public List<IngestionJob> list() {
-        return jobs.list();
+        return jobs.listByOwner(currentUser.requireUserId());
     }
 
     /**
@@ -343,7 +356,8 @@ public class IngestionJobUseCase {
                 parsed.getColumns(),
                 templateFields.listByTemplateId(job.getTemplateId()),
                 parsed.getRows(),
-                job.getTemplateId()));
+                job.getTemplateId(),
+                job.getOwnerUserId()));
         job.setMappingJson(toJson(mapping));
         job.setMappedRowsJson(toJson(applyMapping(parsed, mapping)));
         clearDownstream(job, JobStep.MAPPED);

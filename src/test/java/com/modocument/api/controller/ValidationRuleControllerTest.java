@@ -2,6 +2,7 @@ package com.modocument.api.controller;
 
 import com.modocument.application.dto.UpsertValidationRuleRequest;
 import com.modocument.application.port.ValidationRuleRepository;
+import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.domain.entity.ValidationRule;
 import com.modocument.domain.model.RuleType;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,8 @@ import static org.mockito.Mockito.when;
 class ValidationRuleControllerTest {
 
     private final ValidationRuleRepository repo = mock(ValidationRuleRepository.class);
-    private final ValidationRuleController controller = new ValidationRuleController(repo);
+    private final TemplateOwnership ownership = mock(TemplateOwnership.class);
+    private final ValidationRuleController controller = new ValidationRuleController(repo, ownership);
 
     @Test
     void upsertSavesValidRegexRule() {

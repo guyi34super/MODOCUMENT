@@ -17,11 +17,17 @@ public interface IngestionJobJpaRepository extends JpaRepository<IngestionJob, I
      * *Json checkpoint blobs along just to read the mapping.
      */
     @Query("select j.mappingJson from IngestionJob j"
-            + " where j.templateId = :templateId and j.currentStep in :steps"
+            + " where j.templateId = :templateId and j.ownerUserId = :ownerUserId"
+            + " and j.currentStep in :steps"
             + " and j.mappingJson is not null order by j.updatedDate desc")
     List<String> findRecentMappingJson(@Param("templateId") int templateId,
+                                       @Param("ownerUserId") int ownerUserId,
                                        @Param("steps") Collection<JobStep> steps,
                                        Pageable pageable);
+
+    java.util.Optional<IngestionJob> findByIngestionJobIdAndOwnerUserId(int id, int ownerUserId);
+
+    List<IngestionJob> findByOwnerUserId(int ownerUserId);
 
     long countByTemplateId(int templateId);
 }

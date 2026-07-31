@@ -128,7 +128,7 @@ public class AutoMapUseCase {
     private List<String> assignScored(MappingContext context, List<String> unresolved,
                                       Set<String> pool, Map<String, TemplateFields> fieldsByName,
                                       Map<String, String> mapping) {
-        Map<String, String> historyVotes = historyVotes(context.templateId());
+        Map<String, String> historyVotes = historyVotes(context.templateId(), context.ownerUserId());
         Map<String, List<ValidationRule>> rulesByField = shapeScorer.rulesByField(context.templateId());
 
         // Shape scoring is the expensive tier (samples × rules per pair), so it
@@ -191,11 +191,11 @@ public class AutoMapUseCase {
         return unresolved.stream().filter(c -> !assignedColumns.contains(c)).toList();
     }
 
-    /** Majority-vote target per normalized column name from recent completed jobs. */
-    private Map<String, String> historyVotes(int templateId) {
+    /** Majority-vote target per normalized column name from the caller's recent jobs. */
+    private Map<String, String> historyVotes(int templateId, int ownerUserId) {
         List<String> mappingJsons;
         try {
-            mappingJsons = jobs.listRecentMappingJson(templateId, properties.getHistoryJobs());
+            mappingJsons = jobs.listRecentMappingJson(templateId, ownerUserId, properties.getHistoryJobs());
         } catch (Exception e) {
             log.warn("Could not load mapping history for template {}: {}", templateId, e.getMessage());
             return Map.of();

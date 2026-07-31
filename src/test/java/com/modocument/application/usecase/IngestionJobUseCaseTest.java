@@ -48,8 +48,20 @@ class IngestionJobUseCaseTest {
         }
 
         @Override
+        public Optional<IngestionJob> getByIdAndOwner(int id, int ownerUserId) {
+            return getById(id).filter(j -> j.getOwnerUserId() == ownerUserId);
+        }
+
+        @Override
         public List<IngestionJob> list() {
             return List.copyOf(store.values());
+        }
+
+        @Override
+        public List<IngestionJob> listByOwner(int ownerUserId) {
+            return store.values().stream()
+                    .filter(j -> j.getOwnerUserId() == ownerUserId)
+                    .toList();
         }
 
         @Override
@@ -62,9 +74,10 @@ class IngestionJobUseCaseTest {
         }
 
         @Override
-        public List<String> listRecentMappingJson(int templateId, int limit) {
+        public List<String> listRecentMappingJson(int templateId, int ownerUserId, int limit) {
             return store.values().stream()
                     .filter(j -> j.getTemplateId() == templateId)
+                    .filter(j -> j.getOwnerUserId() == ownerUserId)
                     .filter(j -> j.getCurrentStep() == JobStep.VALIDATED
                             || j.getCurrentStep() == JobStep.EXPORTED)
                     .filter(j -> j.getMappingJson() != null)
@@ -90,17 +103,18 @@ class IngestionJobUseCaseTest {
     private final IngestionParseStep parseStep = mock(IngestionParseStep.class);
     private final AutoMapUseCase autoMap = mock(AutoMapUseCase.class);
     private final ValidateRowsUseCase validateRows = mock(ValidateRowsUseCase.class);
+    private static final int USER = 1;
 
     private final IngestionJobUseCase useCase = new IngestionJobUseCase(
             jobs, templates, templateFields, importHistory, importDetails,
-            parseStep, autoMap, validateRows);
+            parseStep, autoMap, validateRows, () -> USER);
 
     private static final TableData PARSED = new TableData(
             List.of("first_name"), List.of(Map.of("first_name", "Ada")));
 
     @BeforeEach
     void setUp() {
-        when(templates.getById(1)).thenReturn(Optional.of(new Template(1, "T", null)));
+        when(templates.getByIdAndOwner(1, USER)).thenReturn(Optional.of(new Template(1, "T", null)));
         when(importHistory.add(any(ImportHistory.class))).thenAnswer(invocation -> {
             ImportHistory h = invocation.getArgument(0);
             h.setImportHistoryId(42);
@@ -473,6 +487,7 @@ class IngestionJobUseCaseTest {
         // No explicit id: the in-memory repository assigns one, so several
         // fixtures in a single test do not overwrite each other.
         IngestionJob job = new IngestionJob();
+        job.setOwnerUserId(USER);
         job.setTemplateId(1);
         job.setCurrentStep(step);
         job.setMappedRowsJson(mappedColumnsJson);

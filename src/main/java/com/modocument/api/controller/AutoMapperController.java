@@ -30,15 +30,18 @@ public class AutoMapperController {
     private final TemplateFieldsRepository templateFieldsRepository;
     private final PromptFactory promptFactory;
     private final AiFilesService aiFilesService;
+    private final com.modocument.application.port.CurrentUserProvider currentUser;
 
     public AutoMapperController(ImportHistoryRepository importHistoryRepository,
                                 TemplateFieldsRepository templateFieldsRepository,
                                 PromptFactory promptFactory,
-                                AiFilesService aiFilesService) {
+                                AiFilesService aiFilesService,
+                                com.modocument.application.port.CurrentUserProvider currentUser) {
         this.importHistoryRepository = importHistoryRepository;
         this.templateFieldsRepository = templateFieldsRepository;
         this.promptFactory = promptFactory;
         this.aiFilesService = aiFilesService;
+        this.currentUser = currentUser;
     }
 
     @PostMapping("/api/automapper/generate")
@@ -58,14 +61,15 @@ public class AutoMapperController {
                             + " characters."));
         }
 
-        Optional<ImportHistory> importHistory = importHistoryRepository.getByFileName(filename);
+        Optional<ImportHistory> importHistory =
+                importHistoryRepository.getByFileNameAndOwner(filename, currentUser.requireUserId());
         if (importHistory.isEmpty()) {
             return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)
                     .body(Map.of("error", "No import history for file '" + filename + "'."));
         }
 
-        List<String> fieldNames = templateFieldsRepository.list().stream()
-                .filter(tf -> tf.getTemplateId() == importHistory.get().getTemplateId())
+        List<String> fieldNames = templateFieldsRepository
+                .listByTemplateId(importHistory.get().getTemplateId()).stream()
                 .map(tf -> tf.getFieldName())
                 .toList();
 

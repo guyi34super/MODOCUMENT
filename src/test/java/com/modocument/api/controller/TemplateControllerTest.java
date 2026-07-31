@@ -20,13 +20,16 @@ import static org.mockito.Mockito.when;
 
 class TemplateControllerTest {
 
+    private static final int USER = 1;
     private final TemplateRepository repo = mock(TemplateRepository.class);
     private final DeleteTemplateUseCase deleteTemplate = mock(DeleteTemplateUseCase.class);
-    private final TemplateController controller = new TemplateController(repo, deleteTemplate);
+    // CurrentUserProvider is a functional interface — a fixed caller is enough.
+    private final TemplateController controller =
+            new TemplateController(repo, deleteTemplate, () -> USER);
 
     @Test
     void getAllReturnsOkWithListOfTemplates() {
-        when(repo.list()).thenReturn(List.of(
+        when(repo.listByOwner(USER)).thenReturn(List.of(
                 new Template(1, "TemplateName1", "TemplateDescription1"),
                 new Template(2, "TemplateName2", "TemplateDescription2")));
 
@@ -38,7 +41,7 @@ class TemplateControllerTest {
 
     @Test
     void getReturnsNotFoundWhenIdDoesNotExist() {
-        when(repo.getById(1)).thenReturn(Optional.empty());
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.empty());
 
         ResponseEntity<?> result = controller.getTemplateById(1);
 
@@ -47,7 +50,7 @@ class TemplateControllerTest {
 
     @Test
     void getReturnsOkWithTemplate() {
-        when(repo.getById(1)).thenReturn(Optional.of(
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.of(
                 new Template(1, "TemplateName1", "TemplateDescription1")));
 
         ResponseEntity<?> result = controller.getTemplateById(1);
@@ -72,7 +75,7 @@ class TemplateControllerTest {
 
     @Test
     void updateReturnsNotFoundWhenTemplateDoesNotExist() {
-        when(repo.getById(1)).thenReturn(Optional.empty());
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.empty());
 
         ResponseEntity<?> result = controller.update(new Template(1, "TestName", "TestDescription"));
 
@@ -82,7 +85,7 @@ class TemplateControllerTest {
     @Test
     void updateAppliesChangesWhenUpdateIsSuccessful() {
         Template existing = new Template(1, "OldName", "OldDescription");
-        when(repo.getById(1)).thenReturn(Optional.of(existing));
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.of(existing));
         when(repo.update(any(Template.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ResponseEntity<?> result = controller.update(new Template(1, "NewName", "NewDescription"));
@@ -97,13 +100,13 @@ class TemplateControllerTest {
         ResponseEntity<?> result = controller.delete(1);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-        verify(deleteTemplate).handle(1);
+        verify(deleteTemplate).handle(1, USER);
     }
 
     @Test
     void deleteReturnsNotFoundWhenTemplateDoesNotExist() {
         doThrow(new NoSuchElementException("Template 1 not found."))
-                .when(deleteTemplate).handle(1);
+                .when(deleteTemplate).handle(1, USER);
 
         ResponseEntity<?> result = controller.delete(1);
 
@@ -114,7 +117,7 @@ class TemplateControllerTest {
     @Test
     void deleteReturnsConflictWhenTemplateIsStillInUse() {
         doThrow(new IllegalStateException("This template is still in use by 2 upload jobs."))
-                .when(deleteTemplate).handle(1);
+                .when(deleteTemplate).handle(1, USER);
 
         ResponseEntity<?> result = controller.delete(1);
 

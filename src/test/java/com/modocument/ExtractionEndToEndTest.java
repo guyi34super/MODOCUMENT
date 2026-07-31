@@ -17,8 +17,13 @@ import com.modocument.domain.model.ExtractionJobStatus;
 import com.modocument.domain.model.SourceType;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -112,6 +117,18 @@ class ExtractionEndToEndTest {
         if (server != null) {
             server.stop(0);
         }
+    }
+
+    @BeforeEach
+    void authenticate() {
+        Jwt jwt = Jwt.withTokenValue("test-token").header("alg", "none").subject("1")
+                .claim("email", "e2e@example.com").build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+    }
+
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test

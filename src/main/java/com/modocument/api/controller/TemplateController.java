@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.usecase.DeleteTemplateUseCase;
 import com.modocument.domain.entity.Template;
@@ -23,20 +24,23 @@ public class TemplateController {
 
     private final TemplateRepository repo;
     private final DeleteTemplateUseCase deleteTemplate;
+    private final CurrentUserProvider currentUser;
 
-    public TemplateController(TemplateRepository repo, DeleteTemplateUseCase deleteTemplate) {
+    public TemplateController(TemplateRepository repo, DeleteTemplateUseCase deleteTemplate,
+                              CurrentUserProvider currentUser) {
         this.repo = repo;
         this.deleteTemplate = deleteTemplate;
+        this.currentUser = currentUser;
     }
 
     @GetMapping("/Templates/GetAll")
     public ResponseEntity<?> getAll() {
-        return ResponseEntity.ok(repo.list());
+        return ResponseEntity.ok(repo.listByOwner(currentUser.requireUserId()));
     }
 
     @GetMapping("/Templates/GetById/{id}")
     public ResponseEntity<?> getTemplateById(@PathVariable int id) {
-        Optional<Template> item = repo.getById(id);
+        Optional<Template> item = repo.getByIdAndOwner(id, currentUser.requireUserId());
         if (item.isEmpty()) {
             return notFound(id);
         }
@@ -48,6 +52,7 @@ public class TemplateController {
     @PostMapping("/Templates/Create")
     public ResponseEntity<?> create(@RequestBody Template dto) {
         Template entity = new Template(0, dto.getName(), dto.getDescription());
+        entity.setOwnerUserId(currentUser.requireUserId());
         repo.add(entity);
         return ResponseEntity
                 .created(URI.create("/Templates/GetById/" + entity.getTemplateId()))
@@ -56,7 +61,9 @@ public class TemplateController {
 
     @PutMapping("/Templates/Update")
     public ResponseEntity<?> update(@RequestBody Template dto) {
-        Optional<Template> existingOpt = repo.getById(dto.getTemplateId());
+        // Owner-scoped: updating another user's template is a 404, not an edit.
+        Optional<Template> existingOpt =
+                repo.getByIdAndOwner(dto.getTemplateId(), currentUser.requireUserId());
         if (existingOpt.isEmpty()) {
             return notFound(dto.getTemplateId());
         }
@@ -77,7 +84,7 @@ public class TemplateController {
     @DeleteMapping("/Templates/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         try {
-            deleteTemplate.handle(id);
+            deleteTemplate.handle(id, currentUser.requireUserId());
         } catch (NoSuchElementException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", e.getMessage()));

@@ -34,7 +34,7 @@ class CreateTemplateWithFieldsUseCaseTest {
     private final ValidationRuleRepository rules = mock(ValidationRuleRepository.class);
 
     private final CreateTemplateWithFieldsUseCase useCase =
-            new CreateTemplateWithFieldsUseCase(templates, fields, dataTypes, rules);
+            new CreateTemplateWithFieldsUseCase(templates, fields, dataTypes, rules, () -> 1);
 
     private void seedDataTypes() {
         when(dataTypes.list()).thenReturn(List.of(

@@ -51,7 +51,7 @@ class AutoMapUseCaseTest {
     }
 
     private static MappingContext context(List<String> columns, List<TemplateFields> fields) {
-        return new MappingContext(columns, fields, List.of(), 1);
+        return new MappingContext(columns, fields, List.of(), 1, 1);
     }
 
     @Test
@@ -86,7 +86,7 @@ class AutoMapUseCaseTest {
                 Map.of("Column3", "rosa@acme.com"));
 
         Map<String, String> mapping = useCase.map(
-                new MappingContext(List.of("Column3"), fields, rows, 1));
+                new MappingContext(List.of("Column3"), fields, rows, 1, 1));
 
         assertThat(mapping).containsEntry("Column3", "Email");
         verify(ai, never()).sendForObject(anyString(), any());
@@ -94,7 +94,7 @@ class AutoMapUseCaseTest {
 
     @Test
     void historyResolvesColumnsSeenInPastJobs() {
-        when(jobs.listRecentMappingJson(1, properties.getHistoryJobs())).thenReturn(List.of(
+        when(jobs.listRecentMappingJson(1, 1, properties.getHistoryJobs())).thenReturn(List.of(
                 "{\"Nom\":\"FirstName\"}", "{\"Nom\":\"FirstName\"}"));
 
         Map<String, String> mapping = useCase.map(context(List.of("Nom"), TEMPLATE_FIELDS));
@@ -162,7 +162,7 @@ class AutoMapUseCaseTest {
     @Test
     void historyLookupFailureDegradesSilently() {
         properties.setLlmFallbackEnabled(false);
-        when(jobs.listRecentMappingJson(anyInt(), anyInt()))
+        when(jobs.listRecentMappingJson(anyInt(), anyInt(), anyInt()))
                 .thenThrow(new IllegalStateException("db down"));
 
         assertThatCode(() -> useCase.map(context(List.of("Nom"), TEMPLATE_FIELDS)))

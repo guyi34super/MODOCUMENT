@@ -1,7 +1,9 @@
 package com.modocument.api.controller;
 
 import com.modocument.application.port.TemplateFieldsRepository;
+import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.domain.entity.TemplateFields;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,28 +15,33 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
 public class TemplateFieldsController {
 
     private final TemplateFieldsRepository repo;
+    private final TemplateOwnership ownership;
 
-    public TemplateFieldsController(TemplateFieldsRepository repo) {
+    public TemplateFieldsController(TemplateFieldsRepository repo, TemplateOwnership ownership) {
         this.repo = repo;
+        this.ownership = ownership;
     }
 
     /**
-     * With {@code templateId} the answer is scoped to that template — which is
-     * all any caller actually needs, and avoids shipping every template's
-     * fields to a client that then filters them away.
+     * Always scoped to one caller-owned template — a global list would leak
+     * every user's field definitions, so {@code templateId} is required and
+     * ownership is enforced.
      */
     @GetMapping("/TemplateFields/GetAll")
     public ResponseEntity<?> getAll(
             @RequestParam(value = "templateId", required = false) Integer templateId) {
-        return ResponseEntity.ok(templateId == null
-                ? repo.list()
-                : repo.listByTemplateId(templateId));
+        if (templateId == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "templateId is required."));
+        }
+        ownership.require(templateId);
+        return ResponseEntity.ok(repo.listByTemplateId(templateId));
     }
 
     @GetMapping("/TemplateFields/GetById/{id}")
@@ -43,6 +50,8 @@ public class TemplateFieldsController {
         if (itemOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
+        // A field belongs to whoever owns its template.
+        ownership.require(itemOpt.get().getTemplateId());
         TemplateFields item = itemOpt.get();
         TemplateFields dto = new TemplateFields();
         dto.setTemplateFieldsId(item.getTemplateFieldsId());
@@ -55,6 +64,7 @@ public class TemplateFieldsController {
 
     @PostMapping("/TemplateFields/Create")
     public ResponseEntity<?> create(@RequestBody TemplateFields dto) {
+        ownership.require(dto.getTemplateId());
         TemplateFields entity = new TemplateFields();
         entity.setTemplateId(dto.getTemplateId());
         entity.setFieldName(dto.getFieldName());
@@ -70,6 +80,9 @@ public class TemplateFieldsController {
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
+        // Must own both the current template and any template it's being moved to.
+        ownership.require(existingOpt.get().getTemplateId());
+        ownership.require(dto.getTemplateId());
         TemplateFields existing = existingOpt.get();
         existing.setFieldName(dto.getFieldName());
         existing.setTemplateId(dto.getTemplateId());
@@ -93,7 +106,14 @@ public class TemplateFieldsController {
         if (existing.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
+        ownership.require(existing.get().getTemplateId());
         repo.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @org.springframework.web.bind.annotation.ExceptionHandler(java.util.NoSuchElementException.class)
+    public ResponseEntity<?> notFound(java.util.NoSuchElementException e) {
+        // Cross-user template access is reported as not-found, never forbidden.
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
     }
 }

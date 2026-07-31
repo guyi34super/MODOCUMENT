@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.UpsertValidationRuleRequest;
 import com.modocument.application.port.ValidationRuleRepository;
 import com.modocument.application.usecase.CreateTemplateWithFieldsUseCase;
+import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.application.validation.RegexPatternChecker;
 import com.modocument.domain.entity.ValidationRule;
 import com.modocument.domain.model.RuleType;
@@ -27,13 +28,16 @@ public class ValidationRuleController {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ValidationRuleRepository repo;
+    private final TemplateOwnership ownership;
 
-    public ValidationRuleController(ValidationRuleRepository repo) {
+    public ValidationRuleController(ValidationRuleRepository repo, TemplateOwnership ownership) {
         this.repo = repo;
+        this.ownership = ownership;
     }
 
     @GetMapping("/ValidationRules/GetByTemplate/{templateId}")
     public ResponseEntity<?> getByTemplate(@PathVariable int templateId) {
+        ownership.require(templateId);
         return ResponseEntity.ok(repo.getRulesByTemplate(templateId));
     }
 
@@ -42,6 +46,7 @@ public class ValidationRuleController {
         if (request.getFieldName() == null || request.getFieldName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "fieldName is required."));
         }
+        ownership.require(request.getTemplateId());
         Optional<RuleType> ruleType = CreateTemplateWithFieldsUseCase.parseRuleType(request.getRuleType());
         if (ruleType.isEmpty()) {
             return ResponseEntity.badRequest()
@@ -94,6 +99,7 @@ public class ValidationRuleController {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Unknown rule type '" + ruleType + "'."));
         }
+        ownership.require(templateId);
         return repo.delete(templateId, fieldName, parsed.get())
                 ? ResponseEntity.noContent().build()
                 : ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)

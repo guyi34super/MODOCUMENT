@@ -46,22 +46,26 @@ public class ChatEditTableUseCase {
     private final List<PromptStrategy> promptStrategies;
     private final AiFilesService aiFilesService;
     private final PiiTokenizer tokenizer;
+    private final com.modocument.application.port.CurrentUserProvider currentUser;
 
     public ChatEditTableUseCase(IngestionJobRepository jobs,
                                 List<PromptStrategy> promptStrategies,
                                 AiFilesService aiFilesService,
-                                PiiTokenizer tokenizer) {
+                                PiiTokenizer tokenizer,
+                                com.modocument.application.port.CurrentUserProvider currentUser) {
         this.jobs = jobs;
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
         this.tokenizer = tokenizer;
+        this.currentUser = currentUser;
     }
 
     public IngestionJob handle(int jobId, String instruction) {
         if (instruction == null || instruction.isBlank()) {
             throw new IllegalArgumentException("instruction is required.");
         }
-        IngestionJob job = jobs.getById(jobId).orElseThrow(
+        // Owner-scoped: chat-editing another user's job is a 404, not an edit.
+        IngestionJob job = jobs.getByIdAndOwner(jobId, currentUser.requireUserId()).orElseThrow(
                 () -> new NoSuchElementException("Ingestion job " + jobId + " not found."));
         if (job.getStatus() == JobStatus.CANCELLED) {
             throw new IllegalStateException("Job " + jobId + " is cancelled.");

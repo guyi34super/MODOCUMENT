@@ -8,6 +8,7 @@ import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.port.TransformService;
+import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.domain.entity.ImportDetails;
 import com.modocument.domain.entity.ImportHistory;
 import org.springframework.http.HttpStatus;
@@ -30,15 +31,18 @@ public class TransformController {
     private final TemplateFieldsRepository templateFieldsRepository;
     private final ImportHistoryRepository importHistoryRepository;
     private final ImportDetailsRepository importDetailsRepository;
+    private final TemplateOwnership ownership;
 
     public TransformController(TransformService transformService,
                                TemplateFieldsRepository templateFieldsRepository,
                                ImportHistoryRepository importHistoryRepository,
-                               ImportDetailsRepository importDetailsRepository) {
+                               ImportDetailsRepository importDetailsRepository,
+                               TemplateOwnership ownership) {
         this.transformService = transformService;
         this.templateFieldsRepository = templateFieldsRepository;
         this.importHistoryRepository = importHistoryRepository;
         this.importDetailsRepository = importDetailsRepository;
+        this.ownership = ownership;
     }
 
     @PostMapping("/api/transform/transform")
@@ -50,9 +54,10 @@ public class TransformController {
 
         try {
             int templateId = transformService.getTemplateId(request);
+            // The transform target template must belong to the caller.
+            int owner = ownership.require(templateId);
 
-            List<String> fieldNames = templateFieldsRepository.list().stream()
-                    .filter(tf -> tf.getTemplateId() == templateId)
+            List<String> fieldNames = templateFieldsRepository.listByTemplateId(templateId).stream()
                     .map(tf -> tf.getFieldName() == null ? "" : tf.getFieldName())
                     .toList();
             if (fieldNames.isEmpty()) {
@@ -65,7 +70,7 @@ public class TransformController {
             TransformResult resultDto = transformService.transform(request, model);
 
             ImportHistory importHistory = new ImportHistory();
-            importHistory.setCompanyId(1000);
+            importHistory.setOwnerUserId(owner);
             importHistory.setTemplateId(templateId);
             importHistory.setFileName(request.getFileName());
             importHistory.setImportDate(LocalDateTime.now(ZoneOffset.UTC));

@@ -31,8 +31,11 @@ class DeleteTemplateUseCaseTest {
     private final DeleteTemplateUseCase useCase =
             new DeleteTemplateUseCase(templates, fields, rules, jobs, imports);
 
+    private static final int USER = 5;
+
     private void templateExists() {
-        when(templates.getById(3)).thenReturn(Optional.of(new Template(3, "People", null)));
+        when(templates.getByIdAndOwner(3, USER))
+                .thenReturn(Optional.of(new Template(3, "People", null)));
     }
 
     @Test
@@ -46,7 +49,7 @@ class DeleteTemplateUseCaseTest {
         when(rules.getRulesByTemplate(3)).thenReturn(List.of(
                 new ValidationRule(3, "Email", RuleType.REQUIRED, "{}")));
 
-        useCase.handle(3);
+        useCase.handle(3, USER);
 
         verify(rules).delete(3, "Email", RuleType.REQUIRED);
         verify(fields).delete(11);
@@ -58,7 +61,7 @@ class DeleteTemplateUseCaseTest {
         templateExists();
         when(jobs.countByTemplateId(3)).thenReturn(2);
 
-        assertThatThrownBy(() -> useCase.handle(3))
+        assertThatThrownBy(() -> useCase.handle(3, USER))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("2 upload jobs");
         verify(templates, never()).delete(3);
@@ -70,7 +73,7 @@ class DeleteTemplateUseCaseTest {
         templateExists();
         when(imports.countByTemplateId(3)).thenReturn(1);
 
-        assertThatThrownBy(() -> useCase.handle(3))
+        assertThatThrownBy(() -> useCase.handle(3, USER))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("1 import");
         verify(templates, never()).delete(3);
@@ -78,9 +81,9 @@ class DeleteTemplateUseCaseTest {
 
     @Test
     void reportsAMissingTemplate() {
-        when(templates.getById(3)).thenReturn(Optional.empty());
+        when(templates.getByIdAndOwner(3, USER)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> useCase.handle(3))
+        assertThatThrownBy(() -> useCase.handle(3, USER))
                 .isInstanceOf(NoSuchElementException.class);
     }
 }

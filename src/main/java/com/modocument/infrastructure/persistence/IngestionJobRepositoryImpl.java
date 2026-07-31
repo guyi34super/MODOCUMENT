@@ -25,8 +25,18 @@ public class IngestionJobRepositoryImpl implements IngestionJobRepository {
     }
 
     @Override
+    public Optional<IngestionJob> getByIdAndOwner(int id, int ownerUserId) {
+        return jpa.findByIngestionJobIdAndOwnerUserId(id, ownerUserId);
+    }
+
+    @Override
     public List<IngestionJob> list() {
         return jpa.findAll();
+    }
+
+    @Override
+    public List<IngestionJob> listByOwner(int ownerUserId) {
+        return jpa.findByOwnerUserId(ownerUserId);
     }
 
     @Override
@@ -44,8 +54,8 @@ public class IngestionJobRepositoryImpl implements IngestionJobRepository {
     }
 
     @Override
-    public List<String> listRecentMappingJson(int templateId, int limit) {
-        return jpa.findRecentMappingJson(templateId,
+    public List<String> listRecentMappingJson(int templateId, int ownerUserId, int limit) {
+        return jpa.findRecentMappingJson(templateId, ownerUserId,
                 List.of(JobStep.VALIDATED, JobStep.EXPORTED), PageRequest.of(0, limit));
     }
 }

@@ -1,7 +1,9 @@
 package com.modocument.api.controller;
 
 import com.modocument.application.port.ImportDetailsRepository;
+import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.domain.entity.ImportDetails;
+import com.modocument.domain.entity.ImportHistory;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,8 +18,20 @@ import static org.mockito.Mockito.when;
 
 class ImportDetailsControllerTest {
 
+    private static final int USER = 1;
     private final ImportDetailsRepository repo = mock(ImportDetailsRepository.class);
-    private final ImportDetailsController controller = new ImportDetailsController(repo);
+    private final ImportHistoryRepository imports = mock(ImportHistoryRepository.class);
+    private final ImportDetailsController controller =
+            new ImportDetailsController(repo, imports, () -> USER);
+
+    {
+        // Parent import #1 belongs to the caller in every scenario below.
+        ImportHistory parent = new ImportHistory();
+        parent.setImportHistoryId(1);
+        parent.setOwnerUserId(USER);
+        when(imports.getByIdAndOwner(1, USER)).thenReturn(Optional.of(parent));
+        when(imports.listByOwner(USER)).thenReturn(List.of(parent));
+    }
 
     private static ImportDetails importDetails(int id, String rawJson) {
         ImportDetails details = new ImportDetails();

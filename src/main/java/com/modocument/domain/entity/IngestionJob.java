@@ -3,6 +3,7 @@ package com.modocument.domain.entity;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -30,6 +31,10 @@ public class IngestionJob {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "IngestionJobId")
     private int ingestionJobId;
+
+    /** The AppUser who owns this job — every read/write is scoped to it. */
+    @Column(name = "OwnerUserId")
+    private int ownerUserId;
 
     @Column(name = "TemplateId")
     private int templateId;
@@ -100,6 +105,15 @@ public class IngestionJob {
 
     public void setIngestionJobId(int ingestionJobId) {
         this.ingestionJobId = ingestionJobId;
+    }
+
+    @JsonIgnore
+    public int getOwnerUserId() {
+        return ownerUserId;
+    }
+
+    public void setOwnerUserId(int ownerUserId) {
+        this.ownerUserId = ownerUserId;
     }
 
     public int getTemplateId() {

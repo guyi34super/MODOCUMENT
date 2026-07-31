@@ -1,6 +1,7 @@
 package com.modocument.api.controller;
 
 import com.modocument.application.port.TemplateFieldsRepository;
+import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.domain.entity.TemplateFields;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -17,7 +18,11 @@ import static org.mockito.Mockito.when;
 class TemplateFieldsControllerTest {
 
     private final TemplateFieldsRepository repo = mock(TemplateFieldsRepository.class);
-    private final TemplateFieldsController controller = new TemplateFieldsController(repo);
+    // Ownership is verified elsewhere (TemplateOwnership); a permissive mock lets
+    // these tests focus on the controller's own behaviour.
+    private final TemplateOwnership ownership = mock(TemplateOwnership.class);
+    private final TemplateFieldsController controller =
+            new TemplateFieldsController(repo, ownership);
 
     private static TemplateFields templateFields(int id, int templateId, String fieldName) {
         TemplateFields fields = new TemplateFields();
@@ -28,15 +33,11 @@ class TemplateFieldsControllerTest {
     }
 
     @Test
-    void getAllReturnsOkWithListOfTemplateFields() {
-        when(repo.list()).thenReturn(List.of(
-                templateFields(1, 1, "FirstName"),
-                templateFields(2, 1, "LastName")));
-
+    void getAllRequiresATemplateId() {
+        // A global list would leak every user's fields, so templateId is required.
         ResponseEntity<?> result = controller.getAll(null);
 
-        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat((List<?>) result.getBody()).hasSize(2);
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test

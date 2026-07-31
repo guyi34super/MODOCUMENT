@@ -52,10 +52,11 @@ class BridgeToTemplateUseCaseTest {
     private final ImportHistoryRepository importHistory = mock(ImportHistoryRepository.class);
     private final ImportDetailsRepository importDetails = mock(ImportDetailsRepository.class);
 
+    private static final int USER = 1;
     private final BridgeToTemplateUseCase useCase = new BridgeToTemplateUseCase(
             extractionJobs, processedRecords, templates, templateFields, autoMap, validateRows,
             cleanRecords, ingestionJobs, importHistory, importDetails,
-            new InMemoryExtractionAuditLog(), 500);
+            new InMemoryExtractionAuditLog(), () -> USER, 500);
 
     private ExtractionJob job;
 
@@ -66,7 +67,7 @@ class BridgeToTemplateUseCaseTest {
         job.setStatus(ExtractionJobStatus.COMPLETED);
         job = extractionJobs.save(job);
 
-        when(templates.getById(1)).thenReturn(Optional.of(new Template(1, "T", "T")));
+        when(templates.getByIdAndOwner(1, USER)).thenReturn(Optional.of(new Template(1, "T", "T")));
         TemplateFields nameField = mock(TemplateFields.class);
         when(nameField.getFieldName()).thenReturn("Name");
         when(templateFields.listByTemplateId(1)).thenReturn(List.of(nameField));

@@ -42,8 +42,10 @@ public class DeleteTemplateUseCase {
     }
 
     @Transactional
-    public void handle(int templateId) {
-        if (templates.getById(templateId).isEmpty()) {
+    public void handle(int templateId, int ownerUserId) {
+        // Owner-scoped: a template the caller does not own is a 404, so deletion
+        // can never reach another user's data.
+        if (templates.getByIdAndOwner(templateId, ownerUserId).isEmpty()) {
             throw new NoSuchElementException("Template " + templateId + " not found.");
         }
 

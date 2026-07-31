@@ -33,9 +33,10 @@ class ChatEditTableUseCaseTest {
 
     private final IngestionJobRepository jobs = mock(IngestionJobRepository.class);
     private final AiFilesService ai = mock(AiFilesService.class);
+    private static final int USER = 1;
     private final ChatEditTableUseCase useCase = new ChatEditTableUseCase(
             jobs, List.of(new ChatEditPrompt(), new ChatEditPatchPrompt()), ai,
-            new PiiTokenizer(new PrivacyProperties()));
+            new PiiTokenizer(new PrivacyProperties()), () -> USER);
 
     private IngestionJob jobWithMappedRows() {
         IngestionJob job = new IngestionJob();
@@ -45,7 +46,8 @@ class ChatEditTableUseCaseTest {
         job.setMappedRowsJson("{\"columns\":[\"FirstName\"],\"rows\":[{\"FirstName\":\"ada\"}]}");
         job.setValidationResultJson("[]");
         job.setExportInfoJson("{}");
-        when(jobs.getById(7)).thenReturn(Optional.of(job));
+        job.setOwnerUserId(USER);
+        when(jobs.getByIdAndOwner(7, USER)).thenReturn(Optional.of(job));
         when(jobs.save(any(IngestionJob.class))).thenAnswer(inv -> inv.getArgument(0));
         return job;
     }
