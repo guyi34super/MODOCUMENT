@@ -499,7 +499,10 @@ function EditableCell({
     return (
       <input
         autoFocus
-        defaultValue={value ?? ''}
+        // An errored cell opens empty so the fix is retyped clean; a valid cell
+        // keeps its value for a small tweak. The error text stays visible in the
+        // ErrorInspector above, so emptying the input loses no context.
+        defaultValue={err ? '' : (value ?? '')}
         className={`${inputClass} w-full min-w-28`}
         onBlur={(e) => {
           if (handledRef.current) return;

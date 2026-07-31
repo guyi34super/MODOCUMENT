@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '../context/ToastContext';
@@ -173,6 +173,71 @@ describe('ValidationRulesPage rule config UI', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('heading', { name: 'Add field rules' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+  });
+});
+
+describe('ValidationRulesPage one row per field', () => {
+  beforeEach(() => {
+    getTemplates.mockResolvedValue([{ templateId: 1, name: 'People' }]);
+    getAllFields.mockResolvedValue([
+      { templateFieldsId: 20, templateId: 1, fieldName: 'Age' },
+    ]);
+    upsertRule.mockClear();
+    deleteRule.mockClear();
+  });
+
+  const ageRows = () =>
+    screen.getAllByRole('row').filter((r) => within(r).queryByText('Age'));
+
+  it('shows a Required field with a format rule on one row, not two', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Age', ruleType: 'REQUIRED', configJson: '{}' },
+      { fieldName: 'Age', ruleType: 'RANGE', configJson: '{"Min":0,"Max":120}' },
+    ]);
+    renderPage();
+    // 'Between 0 and 120' appears only in the table, not the type dropdown.
+    await screen.findByText('Between 0 and 120');
+
+    const rows = ageRows();
+    expect(rows).toHaveLength(1);
+    // The redundant standalone REQUIRED row is gone; the Required column carries it.
+    expect(screen.queryByText('Required — must not be empty')).not.toBeInTheDocument();
+    expect(within(rows[0]).getByText('Yes')).toBeInTheDocument();
+  });
+
+  it('still shows a field that is only Required', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Age', ruleType: 'REQUIRED', configJson: '{}' },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Required — must not be empty')).toBeInTheDocument();
+    expect(ageRows()).toHaveLength(1);
+  });
+
+  it('updating an optional field to Required keeps it on one row', async () => {
+    // The exact scenario the user hit: before the update the field is optional
+    // with one format rule; the update adds Required, and the refetched rules
+    // now include a REQUIRED entry — the field must still show once.
+    getRulesByTemplate
+      .mockResolvedValueOnce([
+        { fieldName: 'Age', ruleType: 'RANGE', configJson: '{"Min":0,"Max":120}' },
+      ])
+      .mockResolvedValue([
+        { fieldName: 'Age', ruleType: 'REQUIRED', configJson: '{}' },
+        { fieldName: 'Age', ruleType: 'RANGE', configJson: '{"Min":0,"Max":120}' },
+      ]);
+    renderPage();
+    await screen.findByText('Between 0 and 120');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+    await userEvent.selectOptions(screen.getByLabelText('Required or Optional'), 'Required');
+    await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+
+    // Wait for the refetch that now carries the REQUIRED rule.
+    await screen.findByText('Yes');
+    expect(ageRows()).toHaveLength(1);
+    expect(screen.queryByText('Required — must not be empty')).not.toBeInTheDocument();
   });
 });
 

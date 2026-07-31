@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
 import { getAllFields } from '../api/templates';
@@ -270,6 +270,23 @@ export default function ValidationRulesPage() {
 
   const testErrors = (testResults || []).filter((r) => r.errorMessage);
   const ruleHint = RULE_HINTS[ruleType];
+
+  // One row per field: the REQUIRED marker belongs in the Required column, not
+  // in a row of its own, so a field that is Required AND has a format rule
+  // shows once — not twice with the same field name. A field that is ONLY
+  // Required still keeps a row so it doesn't disappear.
+  const displayRules = useMemo(() => {
+    if (!rules) return rules;
+    const formatRules = rules.filter((r) => ruleTypeName(r.ruleType) !== 'REQUIRED');
+    const withFormat = new Set(formatRules.map((r) => r.fieldName));
+    const requiredOnly = rules.filter(
+      (r) => ruleTypeName(r.ruleType) === 'REQUIRED' && !withFormat.has(r.fieldName)
+    );
+    return [...formatRules, ...requiredOnly].sort((a, b) =>
+      a.fieldName.localeCompare(b.fieldName)
+    );
+  }, [rules]);
+
   // Optional + no format check, with nothing existing to remove, would save
   // nothing at all — and used to answer with a success toast anyway.
   const editingFormatRow = !!editingRule && editingRule.ruleType !== 'REQUIRED';
@@ -470,7 +487,7 @@ export default function ValidationRulesPage() {
                   ),
                 },
               ]}
-              rows={rules}
+              rows={displayRules}
               emptyMessage="No rules for this template yet."
             />
           )}

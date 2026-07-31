@@ -166,6 +166,53 @@ describe('IngestionJobPage wizard', () => {
     expect(screen.getByRole('button', { name: 'Re-validate' })).toBeDisabled();
   });
 
+  it('opens an errored cell empty so the bad value is retyped clean', async () => {
+    // A non-empty value that fails validation: the editor must not pre-fill it.
+    getJob.mockResolvedValue({
+      ...validatedJobWithErrors,
+      mappedRows: { columns: ['Email'], rows: [{ Email: 'bad-value' }] },
+      validationResults: [
+        {
+          row: 1,
+          fieldName: 'Email',
+          rawValue: 'bad-value',
+          errorMessage: 'Email format is invalid.',
+          ruleType: 'REGEX',
+        },
+      ],
+    });
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByText('bad-value'));
+    const input = screen.getByRole('textbox');
+    expect(input).toHaveValue('');
+    // The error text is still on screen while the input is empty.
+    expect(screen.getByText(/Email format is invalid\./)).toBeInTheDocument();
+  });
+
+  it('opens a valid cell with its existing value for a small tweak', async () => {
+    // Row 1 fails (Email), row 2 is valid — editing the valid cell keeps it.
+    getJob.mockResolvedValue({
+      ...validatedJobWithErrors,
+      mappedRows: { columns: ['Email'], rows: [{ Email: 'bad' }, { Email: 'ok@x.com' }] },
+      validationResults: [
+        {
+          row: 1,
+          fieldName: 'Email',
+          rawValue: 'bad',
+          errorMessage: 'Email format is invalid.',
+          ruleType: 'REGEX',
+        },
+      ],
+    });
+    renderPage('/ingestion/7?step=validation');
+    await screen.findByRole('heading', { name: 'Validation' });
+
+    await userEvent.click(screen.getByText('ok@x.com'));
+    expect(screen.getByRole('textbox')).toHaveValue('ok@x.com');
+  });
+
   it('save sends edited rows, chains revalidate, and re-checkpoints the wizard step', async () => {
     getJob.mockResolvedValue(validatedJobWithErrors);
     revalidateJob.mockResolvedValueOnce(validatedJob);
