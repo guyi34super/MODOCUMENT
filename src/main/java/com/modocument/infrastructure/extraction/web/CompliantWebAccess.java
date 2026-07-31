@@ -13,6 +13,7 @@ import com.modocument.domain.document.WebSourceConfig;
 import com.modocument.domain.model.AuditAction;
 import com.modocument.infrastructure.extraction.ExtractionProperties;
 import com.modocument.infrastructure.extraction.worker.ExtractionMetrics;
+import com.modocument.infrastructure.net.OutboundHostPolicy;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
@@ -38,16 +39,19 @@ public class CompliantWebAccess {
     private final ExtractionAuditLog audit;
     private final ExtractionMetrics metrics;
     private final ExtractionProperties properties;
+    private final OutboundHostPolicy egress;
 
     public CompliantWebAccess(WebFetcher fetcher, RobotsPolicy robots,
                               HostRateLimiter rateLimiter, ExtractionAuditLog audit,
-                              ExtractionMetrics metrics, ExtractionProperties properties) {
+                              ExtractionMetrics metrics, ExtractionProperties properties,
+                              OutboundHostPolicy egress) {
         this.fetcher = fetcher;
         this.robots = robots;
         this.rateLimiter = rateLimiter;
         this.audit = audit;
         this.metrics = metrics;
         this.properties = properties;
+        this.egress = egress;
     }
 
     public Access fetch(String jobId, String sourceId, WebSourceConfig config, String url,
@@ -57,6 +61,14 @@ public class CompliantWebAccess {
             metrics.domainBlocked();
             audit.add(ExtractionAuditEvent.of(jobId, sourceId, AuditAction.DOMAIN_BLOCKED, url,
                     "blocked", "Host is not in the source's allowed domains."));
+            return new Access(Outcome.BLOCKED_DOMAIN, null);
+        }
+        // SSRF guard: even an allow-listed domain must not resolve to an internal
+        // address (169.254.169.254, 127.0.0.1, RFC1918…). Terminal, not retried.
+        if (!egress.isHostAllowed(host)) {
+            metrics.domainBlocked();
+            audit.add(ExtractionAuditEvent.of(jobId, sourceId, AuditAction.DOMAIN_BLOCKED, url,
+                    "blocked", "Host resolves to a private or internal address."));
             return new Access(Outcome.BLOCKED_DOMAIN, null);
         }
         if (!robots.isAllowed(url)) {

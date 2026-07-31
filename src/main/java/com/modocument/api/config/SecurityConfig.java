@@ -16,6 +16,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 
@@ -62,10 +63,25 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        // A JSON API serves no markup, so the strictest CSP applies; when the
+        // dev tooling (Swagger UI, H2 console) is enabled, relax it just enough
+        // for those pages to load their own assets.
+        String csp = permitDevPaths
+                ? "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+                        + "script-src 'self' 'unsafe-inline'; frame-ancestors 'self'"
+                : "default-src 'none'; frame-ancestors 'none'";
         http.csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .headers(h -> h.frameOptions(f -> f.sameOrigin()))
+                .headers(h -> h
+                        .frameOptions(f -> f.sameOrigin())
+                        // X-Content-Type-Options: nosniff is on by default.
+                        .contentSecurityPolicy(c -> c.policyDirectives(csp))
+                        .referrerPolicy(r -> r.policy(ReferrerPolicy.NO_REFERRER))
+                        // Emitted only over HTTPS; harmless on plain-HTTP local dev.
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(31_536_000)))
                 .authorizeHttpRequests(a -> {
                     a.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                             .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()

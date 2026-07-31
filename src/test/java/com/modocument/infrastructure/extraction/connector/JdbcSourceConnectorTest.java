@@ -29,7 +29,8 @@ class JdbcSourceConnectorTest {
     private final InProcessJobSecrets secrets = new InProcessJobSecrets();
     private final NodeIdentity node = new NodeIdentity();
     private final JdbcSourceConnector connector = new JdbcSourceConnector(
-            secrets, node, new ExtractionProperties(), mock(ExtractionAuditLog.class));
+            secrets, node, new ExtractionProperties(), mock(ExtractionAuditLog.class),
+            com.modocument.infrastructure.net.OutboundHostPolicy.disabled());
 
     @BeforeEach
     void seedDatabase() throws Exception {

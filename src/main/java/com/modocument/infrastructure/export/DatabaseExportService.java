@@ -2,6 +2,7 @@ package com.modocument.infrastructure.export;
 
 import com.modocument.application.dto.DatabaseExportRequest;
 import com.modocument.application.dto.TableData;
+import com.modocument.infrastructure.net.OutboundHostPolicy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
@@ -24,11 +25,19 @@ import java.util.stream.Collectors;
 @Service
 public class DatabaseExportService {
 
+    private final OutboundHostPolicy egress;
+
+    public DatabaseExportService(OutboundHostPolicy egress) {
+        this.egress = egress;
+    }
+
     /** Exports all rows and returns the inserted row count. */
     public int export(TableData table, DatabaseExportRequest request) {
         if (table == null || table.isEmpty()) {
             throw new IllegalStateException("There is no data to export.");
         }
+        // SSRF guard: refuse to open a JDBC connection to an internal host.
+        egress.checkJdbcUrl(request.getJdbcUrl());
         String tableName = requireValidIdentifier(request.getTableName(), "tableName");
         List<String> columns = table.getColumns();
         for (String column : columns) {

@@ -14,7 +14,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DatabaseExportServiceTest {
 
-    private final DatabaseExportService service = new DatabaseExportService();
+    private final DatabaseExportService service = new DatabaseExportService(
+            com.modocument.infrastructure.net.OutboundHostPolicy.disabled());
 
     private static final TableData TABLE = new TableData(
             List.of("FirstName", "City"),

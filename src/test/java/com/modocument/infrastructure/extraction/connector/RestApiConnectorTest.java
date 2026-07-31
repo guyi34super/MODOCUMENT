@@ -23,7 +23,8 @@ class RestApiConnectorTest {
 
     private final RestApiConnector connector = new RestApiConnector(
             new ExtractionProperties(), mock(JobSecrets.class), mock(HostRateLimiter.class),
-            mock(ExtractionAuditLog.class), new ExtractionMetrics());
+            mock(ExtractionAuditLog.class), new ExtractionMetrics(),
+            com.modocument.infrastructure.net.OutboundHostPolicy.disabled());
 
     private ExtractionSource source(ApiSourceConfig config) {
         ExtractionSource source = new ExtractionSource();

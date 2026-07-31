@@ -12,9 +12,11 @@ import org.springframework.dao.InvalidDataAccessResourceUsageException;
 import com.modocument.infrastructure.ratelimit.TooManyRequestsException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.io.UncheckedIOException;
@@ -60,6 +62,20 @@ public class ApiExceptionHandler {
     public ResponseEntity<?> tooManyRequests(TooManyRequestsException e) {
         return error(HttpStatus.TOO_MANY_REQUESTS,
                 message(e, "Too many requests. Please slow down and try again."));
+    }
+
+    /**
+     * A malformed body (bad JSON, wrong types) or a bad path/query type is the
+     * caller's mistake, not a server fault. Answer 400 with a generic message
+     * rather than letting the catch-all turn it into a 500 that echoes Jackson
+     * or binding internals back to the client.
+     */
+    @ExceptionHandler({HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<?> malformedRequest(Exception e) {
+        return error(HttpStatus.BAD_REQUEST,
+                "The request could not be read: check that the body is valid JSON and the "
+                        + "fields have the expected types.");
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
