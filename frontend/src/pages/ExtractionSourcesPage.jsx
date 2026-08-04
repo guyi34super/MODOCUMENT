@@ -1,14 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
+import { getTemplates } from '../api/cache';
 import { SOURCE_TYPES, createSource, deleteSource, listSources } from '../api/extraction';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 
+const CRAWL_DEPTHS = [
+  { value: 0, label: 'Seed pages only' },
+  { value: 1, label: 'Seeds + pages they link to' },
+  { value: 2, label: 'Seeds + 2 link levels' },
+  { value: 3, label: 'Seeds + 3 link levels' },
+];
+
 const emptyForm = {
   name: '',
   type: 'WEBSITE',
   dataSpec: '',
+  templateId: '',
   termsAcknowledged: false,
   seedUrls: '',
   allowedDomains: '',
@@ -29,6 +38,7 @@ function buildPayload(form) {
     type: form.type,
     termsAcknowledged: form.termsAcknowledged,
     dataSpec: form.dataSpec || null,
+    templateId: form.templateId ? Number(form.templateId) : null,
   };
   if (form.type === 'WEBSITE') {
     payload.web = {
@@ -57,6 +67,7 @@ function buildPayload(form) {
 export default function ExtractionSourcesPage() {
   const toast = useToast();
   const [sources, setSources] = useState(null);
+  const [templates, setTemplates] = useState([]);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -64,7 +75,9 @@ export default function ExtractionSourcesPage() {
 
   const load = useCallback(async () => {
     try {
-      setSources(await listSources());
+      const [sourceList, templateList] = await Promise.all([listSources(), getTemplates()]);
+      setSources(sourceList);
+      setTemplates(templateList);
     } catch (err) {
       setError(err.message);
     }
@@ -168,8 +181,14 @@ export default function ExtractionSourcesPage() {
                       onChange={set('allowedDomains')}
                     />
                   </Field>
-                  <Field label="Max depth">
-                    <input type="number" min="0" className={inputClass} value={form.maxDepth} onChange={set('maxDepth')} />
+                  <Field label="Crawl depth" hint="How far links are followed from the seed pages.">
+                    <select className={inputClass} value={form.maxDepth} onChange={set('maxDepth')}>
+                      {CRAWL_DEPTHS.map((d) => (
+                        <option key={d.value} value={d.value}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </select>
                   </Field>
                   <Field label="Max pages">
                     <input type="number" min="1" className={inputClass} value={form.maxPages} onChange={set('maxPages')} />
@@ -210,9 +229,21 @@ export default function ExtractionSourcesPage() {
               </div>
             )}
 
-            <Field label="Data spec (optional)" hint="Describe the data you want, e.g. 'product name, price, SKU'.">
-              <input className={inputClass} value={form.dataSpec} onChange={set('dataSpec')} />
-            </Field>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Template (optional)" hint="Its fields become the data spec when the text below is blank.">
+                <select className={inputClass} value={form.templateId} onChange={set('templateId')}>
+                  <option value="">None</option>
+                  {templates.map((t) => (
+                    <option key={t.templateId} value={t.templateId}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Data spec (optional)" hint="Describe the data you want, e.g. 'product name, price, SKU'. Leave blank to derive it from the selected template's fields.">
+                <input className={inputClass} value={form.dataSpec} onChange={set('dataSpec')} />
+              </Field>
+            </div>
 
             <label className="flex items-start gap-2 text-sm">
               <input
@@ -248,7 +279,15 @@ export default function ExtractionSourcesPage() {
               render: (row) =>
                 row.web?.seedUrls?.join(', ') || row.api?.baseUrl || row.db?.jdbcUrl || '—',
             },
-            { key: 'dataSpec', label: 'Data spec', render: (row) => row.dataSpec || '—' },
+            {
+              key: 'dataSpec',
+              label: 'Data spec',
+              render: (row) =>
+                row.dataSpec ||
+                (row.templateId != null
+                  ? `From template: ${templates.find((t) => t.templateId === row.templateId)?.name ?? row.templateId}`
+                  : '—'),
+            },
             {
               key: 'actions',
               label: '',

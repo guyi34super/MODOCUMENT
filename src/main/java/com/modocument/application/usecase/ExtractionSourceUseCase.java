@@ -3,6 +3,7 @@ package com.modocument.application.usecase;
 import com.modocument.application.dto.SaveExtractionSourceRequest;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ExtractionSourceStore;
+import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.document.ExtractionSource;
 import com.modocument.domain.model.SourceType;
 import com.modocument.domain.model.UrlNormalizer;
@@ -21,10 +22,13 @@ import java.util.NoSuchElementException;
 public class ExtractionSourceUseCase {
 
     private final ExtractionSourceStore sources;
+    private final TemplateRepository templates;
     private final CurrentUserProvider currentUser;
 
-    public ExtractionSourceUseCase(ExtractionSourceStore sources, CurrentUserProvider currentUser) {
+    public ExtractionSourceUseCase(ExtractionSourceStore sources, TemplateRepository templates,
+                                   CurrentUserProvider currentUser) {
         this.sources = sources;
+        this.templates = templates;
         this.currentUser = currentUser;
     }
 
@@ -62,6 +66,7 @@ public class ExtractionSourceUseCase {
         source.setType(request.getType());
         source.setTermsAcknowledged(request.isTermsAcknowledged());
         source.setDataSpec(request.getDataSpec());
+        source.setTemplateId(request.getTemplateId());
         source.setWeb(request.getWeb());
         source.setApi(request.getApi());
         source.setDb(request.getDb());
@@ -78,6 +83,13 @@ public class ExtractionSourceUseCase {
             throw new IllegalArgumentException("termsAcknowledged must be true: confirm you are "
                     + "authorized to access this source under its terms of service and "
                     + "applicable data-protection law.");
+        }
+        if (request.getTemplateId() != null) {
+            // The template must exist AND belong to the caller — otherwise a user
+            // could point their source at someone else's template.
+            templates.getByIdAndOwner(request.getTemplateId(), currentUser.requireUserId())
+                    .orElseThrow(() -> new NoSuchElementException(
+                            "Template " + request.getTemplateId() + " not found."));
         }
         switch (request.getType()) {
             case WEBSITE -> validateWeb(request);

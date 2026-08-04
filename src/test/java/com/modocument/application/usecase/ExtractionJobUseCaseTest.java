@@ -2,9 +2,14 @@ package com.modocument.application.usecase;
 
 import com.modocument.application.port.Connector;
 import com.modocument.application.port.TaskEventBus;
+import com.modocument.application.port.TemplateFieldsRepository;
+import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.document.ExtractionJob;
 import com.modocument.domain.document.ExtractionSource;
 import com.modocument.domain.document.ExtractionTask;
+import com.modocument.domain.entity.Template;
+import com.modocument.domain.entity.TemplateDataType;
+import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.model.ExtractionJobStatus;
 import com.modocument.domain.model.ExtractionTaskType;
 import com.modocument.domain.model.SourceType;
@@ -19,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,6 +41,8 @@ class ExtractionJobUseCaseTest {
     private final TaskEventBus eventBus = mock(TaskEventBus.class);
     private final InProcessJobSecrets secrets = new InProcessJobSecrets();
     private final Connector connector = mock(Connector.class);
+    private final TemplateRepository templates = mock(TemplateRepository.class);
+    private final TemplateFieldsRepository templateFields = mock(TemplateFieldsRepository.class);
 
     private ExtractionJobUseCase useCase;
     private ExtractionSource source;
@@ -45,7 +53,8 @@ class ExtractionJobUseCaseTest {
     void setUp() {
         when(connector.type()).thenReturn(SourceType.WEBSITE);
         useCase = new ExtractionJobUseCase(sources, jobs, queue, eventBus,
-                new InMemoryConnectorStateStore(), secrets, List.of(connector), () -> USER);
+                new InMemoryConnectorStateStore(), secrets, List.of(connector),
+                templates, templateFields, () -> USER);
 
         source = new ExtractionSource();
         source.setOwnerUserId(USER);
@@ -74,6 +83,59 @@ class ExtractionJobUseCaseTest {
         assertThatThrownBy(() -> useCase.create(source.getId(), null, null, false, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("terms");
+    }
+
+    private TemplateFields field(String name, String dataType) {
+        TemplateFields field = new TemplateFields();
+        field.setFieldName(name);
+        if (dataType != null) {
+            field.setTemplateDataType(new TemplateDataType(1, dataType));
+        }
+        return field;
+    }
+
+    @Test
+    void createInheritsSourceTemplateAndDerivesDataSpecFromItsFields() {
+        source.setTemplateId(5);
+        sources.save(source);
+        when(templateFields.listByTemplateId(5)).thenReturn(List.of(
+                field("EmployeeId", "Text"), field("HireDate", "Date"), field("Notes", null)));
+
+        ExtractionJob job = useCase.create(source.getId(), null, null, false, null);
+
+        assertThat(job.getTemplateId()).isEqualTo(5);
+        assertThat(job.getDataSpec())
+                .isEqualTo("EmployeeId (Text), HireDate (Date), Notes");
+    }
+
+    @Test
+    void createPrefersExplicitDataSpecTextOverTemplateDerivation() {
+        source.setTemplateId(5);
+        sources.save(source);
+
+        ExtractionJob job = useCase.create(source.getId(), null, "just the prices", false, null);
+        assertThat(job.getDataSpec()).isEqualTo("just the prices");
+
+        source.setDataSpec("names and emails");
+        sources.save(source);
+        job = useCase.create(source.getId(), null, null, false, null);
+        assertThat(job.getDataSpec()).isEqualTo("names and emails");
+    }
+
+    @Test
+    void createChecksRequestTemplateOwnershipAndDerivesItsSpec() {
+        when(templates.getByIdAndOwner(9, USER)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> useCase.create(source.getId(), 9, null, false, null))
+                .isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining("Template 9");
+
+        when(templates.getByIdAndOwner(9, USER))
+                .thenReturn(Optional.of(new Template(9, "Products", null)));
+        when(templateFields.listByTemplateId(9)).thenReturn(List.of(field("Sku", "Text")));
+
+        ExtractionJob job = useCase.create(source.getId(), 9, null, false, null);
+        assertThat(job.getTemplateId()).isEqualTo(9);
+        assertThat(job.getDataSpec()).isEqualTo("Sku (Text)");
     }
 
     @Test

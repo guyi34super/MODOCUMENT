@@ -106,6 +106,10 @@ the test suite.
 - **Sources** (`/api/extraction/sources`) describe where and what to extract. Creating
   one requires `termsAcknowledged: true` — you confirm you are authorized to access the
   source under its terms of service and applicable data-protection/privacy law.
+  The *data spec* (what data you want) is free text, **or select a template**
+  (`templateId`): when the text is blank, the spec is derived from the template's
+  fields (`Name (Text), HireDate (Date), …`) at job creation, and jobs inherit the
+  template for the bridge step.
 - **Jobs** (`/api/extraction/jobs`) run distributed: work is split into small leased
   tasks (one page / one API page / one DB batch) claimed by a worker pool. Retries with
   exponential backoff, content-hash deduplication, incremental re-extraction

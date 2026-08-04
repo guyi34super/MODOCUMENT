@@ -25,6 +25,11 @@ public class ExtractionSource {
     private boolean termsAcknowledged;
     /** Free-text description of the data wanted; guides LLM cleaning/schema. */
     private String dataSpec;
+    /**
+     * Optional template whose fields define the data spec when dataSpec text
+     * is blank. Jobs created from this source inherit it (for bridging too).
+     */
+    private Integer templateId;
 
     private WebSourceConfig web;
     private ApiSourceConfig api;
@@ -80,6 +85,14 @@ public class ExtractionSource {
 
     public void setDataSpec(String dataSpec) {
         this.dataSpec = dataSpec;
+    }
+
+    public Integer getTemplateId() {
+        return templateId;
+    }
+
+    public void setTemplateId(Integer templateId) {
+        this.templateId = templateId;
     }
 
     public WebSourceConfig getWeb() {

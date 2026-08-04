@@ -1223,6 +1223,9 @@ paths:
                   type: boolean
                 dataSpec:
                   type: string
+                templateId:
+                  type: integer
+                  description: Optional template whose fields define the data spec when dataSpec is blank; jobs inherit it.
                 web:
                   type: object
                 api:

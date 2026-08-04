@@ -2,6 +2,7 @@ package com.modocument.api.controller;
 
 import com.modocument.application.dto.ExtractionSourceDto;
 import com.modocument.application.dto.SaveExtractionSourceRequest;
+import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.usecase.ExtractionSourceUseCase;
 import com.modocument.domain.document.WebSourceConfig;
 import com.modocument.domain.model.SourceType;
@@ -14,11 +15,13 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 class ExtractionSourceControllerTest {
 
     private final ExtractionSourceController controller = new ExtractionSourceController(
-            new ExtractionSourceUseCase(new InMemoryExtractionSourceStore(), () -> 1));
+            new ExtractionSourceUseCase(new InMemoryExtractionSourceStore(),
+                    mock(TemplateRepository.class), () -> 1));
 
     private SaveExtractionSourceRequest websiteRequest(boolean termsAcknowledged) {
         SaveExtractionSourceRequest request = new SaveExtractionSourceRequest();

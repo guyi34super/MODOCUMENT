@@ -91,7 +91,7 @@ export default function ExtractionJobsPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Data spec (optional)">
+            <Field label="Data spec (optional)" hint="Falls back to the source's data spec, else it's derived from the selected template's fields.">
               <input className={inputClass} value={form.dataSpec} onChange={(e) => setForm((f) => ({ ...f, dataSpec: e.target.value }))} />
             </Field>
           </div>

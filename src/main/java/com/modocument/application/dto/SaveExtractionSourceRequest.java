@@ -12,6 +12,7 @@ public class SaveExtractionSourceRequest {
     private SourceType type;
     private boolean termsAcknowledged;
     private String dataSpec;
+    private Integer templateId;
     private WebSourceConfig web;
     private ApiSourceConfig api;
     private DbSourceConfig db;
@@ -46,6 +47,14 @@ public class SaveExtractionSourceRequest {
 
     public void setDataSpec(String dataSpec) {
         this.dataSpec = dataSpec;
+    }
+
+    public Integer getTemplateId() {
+        return templateId;
+    }
+
+    public void setTemplateId(Integer templateId) {
+        this.templateId = templateId;
     }
 
     public WebSourceConfig getWeb() {

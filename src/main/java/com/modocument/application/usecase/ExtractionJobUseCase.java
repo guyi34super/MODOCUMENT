@@ -8,10 +8,13 @@ import com.modocument.application.port.ExtractionSourceStore;
 import com.modocument.application.port.ExtractionTaskQueue;
 import com.modocument.application.port.JobSecrets;
 import com.modocument.application.port.TaskEventBus;
+import com.modocument.application.port.TemplateFieldsRepository;
+import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.document.ConnectorState;
 import com.modocument.domain.document.ExtractionJob;
 import com.modocument.domain.document.ExtractionSource;
 import com.modocument.domain.document.ExtractionTask;
+import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.model.ExtractionJobStatus;
 import com.modocument.domain.model.ExtractionTaskStatus;
 import org.springframework.stereotype.Service;
@@ -19,6 +22,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.stream.Collectors;
 
 /**
  * Lifecycle of distributed extraction jobs. Starting a job plans the seed
@@ -36,6 +40,8 @@ public class ExtractionJobUseCase {
     private final ConnectorStateStore states;
     private final JobSecrets secrets;
     private final List<Connector> connectors;
+    private final TemplateRepository templates;
+    private final TemplateFieldsRepository templateFields;
     private final CurrentUserProvider currentUser;
 
     public ExtractionJobUseCase(ExtractionSourceStore sources,
@@ -45,6 +51,8 @@ public class ExtractionJobUseCase {
                                 ConnectorStateStore states,
                                 JobSecrets secrets,
                                 List<Connector> connectors,
+                                TemplateRepository templates,
+                                TemplateFieldsRepository templateFields,
                                 CurrentUserProvider currentUser) {
         this.sources = sources;
         this.jobs = jobs;
@@ -53,6 +61,8 @@ public class ExtractionJobUseCase {
         this.states = states;
         this.secrets = secrets;
         this.connectors = connectors;
+        this.templates = templates;
+        this.templateFields = templateFields;
         this.currentUser = currentUser;
     }
 
@@ -69,11 +79,19 @@ public class ExtractionJobUseCase {
             throw new IllegalStateException(
                     "Source " + sourceId + " has not acknowledged the source's terms of use.");
         }
+        Integer effectiveTemplateId = templateId != null ? templateId : source.getTemplateId();
+        if (templateId != null) {
+            // The template must exist AND belong to the caller — otherwise a user
+            // could stamp their own jobs against someone else's template. (The
+            // source's own templateId was checked when the source was saved.)
+            templates.getByIdAndOwner(templateId, currentUser.requireUserId()).orElseThrow(
+                    () -> new NoSuchElementException("Template " + templateId + " not found."));
+        }
         ExtractionJob job = new ExtractionJob();
         job.setOwnerUserId(currentUser.requireUserId());
         job.setSourceId(sourceId);
-        job.setTemplateId(templateId);
-        job.setDataSpec(dataSpec != null ? dataSpec : source.getDataSpec());
+        job.setTemplateId(effectiveTemplateId);
+        job.setDataSpec(effectiveDataSpec(dataSpec, source, effectiveTemplateId));
         job.setIncremental(incremental);
         job.setStatus(ExtractionJobStatus.PENDING);
         job = jobs.save(job);
@@ -81,6 +99,35 @@ public class ExtractionJobUseCase {
             secrets.put(job.getId(), credentials);
         }
         return job;
+    }
+
+    /**
+     * Request text wins, then the source's text, then a spec derived from the
+     * template's current fields — so each new job picks up template edits.
+     */
+    private String effectiveDataSpec(String dataSpec, ExtractionSource source,
+                                     Integer templateId) {
+        if (dataSpec != null && !dataSpec.isBlank()) {
+            return dataSpec;
+        }
+        if (source.getDataSpec() != null && !source.getDataSpec().isBlank()) {
+            return source.getDataSpec();
+        }
+        return templateId != null ? dataSpecFromTemplate(templateId) : null;
+    }
+
+    private String dataSpecFromTemplate(int templateId) {
+        List<TemplateFields> fields = templateFields.listByTemplateId(templateId);
+        if (fields.isEmpty()) {
+            return null;
+        }
+        return fields.stream()
+                .map(field -> field.getTemplateDataType() == null
+                        || field.getTemplateDataType().getDataType() == null
+                        ? field.getFieldName()
+                        : field.getFieldName()
+                                + " (" + field.getTemplateDataType().getDataType() + ")")
+                .collect(Collectors.joining(", "));
     }
 
     /** Plans the seed tasks and sets the workers loose. */
