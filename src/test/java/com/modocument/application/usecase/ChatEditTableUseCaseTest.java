@@ -71,7 +71,7 @@ class ChatEditTableUseCaseTest {
     @Test
     void appliesModifiedTableAndClearsStaleCheckpoints() {
         jobWithMappedRows();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new TableData(List.of("FirstName"), List.of(Map.of("FirstName", "Ada"))));
 
         IngestionJob result = useCase.handle(7, "Capitalize all first names");
@@ -87,7 +87,7 @@ class ChatEditTableUseCaseTest {
     void clampsWizardStepBackToMapping() {
         IngestionJob job = jobWithMappedRows();
         job.setWizardStep(WizardStep.VALIDATION);
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new TableData(List.of("FirstName"), List.of(Map.of("FirstName", "Ada"))));
 
         IngestionJob result = useCase.handle(7, "Capitalize all first names");
@@ -104,7 +104,7 @@ class ChatEditTableUseCaseTest {
     @Test
     void rejectsEmptyModelResult() {
         jobWithMappedRows();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new TableData(List.of(), List.of()));
 
         assertThatThrownBy(() -> useCase.handle(7, "Do something"))
@@ -115,14 +115,14 @@ class ChatEditTableUseCaseTest {
     @Test
     void chunkedPathSendsOnlyErrorRowsAndMergesThePatch() {
         jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(
                         List.of(new RowPatch(2, Map.of("FirstName", "Ada")))));
 
         IngestionJob result = useCase.handle(7, "Fix the validation errors");
 
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class), anyString());
         assertThat(prompt.getValue()).contains("patch mode");
         assertThat(prompt.getValue()).contains("Value is required.");
         assertThat(prompt.getValue()).contains("\"row\":2");
@@ -139,14 +139,14 @@ class ChatEditTableUseCaseTest {
     @Test
     void cellScopedEditSendsSingleCellPayload() {
         jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(
                         List.of(new RowPatch(2, Map.of("Email", "fixed@example.com")))));
 
         useCase.handle(7, "Fix it", 2, "Email");
 
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class), anyString());
         assertThat(prompt.getValue()).contains("ONE cell");
         assertThat(prompt.getValue()).contains("\"column\":\"Email\"");
         assertThat(prompt.getValue()).contains("Email format is invalid.");
@@ -157,14 +157,14 @@ class ChatEditTableUseCaseTest {
     @Test
     void rowScopedEditSendsSingleRowPayload() {
         jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(
                         List.of(new RowPatch(2, Map.of("FirstName", "Ada")))));
 
         useCase.handle(7, "Fix this row", 2, "Email");
 
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class), anyString());
         assertThat(prompt.getValue()).contains("ONE row");
         assertThat(prompt.getValue()).contains("\"row\":2");
         assertThat(prompt.getValue()).contains("Value is required.");
@@ -175,14 +175,14 @@ class ChatEditTableUseCaseTest {
     @Test
     void columnScopedEditSendsOnlyThatColumnsErrorCells() {
         jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(
                         List.of(new RowPatch(2, Map.of("Email", "fixed@example.com")))));
 
         useCase.handle(7, "Fix Email column");
 
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class), anyString());
         assertThat(prompt.getValue()).contains("ONE column");
         assertThat(prompt.getValue()).contains("\"columns\":[\"Email\"]");
         assertThat(prompt.getValue()).contains("Email format is invalid.");
@@ -193,7 +193,7 @@ class ChatEditTableUseCaseTest {
     @Test
     void patchEchoingATokenIsDetokenizedToTheOriginalValue() {
         jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(List.of(
                         new RowPatch(2, Map.of("FirstName", "Ada", "Email", "[EMAIL_1]")))));
 
@@ -206,13 +206,13 @@ class ChatEditTableUseCaseTest {
     @Test
     void fullTablePromptIsTokenizedAndResponseDetokenized() {
         jobWithMappedRows(); // FirstName "ada", validation "[]" -> full-table path
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new TableData(List.of("FirstName"), List.of(Map.of("FirstName", "[NAME_1]"))));
 
         IngestionJob result = useCase.handle(7, "Deduplicate rows");
 
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class), anyString());
         assertThat(prompt.getValue()).contains("[NAME_1]");
         assertThat(prompt.getValue()).doesNotContain("ada");
 
@@ -225,20 +225,20 @@ class ChatEditTableUseCaseTest {
         IngestionJob job = jobWithMappedRows();
         job.setValidationResultJson("["
                 + "{\"row\":1,\"fieldName\":\"FirstName\",\"rawValue\":\"ada\",\"errorMessage\":null,\"ruleType\":null}]");
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new TableData(List.of("FirstName"), List.of(Map.of("FirstName", "Ada"))));
 
         useCase.handle(7, "Capitalize all first names");
 
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class), anyString());
         assertThat(prompt.getValue()).contains("return the FULL");
     }
 
     @Test
     void fullTableKeepsOurColumnsAndIgnoresInventedOnes() {
         jobWithMappedRows(); // columns: ["FirstName"]
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new TableData(List.of("FirstName", "Ssn"),
                         List.of(Map.of("FirstName", "Ada", "Ssn", "123-45-6789"))));
 
@@ -253,7 +253,7 @@ class ChatEditTableUseCaseTest {
     void fullTableRejectsARowCountChange() {
         IngestionJob job = jobWithMappedRows(); // one row
         String before = job.getMappedRowsJson();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new TableData(List.of("FirstName"),
                         List.of(Map.of("FirstName", "Ada"), Map.of("FirstName", "Grace"))));
 
@@ -267,7 +267,7 @@ class ChatEditTableUseCaseTest {
     void rejectsPatchRowOutOfRange() {
         IngestionJob job = jobWithValidationErrors();
         String before = job.getMappedRowsJson();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(
                         List.of(new RowPatch(99, Map.of("FirstName", "Ada")))));
 
@@ -281,7 +281,7 @@ class ChatEditTableUseCaseTest {
     @Test
     void ignoresUnknownPatchColumns() {
         jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(List.of(
                         new RowPatch(2, Map.of("FirstName", "Ada", "Bogus", "x")))));
 
@@ -294,7 +294,7 @@ class ChatEditTableUseCaseTest {
     @Test
     void rejectsEmptyPatch() {
         IngestionJob job = jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(List.of()));
 
         assertThatThrownBy(() -> useCase.handle(7, "Fix the validation errors"))
@@ -309,7 +309,7 @@ class ChatEditTableUseCaseTest {
     @Test
     void cellScopedEditDropsOutOfScopeCells() {
         jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(List.of(
                         new RowPatch(2, Map.of("Email", "fixed@example.com", "FirstName", "HACKED")))));
 
@@ -322,7 +322,7 @@ class ChatEditTableUseCaseTest {
     @Test
     void rowScopedEditDropsPatchesForOtherRows() {
         jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(List.of(
                         new RowPatch(2, Map.of("FirstName", "Ada")),
                         new RowPatch(3, Map.of("FirstName", "HACKED")))));
@@ -336,7 +336,7 @@ class ChatEditTableUseCaseTest {
     @Test
     void columnScopedEditDropsChangesToOtherColumns() {
         jobWithValidationErrors();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(List.of(
                         new RowPatch(2, Map.of("Email", "fixed@example.com", "FirstName", "HACKED")))));
 
@@ -350,7 +350,7 @@ class ChatEditTableUseCaseTest {
     void rejectsWhenPatchOnlyChangesOutOfScopeCells() {
         IngestionJob job = jobWithValidationErrors();
         String before = job.getMappedRowsJson();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new ChatEditPatchResponse(List.of(
                         new RowPatch(2, Map.of("FirstName", "HACKED")))));
 
@@ -385,7 +385,7 @@ class ChatEditTableUseCaseTest {
         IngestionJob job = jobFullTable();
         String before = job.getMappedRowsJson();
         // 7 of 10 cells changed (0.7 > 0.6) with a non-bulk instruction.
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(table2x5(List.of(
                         Map.of("A", "X", "B", "Y"),
                         Map.of("A", "X", "B", "Y"),
@@ -402,7 +402,7 @@ class ChatEditTableUseCaseTest {
     @Test
     void fullTableBulkOverRatioIsApplied() {
         jobFullTable();
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(table2x5(List.of(
                         Map.of("A", "X", "B", "Y"),
                         Map.of("A", "X", "B", "Y"),
@@ -419,7 +419,7 @@ class ChatEditTableUseCaseTest {
     void fullTableUnderRatioIsApplied() {
         jobFullTable();
         // Only 1 of 10 cells changed (0.1 < 0.6).
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(table2x5(List.of(
                         Map.of("A", "X", "B", "b1"),
                         Map.of("A", "a2", "B", "b2"),

@@ -75,7 +75,7 @@ describe('IngestionListPage', () => {
   it('describes automatic processing through validation', async () => {
     renderPage();
     expect(
-      await screen.findByText(/parse, map, and validate automatically/i)
+      await screen.findByText(/parse and map automatically/i)
     ).toBeInTheDocument();
   });
 });
