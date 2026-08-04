@@ -101,6 +101,11 @@ public class AutoMappingPrompt implements PromptStrategy {
 
     private static void appendColumnsToMap(StringBuilder prompt, List<ColumnInfo> columns,
                                            int sampleLimit, String nl) {
+        if (columns != null && !columns.isEmpty()) {
+            int count = columns.size();
+            prompt.append("map ").append(count).append(" source column")
+                    .append(count == 1 ? "" : "s").append(nl);
+        }
         prompt.append("Source columns to map:").append(nl);
         if (columns == null || columns.isEmpty()) {
             prompt.append("(none)").append(nl);
