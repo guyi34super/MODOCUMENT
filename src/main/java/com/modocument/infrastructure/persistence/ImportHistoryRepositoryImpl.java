@@ -26,8 +26,18 @@ public class ImportHistoryRepositoryImpl implements ImportHistoryRepository {
     }
 
     @Override
+    public Optional<ImportHistory> getByIdAndOwner(int id, int ownerUserId) {
+        return jpa.findByImportHistoryIdAndOwnerUserId(id, ownerUserId);
+    }
+
+    @Override
     public List<ImportHistory> list() {
         return jpa.findAll();
+    }
+
+    @Override
+    public List<ImportHistory> listByOwner(int ownerUserId) {
+        return jpa.findByOwnerUserId(ownerUserId);
     }
 
     @Override
@@ -60,5 +70,15 @@ public class ImportHistoryRepositoryImpl implements ImportHistoryRepository {
     @Override
     public Optional<ImportHistory> getByFileName(String fileName) {
         return jpa.findFirstByFileNameIgnoreCase(fileName);
+    }
+
+    @Override
+    public Optional<ImportHistory> getByFileNameAndOwner(String fileName, int ownerUserId) {
+        return jpa.findFirstByFileNameIgnoreCaseAndOwnerUserId(fileName, ownerUserId);
+    }
+
+    @Override
+    public int countByTemplateId(int templateId) {
+        return (int) jpa.countByTemplateId(templateId);
     }
 }

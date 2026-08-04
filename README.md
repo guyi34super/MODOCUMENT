@@ -47,15 +47,32 @@ the test suite.
   restart: `POST /api/ingestion/jobs/{id}/resume`.
 - Re-run individual stages (`.../remap`, `.../revalidate`), cancel jobs (`.../cancel`),
   and inspect everything (`GET /api/ingestion/jobs`, `GET /api/ingestion/jobs/{id}`).
+- **The wizard position is checkpointed too**: `PUT /api/ingestion/jobs/{id}/wizard-step`
+  records the pane the user reached (`MAPPING`/`VALIDATION`/`EXPORT`), so reopening a job
+  resumes the upload wizard at exactly that step. Mutations that invalidate validation
+  (remap, mapping override, chat edit) clamp it back to `MAPPING`.
 
-### Field mapping (code first, AI for the rest)
-- Source columns are mapped to template fields by **exact name match**, then
-  **normalized match** (case/punctuation-insensitive) — all in code, no tokens spent.
-- Only unresolved columns go to the **LLM automapper**; targets it invents that aren't
-  real template fields are discarded.
+### Field mapping (code first, AI only when needed)
+- Source columns are mapped to template fields by a **tiered, deterministic code
+  pipeline**: exact name match → normalized match (case/punctuation-insensitive) →
+  **alias & token similarity** (`fname`, `Surname`, `DOB`… — extendable via
+  `mapping.aliases`) → **value-shape scoring** that runs sample values through the
+  target field's own validation rules and data type (an email regex rule doubles as an
+  email detector; samples never leave the backend) → **learned mappings** replayed from
+  this template's past completed jobs (your manual corrections become training data).
+- Candidates are combined into a **threshold-gated unique assignment**
+  (`mapping.confidence-threshold`): each template field is used at most once, and
+  low-confidence columns stay unmapped for review instead of being guessed.
+- Only the columns code cannot resolve go to the **LLM automapper** (column/field
+  names only, never data; disable entirely with `mapping.llm-fallback-enabled=false`);
+  invented targets are discarded, and an LLM outage degrades to "left unmapped"
+  instead of failing the mapping stage.
 - **Review and override** the mapping: `PUT /api/ingestion/jobs/{id}/mapping`
   (`{"mapping": {"source col": "TemplateField" | null}}`) — rebuilds the mapped rows and
   clears stale validation.
+- **Edit cell values directly** from the validation table (or via
+  `PUT /api/ingestion/jobs/{id}/rows` with the full edited row set) — persists the
+  edits and clears stale validation so it can be re-run.
 
 ### Validation
 - Mapped rows are validated against the template's rules (including your custom regex)
@@ -63,15 +80,17 @@ the test suite.
 
 ### Chat AI table editing
 - `POST /api/ingestion/jobs/{id}/chat-edit` with
-  `{"instruction": "Trim whitespace from all names"}` sends the current table plus your
-  instruction to the LLM and persists the returned **full modified table** (structured
-  output enforces the shape). Stale validation/export checkpoints are cleared so you
-  revalidate after editing.
+  `{"instruction": "Fix the validation errors"}` — when the job has validation errors,
+  **only the failing rows** (with their error messages) are sent to the LLM, which
+  returns a **patch of modified rows** merged back by row index (a fraction of the
+  tokens of a full-table round trip). With no validation errors it falls back to
+  sending the whole table. Structured output enforces the shape; stale
+  validation/export checkpoints are cleared so you revalidate after editing.
 
 ### Review & export anywhere
-- **Download** the validated rows as **CSV, JSON, or XLSX**:
-  `GET /api/ingestion/jobs/{id}/export/file?format=csv|json|xlsx` — a copy is archived
-  under `wwwroot/exports/`.
+- **Download** the validated rows as **CSV, JSON, XLSX, TSV, or XML**:
+  `GET /api/ingestion/jobs/{id}/export/file?format=csv|json|xlsx|tsv|xml` — a copy is
+  archived under `wwwroot/exports/`.
 - **Push directly to your own database**: `POST /api/ingestion/jobs/{id}/export/database`
   with `{jdbcUrl, username, password, tableName, createTableIfMissing}`. Supports
   `jdbc:postgresql:` and `jdbc:h2:` targets, auto-creates the table when asked, inserts
@@ -139,7 +158,8 @@ the test suite.
 - File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`).
 - **Swagger UI** at `/swagger-ui` (static contract at `/swagger/spec.yaml`).
 - `local` profile: same PostgreSQL + Flyway as production, plus dev conveniences
-  (dev JWT secret, Swagger, in-memory extraction).
+  (Swagger, in-memory extraction). The JWT signing key is **not** committed —
+  supply `MODOCUMENT_JWT_SECRET` or a gitignored `application-local-secrets.yml`.
 - **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + PostgreSQL +
   docling-serve), non-root runtime image with a healthcheck.
 - CI: GitHub Actions runs `mvn -B verify` on every push/PR to `main`.
@@ -151,6 +171,11 @@ the test suite.
 ```bash
 # start a database once (or point MODOCUMENT_DB_* at your own PostgreSQL)
 docker compose up -d postgres
+
+# provide a JWT signing key — no secret is committed, even for local dev.
+# (Alternatively, copy application-local-secrets.yml.example to
+# application-local-secrets.yml and put the key there; it is gitignored.)
+export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
 
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
@@ -170,13 +195,14 @@ AIFILES_OPENAI_APIKEY=<your-openai-key> SPRING_PROFILES_ACTIVE=local mvn spring-
 ### Run with Docker
 
 ```bash
-# production-style stack: app + PostgreSQL (Flyway-managed schema) + docling-serve.
+# production-style stack: app + PostgreSQL (Flyway-managed schema).
 # The JWT signing secret is required — the app refuses to boot without one.
 export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
 docker compose up --build
 
-# with an OpenAI key for the LLM features
-AIFILES_OPENAI_APIKEY=<your-openai-key> docker compose up --build
+# with an API key for the LLM features (OpenRouter by default; any
+# OpenAI-compatible endpoint works via AIFILES_OPENAI_BASEURL)
+AIFILES_OPENAI_APIKEY=<your-key> docker compose up --build
 
 # dev mode against the same PostgreSQL (dev JWT secret, Swagger enabled)
 APP_PROFILES=local docker compose up --build
@@ -185,9 +211,8 @@ APP_PROFILES=local docker compose up --build
 APP_PROFILES=scale docker compose --profile extraction up --build
 ```
 
-The API is on <http://localhost:8080> (Swagger UI: <http://localhost:8080/swagger-ui>),
-docling-serve on <http://localhost:5001>, and the web frontend on
-<http://localhost:3000>.
+The API is on <http://localhost:8080> (Swagger UI: <http://localhost:8080/swagger-ui>)
+and the web frontend on <http://localhost:3000>.
 
 ### Web frontend (React)
 
@@ -227,8 +252,15 @@ Endpoints: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`
 `PUT /api/auth/profile`, `PUT /api/auth/password`. Logout is client-side (discard
 the token; it expires after `modocument.security.jwt.ttl-hours`, default 24h).
 `MODOCUMENT_JWT_SECRET` (≥32 bytes, e.g. `openssl rand -base64 48`) is **required**
-in production — the app fails fast at startup if it is missing, too short, or set
-to the old dev default. The `local`/`test` profiles ship their own dev-only secret.
+in production and on `local` — the app fails fast at startup if it is missing, too
+short, or (in production) set to the old dev default. No secret is committed for
+`local`; set the env var or the gitignored `application-local-secrets.yml`. Only
+the `test` profile ships a fixed dev-only key, so the suite is deterministic.
+
+Both open auth endpoints are rate-limited per IP and per email
+(`modocument.security.rate-limit.auth.*`), and the LLM-backed endpoints
+(`/api/aifiles/send`, `/api/automapper/generate`, chat-edit) carry a per-user
+quota (`modocument.security.rate-limit.llm.*`); exceeding either returns `429`.
 
 ### Build & test
 
@@ -243,11 +275,17 @@ mvn -B verify
 | OpenAI API key | `aifiles.openai.api-key` / `AIFILES_OPENAI_APIKEY` | empty (LLM endpoints error until set) |
 | OpenAI model | `aifiles.openai.model-id` / `AIFILES_OPENAI_MODELID` | `gpt-4o` |
 | OpenAI base URL | `aifiles.openai.base-url` / `AIFILES_OPENAI_BASEURL` | `https://api.openai.com` (host root, no `/v1`) |
+| PII tokenization | `aifiles.privacy.tokenize-pii` / `AIFILES_PRIVACY_TOKENIZEPII` | `true` (fail closed) |
+| Mapping LLM fallback | `mapping.llm-fallback-enabled` / `MAPPING_LLMFALLBACK_ENABLED` | `true` (code tiers always run first) |
+| Mapping confidence | `mapping.confidence-threshold` (+ `sample-size`, `history-jobs`, `aliases`) | `0.7`, 20 samples, 25 jobs |
+| Extra sensitive fields | `aifiles.privacy.extra-sensitive-fields` | empty (substring match, case/punct-insensitive) |
 | docling-serve URL | `docling.base-url` / `DOCLING_BASEURL` | empty (built-in readers only) |
 | Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | `true` (active only when an OpenAI key is set) |
 | Vision OCR model | `ocr.vision.model` / `OCR_VISION_MODEL` | `gpt-4o` |
 | Vision OCR page budget | `ocr.vision.max-pages` / `OCR_VISION_MAXPAGES` (+ `dpi`, `max-dimension`) | 20 pages/PDF, 200 DPI, 2048px longest edge |
-| JWT signing secret | `modocument.security.jwt.secret` / `MODOCUMENT_JWT_SECRET` | **required** in production (≥32 bytes); dev secret on `local`/`test` |
+| JWT signing secret | `modocument.security.jwt.secret` / `MODOCUMENT_JWT_SECRET` | **required** in production and `local` (≥32 bytes; not committed); fixed dev secret on `test` only |
+| Auth rate limit | `modocument.security.rate-limit.auth.*` (`per-ip-max`, `per-email-max`, `window-millis`) | 30/IP, 10/email per 15 min → `429` |
+| LLM quota | `modocument.security.rate-limit.llm.*` (`per-user-max`, `window-millis`) | 60/user per hour → `429` |
 | Database | `spring.datasource.url` / `MODOCUMENT_DB_URL` (+ `MODOCUMENT_DB_USERNAME`, `MODOCUMENT_DB_PASSWORD`) | PostgreSQL `localhost:5432/modocument` |
 | CORS origins | `modocument.cors.allowed-origins` / `MODOCUMENT_CORS_ALLOWED_ORIGINS` | localhost dev origins — set your frontend origin in production |
 | Storage root | `modocument.storage.root` / `MODOCUMENT_STORAGE_ROOT` | `wwwroot` (uploads + export copies; mount a volume) |
@@ -266,6 +304,29 @@ LLM calls go through [Spring AI](https://docs.spring.io/spring-ai/reference/); t
 legacy `aifiles.openai.*` keys are bridged into the Spring AI OpenAI auto-configuration,
 so existing environment variables keep working. Never commit real keys — pass them as
 environment variables.
+
+### Privacy: PII tokenization
+
+The LLM chat/analysis features manipulate your data **without seeing raw sensitive
+values**. Before a prompt leaves the backend, sensitive cells are replaced with stable
+placeholders (`[NAME_1]`, `[EMAIL_2]`, `[ID_1]`, …); only the backend holds the
+per-request mapping, and the placeholders are swapped back in the model's answer — the
+model edits structure and tokens, the backend re-substitutes reality (a blind-patch
+pipeline). Detection combines field-name heuristics (names, emails, phones, government
+IDs, addresses, birth dates, gender, pay — extendable via
+`aifiles.privacy.extra-sensitive-fields`) with value-shape patterns (email, phone,
+9-digit SIN/SSN, 13–19-digit card) for unlabeled columns. Applied to: chat table
+edits, LLM record cleaning, schema inference, extraction summaries, and (mask-only)
+the template-classification snippet. Plain numbers/dates in non-sensitive columns
+deliberately stay raw so format cleanup still works.
+
+Boundaries to know: document-to-table extraction (`TableExtraction` / `POST
+/Transform`), vision OCR, and the raw `POST /api/aifiles/send` passthrough inherently
+send document content to the LLM — finding values in raw text *is* their job.
+Tokenized cells cannot be content-reformatted by the model (it never sees them), and
+prose summaries may paraphrase a placeholder — which degrades to vagueness, never to a
+leak. Detection is heuristic, not NER: a bare name in an unlabeled free-text column
+with no recognizable shape passes through.
 
 ## API overview
 
@@ -298,7 +359,7 @@ contract at `/swagger/spec.yaml`. Summary:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/ingestion/jobs/{id}/export/file?format=csv\|json\|xlsx` | Download validated rows (copy archived in `wwwroot/exports/`) |
+| `GET /api/ingestion/jobs/{id}/export/file?format=csv\|json\|xlsx\|tsv\|xml` | Download validated rows (copy archived in `wwwroot/exports/`) |
 | `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied PostgreSQL/H2 database |
 
 ### Data extraction
@@ -500,8 +561,9 @@ service (the bundled `postgres` service is then unnecessary).
     the app waits for it to be healthy and Flyway migrates the schema on boot.
     Override `POSTGRES_USER`/`POSTGRES_PASSWORD` (the compose default is for local
     use only).
-  - `docling`: [docling-serve](https://github.com/docling-project/docling-serve) on
-    port 5001, pre-wired via `DOCLING_BASEURL` for rich layout-aware conversion. Note
+  - `docling` (optional, `--profile docling` + `DOCLING_BASEURL=http://docling:5001`):
+    [docling-serve](https://github.com/docling-project/docling-serve) on port 5001 for
+    rich layout-aware conversion — not needed for the standard flow. Note
     the slim app image has no native Tesseract, so the local OCR fallback silently
     disables itself there — but with `AIFILES_OPENAI_APIKEY` set the container still
     gets full-quality image/scan OCR via the vision model, even without docling.

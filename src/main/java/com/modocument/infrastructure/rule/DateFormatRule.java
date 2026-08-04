@@ -26,7 +26,8 @@ public class DateFormatRule implements ValidationRuleValidator {
         try {
             LocalDate.parse(rawValue == null ? "" : rawValue, FORMAT);
         } catch (DateTimeParseException e) {
-            return new ValidationError(row, fieldName, rawValue, "Date must be in the format YYYY-MM-DD");
+            return new ValidationError(row, fieldName, rawValue,
+                    "Date must be in the format YYYY-MM-DD, e.g. 2026-07-18");
         }
         return null;
     }

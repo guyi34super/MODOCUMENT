@@ -7,6 +7,7 @@ public class CreateIngestionJobRequest {
     private int templateId;
     private Boolean autoRun;
     private String runUntil;
+    private Boolean wait;
 
     public CreateIngestionJobRequest() {
     }
@@ -47,5 +48,13 @@ public class CreateIngestionJobRequest {
 
     public void setRunUntil(String runUntil) {
         this.runUntil = runUntil;
+    }
+
+    public Boolean getWait() {
+        return wait;
+    }
+
+    public void setWait(Boolean wait) {
+        this.wait = wait;
     }
 }

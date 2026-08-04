@@ -1,27 +1,35 @@
 package com.modocument.api.controller;
 
 import com.modocument.application.port.TemplateRepository;
+import com.modocument.application.usecase.DeleteTemplateUseCase;
 import com.modocument.domain.entity.Template;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TemplateControllerTest {
 
+    private static final int USER = 1;
     private final TemplateRepository repo = mock(TemplateRepository.class);
-    private final TemplateController controller = new TemplateController(repo);
+    private final DeleteTemplateUseCase deleteTemplate = mock(DeleteTemplateUseCase.class);
+    // CurrentUserProvider is a functional interface — a fixed caller is enough.
+    private final TemplateController controller =
+            new TemplateController(repo, deleteTemplate, () -> USER);
 
     @Test
     void getAllReturnsOkWithListOfTemplates() {
-        when(repo.list()).thenReturn(List.of(
+        when(repo.listByOwner(USER)).thenReturn(List.of(
                 new Template(1, "TemplateName1", "TemplateDescription1"),
                 new Template(2, "TemplateName2", "TemplateDescription2")));
 
@@ -33,7 +41,7 @@ class TemplateControllerTest {
 
     @Test
     void getReturnsNotFoundWhenIdDoesNotExist() {
-        when(repo.getById(1)).thenReturn(Optional.empty());
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.empty());
 
         ResponseEntity<?> result = controller.getTemplateById(1);
 
@@ -42,7 +50,7 @@ class TemplateControllerTest {
 
     @Test
     void getReturnsOkWithTemplate() {
-        when(repo.getById(1)).thenReturn(Optional.of(
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.of(
                 new Template(1, "TemplateName1", "TemplateDescription1")));
 
         ResponseEntity<?> result = controller.getTemplateById(1);
@@ -67,7 +75,7 @@ class TemplateControllerTest {
 
     @Test
     void updateReturnsNotFoundWhenTemplateDoesNotExist() {
-        when(repo.getById(1)).thenReturn(Optional.empty());
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.empty());
 
         ResponseEntity<?> result = controller.update(new Template(1, "TestName", "TestDescription"));
 
@@ -77,7 +85,7 @@ class TemplateControllerTest {
     @Test
     void updateAppliesChangesWhenUpdateIsSuccessful() {
         Template existing = new Template(1, "OldName", "OldDescription");
-        when(repo.getById(1)).thenReturn(Optional.of(existing));
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.of(existing));
         when(repo.update(any(Template.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ResponseEntity<?> result = controller.update(new Template(1, "NewName", "NewDescription"));
@@ -89,19 +97,31 @@ class TemplateControllerTest {
 
     @Test
     void deleteReturnsNoContent() {
-        when(repo.getById(1)).thenReturn(Optional.of(new Template(1, null, null)));
-
         ResponseEntity<?> result = controller.delete(1);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        verify(deleteTemplate).handle(1, USER);
     }
 
     @Test
     void deleteReturnsNotFoundWhenTemplateDoesNotExist() {
-        when(repo.getById(1)).thenReturn(Optional.empty());
+        doThrow(new NoSuchElementException("Template 1 not found."))
+                .when(deleteTemplate).handle(1, USER);
 
         ResponseEntity<?> result = controller.delete(1);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(result.getBody().toString()).contains("not found");
+    }
+
+    @Test
+    void deleteReturnsConflictWhenTemplateIsStillInUse() {
+        doThrow(new IllegalStateException("This template is still in use by 2 upload jobs."))
+                .when(deleteTemplate).handle(1, USER);
+
+        ResponseEntity<?> result = controller.delete(1);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(result.getBody().toString()).contains("still in use");
     }
 }

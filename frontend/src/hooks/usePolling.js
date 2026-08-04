@@ -14,7 +14,9 @@ export default function usePolling(fn, intervalMs, active) {
 
   useEffect(() => {
     if (!active) return undefined;
-    const id = setInterval(() => saved.current(), intervalMs);
+    const id = setInterval(() => {
+      saved.current();
+    }, intervalMs);
     return () => clearInterval(id);
   }, [intervalMs, active]);
 }

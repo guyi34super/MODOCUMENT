@@ -16,6 +16,8 @@ export default function TemplatesPage() {
   const load = useCallback(async () => {
     try {
       setTemplates(await getTemplates());
+      // A banner that survives a successful reload reads as a broken page.
+      setError('');
     } catch (err) {
       setError(err.message);
     }
@@ -41,9 +43,10 @@ export default function TemplatesPage() {
   return (
     <div>
       <PageHeader
+        sticky
         crumbs={[{ label: 'Design Templates' }]}
         title="Design Templates"
-        subtitle="Step 1 — define the shape of the documents you process"
+        subtitle="Define the shape of the documents you process"
         actions={
           <>
             <Button
@@ -63,51 +66,61 @@ export default function TemplatesPage() {
       {!templates ? (
         <Spinner />
       ) : (
-        <DataTable
-          columns={[
-            { key: 'templateId', label: 'ID' },
-            {
-              key: 'name',
-              label: 'Name',
-              render: (row) => (
-                <Link to={`/templates/${row.templateId}`} className="text-accent hover:underline">
-                  {row.name}
-                </Link>
-              ),
-            },
-            { key: 'description', label: 'Description' },
-            {
-              key: 'actions',
-              label: '',
-              render: (row) => (
-                <div className="flex justify-end gap-2">
-                  <Button variant="secondary" onClick={() => navigate(`/templates/${row.templateId}`)}>
-                    Edit
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => navigate(`/validation?templateId=${row.templateId}`)}
-                  >
-                    Rules
-                  </Button>
-                  <Button variant="danger" onClick={() => remove(row)}>
-                    Delete
-                  </Button>
-                </div>
-              ),
-            },
-          ]}
-          rows={templates}
-          emptyMessage={
-            <>
-              No templates yet —{' '}
-              <Link to="/templates/new" className="text-accent hover:underline">
-                design your first template
-              </Link>{' '}
-              to start processing documents.
-            </>
-          }
-        />
+        <>
+          <DataTable
+            maxHeight="65vh"
+            onRowClick={(row) => navigate(`/templates/${row.templateId}`)}
+            columns={[
+              { key: 'templateId', label: 'ID' },
+              {
+                key: 'name',
+                label: 'Name',
+                render: (row) => (
+                  <Link to={`/templates/${row.templateId}`} className="text-accent hover:underline">
+                    {row.name}
+                  </Link>
+                ),
+              },
+              { key: 'description', label: 'Description' },
+              {
+                key: 'actions',
+                label: '',
+                render: (row) => (
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => navigate(`/validation?templateId=${row.templateId}`)}
+                    >
+                      Rules
+                    </Button>
+                    <Button size="sm" variant="danger" onClick={() => remove(row)}>
+                      Delete
+                    </Button>
+                  </div>
+                ),
+              },
+            ]}
+            rows={templates}
+            emptyMessage={
+              <>
+                No templates yet —{' '}
+                <Link to="/templates/new" className="text-accent hover:underline">
+                  design your first template
+                </Link>{' '}
+                to start processing documents.
+              </>
+            }
+          />
+          {templates.length > 0 && (
+            <p className="mt-4 text-sm text-muted">
+              Next step:{' '}
+              <Link to="/validation" className="text-accent hover:underline">
+                Set Field Rules →
+              </Link>
+            </p>
+          )}
+        </>
       )}
     </div>
   );

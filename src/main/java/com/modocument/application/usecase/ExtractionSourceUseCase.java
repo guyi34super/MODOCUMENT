@@ -1,6 +1,7 @@
 package com.modocument.application.usecase;
 
 import com.modocument.application.dto.SaveExtractionSourceRequest;
+import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ExtractionSourceStore;
 import com.modocument.domain.document.ExtractionSource;
 import com.modocument.domain.model.SourceType;
@@ -20,30 +21,34 @@ import java.util.NoSuchElementException;
 public class ExtractionSourceUseCase {
 
     private final ExtractionSourceStore sources;
+    private final CurrentUserProvider currentUser;
 
-    public ExtractionSourceUseCase(ExtractionSourceStore sources) {
+    public ExtractionSourceUseCase(ExtractionSourceStore sources, CurrentUserProvider currentUser) {
         this.sources = sources;
+        this.currentUser = currentUser;
     }
 
     public ExtractionSource create(SaveExtractionSourceRequest request) {
         ExtractionSource source = new ExtractionSource();
+        source.setOwnerUserId(currentUser.requireUserId());
         apply(source, request);
         return sources.save(source);
     }
 
     public ExtractionSource update(String id, SaveExtractionSourceRequest request) {
+        // get(id) is owner-scoped, so updating another user's source is a 404.
         ExtractionSource source = get(id);
         apply(source, request);
         return sources.save(source);
     }
 
     public ExtractionSource get(String id) {
-        return sources.getById(id).orElseThrow(
+        return sources.getByIdAndOwner(id, currentUser.requireUserId()).orElseThrow(
                 () -> new NoSuchElementException("Extraction source " + id + " not found."));
     }
 
     public List<ExtractionSource> list() {
-        return sources.list();
+        return sources.listByOwner(currentUser.requireUserId());
     }
 
     public void delete(String id) {

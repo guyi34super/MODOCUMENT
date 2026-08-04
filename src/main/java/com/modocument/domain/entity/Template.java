@@ -1,5 +1,6 @@
 package com.modocument.domain.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -15,6 +16,10 @@ public class Template {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "TemplateId")
     private int templateId;
+
+    /** The AppUser who owns this template — every read/write is scoped to it. */
+    @Column(name = "OwnerUserId")
+    private int ownerUserId;
 
     @Column(name = "Name")
     private String name;
@@ -37,6 +42,15 @@ public class Template {
 
     public void setTemplateId(int templateId) {
         this.templateId = templateId;
+    }
+
+    @JsonIgnore
+    public int getOwnerUserId() {
+        return ownerUserId;
+    }
+
+    public void setOwnerUserId(int ownerUserId) {
+        this.ownerUserId = ownerUserId;
     }
 
     public String getName() {

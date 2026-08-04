@@ -1,6 +1,7 @@
 package com.modocument.application.usecase;
 
 import com.modocument.application.dto.RowValidationResult;
+import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.IngestionJobRepository;
@@ -51,10 +52,11 @@ class BridgeToTemplateUseCaseTest {
     private final ImportHistoryRepository importHistory = mock(ImportHistoryRepository.class);
     private final ImportDetailsRepository importDetails = mock(ImportDetailsRepository.class);
 
+    private static final int USER = 1;
     private final BridgeToTemplateUseCase useCase = new BridgeToTemplateUseCase(
             extractionJobs, processedRecords, templates, templateFields, autoMap, validateRows,
             cleanRecords, ingestionJobs, importHistory, importDetails,
-            new InMemoryExtractionAuditLog(), 500);
+            new InMemoryExtractionAuditLog(), () -> USER, 500);
 
     private ExtractionJob job;
 
@@ -65,11 +67,11 @@ class BridgeToTemplateUseCaseTest {
         job.setStatus(ExtractionJobStatus.COMPLETED);
         job = extractionJobs.save(job);
 
-        when(templates.getById(1)).thenReturn(Optional.of(new Template(1, "T", "T")));
+        when(templates.getByIdAndOwner(1, USER)).thenReturn(Optional.of(new Template(1, "T", "T")));
         TemplateFields nameField = mock(TemplateFields.class);
         when(nameField.getFieldName()).thenReturn("Name");
         when(templateFields.listByTemplateId(1)).thenReturn(List.of(nameField));
-        when(autoMap.map(anyList(), anyList())).thenReturn(Map.of("Name", "Name"));
+        when(autoMap.map(any(MappingContext.class))).thenReturn(Map.of("Name", "Name"));
         when(validateRows.handle(any())).thenReturn(
                 List.of(new RowValidationResult(0, "Name", "Ada", null),
                         new RowValidationResult(1, "Name", "", "Required")));

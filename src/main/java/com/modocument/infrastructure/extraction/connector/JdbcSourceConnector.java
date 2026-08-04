@@ -17,6 +17,7 @@ import com.modocument.domain.model.SourceType;
 import com.modocument.infrastructure.export.JdbcIdentifiers;
 import com.modocument.infrastructure.extraction.ExtractionProperties;
 import com.modocument.infrastructure.extraction.worker.NodeIdentity;
+import com.modocument.infrastructure.net.OutboundHostPolicy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -46,13 +47,16 @@ public class JdbcSourceConnector implements Connector {
     private final NodeIdentity node;
     private final ExtractionProperties properties;
     private final ExtractionAuditLog audit;
+    private final OutboundHostPolicy egress;
 
     public JdbcSourceConnector(JobSecrets secrets, NodeIdentity node,
-                               ExtractionProperties properties, ExtractionAuditLog audit) {
+                               ExtractionProperties properties, ExtractionAuditLog audit,
+                               OutboundHostPolicy egress) {
         this.secrets = secrets;
         this.node = node;
         this.properties = properties;
         this.audit = audit;
+        this.egress = egress;
     }
 
     @Override
@@ -72,6 +76,8 @@ public class JdbcSourceConnector implements Connector {
     public ConnectorResult execute(ExtractionTask task, ExtractionJob job,
                                    ExtractionSource source, ConnectorState state) {
         DbSourceConfig config = source.getDb();
+        // SSRF guard: refuse to open a JDBC connection to an internal host.
+        egress.checkJdbcUrl(config.getJdbcUrl());
         String table = JdbcIdentifiers.requireValidIdentifier(config.getTable(), "table");
         String watermark = config.getWatermarkColumn() == null ? null
                 : JdbcIdentifiers.requireValidIdentifier(config.getWatermarkColumn(), "watermarkColumn");

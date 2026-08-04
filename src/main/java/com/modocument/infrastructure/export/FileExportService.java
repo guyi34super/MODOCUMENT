@@ -18,14 +18,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-/** Serializes an ingested table to CSV, JSON, or XLSX bytes for download/archive. */
+/** Serializes an ingested table to CSV, JSON, XLSX, TSV, or XML bytes for download/archive. */
 @Service
 public class FileExportService {
 
     public enum Format {
         CSV("text/csv", ".csv"),
         JSON("application/json", ".json"),
-        XLSX("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx");
+        XLSX("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"),
+        TSV("text/tab-separated-values", ".tsv"),
+        XML("application/xml", ".xml");
 
         private final String contentType;
         private final String extension;
@@ -48,7 +50,7 @@ public class FileExportService {
                 return Format.valueOf(value == null ? "" : value.trim().toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException(
-                        "Unknown export format '" + value + "'; use csv, json, or xlsx.");
+                        "Unknown export format '" + value + "'; use csv, json, xlsx, tsv, or xml.");
             }
         }
     }
@@ -56,30 +58,113 @@ public class FileExportService {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     public byte[] export(TableData table, Format format) {
+        if (table == null || table.getColumns() == null || table.getColumns().isEmpty()) {
+            throw new IllegalStateException(
+                    "There are no columns to export; map at least one column to a template field.");
+        }
         try {
             return switch (format) {
-                case CSV -> toCsv(table);
+                case CSV -> toDelimited(table, CSVFormat.DEFAULT);
                 case JSON -> MAPPER.writerWithDefaultPrettyPrinter().writeValueAsBytes(table.getRows());
                 case XLSX -> toXlsx(table);
+                case TSV -> toDelimited(table, CSVFormat.TDF);
+                case XML -> toXml(table);
             };
         } catch (IOException e) {
             throw new UncheckedIOException("Could not serialize export.", e);
         }
     }
 
-    private static byte[] toCsv(TableData table) throws IOException {
+    private static byte[] toDelimited(TableData table, CSVFormat base) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         List<String> columns = table.getColumns();
-        CSVFormat format = CSVFormat.DEFAULT.builder()
-                .setHeader(columns.toArray(new String[0]))
+        CSVFormat format = base.builder()
+                .setHeader(columns.stream().map(FileExportService::neutralizeFormula)
+                        .toArray(String[]::new))
                 .build();
         try (CSVPrinter printer = new CSVPrinter(
                 new OutputStreamWriter(out, StandardCharsets.UTF_8), format)) {
             for (Map<String, String> row : table.getRows()) {
-                printer.printRecord(columns.stream().map(c -> row.getOrDefault(c, "")).toList());
+                printer.printRecord(columns.stream()
+                        .map(c -> neutralizeFormula(row.getOrDefault(c, "")))
+                        .toList());
             }
         }
         return out.toByteArray();
+    }
+
+    /**
+     * Excel and Sheets execute a cell that starts with = + - or @, so an
+     * ingested value like {@code =HYPERLINK(...)} would run when the exported
+     * file is opened. A leading apostrophe makes it text again.
+     */
+    static String neutralizeFormula(String value) {
+        if (value == null || value.isEmpty()) {
+            return value == null ? "" : value;
+        }
+        return switch (value.charAt(0)) {
+            case '=', '+', '-', '@', '\t', '\r' -> "'" + value;
+            default -> value;
+        };
+    }
+
+    /**
+     * Columns become {@code <col name="...">} attributes rather than element
+     * names because column names may contain characters (spaces, slashes)
+     * that are not legal in XML element names.
+     */
+    private static byte[] toXml(TableData table) {
+        StringBuilder xml = new StringBuilder();
+        xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rows>\n");
+        for (Map<String, String> row : table.getRows()) {
+            xml.append("  <row>\n");
+            for (String column : table.getColumns()) {
+                xml.append("    <col name=\"").append(escapeAttr(column)).append("\">")
+                        .append(escapeText(row.getOrDefault(column, "")))
+                        .append("</col>\n");
+            }
+            xml.append("  </row>\n");
+        }
+        xml.append("</rows>\n");
+        return xml.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Escapes markup and drops the characters XML 1.0 simply cannot carry
+     * (control codes other than tab/newline), which otherwise produced a file
+     * no parser would accept. CR is escaped rather than dropped because an
+     * unescaped one is silently normalized to LF on re-read.
+     */
+    private static String escapeText(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '&' -> escaped.append("&amp;");
+                case '<' -> escaped.append("&lt;");
+                case '>' -> escaped.append("&gt;");
+                case '\r' -> escaped.append("&#13;");
+                case '\n', '\t' -> escaped.append(c);
+                default -> {
+                    if (c >= 0x20 || Character.isHighSurrogate(c) || Character.isLowSurrogate(c)) {
+                        escaped.append(c);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
+    }
+
+    /**
+     * Attribute values additionally need the quote escaped, and newlines/tabs
+     * spelled out — a literal one is normalized to a space when the attribute
+     * is read back, so a column name containing it would come out different.
+     */
+    private static String escapeAttr(String value) {
+        return escapeText(value)
+                .replace("\"", "&quot;")
+                .replace("\n", "&#10;")
+                .replace("\t", "&#9;");
     }
 
     private static byte[] toXlsx(TableData table) throws IOException {

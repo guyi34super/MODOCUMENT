@@ -2,6 +2,8 @@ package com.modocument.domain.entity;
 
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
+import com.modocument.domain.model.WizardStep;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,6 +12,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -29,6 +32,10 @@ public class IngestionJob {
     @Column(name = "IngestionJobId")
     private int ingestionJobId;
 
+    /** The AppUser who owns this job — every read/write is scoped to it. */
+    @Column(name = "OwnerUserId")
+    private int ownerUserId;
+
     @Column(name = "TemplateId")
     private int templateId;
 
@@ -46,6 +53,10 @@ public class IngestionJob {
     @Column(name = "Status", length = 20)
     private JobStatus status = JobStatus.PENDING;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "WizardStep", length = 20)
+    private WizardStep wizardStep;
+
     @Column(name = "ErrorMessage", length = 2000)
     private String errorMessage;
 
@@ -58,6 +69,10 @@ public class IngestionJob {
     private String mappingJson;
 
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "SuggestedMappingJson")
+    private String suggestedMappingJson;
+
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "MappedRowsJson")
     private String mappedRowsJson;
 
@@ -68,6 +83,16 @@ public class IngestionJob {
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "ExportInfoJson")
     private String exportInfoJson;
+
+    /**
+     * Optimistic-lock guard. Two requests editing the same job (a resume run
+     * and a cell-edit save, say) both write the whole checkpoint set, so the
+     * slower writer would otherwise silently revert the other's work. The
+     * loser's UPDATE now matches no row and fails with a 409 instead.
+     */
+    @Version
+    @Column(name = "RowVersion")
+    private long rowVersion;
 
     @Column(name = "CreatedDate")
     private LocalDateTime createdDate;
@@ -84,6 +109,15 @@ public class IngestionJob {
 
     public void setIngestionJobId(int ingestionJobId) {
         this.ingestionJobId = ingestionJobId;
+    }
+
+    @JsonIgnore
+    public int getOwnerUserId() {
+        return ownerUserId;
+    }
+
+    public void setOwnerUserId(int ownerUserId) {
+        this.ownerUserId = ownerUserId;
     }
 
     public int getTemplateId() {
@@ -126,6 +160,14 @@ public class IngestionJob {
         this.status = status;
     }
 
+    public WizardStep getWizardStep() {
+        return wizardStep;
+    }
+
+    public void setWizardStep(WizardStep wizardStep) {
+        this.wizardStep = wizardStep;
+    }
+
     public String getErrorMessage() {
         return errorMessage;
     }
@@ -150,6 +192,14 @@ public class IngestionJob {
         this.mappingJson = mappingJson;
     }
 
+    public String getSuggestedMappingJson() {
+        return suggestedMappingJson;
+    }
+
+    public void setSuggestedMappingJson(String suggestedMappingJson) {
+        this.suggestedMappingJson = suggestedMappingJson;
+    }
+
     public String getMappedRowsJson() {
         return mappedRowsJson;
     }
@@ -172,6 +222,14 @@ public class IngestionJob {
 
     public void setExportInfoJson(String exportInfoJson) {
         this.exportInfoJson = exportInfoJson;
+    }
+
+    public long getRowVersion() {
+        return rowVersion;
+    }
+
+    public void setRowVersion(long rowVersion) {
+        this.rowVersion = rowVersion;
     }
 
     public LocalDateTime getCreatedDate() {

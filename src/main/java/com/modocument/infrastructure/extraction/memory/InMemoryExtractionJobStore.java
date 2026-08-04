@@ -36,8 +36,22 @@ public class InMemoryExtractionJobStore implements ExtractionJobStore {
     }
 
     @Override
+    public Optional<ExtractionJob> getByIdAndOwner(String id, int ownerUserId) {
+        return getById(id).filter(j -> j.getOwnerUserId() == ownerUserId);
+    }
+
+    @Override
     public List<ExtractionJob> list() {
         return jobs.values().stream()
+                .sorted(Comparator.comparing(ExtractionJob::getCreatedDate,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+    }
+
+    @Override
+    public List<ExtractionJob> listByOwner(int ownerUserId) {
+        return jobs.values().stream()
+                .filter(j -> j.getOwnerUserId() == ownerUserId)
                 .sorted(Comparator.comparing(ExtractionJob::getCreatedDate,
                         Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();

@@ -126,7 +126,7 @@ function Tester({ pattern }) {
   }, [pattern, sample]);
 
   return (
-    <div className="mt-3 border-t border-line pt-3">
+    <div className="mt-3">
       <Field label="Try a sample value" hint="Checked instantly against the pattern as you type.">
         <div className="flex items-center gap-3">
           <input
@@ -160,6 +160,7 @@ export default function RegexBuilder({ pattern, onChange }) {
   const [mode, setMode] = useState('presets');
   const [presetKey, setPresetKey] = useState('');
   const [parts, setParts] = useState([{ ...NEW_PART, type: 'text' }]);
+  const [showTester, setShowTester] = useState(false);
 
   const preset = PRESETS.find((p) => p.key === presetKey);
 
@@ -331,7 +332,16 @@ export default function RegexBuilder({ pattern, onChange }) {
         </p>
       )}
 
-      <Tester pattern={pattern} />
+      <div className="mt-3 border-t border-line pt-3">
+        <button
+          type="button"
+          onClick={() => setShowTester((s) => !s)}
+          className="cursor-pointer text-sm text-accent hover:underline"
+        >
+          {showTester ? 'Hide tester' : 'Test this pattern'}
+        </button>
+        {showTester && <Tester pattern={pattern} />}
+      </div>
     </div>
   );
 }

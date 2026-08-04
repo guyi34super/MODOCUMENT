@@ -35,7 +35,8 @@ class CompliantWebAccessTest {
     private final ExtractionAuditLog audit = new InMemoryExtractionAuditLog();
     private final ExtractionProperties properties = new ExtractionProperties();
     private final CompliantWebAccess access = new CompliantWebAccess(
-            fetcher, robots, rateLimiter, audit, new ExtractionMetrics(), properties);
+            fetcher, robots, rateLimiter, audit, new ExtractionMetrics(), properties,
+            com.modocument.infrastructure.net.OutboundHostPolicy.disabled());
 
     private WebSourceConfig config() {
         WebSourceConfig config = new WebSourceConfig();

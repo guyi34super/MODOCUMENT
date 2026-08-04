@@ -22,7 +22,7 @@ function ToastViewport({ toasts, onDismiss }) {
           }`}
         >
           <span className="flex items-start gap-2">
-            {toast.type === 'loading' && <Spinner />}
+            {toast.type === 'loading' && <Spinner inline label="" />}
             <span>{toast.message}</span>
           </span>
           <button

@@ -3,6 +3,7 @@ package com.modocument.infrastructure.prompt;
 import com.modocument.application.dto.PromptInput;
 import com.modocument.application.dto.TemplateIdentifierPromptInput;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.infrastructure.file.FileTextReader;
 import org.springframework.stereotype.Component;
 
@@ -12,9 +13,11 @@ public class TemplateIdentifierPrompt implements PromptStrategy {
     private static final int MAX_SNIPPET_CHARS = 2000;
 
     private final FileTextReader fileTextReader;
+    private final PiiTokenizer piiTokenizer;
 
-    public TemplateIdentifierPrompt(FileTextReader fileTextReader) {
+    public TemplateIdentifierPrompt(FileTextReader fileTextReader, PiiTokenizer piiTokenizer) {
         this.fileTextReader = fileTextReader;
+        this.piiTokenizer = piiTokenizer;
     }
 
     @Override
@@ -35,7 +38,10 @@ public class TemplateIdentifierPrompt implements PromptStrategy {
         String timeSheetTemplate =
                 "Timesheet: contains earnings codes and hours worked per pay period";
 
-        String snippet = fileTextReader.readSnippet(templateIdentifier.getFilePath(), MAX_SNIPPET_CHARS);
+        // Classification keys off headers/shape; sensitive value shapes in the
+        // sample rows are masked before the snippet leaves the backend.
+        String snippet = piiTokenizer.maskText(
+                fileTextReader.readSnippet(templateIdentifier.getFilePath(), MAX_SNIPPET_CHARS));
 
         StringBuilder prompt = new StringBuilder();
         prompt.append("You are a document-template classifier.").append(System.lineSeparator());

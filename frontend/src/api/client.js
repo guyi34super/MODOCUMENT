@@ -27,6 +27,25 @@ export function clearSession() {
   localStorage.removeItem(USER_KEY);
 }
 
+/**
+ * Validation endpoints answer with a list — `{ errors: [{ fieldName, ruleType,
+ * message }] }` — rather than a single `error`. Without this every template
+ * problem reached the user as "Request failed (400)".
+ */
+function errorList(data) {
+  if (!data || !Array.isArray(data.errors) || data.errors.length === 0) return null;
+  return data.errors
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      const text = item?.message || item?.error || '';
+      const where = item?.fieldName ? `${item.fieldName}${item.ruleType ? ` (${item.ruleType})` : ''}` : '';
+      if (where && text) return `${where}: ${text}`;
+      return text || where;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
 async function request(path, { method = 'GET', body, raw = false } = {}) {
   const opts = { method, headers: {} };
   const token = getToken();
@@ -51,7 +70,10 @@ async function request(path, { method = 'GET', body, raw = false } = {}) {
     let message = `Request failed (${res.status})`;
     try {
       const data = await res.json();
-      if (data && data.error) message = data.error;
+      const listed = errorList(data);
+      if (listed) message = listed;
+      else if (data && data.error) message = data.error;
+      else if (data && data.message) message = data.message;
       else if (typeof data === 'string' && data) message = data;
     } catch {
       /* non-JSON error body */

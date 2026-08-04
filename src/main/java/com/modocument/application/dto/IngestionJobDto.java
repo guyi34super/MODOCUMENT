@@ -15,20 +15,34 @@ public record IngestionJobDto(int ingestionJobId,
                               Integer importHistoryId,
                               String currentStep,
                               String status,
+                              String wizardStep,
                               String errorMessage,
                               TableData parsedTable,
+                              Map<String, String> suggestedMapping,
                               Map<String, String> mapping,
                               TableData mappedRows,
                               List<RowValidationResult> validationResults,
                               Long validationErrorCount,
+                              List<String> unmappedFields,
+                              List<String> reachableSteps,
                               Map<String, Object> exportInfo,
                               LocalDateTime createdDate,
                               LocalDateTime updatedDate) {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    public static IngestionJobDto from(IngestionJob job) {
+    /**
+     * {@code unmappedFields} and {@code reachableSteps} are computed by
+     * {@link com.modocument.application.usecase.IngestionJobUseCase#reachableSteps}
+     * — this factory has no repository access, and the wizard rule must have
+     * exactly one home. Build views through {@code IngestionJobUseCase.view}.
+     */
+    public static IngestionJobDto from(IngestionJob job,
+                                       List<String> unmappedFields,
+                                       List<String> reachableSteps) {
         TableData parsed = read(job.getParsedTableJson(), new TypeReference<TableData>() {
+        });
+        Map<String, String> suggestedMapping = read(job.getSuggestedMappingJson(), new TypeReference<Map<String, String>>() {
         });
         Map<String, String> mapping = read(job.getMappingJson(), new TypeReference<Map<String, String>>() {
         });
@@ -51,12 +65,16 @@ public record IngestionJobDto(int ingestionJobId,
                 job.getImportHistoryId(),
                 job.getCurrentStep() == null ? null : job.getCurrentStep().name(),
                 job.getStatus() == null ? null : job.getStatus().name(),
+                job.getWizardStep() == null ? null : job.getWizardStep().name(),
                 job.getErrorMessage(),
                 parsed,
+                suggestedMapping,
                 mapping,
                 mapped,
                 validation,
                 errorCount,
+                unmappedFields,
+                reachableSteps,
                 exportInfo,
                 job.getCreatedDate(),
                 job.getUpdatedDate());

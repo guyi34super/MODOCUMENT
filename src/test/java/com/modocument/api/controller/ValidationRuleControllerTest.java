@@ -2,6 +2,7 @@ package com.modocument.api.controller;
 
 import com.modocument.application.dto.UpsertValidationRuleRequest;
 import com.modocument.application.port.ValidationRuleRepository;
+import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.domain.entity.ValidationRule;
 import com.modocument.domain.model.RuleType;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,8 @@ import static org.mockito.Mockito.when;
 class ValidationRuleControllerTest {
 
     private final ValidationRuleRepository repo = mock(ValidationRuleRepository.class);
-    private final ValidationRuleController controller = new ValidationRuleController(repo);
+    private final TemplateOwnership ownership = mock(TemplateOwnership.class);
+    private final ValidationRuleController controller = new ValidationRuleController(repo, ownership);
 
     @Test
     void upsertSavesValidRegexRule() {
@@ -59,5 +61,24 @@ class ValidationRuleControllerTest {
                 .isEqualTo(HttpStatus.NO_CONTENT);
         assertThat(controller.delete(1, "PostalCode", "REGEX").getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void deletesByQueryParametersSoSlashesInFieldNamesWork() {
+        when(repo.delete(1, "Province/State", RuleType.REQUIRED)).thenReturn(true);
+
+        ResponseEntity<?> result = controller.delete(1, "Province/State", "REQUIRED");
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+    }
+
+    @Test
+    void missingRuleDeleteExplainsWhatWasNotFound() {
+        when(repo.delete(1, "Email", RuleType.REGEX)).thenReturn(false);
+
+        ResponseEntity<?> result = controller.delete(1, "Email", "REGEX");
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(result.getBody().toString()).contains("Email");
     }
 }

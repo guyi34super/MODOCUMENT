@@ -3,6 +3,8 @@ package com.modocument.application.usecase;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
+import com.modocument.application.mapping.MappingContext;
+import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ExtractionAuditLog;
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ImportDetailsRepository;
@@ -61,6 +63,7 @@ public class BridgeToTemplateUseCase {
     private final ImportHistoryRepository importHistory;
     private final ImportDetailsRepository importDetails;
     private final ExtractionAuditLog audit;
+    private final CurrentUserProvider currentUser;
     private final int batchSize;
 
     public record BridgeResult(int ingestionJobId, Integer importHistoryId, int rowsBridged,
@@ -79,6 +82,7 @@ public class BridgeToTemplateUseCase {
                                    ImportHistoryRepository importHistory,
                                    ImportDetailsRepository importDetails,
                                    ExtractionAuditLog audit,
+                                   CurrentUserProvider currentUser,
                                    @Value("${extraction.batch-size:500}") int batchSize) {
         this.extractionJobs = extractionJobs;
         this.processedRecords = processedRecords;
@@ -91,11 +95,13 @@ public class BridgeToTemplateUseCase {
         this.importHistory = importHistory;
         this.importDetails = importDetails;
         this.audit = audit;
+        this.currentUser = currentUser;
         this.batchSize = batchSize;
     }
 
     public BridgeResult bridge(String extractionJobId, int templateId, Integer maxRows,
                                boolean llmClean) {
+        int owner = currentUser.requireUserId();
         var extractionJob = extractionJobs.getById(extractionJobId).orElseThrow(
                 () -> new NoSuchElementException(
                         "Extraction job " + extractionJobId + " not found."));
@@ -104,7 +110,8 @@ public class BridgeToTemplateUseCase {
             throw new IllegalStateException(
                     "Extraction job " + extractionJobId + " has not completed yet.");
         }
-        templates.getById(templateId).orElseThrow(
+        // The bridge target template must belong to the caller.
+        templates.getByIdAndOwner(templateId, owner).orElseThrow(
                 () -> new NoSuchElementException("Template " + templateId + " not found."));
 
         int cap = maxRows != null ? maxRows : DEFAULT_MAX_ROWS;
@@ -137,12 +144,11 @@ public class BridgeToTemplateUseCase {
                     null));
         }
 
-        List<String> fieldNames = templateFields.listByTemplateId(templateId).stream()
-                .map(TemplateFields::getFieldName)
-                .toList();
-        Map<String, String> mapping = autoMap.map(columnList, fieldNames);
-
+        List<TemplateFields> fields = templateFields.listByTemplateId(templateId);
         TableData parsed = new TableData(columnList, rows);
+        Map<String, String> mapping = autoMap.map(
+                new MappingContext(columnList, fields, rows, templateId, owner));
+
         TableData mapped = IngestionJobUseCase.applyMapping(parsed, mapping);
         List<RowValidationResult> results =
                 validateRows.handle(new ValidationRequest(templateId, mapped.getRows()));
@@ -150,13 +156,14 @@ public class BridgeToTemplateUseCase {
 
         String fileName = "extraction:" + extractionJobId;
         ImportHistory history = new ImportHistory();
-        history.setCompanyId(1000);
+        history.setOwnerUserId(owner);
         history.setFileName(fileName);
         history.setTemplateId(templateId);
         history.setImportDate(LocalDateTime.now(ZoneOffset.UTC));
         ImportHistory savedHistory = importHistory.add(history);
 
         IngestionJob ingestionJob = new IngestionJob();
+        ingestionJob.setOwnerUserId(owner);
         ingestionJob.setFileName(fileName);
         ingestionJob.setTemplateId(templateId);
         ingestionJob.setImportHistoryId(savedHistory.getImportHistoryId());

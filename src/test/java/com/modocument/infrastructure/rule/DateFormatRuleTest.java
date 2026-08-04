@@ -26,7 +26,8 @@ class DateFormatRuleTest {
         ValidationError error = rule.validate(1, "BirthDate", "11-07-2002", "{}");
 
         assertThat(error).isNotNull();
-        assertThat(error.errorMessage()).isEqualTo("Date must be in the format YYYY-MM-DD");
+        assertThat(error.errorMessage())
+                .isEqualTo("Date must be in the format YYYY-MM-DD, e.g. 2026-07-18");
     }
 
     @Test

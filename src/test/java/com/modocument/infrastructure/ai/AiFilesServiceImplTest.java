@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.ai;
 
+import com.modocument.application.dto.ChatEditPatchResponse;
 import com.modocument.application.dto.TableData;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -53,6 +54,21 @@ class AiFilesServiceImplTest {
     }
 
     @Test
+    void sendForObjectToleratesLeadingDecimalNumbers() {
+        // Models sometimes emit `.5` (invalid JSON) for a numeric-looking cell;
+        // strict parsing used to 500. The lenient path coerces it to "0.5".
+        modelReturns("{\"rows\":[{\"row\":7,\"values\":{\"Salary Net\":.5}}]}");
+
+        ChatEditPatchResponse patch = serviceWithKey("real-key").sendForObject(
+                "fix", new ParameterizedTypeReference<ChatEditPatchResponse>() {
+                });
+
+        assertThat(patch.rows()).hasSize(1);
+        assertThat(patch.rows().get(0).row()).isEqualTo(7);
+        assertThat(patch.rows().get(0).values()).containsEntry("Salary Net", "0.5");
+    }
+
+    @Test
     void rejectsBlankPrompt() {
         assertThatThrownBy(() -> serviceWithKey("real-key").sendPrompt("  "))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -60,10 +76,12 @@ class AiFilesServiceImplTest {
 
     @Test
     void rejectsMissingOrSentinelApiKey() {
+        // The message is read by end users, so it names the environment
+        // variable an operator sets — not the internal property key.
         assertThatThrownBy(() -> serviceWithKey("").sendPrompt("hi"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("api-key");
+                .isInstanceOf(AiNotConfiguredException.class)
+                .hasMessageContaining("AIFILES_OPENAI_APIKEY");
         assertThatThrownBy(() -> serviceWithKey(AiFilesServiceImpl.UNSET_API_KEY).sendPrompt("hi"))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(AiNotConfiguredException.class);
     }
 }

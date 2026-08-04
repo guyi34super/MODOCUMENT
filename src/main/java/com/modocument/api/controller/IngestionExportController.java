@@ -2,14 +2,14 @@ package com.modocument.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.DatabaseExportRequest;
-import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.usecase.IngestionJobUseCase;
 import com.modocument.domain.entity.IngestionJob;
-import com.modocument.domain.model.JobStep;
 import com.modocument.infrastructure.export.DatabaseExportService;
 import com.modocument.infrastructure.export.FileExportService;
 import com.modocument.infrastructure.file.StorageProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -26,8 +26,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -40,7 +38,7 @@ import java.util.NoSuchElementException;
 @RestController
 public class IngestionExportController {
 
-    private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final Logger log = LoggerFactory.getLogger(IngestionExportController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final IngestionJobUseCase jobs;
@@ -66,8 +64,10 @@ public class IngestionExportController {
         FileExportService.Format exportFormat = FileExportService.Format.parse(format);
 
         byte[] bytes = fileExport.export(table, exportFormat);
-        String exportName = "job" + job.getIngestionJobId() + "_"
-                + LocalDateTime.now().format(TIMESTAMP) + exportFormat.extension();
+        // Downloading is a GET, so browsers prefetch it and users double-click
+        // it: a timestamped name piled up a new archive copy every time. One
+        // copy per job and format, overwritten, is the useful artifact.
+        String exportName = "job" + job.getIngestionJobId() + exportFormat.extension();
         archiveCopy(exportName, bytes);
 
         Map<String, Object> exportInfo = new LinkedHashMap<>();
@@ -99,20 +99,30 @@ public class IngestionExportController {
         exportInfo.put("rowCount", rowCount);
         IngestionJob updated = jobs.recordExport(job, exportInfo);
 
-        return ResponseEntity.ok(IngestionJobDto.from(updated));
+        return ResponseEntity.ok(jobs.view(updated));
     }
 
-    /** Exports operate on the mapped (post-review) rows of a validated job. */
-    private static TableData exportableTable(IngestionJob job) {
-        if (job.getCurrentStep() != JobStep.VALIDATED && job.getCurrentStep() != JobStep.EXPORTED) {
-            throw new IllegalStateException(
-                    "Job " + job.getIngestionJobId() + " has not been validated yet "
-                            + "(current step: " + job.getCurrentStep() + ").");
-        }
+    /**
+     * Exports operate on finished work only: an active job whose every template
+     * field is mapped and whose rows all pass validation. The use case owns that
+     * rule, so a caller bypassing the UI hits the same wall.
+     */
+    private TableData exportableTable(IngestionJob job) {
+        jobs.requireExportable(job);
         String json = job.getMappedRowsJson();
         if (json == null) {
             throw new IllegalStateException("Job has no mapped rows to export.");
         }
+        TableData table = readTable(json);
+        if (table.isEmpty()) {
+            throw new IllegalStateException(
+                    "Job " + job.getIngestionJobId() + " has no mapped columns to export; "
+                            + "map at least one column to a template field first.");
+        }
+        return table;
+    }
+
+    private static TableData readTable(String json) {
         try {
             return MAPPER.readValue(json, TableData.class);
         } catch (IOException e) {
@@ -125,7 +135,9 @@ public class IngestionExportController {
             Files.createDirectories(exportsDir);
             Files.write(exportsDir.resolve(exportName), bytes);
         } catch (IOException e) {
-            throw new UncheckedIOException("Could not archive the export file.", e);
+            // The download itself succeeded; a missing archive copy must not
+            // fail the user's export.
+            log.warn("Could not archive export {}: {}", exportName, e.getMessage());
         }
     }
 

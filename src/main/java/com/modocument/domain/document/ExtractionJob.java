@@ -1,5 +1,6 @@
 package com.modocument.domain.document;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.modocument.domain.model.ExtractionJobStatus;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -26,6 +27,8 @@ public class ExtractionJob {
 
     @Id
     private String id;
+    /** The AppUser who owns this job — every read/write is scoped to it. */
+    private int ownerUserId;
     private String sourceId;
     /** Template the results are meant for (optional until bridging). */
     private Integer templateId;
@@ -44,6 +47,15 @@ public class ExtractionJob {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    @JsonIgnore
+    public int getOwnerUserId() {
+        return ownerUserId;
+    }
+
+    public void setOwnerUserId(int ownerUserId) {
+        this.ownerUserId = ownerUserId;
     }
 
     public String getSourceId() {

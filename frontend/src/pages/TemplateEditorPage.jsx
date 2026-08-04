@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { getTemplateDataTypes } from '../api/cache';
 import {
   createField,
@@ -10,6 +10,7 @@ import {
   updateTemplate,
 } from '../api/templates';
 import PageHeader from '../components/PageHeader';
+import DataTable from '../components/DataTable';
 import { Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 
@@ -29,14 +30,24 @@ export default function TemplateEditorPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(!isNew);
+  const fieldNameRef = useRef(null);
+  // What the server currently holds, so "Next" knows whether the name or
+  // description on screen still needs saving.
+  const savedDetails = useRef({ name: '', description: '' });
 
+  // No setLoading(true) here: refetches after adding a field must update the
+  // table in place without unmounting (and de-focusing) the add-field form.
   const loadExisting = useCallback(async () => {
-    setLoading(true);
     try {
-      const [template, allFields] = await Promise.all([getTemplate(id), getAllFields()]);
+      const [template, fields] = await Promise.all([getTemplate(id), getAllFields(id)]);
       setName(template.name || '');
       setDescription(template.description || '');
-      setSavedFields(allFields.filter((f) => f.templateId === Number(id)));
+      savedDetails.current = {
+        name: template.name || '',
+        description: template.description || '',
+      };
+      setSavedFields(fields);
+      setError('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -44,10 +55,23 @@ export default function TemplateEditorPage() {
     }
   }, [id]);
 
+  const loadDataTypes = useCallback(() => {
+    getTemplateDataTypes()
+      .then(setDataTypes)
+      .catch((err) => setError(`Field data types could not be loaded: ${err.message}`));
+  }, []);
+
   useEffect(() => {
-    getTemplateDataTypes().then(setDataTypes).catch((err) => setError(err.message));
-    if (!isNew) loadExisting();
-  }, [isNew, loadExisting]);
+    loadDataTypes();
+    // setLoading(true) here (not in loadExisting): opening a different template
+    // reuses this component, and without it the previous template's fields —
+    // or an empty "No fields yet" — flash before the new ones arrive. Refetches
+    // after adding a field still update in place.
+    if (!isNew) {
+      setLoading(true);
+      loadExisting();
+    }
+  }, [isNew, loadExisting, loadDataTypes]);
 
   const typeName = (typeId) =>
     dataTypes.find((t) => t.templateDataTypeId === typeId)?.dataType ?? typeId;
@@ -75,6 +99,21 @@ export default function TemplateEditorPage() {
     }
   };
 
+  /**
+   * Leaving for the rules page used to drop an edited name or description on
+   * the floor, so the edit is committed first.
+   */
+  const goToRules = async () => {
+    const dirty =
+      name !== savedDetails.current.name || description !== savedDetails.current.description;
+    if (dirty) {
+      const saved = await saveDetails();
+      if (!saved) return;
+    }
+    navigate(`/validation?templateId=${id}`);
+  };
+
+  /** Returns true when the details were persisted. */
   const saveDetails = async () => {
     setBusy(true);
     try {
@@ -82,8 +121,11 @@ export default function TemplateEditorPage() {
         loading: 'Saving template…',
         success: 'Template details saved',
       });
+      savedDetails.current = { name, description };
+      return true;
     } catch {
       // The error toast is already shown.
+      return false;
     } finally {
       setBusy(false);
     }
@@ -104,6 +146,7 @@ export default function TemplateEditorPage() {
       );
       setNewField({ fieldName: '', templateDataTypeId: 1 });
       await loadExisting();
+      fieldNameRef.current?.focus();
     } catch {
       // The error toast is already shown.
     } finally {
@@ -124,18 +167,36 @@ export default function TemplateEditorPage() {
     }
   };
 
-  if (loading) return <Spinner />;
-
   return (
     <div>
       <PageHeader
-        crumbs={[{ label: 'Design Templates', to: '/templates' }, { label: isNew ? 'New' : name }]}
-        title={isNew ? 'New Template' : `Edit: ${name}`}
+        crumbs={[{ label: 'Design Templates', to: '/templates' }, { label: isNew ? 'New' : name || '…' }]}
+        title={isNew ? 'New Template' : name ? `Edit: ${name}` : 'Edit template'}
         subtitle={isNew ? 'Create a template together with its fields' : 'Update details and manage fields'}
+        actions={
+          !isNew && (
+            <Button variant="secondary" onClick={goToRules}>
+              Next: set field rules →
+            </Button>
+          )
+        }
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
-      {isNew ? (
+      {dataTypes.length === 0 && !loading && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-md bg-danger-bg px-4 py-3 text-sm text-danger-ink">
+          <span>
+            Field data types are unavailable, so fields cannot be created right now.
+          </span>
+          <Button variant="secondary" size="sm" onClick={loadDataTypes}>
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {loading ? (
+        <Spinner />
+      ) : isNew ? (
         <form onSubmit={submitNew} className="space-y-5">
           <Card className="space-y-4">
             <Field label="Name">
@@ -219,40 +280,17 @@ export default function TemplateEditorPage() {
               <Button onClick={saveDetails} disabled={busy}>
                 {busy ? 'Saving…' : 'Save details'}
               </Button>
-              <Link to={`/validation?templateId=${id}`} className="text-sm text-accent hover:underline">
-                Next: set field rules →
-              </Link>
+              <span className="text-xs text-muted">
+                Applies to name and description only — field changes below save immediately.
+              </span>
             </div>
           </Card>
 
           <Card>
             <h2 className="mb-3 text-lg font-normal">Fields ({savedFields.length})</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="bg-sidebar text-left">
-                    <th className="border-b border-line px-3 py-2 font-medium text-muted">Field name</th>
-                    <th className="border-b border-line px-3 py-2 font-medium text-muted">Data type</th>
-                    <th className="border-b border-line px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {savedFields.map((field) => (
-                    <tr key={field.templateFieldsId} className="hover:bg-sidebar/60">
-                      <td className="border-b border-line px-3 py-2">{field.fieldName}</td>
-                      <td className="border-b border-line px-3 py-2">{typeName(field.templateDataTypeId)}</td>
-                      <td className="border-b border-line px-3 py-2 text-right">
-                        <Button variant="danger" onClick={() => removeField(field)}>
-                          Delete
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <form onSubmit={addField} className="mt-4 flex gap-2">
+            <form onSubmit={addField} className="mb-4 flex gap-2">
               <input
+                ref={fieldNameRef}
                 placeholder="New field name"
                 className={inputClass}
                 value={newField.fieldName}
@@ -273,7 +311,37 @@ export default function TemplateEditorPage() {
                 Add
               </Button>
             </form>
+            <DataTable
+              maxHeight="50vh"
+              columns={[
+                { key: 'fieldName', label: 'Field name' },
+                {
+                  key: 'dataType',
+                  label: 'Data type',
+                  render: (field) => typeName(field.templateDataTypeId),
+                },
+                {
+                  key: 'actions',
+                  label: '',
+                  render: (field) => (
+                    <div className="flex justify-end">
+                      <Button size="sm" variant="danger" onClick={() => removeField(field)}>
+                        Delete
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+              rows={savedFields}
+              emptyMessage="No fields yet — add the first one above."
+            />
           </Card>
+
+          <div className="flex justify-end">
+            <Button onClick={goToRules}>
+              Next: set field rules →
+            </Button>
+          </div>
         </div>
       )}
     </div>

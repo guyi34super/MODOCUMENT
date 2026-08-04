@@ -27,23 +27,34 @@ services:
       MODOCUMENT_JWT_SECRET: ${MODOCUMENT_JWT_SECRET:?Set MODOCUMENT_JWT_SECRET (openssl rand -base64 48)}
       # Origins allowed to call the API; add your deployed frontend origin.
       MODOCUMENT_CORS_ALLOWED_ORIGINS: ${MODOCUMENT_CORS_ALLOWED_ORIGINS:-http://localhost:3000}
-      DOCLING_BASEURL: http://docling:5001
+      # Docling is opt-in only. Empty = local readers + LLM for all supported formats.
+      DOCLING_BASEURL: ${DOCLING_BASEURL:-}
       # Passed through from the host environment; empty keeps the app booting
-      # with the LLM endpoints disabled.
+      # with the LLM endpoints disabled. The default model id must exist on
+      # the configured endpoint and be vision-capable (it also does OCR).
       AIFILES_OPENAI_APIKEY: ${AIFILES_OPENAI_APIKEY:-}
       AIFILES_OPENAI_BASEURL: ${AIFILES_OPENAI_BASEURL:-https://openrouter.ai/api}
       AIFILES_OPENAI_MODELID: ${AIFILES_OPENAI_MODELID:-moonshotai/kimi-k3}
       OCR_VISION_MODEL: ${OCR_VISION_MODEL:-moonshotai/kimi-k3}
+      OCR_VISION_ENABLED: ${OCR_VISION_ENABLED:-true}
+      MAPPING_LLM_SCOPE: ${MAPPING_LLM_SCOPE:-unresolved}
+      MAPPING_LLM_SAMPLE_SIZE: ${MAPPING_LLM_SAMPLE_SIZE:-5}
+      PARSING_LLM_SINGLE_PASS_MAX_ROWS: ${PARSING_LLM_SINGLE_PASS_MAX_ROWS:-150}
+      PARSING_LLM_BATCH_CONCURRENCY: ${PARSING_LLM_BATCH_CONCURRENCY:-8}
+      PARSING_DETERMINISTIC_ENABLED: ${PARSING_DETERMINISTIC_ENABLED:-true}
+      EXCEL_LLM_ENABLED: ${EXCEL_LLM_ENABLED:-false}
+      MODOCUMENT_CHAT_EDIT_MODEL: ${MODOCUMENT_CHAT_EDIT_MODEL:-deepseek-r1:8b}
       # Only used when the scale profile is active.
       EXTRACTION_MONGO_URI: mongodb://mongodb:27017/modocument
       EXTRACTION_KAFKA_SERVERS: kafka:9092
     volumes:
       - modocument-files:/app/wwwroot
+      - ./.cursor:/app/.cursor
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
-      docling:
-        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
       interval: 30s
@@ -69,12 +80,21 @@ services:
       timeout: 3s
       retries: 10
 
-  # Rich document conversion (pdf/doc/docx/pptx/images) with OCR. The app falls
-  # back to its built-in readers automatically if this service is down.
+  # Optional rich document conversion (pdf/doc/docx/pptx/images) with OCR.
+  # Not needed for the standard flow — the app's built-in readers plus AI
+  # vision OCR cover csv/xlsx/pdf/doc/images. Opt in with
+  # `docker compose --profile docling up` and DOCLING_BASEURL=http://docling:5001.
   docling:
+    profiles: ["docling"]
     image: ghcr.io/docling-project/docling-serve:latest
     ports:
       - "5001:5001"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5001/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
 
   # Extraction at scale: docker compose --profile extraction up with
   # APP_PROFILES=scale. MongoDB stores raw/processed records, job state,

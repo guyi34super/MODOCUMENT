@@ -21,6 +21,7 @@ import com.modocument.infrastructure.extraction.ExtractionProperties;
 import com.modocument.domain.model.Hashing;
 import com.modocument.domain.model.UrlNormalizer;
 import com.modocument.infrastructure.extraction.worker.ExtractionMetrics;
+import com.modocument.infrastructure.net.OutboundHostPolicy;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -62,16 +63,18 @@ public class RestApiConnector implements Connector {
     private final HostRateLimiter rateLimiter;
     private final ExtractionAuditLog audit;
     private final ExtractionMetrics metrics;
+    private final OutboundHostPolicy egress;
     private final HttpClient client;
 
     public RestApiConnector(ExtractionProperties properties, JobSecrets secrets,
                             HostRateLimiter rateLimiter, ExtractionAuditLog audit,
-                            ExtractionMetrics metrics) {
+                            ExtractionMetrics metrics, OutboundHostPolicy egress) {
         this.properties = properties;
         this.secrets = secrets;
         this.rateLimiter = rateLimiter;
         this.audit = audit;
         this.metrics = metrics;
+        this.egress = egress;
         this.client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(properties.getWeb().getRequestTimeoutSeconds()))
@@ -120,6 +123,8 @@ public class RestApiConnector implements Connector {
         String url = task.getPayload().get(PAYLOAD_URL);
         int page = Integer.parseInt(task.getPayload().getOrDefault(PAYLOAD_PAGE, "1"));
 
+        // SSRF guard: refuse an API URL that points at an internal address.
+        egress.checkUrl(url);
         rateLimiter.acquire(UrlNormalizer.hostOf(url), properties.getWeb().getDefaultDelayMillis());
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(properties.getWeb().getRequestTimeoutSeconds()))

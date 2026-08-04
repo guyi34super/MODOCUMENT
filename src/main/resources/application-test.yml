@@ -33,6 +33,11 @@ modocument:
       # Test-only signing key; production requires MODOCUMENT_JWT_SECRET.
       secret: modocument-local-dev-secret-change-in-production-0123456789
     permit-dev-paths: true
+    ssrf:
+      # The extraction end-to-end test crawls a loopback HTTP server, so the
+      # SSRF egress guard (which blocks loopback) is off for the suite. The
+      # guard itself is covered by OutboundHostPolicyTest.
+      enabled: false
 
 extraction:
   store: memory

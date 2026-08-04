@@ -304,6 +304,14 @@ paths:
       - ProcessStep
   /TemplateFields/GetAll:
     get:
+      parameters:
+        - name: templateId
+          in: query
+          required: false
+          description: Scope the answer to one template's fields.
+          schema:
+            format: int32
+            type: integer
       description: Get a list of TemplateFields
       operationId: getAllTemplateFields
       responses:
@@ -599,105 +607,6 @@ paths:
       summary: Delete a ImportDetails by Id
       tags:
       - ImportDetails
-  /Validations/GetAll:
-    get:
-      description: Get a list of Validations
-      operationId: getAllValidations
-      responses:
-        default:
-          description: OK
-      summary: Get a list of ImportHistory
-      tags:
-      - Validations 
-  /Validations/GetById/{id}:
-    get:
-      description: Get a Validation By Id
-      operationId: getValidationById
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: ID of the Validation record
-          schema:
-            type: integer
-            format: int32
-      responses:
-        '200':
-          description: Successful response
-        '404':
-          description: Not found
-      summary: Get a Validation by Id
-      tags:
-      - Validations
-  /Validations/Create:
-    post:
-      description: Create a new Validation
-      operationId: postValidation
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ValidationCreate'
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ValidationCreate'
-          description: success
-      summary: Create a new ImportHistory
-      tags:
-      - Validations
-  /Validations/Update/{id}:
-    put:
-      description: Update a Validation
-      operationId: putValidation
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ValidationUpdate'
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ValidationUpdate'
-          description: success
-      summary: Update a Validation
-      tags:
-      - Validations
-  /Validations/{Id}:
-    delete:
-      description: Deletes the Validation by Id
-      operationId: deleteValidation
-      parameters:
-      - content:
-          text/plain:
-            schema:
-              format: int32
-              type: integer
-        description: Id of the Validation to delete
-        in: path
-        name: Id
-        required: true
-      requestBody:
-        content:
-          text/plain:
-            schema:
-              format: int32
-              type: integer
-      responses:
-        "200":
-          content:
-            text/plain:
-              schema:
-                format: int32
-                type: integer
-          description: success
-      summary: Delete a Validation by Id
-      tags:
-      - Validations
   /Templates/CreateWithFields:
     post:
       description: Create a custom template with its fields and validation rules
@@ -783,6 +692,36 @@ paths:
       summary: Upsert a validation rule
       tags:
       - ValidationRules
+  /ValidationRules:
+    delete:
+      description: Delete a rule. Field name travels as a query parameter so names
+        containing a slash (e.g. "Province/State") can be addressed at all.
+      operationId: deleteValidationRule
+      parameters:
+      - name: templateId
+        in: query
+        required: true
+        schema:
+          type: integer
+          format: int32
+      - name: fieldName
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: ruleType
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: No such rule
+      summary: Delete a validation rule
+      tags:
+      - ValidationRules
   /ValidationRules/{templateId}/{fieldName}/{ruleType}:
     delete:
       description: Delete a validation rule by its composite key
@@ -842,6 +781,11 @@ paths:
                   type: integer
                 autoRun:
                   type: boolean
+                runUntil:
+                  description: Stage to stop at, inclusive. Defaults to MAPPED so the
+                    user reviews the column mapping before validation.
+                  type: string
+                  enum: [UPLOADED, PARSED, MAPPED, VALIDATED, EXPORTED]
           application/json:
             schema:
               type: object
@@ -853,6 +797,10 @@ paths:
                   type: integer
                 autoRun:
                   type: boolean
+                runUntil:
+                  description: Stage to stop at, inclusive. Defaults to MAPPED.
+                  type: string
+                  enum: [UPLOADED, PARSED, MAPPED, VALIDATED, EXPORTED]
       responses:
         "201":
           description: Created
@@ -889,6 +837,13 @@ paths:
           schema:
             format: int32
             type: integer
+        - name: until
+          in: query
+          required: false
+          description: Stage to stop at, inclusive. Defaults to VALIDATED.
+          schema:
+            type: string
+            enum: [UPLOADED, PARSED, MAPPED, VALIDATED, EXPORTED]
       responses:
         default:
           description: OK
@@ -1002,7 +957,7 @@ paths:
       - IngestionJobs
   /api/ingestion/jobs/{id}/export/file:
     get:
-      description: Download the validated (mapped) rows as csv, json, or xlsx;
+      description: Download the validated (mapped) rows as csv, json, xlsx, tsv, or xml;
         a copy is archived under wwwroot/exports
       operationId: exportIngestionJobFile
       parameters:
@@ -1017,19 +972,20 @@ paths:
           required: false
           schema:
             type: string
-            enum: [csv, json, xlsx]
+            enum: [csv, json, xlsx, tsv, xml]
       responses:
         "200":
           description: File download
         "409":
-          description: Job not validated yet
+          description: Job is not finished — cancelled, a template field still
+            unmapped, or rows still failing validation (the body says which)
       summary: Export to a file
       tags:
       - IngestionJobs
   /api/ingestion/jobs/{id}/export/database:
     post:
       description: Insert the validated (mapped) rows into a user-supplied
-        database over JDBC (sqlserver/h2 URL prefixes); identifiers are strictly
+        database over JDBC (postgresql/h2 URL prefixes); identifiers are strictly
         validated, values are bound parameters, credentials are never stored
       operationId: exportIngestionJobDatabase
       parameters:
@@ -1056,11 +1012,196 @@ paths:
                 createTableIfMissing:
                   type: boolean
       responses:
-        default:
-          description: OK
+        "200":
+          description: Updated job
+        "400":
+          description: Rejected jdbcUrl, identifier, or target-database error
+        "409":
+          description: Job is not finished — cancelled, a template field still
+            unmapped, or rows still failing validation (the body says which)
+        "502":
+          description: Target database unreachable
       summary: Export to a custom database
       tags:
       - IngestionJobs
+  /api/auth/register:
+    post:
+      description: Create an account and return a bearer token
+      operationId: register
+      security: []
+      responses:
+        "200":
+          description: Token and user profile
+        "400":
+          description: Email already registered or password too weak
+      summary: Register
+      tags:
+      - Auth
+  /api/auth/login:
+    post:
+      description: Exchange credentials for a bearer token
+      operationId: login
+      security: []
+      responses:
+        "200":
+          description: Token and user profile
+        "401":
+          description: Invalid credentials
+      summary: Log in
+      tags:
+      - Auth
+  /api/auth/me:
+    get:
+      description: The signed-in user's profile
+      operationId: currentUser
+      responses:
+        "200":
+          description: User profile
+      summary: Current user
+      tags:
+      - Auth
+  /api/auth/profile:
+    put:
+      description: Update the signed-in user's display name
+      operationId: updateProfile
+      responses:
+        "200":
+          description: Updated profile
+      summary: Update profile
+      tags:
+      - Auth
+  /api/auth/password:
+    put:
+      description: Change the signed-in user's password
+      operationId: changePassword
+      responses:
+        "204":
+          description: Changed
+        "400":
+          description: Current password wrong or new password too weak
+      summary: Change password
+      tags:
+      - Auth
+  /api/ingestion/supported-types:
+    get:
+      description: Extensions this build can parse, plus a ready-made accept list
+      operationId: supportedDocumentTypes
+      responses:
+        "200":
+          description: '{ extensions, accept, description }'
+      summary: Supported document types
+      tags:
+      - Ingestion
+  /api/ingestion/jobs/{id}/rows:
+    put:
+      description: Persist directly-edited cell values; clears validation and export
+      operationId: updateIngestionRows
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        "200":
+          description: Updated job
+        "400":
+          description: Row count changed or unknown column
+        "409":
+          description: Job is cancelled, has no mapped rows, or was changed concurrently
+      summary: Update mapped rows
+      tags:
+      - Ingestion
+  /api/ingestion/jobs/{id}/wizard-step:
+    put:
+      description: Checkpoint the wizard pane the user is on, so reopening resumes
+        there. Only a step the job has earned is accepted; every job payload carries
+        a reachableSteps list plus unmappedFields and validationErrorCount so a
+        client never has to guess. Mapping is finished when every template field has
+        a source column, validation when it has run with no failing rows.
+      operationId: updateWizardStep
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int32
+      responses:
+        "200":
+          description: Updated job
+        "400":
+          description: Step not reachable yet — the body names what is unfinished
+        "409":
+          description: Job is cancelled
+      summary: Set wizard step
+      tags:
+      - Ingestion
+  /Validation/validate:
+    post:
+      description: Run a template's rules over supplied rows; answers with the failures
+      operationId: validateRows
+      responses:
+        "200":
+          description: Validation results
+      summary: Validate rows
+      tags:
+      - Validation
+  /api/fileupload/upload:
+    post:
+      description: Store a document without creating an ingestion job
+      operationId: uploadFile
+      responses:
+        "200":
+          description: Stored file name and size
+        "400":
+          description: No file, or an unsupported type
+        "413":
+          description: File larger than the upload limit
+      summary: Upload a file
+      tags:
+      - Files
+  /api/aifiles/send:
+    post:
+      description: Diagnostic prompt passthrough to the configured provider
+      operationId: sendPrompt
+      responses:
+        "200":
+          description: Model response
+        "400":
+          description: Prompt missing or too long
+        "502":
+          description: Provider unreachable or rejected the request
+        "503":
+          description: No provider API key configured
+      summary: Send a prompt
+      tags:
+      - AI
+  /api/automapper/generate:
+    post:
+      description: Suggest a column mapping for an already-imported file
+      operationId: generateAutoMapping
+      responses:
+        "200":
+          description: Model response
+        "400":
+          description: Missing or oversized parameters
+        "404":
+          description: No import history for that file
+      summary: Suggest a mapping
+      tags:
+      - AI
+  /api/transform/transform:
+    post:
+      description: Apply the configured transformation to supplied rows
+      operationId: transform
+      responses:
+        "200":
+          description: Transformed rows
+      summary: Transform rows
+      tags:
+      - Transform
   /api/extraction/sources:
     post:
       description: Create an extraction source (website / REST API / external database).
@@ -1420,7 +1561,15 @@ paths:
       summary: Extraction metrics
       tags:
       - Extraction
+security:
+- bearerAuth: []
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT issued by /api/auth/login or /api/auth/register
   schemas:
     TemplateDataTypesCreate:
       description: TemplateDataTypesCreate object

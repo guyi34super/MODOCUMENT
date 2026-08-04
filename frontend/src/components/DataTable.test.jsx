@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import DataTable from './DataTable';
 
 const columns = [
@@ -29,5 +30,76 @@ describe('DataTable', () => {
     render(<DataTable columns={[{ key: 'name', label: 'Name' }]} rows={[{ name: null }]} />);
     const cell = screen.getAllByRole('cell')[0];
     expect(cell).toHaveTextContent('');
+  });
+
+  it('calls onRowClick with the row when a row is clicked', async () => {
+    const onRowClick = vi.fn();
+    render(
+      <DataTable
+        columns={columns}
+        rows={[{ name: 'Job 1', status: 'OK' }]}
+        onRowClick={onRowClick}
+      />
+    );
+    await userEvent.click(screen.getByText('Job 1'));
+    expect(onRowClick).toHaveBeenCalledWith({ name: 'Job 1', status: 'OK' }, 0);
+  });
+
+  it('does not call onRowClick when an interactive element inside a cell is clicked', async () => {
+    const onRowClick = vi.fn();
+    render(
+      <DataTable
+        columns={[
+          { key: 'name', label: 'Name' },
+          { key: 'open', label: 'Open', render: () => <button>Open</button> },
+        ]}
+        rows={[{ name: 'Job 1' }]}
+        onRowClick={onRowClick}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('rows without onRowClick stay clickable without crashing', async () => {
+    render(<DataTable columns={columns} rows={[{ name: 'Job 1', status: 'OK' }]} />);
+    await userEvent.click(screen.getByText('Job 1'));
+    expect(screen.getByText('Job 1').closest('tr').className).not.toContain('cursor-pointer');
+  });
+
+  it('maxHeight caps the wrapper and enables internal vertical scroll', () => {
+    const { container } = render(
+      <DataTable columns={columns} rows={[{ name: 'Job 1', status: 'OK' }]} maxHeight="60vh" />
+    );
+    const wrapper = container.firstChild;
+    expect(wrapper).toHaveStyle({ maxHeight: '60vh' });
+    expect(wrapper.className).toContain('overflow-y-auto');
+    screen.getAllByRole('columnheader').forEach((th) => {
+      expect(th.className).toContain('sticky');
+    });
+  });
+
+  it('without maxHeight the header is not sticky and no height cap applies', () => {
+    const { container } = render(
+      <DataTable columns={columns} rows={[{ name: 'Job 1', status: 'OK' }]} />
+    );
+    expect(container.firstChild.className).not.toContain('overflow-y-auto');
+    screen.getAllByRole('columnheader').forEach((th) => {
+      expect(th.className).not.toContain('sticky');
+    });
+  });
+
+  it('onRowClick still fires with maxHeight set', async () => {
+    const onRowClick = vi.fn();
+    render(
+      <DataTable
+        columns={columns}
+        rows={[{ name: 'Job 1', status: 'OK' }]}
+        maxHeight="40vh"
+        onRowClick={onRowClick}
+      />
+    );
+    await userEvent.click(screen.getByText('Job 1'));
+    expect(onRowClick).toHaveBeenCalled();
   });
 });

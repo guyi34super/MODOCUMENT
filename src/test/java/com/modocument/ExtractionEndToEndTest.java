@@ -17,8 +17,13 @@ import com.modocument.domain.model.ExtractionJobStatus;
 import com.modocument.domain.model.SourceType;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -114,6 +119,18 @@ class ExtractionEndToEndTest {
         }
     }
 
+    @BeforeEach
+    void authenticate() {
+        Jwt jwt = Jwt.withTokenValue("test-token").header("alg", "none").subject("1")
+                .claim("email", "e2e@example.com").build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+    }
+
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
+
     @Test
     void crawlRespectsRobotsExtractsRecordsAndBridgesIntoDocumentPipeline() {
         SaveExtractionSourceRequest request = new SaveExtractionSourceRequest();
@@ -132,7 +149,12 @@ class ExtractionEndToEndTest {
                 false, null);
         String jobId = jobs.start(job.getId()).getId();
 
-        await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
+        // jobs.get is owner-scoped and reads the caller from the SecurityContext,
+        // which is a thread-local set on this test thread; poll on the same thread
+        // so the authenticated context is in scope (Awaitility polls off-thread by
+        // default). The worker pool that drives the job to COMPLETED runs on its own
+        // threads but uses the unscoped store, so it needs no context.
+        await().pollInSameThread().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
                 assertThat(jobs.get(jobId).getStatus()).isEqualTo(ExtractionJobStatus.COMPLETED));
 
         // Three table rows from the two allowed pages; the /private/ page was

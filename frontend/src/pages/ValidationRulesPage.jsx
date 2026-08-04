@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
 import { getAllFields } from '../api/templates';
 import {
@@ -15,7 +15,6 @@ import {
   isFieldRequired,
   loadRuleIntoFormState,
   ruleTypeName,
-  shouldSyncRequired,
   upsertRule,
   validateRows,
 } from '../api/validationRules';
@@ -42,10 +41,11 @@ const EMPTY_FORM = {
 
 export default function ValidationRulesPage() {
   const toast = useToast();
+  const navigate = useNavigate();
   const formRef = useRef(null);
   const [searchParams] = useSearchParams();
   const [templates, setTemplates] = useState([]);
-  const [allFields, setAllFields] = useState([]);
+  const [templateFields, setTemplateFields] = useState([]);
   const [templateId, setTemplateId] = useState('');
   const [rules, setRules] = useState(null);
   const [error, setError] = useState('');
@@ -61,23 +61,35 @@ export default function ValidationRulesPage() {
 
   const [testRow, setTestRow] = useState({});
   const [testResults, setTestResults] = useState(null);
+  const [showTest, setShowTest] = useState(false);
 
   useEffect(() => {
-    Promise.all([getTemplates(), getAllFields()])
-      .then(([tpl, fields]) => {
+    getTemplates()
+      .then((tpl) => {
         setTemplates(tpl);
-        setAllFields(fields);
         const preselected = searchParams.get('templateId');
         if (preselected && tpl.some((t) => t.templateId === Number(preselected))) {
           setTemplateId(preselected);
-          loadRules(preselected);
+          selectTemplate(preselected);
         }
       })
       .catch((err) => setError(err.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const templateFields = allFields.filter((f) => f.templateId === Number(templateId));
+  // Fields are fetched per template rather than fetching every template's
+  // fields and filtering here.
+  const loadFields = useCallback(async (tid) => {
+    if (!tid) {
+      setTemplateFields([]);
+      return;
+    }
+    try {
+      setTemplateFields(await getAllFields(tid));
+    } catch (err) {
+      setError(err.message);
+    }
+  }, []);
 
   const loadRules = useCallback(async (tid) => {
     setRules(null);
@@ -95,6 +107,8 @@ export default function ValidationRulesPage() {
     setTemplateId(tid);
     setError('');
     resetForm();
+    setShowTest(false);
+    loadFields(tid);
     loadRules(tid);
   };
 
@@ -174,43 +188,38 @@ export default function ValidationRulesPage() {
       await toast.promise(
         (async () => {
           const isEditing = !!editingRule;
-          const isEditingRequiredRow = isEditing && editingRule.ruleType === 'REQUIRED';
-          const isEditingFormatRow = isEditing && editingRule.ruleType !== 'REQUIRED';
+          const renamedField = isEditing && editingRule.fieldName !== fieldName;
+          const oldFormatType =
+            isEditing && editingRule.ruleType !== 'REQUIRED' ? editingRule.ruleType : null;
 
-          if (
-            !isEditing ||
-            shouldSyncRequired(fieldRequirement, editingRule.fieldRequirement)
-          ) {
-            if (fieldRequirement === 'required') {
-              await upsertRule(tid, fieldName, 'REQUIRED', {});
-            } else if (isFieldRequired(rules, fieldName)) {
-              await deleteRule(tid, fieldName, 'REQUIRED');
-            }
+          // Required marker: it belongs to the field, so a rename has to move
+          // it. Writing it unconditionally (the endpoint is an upsert) also
+          // means "rename a required field" can never end up doing nothing.
+          if (renamedField && editingRule.fieldRequirement === 'required') {
+            await deleteRule(tid, editingRule.fieldName, 'REQUIRED');
+          }
+          if (fieldRequirement === 'required') {
+            await upsertRule(tid, fieldName, 'REQUIRED', {});
+          } else if (isFieldRequired(rules, fieldName)) {
+            await deleteRule(tid, fieldName, 'REQUIRED');
           }
 
-          if (isEditingFormatRow) {
-            const oldField = editingRule.fieldName;
-            const oldType = editingRule.ruleType;
-
-            if (
-              oldType !== 'REQUIRED' &&
-              (oldField !== fieldName || oldType !== ruleType || ruleType === 'NONE')
-            ) {
-              await deleteFormatRule(tid, oldField, oldType);
-            }
-
-            if (ruleType !== 'NONE') {
-              const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
-              await saveFormatRule(tid, fieldName, ruleType, config);
-            }
-          } else if (isEditingRequiredRow) {
-            if (ruleType !== 'NONE') {
-              const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
-              await saveFormatRule(tid, fieldName, ruleType, config);
-            }
-          } else if (ruleType !== 'NONE') {
-            const config = buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax });
-            await saveFormatRule(tid, fieldName, ruleType, config);
+          // Format rule: drop the row being edited whenever its key changes
+          // (field or type) or the user chose no format check at all.
+          if (
+            oldFormatType &&
+            oldFormatType !== 'NONE' &&
+            (renamedField || oldFormatType !== ruleType || ruleType === 'NONE')
+          ) {
+            await deleteFormatRule(tid, editingRule.fieldName, oldFormatType);
+          }
+          if (ruleType !== 'NONE') {
+            await saveFormatRule(
+              tid,
+              fieldName,
+              ruleType,
+              buildRuleConfig(ruleType, { pattern, rangeMin, rangeMax })
+            );
           }
         })(),
         { loading: loadingMessage, success: successMessage }
@@ -261,22 +270,63 @@ export default function ValidationRulesPage() {
 
   const testErrors = (testResults || []).filter((r) => r.errorMessage);
   const ruleHint = RULE_HINTS[ruleType];
+
+  // One row per field: the REQUIRED marker belongs in the Required column, not
+  // in a row of its own, so a field that is Required AND has a format rule
+  // shows once — not twice with the same field name. A field that is ONLY
+  // Required still keeps a row so it doesn't disappear.
+  const displayRules = useMemo(() => {
+    if (!rules) return rules;
+    const formatRules = rules.filter((r) => ruleTypeName(r.ruleType) !== 'REQUIRED');
+    const withFormat = new Set(formatRules.map((r) => r.fieldName));
+    const requiredOnly = rules.filter(
+      (r) => ruleTypeName(r.ruleType) === 'REQUIRED' && !withFormat.has(r.fieldName)
+    );
+    return [...formatRules, ...requiredOnly].sort((a, b) =>
+      a.fieldName.localeCompare(b.fieldName)
+    );
+  }, [rules]);
+
+  // Optional + no format check, with nothing existing to remove, would save
+  // nothing at all — and used to answer with a success toast anyway.
+  const editingFormatRow = !!editingRule && editingRule.ruleType !== 'REQUIRED';
+  const nothingToSave =
+    ruleType === 'NONE' &&
+    fieldRequirement === 'optional' &&
+    !isFieldRequired(rules, fieldName) &&
+    !editingFormatRow;
   const saveDisabled =
     busy ||
     !fieldName ||
+    nothingToSave ||
     (ruleType === 'REGEX' && !pattern.trim()) ||
     (ruleType === 'RANGE' && (rangeMin === '' || rangeMax === ''));
+  // Missing field name is self-evident (the select still shows its prompt);
+  // explain only the non-obvious disabled cases inline.
+  const saveDisabledReason =
+    !busy && fieldName && ruleType === 'REGEX' && !pattern.trim()
+      ? 'Choose or enter a format pattern first.'
+      : !busy && fieldName && ruleType === 'RANGE' && (rangeMin === '' || rangeMax === '')
+        ? 'Enter both a minimum and maximum.'
+        : !busy && fieldName && nothingToSave
+          ? 'Mark the field Required or pick a format rule — there is nothing to save yet.'
+          : '';
 
   return (
     <div>
       <PageHeader
         crumbs={[{ label: 'Set Field Rules' }]}
         title="Set Field Rules"
-        subtitle="Step 2 — per-field rules every processed row is checked against"
+        subtitle="Per-field rules every processed row is checked against"
+        actions={
+          <Button variant="secondary" onClick={() => navigate('/ingestion')}>
+            Next: upload &amp; process →
+          </Button>
+        }
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
-      <Card className="mb-5">
+      <div className="mb-5 max-w-sm">
         <Field label="Template">
           <select
             className={inputClass}
@@ -291,56 +341,12 @@ export default function ValidationRulesPage() {
             ))}
           </select>
         </Field>
-      </Card>
+      </div>
 
       {templateId && (
         <>
-          <h2 className="mb-3 text-xl font-normal">Rules</h2>
-          {!rules ? (
-            <Spinner />
-          ) : (
-            <DataTable
-              columns={[
-                { key: 'fieldName', label: 'Field' },
-                {
-                  key: 'required',
-                  label: 'Required',
-                  render: (row) => (isFieldRequired(rules, row.fieldName) ? 'Yes' : 'No'),
-                },
-                {
-                  key: 'ruleType',
-                  label: 'Rule',
-                  render: (row) => formatRuleTypeLabel(row),
-                },
-                {
-                  key: 'settings',
-                  label: 'Settings',
-                  render: (row) => (
-                    <span className="text-sm text-muted">{formatRuleConfig(row)}</span>
-                  ),
-                },
-                {
-                  key: 'actions',
-                  label: '',
-                  render: (row) => (
-                    <div className="flex justify-end gap-2">
-                      <Button variant="secondary" onClick={() => loadRuleForEdit(row)}>
-                        Update
-                      </Button>
-                      <Button variant="danger" onClick={() => removeRule(row)}>
-                        Delete
-                      </Button>
-                    </div>
-                  ),
-                },
-              ]}
-              rows={rules}
-              emptyMessage="No rules for this template yet."
-            />
-          )}
-
           <div ref={formRef}>
-          <Card className="mt-5">
+          <Card className="mb-5">
             <h3 className="mb-3 text-lg font-normal">
               {editingRule ? 'Update field rules' : 'Add field rules'}
             </h3>
@@ -424,7 +430,7 @@ export default function ValidationRulesPage() {
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button type="submit" disabled={saveDisabled}>
                   {busy ? 'Saving…' : editingRule ? 'Update rule' : 'Save rule'}
                 </Button>
@@ -433,18 +439,73 @@ export default function ValidationRulesPage() {
                     Cancel
                   </Button>
                 )}
+                {saveDisabledReason && (
+                  <span className="text-xs text-muted">{saveDisabledReason}</span>
+                )}
               </div>
             </form>
           </Card>
           </div>
 
-          <Card className="mt-5">
+          <h2 className="mb-3 text-xl font-normal">Rules</h2>
+          {!rules ? (
+            <Spinner />
+          ) : (
+            <DataTable
+              maxHeight="45vh"
+              columns={[
+                { key: 'fieldName', label: 'Field' },
+                {
+                  key: 'required',
+                  label: 'Required',
+                  render: (row) => (isFieldRequired(rules, row.fieldName) ? 'Yes' : 'No'),
+                },
+                {
+                  key: 'ruleType',
+                  label: 'Rule',
+                  render: (row) => formatRuleTypeLabel(row),
+                },
+                {
+                  key: 'settings',
+                  label: 'Settings',
+                  render: (row) => (
+                    <span className="text-sm text-muted">{formatRuleConfig(row)}</span>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  label: '',
+                  render: (row) => (
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => loadRuleForEdit(row)}>
+                        Update
+                      </Button>
+                      <Button size="sm" variant="danger" onClick={() => removeRule(row)}>
+                        Delete
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+              rows={displayRules}
+              emptyMessage="No rules for this template yet."
+            />
+          )}
+
+          <div className="mt-5">
+            <Button variant="secondary" onClick={() => setShowTest((s) => !s)}>
+              {showTest ? 'Hide test row' : 'Test a sample row…'}
+            </Button>
+          </div>
+
+          {showTest && (
+          <Card className="mt-3">
             <h3 className="mb-1 text-lg font-normal">Test a row</h3>
             <p className="mb-3 text-sm text-muted">
               Enter sample values and run them through this template's rules.
             </p>
             <form onSubmit={runTest}>
-              <div className="mb-3 grid max-h-72 grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+              <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {templateFields.map((f) => (
                   <Field key={f.templateFieldsId} label={f.fieldName}>
                     <input
@@ -483,13 +544,13 @@ export default function ValidationRulesPage() {
               </div>
             )}
           </Card>
+          )}
 
-          <p className="mt-5 text-sm text-muted">
-            Done with rules?{' '}
-            <Link to="/ingestion" className="text-accent hover:underline">
+          <div className="mt-5 flex justify-end">
+            <Button onClick={() => navigate('/ingestion')}>
               Next: upload &amp; process a file →
-            </Link>
-          </p>
+            </Button>
+          </div>
         </>
       )}
     </div>

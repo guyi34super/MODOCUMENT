@@ -65,8 +65,13 @@ describe('RegexBuilder component', () => {
     expect(onChange).toHaveBeenLastCalledWith('^ID\\d{1}$');
   });
 
-  it('the tester reports matches and non-matches live', async () => {
+  it('the tester is collapsed by default and reports matches once opened', async () => {
     render(<RegexBuilder pattern="^\d+$" onChange={() => {}} />);
+
+    expect(
+      screen.queryByPlaceholderText('Type a value this field could contain…')
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Test this pattern' }));
 
     const sample = screen.getByPlaceholderText('Type a value this field could contain…');
     await userEvent.type(sample, '123');

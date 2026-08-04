@@ -31,6 +31,14 @@ public class ChatEditPrompt implements PromptStrategy {
         prompt.append("Keep every value a string; use \"\" for empty cells. ")
                 .append("Do not change data the instruction does not ask you to change.")
                 .append(System.lineSeparator());
+        prompt.append("Return every cell the instruction does not target byte-for-byte identical to the ")
+                .append("input. Change ONLY what the instruction explicitly asks for; do not reformat, ")
+                .append("re-order, clean, or \"improve\" any other cell.")
+                .append(System.lineSeparator());
+        prompt.append("Output strict JSON only: use double quotes for every key and value ")
+                .append("(escape any inner double quote as \\\"), quote every value ")
+                .append("(write \"0.5\", not .5), no comments, and no \"...\" or other placeholders.")
+                .append(System.lineSeparator());
         prompt.append("Instruction: ").append(chatInput.getInstruction()).append(System.lineSeparator());
         prompt.append("Current table (JSON):").append(System.lineSeparator());
         prompt.append(chatInput.getTableJson());

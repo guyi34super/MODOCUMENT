@@ -44,15 +44,18 @@ public class CreateTemplateWithFieldsUseCase {
     private final TemplateFieldsRepository templateFieldsRepository;
     private final TemplateDataTypeRepository templateDataTypeRepository;
     private final ValidationRuleRepository validationRuleRepository;
+    private final com.modocument.application.port.CurrentUserProvider currentUser;
 
     public CreateTemplateWithFieldsUseCase(TemplateRepository templateRepository,
                                            TemplateFieldsRepository templateFieldsRepository,
                                            TemplateDataTypeRepository templateDataTypeRepository,
-                                           ValidationRuleRepository validationRuleRepository) {
+                                           ValidationRuleRepository validationRuleRepository,
+                                           com.modocument.application.port.CurrentUserProvider currentUser) {
         this.templateRepository = templateRepository;
         this.templateFieldsRepository = templateFieldsRepository;
         this.templateDataTypeRepository = templateDataTypeRepository;
         this.validationRuleRepository = validationRuleRepository;
+        this.currentUser = currentUser;
     }
 
     @Transactional
@@ -64,6 +67,7 @@ public class CreateTemplateWithFieldsUseCase {
         }
 
         Template template = new Template(0, request.getName().trim(), request.getDescription());
+        template.setOwnerUserId(currentUser.requireUserId());
         templateRepository.add(template);
 
         List<CreateTemplateResponse.CreatedField> createdFields = new ArrayList<>();

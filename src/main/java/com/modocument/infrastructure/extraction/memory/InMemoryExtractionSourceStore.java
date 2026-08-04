@@ -36,8 +36,22 @@ public class InMemoryExtractionSourceStore implements ExtractionSourceStore {
     }
 
     @Override
+    public Optional<ExtractionSource> getByIdAndOwner(String id, int ownerUserId) {
+        return getById(id).filter(s -> s.getOwnerUserId() == ownerUserId);
+    }
+
+    @Override
     public List<ExtractionSource> list() {
         return sources.values().stream()
+                .sorted(Comparator.comparing(ExtractionSource::getCreatedDate,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+    }
+
+    @Override
+    public List<ExtractionSource> listByOwner(int ownerUserId) {
+        return sources.values().stream()
+                .filter(s -> s.getOwnerUserId() == ownerUserId)
                 .sorted(Comparator.comparing(ExtractionSource::getCreatedDate,
                         Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();

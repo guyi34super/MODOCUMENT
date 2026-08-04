@@ -25,8 +25,8 @@ public class DoclingClient {
 
     /** Formats docling-serve accepts; anything else goes to the local readers. */
     private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(
-            ".pdf", ".docx", ".doc", ".pptx", ".xlsx", ".xls", ".csv", ".html", ".md",
-            ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp");
+            ".pdf", ".docx", ".doc", ".pptx", ".xlsx", ".xls", ".xlsm", ".csv", ".txt", ".text",
+            ".html", ".md", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp");
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -48,6 +48,10 @@ public class DoclingClient {
     public boolean supports(String extension) {
         return extension != null
                 && SUPPORTED_EXTENSIONS.contains(extension.toLowerCase(Locale.ROOT));
+    }
+
+    public Set<String> supportedExtensions() {
+        return SUPPORTED_EXTENSIONS;
     }
 
     /**

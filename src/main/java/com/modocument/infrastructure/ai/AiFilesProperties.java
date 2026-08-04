@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AiFilesProperties {
 
     private String apiKey = "";
-    private String modelId = "gpt-4o";
+    private String modelId = "moonshotai/kimi-k3";
     /**
      * Host root, without the /v1 suffix the pre-Spring-AI client used —
      * Spring AI appends the /v1/chat/completions path itself.

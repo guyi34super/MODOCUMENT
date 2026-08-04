@@ -1,19 +1,31 @@
 /** Small shared UI primitives carrying the docs-site look. */
 
-export function Button({ variant = 'primary', className = '', ...props }) {
+export function Button({ variant = 'primary', size = 'md', className = '', ...props }) {
   const base =
-    'inline-flex items-center gap-1.5 rounded px-4 py-1.5 text-sm font-medium transition-colors ' +
+    'inline-flex items-center gap-1.5 rounded font-medium transition-colors ' +
     'disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer';
+  const sizes = {
+    md: 'px-4 py-1.5 text-sm',
+    sm: 'px-2.5 py-1 text-xs',
+  };
   const variants = {
     primary: 'bg-accent text-white hover:bg-accent-hover',
     secondary: 'border border-line text-accent bg-white hover:bg-pill/50',
     danger: 'border border-line text-danger-ink bg-white hover:bg-danger-bg',
   };
-  return <button className={`${base} ${variants[variant]} ${className}`} {...props} />;
+  return <button className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} {...props} />;
 }
 
-export function Card({ className = '', children }) {
-  return <div className={`rounded-lg border border-line bg-white p-5 ${className}`}>{children}</div>;
+export function Card({ className = '', padding = 'normal', children }) {
+  return (
+    <div
+      className={`rounded-lg border border-line bg-white ${
+        padding === 'compact' ? 'p-3' : 'p-5'
+      } ${className}`}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function Callout({ variant = 'success', title, children }) {
@@ -56,10 +68,14 @@ export function Badge({ status }) {
   );
 }
 
-export function Spinner({ label = 'Loading…' }) {
+/**
+ * `inline` drops the block padding and the default label, for the spinner that
+ * sits inside a toast or a button rather than standing in for a whole panel.
+ */
+export function Spinner({ label = 'Loading…', inline = false }) {
   return (
-    <div className="flex items-center gap-2 py-8 text-sm text-muted">
-      <span className="size-4 animate-spin rounded-full border-2 border-line border-t-accent" />
+    <div className={`flex items-center gap-2 text-sm text-muted ${inline ? '' : 'py-8'}`}>
+      <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent" />
       {label}
     </div>
   );

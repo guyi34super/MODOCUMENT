@@ -17,8 +17,9 @@ import static org.mockito.Mockito.when;
 
 class ImportHistoryControllerTest {
 
+    private static final int USER = 1;
     private final ImportHistoryRepository repo = mock(ImportHistoryRepository.class);
-    private final ImportHistoryController controller = new ImportHistoryController(repo);
+    private final ImportHistoryController controller = new ImportHistoryController(repo, () -> USER);
 
     private static ImportHistory importHistory(int id, String fileName) {
         ImportHistory history = new ImportHistory();
@@ -32,7 +33,7 @@ class ImportHistoryControllerTest {
 
     @Test
     void getAllReturnsOkWithListOfImportHistory() {
-        when(repo.list()).thenReturn(List.of(
+        when(repo.listByOwner(USER)).thenReturn(List.of(
                 importHistory(1, "file1.csv"),
                 importHistory(2, "file2.csv")));
 
@@ -44,7 +45,7 @@ class ImportHistoryControllerTest {
 
     @Test
     void getReturnsNotFoundWhenIdDoesNotExist() {
-        when(repo.getById(1)).thenReturn(Optional.empty());
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.empty());
 
         ResponseEntity<?> result = controller.getImportHistoryById(1);
 
@@ -53,7 +54,7 @@ class ImportHistoryControllerTest {
 
     @Test
     void getReturnsOkWithImportHistory() {
-        when(repo.getById(1)).thenReturn(Optional.of(importHistory(1, "file1.csv")));
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.of(importHistory(1, "file1.csv")));
 
         ResponseEntity<?> result = controller.getImportHistoryById(1);
 
@@ -78,7 +79,7 @@ class ImportHistoryControllerTest {
 
     @Test
     void updateReturnsNotFoundWhenImportHistoryDoesNotExist() {
-        when(repo.getById(1)).thenReturn(Optional.empty());
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.empty());
 
         ResponseEntity<?> result = controller.update(1, importHistory(1, "test.csv"));
 
@@ -88,7 +89,7 @@ class ImportHistoryControllerTest {
     @Test
     void updateAppliesChangesWhenUpdateIsSuccessful() {
         ImportHistory existing = importHistory(1, "old.csv");
-        when(repo.getById(1)).thenReturn(Optional.of(existing));
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.of(existing));
         when(repo.update(any(ImportHistory.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ResponseEntity<?> result = controller.update(1, importHistory(1, "new.csv"));
@@ -99,7 +100,7 @@ class ImportHistoryControllerTest {
 
     @Test
     void deleteReturnsNoContent() {
-        when(repo.getById(1)).thenReturn(Optional.of(importHistory(1, "file1.csv")));
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.of(importHistory(1, "file1.csv")));
 
         ResponseEntity<?> result = controller.delete(1);
 
@@ -108,7 +109,7 @@ class ImportHistoryControllerTest {
 
     @Test
     void deleteReturnsNotFoundWhenImportHistoryDoesNotExist() {
-        when(repo.getById(1)).thenReturn(Optional.empty());
+        when(repo.getByIdAndOwner(1, USER)).thenReturn(Optional.empty());
 
         ResponseEntity<?> result = controller.delete(1);
 

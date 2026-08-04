@@ -1,10 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, inputClass } from './ui';
 
-const QUICK_PROMPTS = [
-  'Fill empty required fields',
-  'Trim whitespace in name columns',
-];
+const BULK_PROMPT = 'Fill empty required fields';
+
+function buildQuickPrompts(chatContext) {
+  const prompts = [];
+  if (chatContext?.row != null && chatContext?.column) {
+    prompts.push('Fix this cell');
+  }
+  if (chatContext?.row != null) {
+    prompts.push('Fix this row');
+  }
+  if (chatContext?.column) {
+    prompts.push(`Fix ${chatContext.column} column`);
+  }
+  prompts.push(BULK_PROMPT);
+  return prompts;
+}
 
 export default function ValidationChatDrawer({
   open,
@@ -12,10 +24,14 @@ export default function ValidationChatDrawer({
   messages,
   onSend,
   busy,
+  disabledNote = '',
   showQuickPrompts,
+  chatContext = null,
 }) {
   const [draft, setDraft] = useState('');
   const listRef = useRef(null);
+  const blocked = busy || Boolean(disabledNote);
+  const quickPrompts = showQuickPrompts ? buildQuickPrompts(chatContext) : [];
 
   useEffect(() => {
     if (open && listRef.current) {
@@ -25,7 +41,7 @@ export default function ValidationChatDrawer({
 
   const submit = (text) => {
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed || blocked) return;
     onSend(trimmed);
     setDraft('');
   };
@@ -41,6 +57,15 @@ export default function ValidationChatDrawer({
       submit(draft);
     }
   };
+
+  const contextLabel =
+    chatContext?.row != null && chatContext?.column
+      ? `Row ${chatContext.row} · ${chatContext.column}`
+      : chatContext?.row != null
+        ? `Row ${chatContext.row}`
+        : chatContext?.column
+          ? chatContext.column
+          : null;
 
   return (
     <>
@@ -58,7 +83,7 @@ export default function ValidationChatDrawer({
 
       {open && (
         <div
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[70vh] flex-col rounded-t-xl border border-line bg-white shadow-2xl sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-[360px] sm:max-h-[50vh] sm:rounded-xl"
+          className="fixed inset-x-0 bottom-0 z-40 flex max-h-[70vh] flex-col rounded-t-xl border border-line bg-white shadow-2xl sm:inset-x-auto sm:right-6 sm:bottom-6 sm:w-[360px] sm:max-h-[45vh] sm:rounded-xl"
           role="dialog"
           aria-label="AI assistant"
         >
@@ -103,13 +128,19 @@ export default function ValidationChatDrawer({
             )}
           </div>
 
-          {showQuickPrompts && (
+          {contextLabel && (
+            <p className="border-t border-line px-4 py-2 text-xs text-muted">
+              Context: {contextLabel}
+            </p>
+          )}
+
+          {showQuickPrompts && quickPrompts.length > 0 && (
             <div className="flex flex-wrap gap-1 border-t border-line px-4 py-2">
-              {QUICK_PROMPTS.map((prompt) => (
+              {quickPrompts.map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
-                  disabled={busy}
+                  disabled={blocked}
                   onClick={() => submit(prompt)}
                   className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-ink hover:bg-pill disabled:opacity-50"
                 >
@@ -119,18 +150,24 @@ export default function ValidationChatDrawer({
             </div>
           )}
 
+          {disabledNote && (
+            <p className="border-t border-line bg-amber-100/60 px-4 py-2 text-xs text-amber-800">
+              {disabledNote}
+            </p>
+          )}
+
           <form onSubmit={handleSubmit} className="border-t border-line p-3">
             <div className="flex gap-2">
               <textarea
                 rows={2}
                 className={`${inputClass} min-h-[2.5rem] flex-1 resize-none`}
-                placeholder='e.g. "fill empty FirstName fields"'
+                placeholder='e.g. "fix this cell" or "trim Email column"'
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={busy}
+                disabled={blocked}
               />
-              <Button type="submit" disabled={busy || !draft.trim()}>
+              <Button type="submit" disabled={blocked || !draft.trim()}>
                 Send
               </Button>
             </div>

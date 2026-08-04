@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '../context/ToastContext';
@@ -57,6 +57,25 @@ describe('ValidationRulesPage rule config UI', () => {
     getRulesByTemplate.mockResolvedValue([]);
     upsertRule.mockClear();
     deleteRule.mockClear();
+  });
+
+  it('renders the rule form above the rules table', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Name', ruleType: 'REGEX', configJson: '{"Pattern":"^\\\\d+$"}' },
+    ]);
+    renderPage();
+    await screen.findByText('^\\d+$');
+    const heading = screen.getByRole('heading', { name: 'Add field rules' });
+    const table = screen.getByRole('table');
+    expect(heading.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('collapses Test a row behind a toggle', async () => {
+    renderPage();
+    await screen.findByText('No rules for this template yet.');
+    expect(screen.queryByRole('button', { name: 'Validate row' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Test a sample row…' }));
+    expect(screen.getByRole('button', { name: 'Validate row' })).toBeInTheDocument();
   });
 
   it('shows Required/Optional and format rule type defaulting to None', async () => {
@@ -157,6 +176,71 @@ describe('ValidationRulesPage rule config UI', () => {
   });
 });
 
+describe('ValidationRulesPage one row per field', () => {
+  beforeEach(() => {
+    getTemplates.mockResolvedValue([{ templateId: 1, name: 'People' }]);
+    getAllFields.mockResolvedValue([
+      { templateFieldsId: 20, templateId: 1, fieldName: 'Age' },
+    ]);
+    upsertRule.mockClear();
+    deleteRule.mockClear();
+  });
+
+  const ageRows = () =>
+    screen.getAllByRole('row').filter((r) => within(r).queryByText('Age'));
+
+  it('shows a Required field with a format rule on one row, not two', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Age', ruleType: 'REQUIRED', configJson: '{}' },
+      { fieldName: 'Age', ruleType: 'RANGE', configJson: '{"Min":0,"Max":120}' },
+    ]);
+    renderPage();
+    // 'Between 0 and 120' appears only in the table, not the type dropdown.
+    await screen.findByText('Between 0 and 120');
+
+    const rows = ageRows();
+    expect(rows).toHaveLength(1);
+    // The redundant standalone REQUIRED row is gone; the Required column carries it.
+    expect(screen.queryByText('Required — must not be empty')).not.toBeInTheDocument();
+    expect(within(rows[0]).getByText('Yes')).toBeInTheDocument();
+  });
+
+  it('still shows a field that is only Required', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Age', ruleType: 'REQUIRED', configJson: '{}' },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Required — must not be empty')).toBeInTheDocument();
+    expect(ageRows()).toHaveLength(1);
+  });
+
+  it('updating an optional field to Required keeps it on one row', async () => {
+    // The exact scenario the user hit: before the update the field is optional
+    // with one format rule; the update adds Required, and the refetched rules
+    // now include a REQUIRED entry — the field must still show once.
+    getRulesByTemplate
+      .mockResolvedValueOnce([
+        { fieldName: 'Age', ruleType: 'RANGE', configJson: '{"Min":0,"Max":120}' },
+      ])
+      .mockResolvedValue([
+        { fieldName: 'Age', ruleType: 'REQUIRED', configJson: '{}' },
+        { fieldName: 'Age', ruleType: 'RANGE', configJson: '{"Min":0,"Max":120}' },
+      ]);
+    renderPage();
+    await screen.findByText('Between 0 and 120');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+    await userEvent.selectOptions(screen.getByLabelText('Required or Optional'), 'Required');
+    await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+
+    // Wait for the refetch that now carries the REQUIRED rule.
+    await screen.findByText('Yes');
+    expect(ageRows()).toHaveLength(1);
+    expect(screen.queryByText('Required — must not be empty')).not.toBeInTheDocument();
+  });
+});
+
 describe('ValidationRulesPage update without duplicates', () => {
   beforeEach(() => {
     getTemplates.mockResolvedValue([{ templateId: 1, name: 'People' }]);
@@ -188,7 +272,7 @@ describe('ValidationRulesPage update without duplicates', () => {
     expect(deleteRule).not.toHaveBeenCalled();
   });
 
-  it('Update REGEX with unchanged Required does not upsert REQUIRED', async () => {
+  it('Update REGEX on a required field re-asserts both rules', async () => {
     getRulesByTemplate.mockResolvedValue([
       { fieldName: 'Name', ruleType: 'REQUIRED', configJson: '{}' },
       { fieldName: 'Name', ruleType: 'REGEX', configJson: '{"Pattern":"^\\\\d+$"}' },
@@ -198,9 +282,11 @@ describe('ValidationRulesPage update without duplicates', () => {
     expect(screen.getByLabelText('Required or Optional')).toHaveValue('required');
     await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
 
-    expect(upsertRule).toHaveBeenCalledTimes(1);
+    // Both writes are idempotent upserts: what the form shows is what gets
+    // persisted, so a save can never silently do nothing.
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Name', 'REQUIRED', {});
     expect(upsertRule).toHaveBeenCalledWith(1, 'Name', 'REGEX', { Pattern: '^\\d+$' });
-    expect(upsertRule).not.toHaveBeenCalledWith(1, 'Name', 'REQUIRED', expect.anything());
+    expect(deleteRule).not.toHaveBeenCalled();
   });
 
   it('Update REGEX with field rename deletes old key then upserts new field', async () => {
@@ -233,7 +319,7 @@ describe('ValidationRulesPage update without duplicates', () => {
     expect(upsertRule).not.toHaveBeenCalled();
   });
 
-  it('Update REQUIRED row with format NONE does not upsert format rules', async () => {
+  it('Update REQUIRED row with format NONE writes only the REQUIRED rule', async () => {
     getRulesByTemplate.mockResolvedValue([
       { fieldName: 'Name', ruleType: 'REQUIRED', configJson: '{}' },
     ]);
@@ -244,8 +330,34 @@ describe('ValidationRulesPage update without duplicates', () => {
     expect(screen.getByLabelText('Format rule type')).toHaveValue('NONE');
     await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
 
-    expect(upsertRule).not.toHaveBeenCalled();
+    expect(upsertRule).toHaveBeenCalledTimes(1);
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Name', 'REQUIRED', {});
     expect(deleteRule).not.toHaveBeenCalled();
+  });
+
+  it('Renaming the field on a REQUIRED row moves the rule to the new field', async () => {
+    getRulesByTemplate.mockResolvedValue([
+      { fieldName: 'Name', ruleType: 'REQUIRED', configJson: '{}' },
+    ]);
+
+    renderPage();
+    await screen.findByText('Required — must not be empty');
+    await userEvent.click(screen.getByRole('button', { name: 'Update' }));
+    await userEvent.selectOptions(screen.getByLabelText('Field'), 'Email');
+    await userEvent.click(screen.getByRole('button', { name: 'Update rule' }));
+
+    expect(deleteRule).toHaveBeenCalledWith(1, 'Name', 'REQUIRED');
+    expect(upsertRule).toHaveBeenCalledWith(1, 'Email', 'REQUIRED', {});
+  });
+
+  it('Optional with no format rule cannot be saved as a no-op', async () => {
+    getRulesByTemplate.mockResolvedValue([]);
+
+    renderPage();
+    await userEvent.selectOptions(await screen.findByLabelText('Field'), 'Name');
+
+    expect(screen.getByRole('button', { name: 'Save rule' })).toBeDisabled();
+    expect(screen.getByText(/nothing to save yet/)).toBeInTheDocument();
   });
 });
 

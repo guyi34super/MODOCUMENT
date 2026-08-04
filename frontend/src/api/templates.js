@@ -20,7 +20,13 @@ export async function deleteTemplate(id) {
   invalidateTemplates();
 }
 
-export const getAllFields = () => api.get('/TemplateFields/GetAll');
+/** Without a templateId the server returns every template's fields; pass one. */
+export const getAllFields = (templateId) =>
+  api.get(
+    templateId == null
+      ? '/TemplateFields/GetAll'
+      : `/TemplateFields/GetAll?templateId=${encodeURIComponent(templateId)}`
+  );
 
 export const createField = (field) => api.post('/TemplateFields/Create', field);
 

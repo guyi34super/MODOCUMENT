@@ -2,6 +2,7 @@ package com.modocument.application.usecase;
 
 import com.modocument.application.port.Connector;
 import com.modocument.application.port.ConnectorStateStore;
+import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ExtractionSourceStore;
 import com.modocument.application.port.ExtractionTaskQueue;
@@ -35,6 +36,7 @@ public class ExtractionJobUseCase {
     private final ConnectorStateStore states;
     private final JobSecrets secrets;
     private final List<Connector> connectors;
+    private final CurrentUserProvider currentUser;
 
     public ExtractionJobUseCase(ExtractionSourceStore sources,
                                 ExtractionJobStore jobs,
@@ -42,7 +44,8 @@ public class ExtractionJobUseCase {
                                 TaskEventBus eventBus,
                                 ConnectorStateStore states,
                                 JobSecrets secrets,
-                                List<Connector> connectors) {
+                                List<Connector> connectors,
+                                CurrentUserProvider currentUser) {
         this.sources = sources;
         this.jobs = jobs;
         this.queue = queue;
@@ -50,6 +53,7 @@ public class ExtractionJobUseCase {
         this.states = states;
         this.secrets = secrets;
         this.connectors = connectors;
+        this.currentUser = currentUser;
     }
 
     /**
@@ -58,12 +62,15 @@ public class ExtractionJobUseCase {
      */
     public ExtractionJob create(String sourceId, Integer templateId, String dataSpec,
                                 boolean incremental, Map<String, String> credentials) {
+        // requireSource is owner-scoped, so a caller cannot start a job against
+        // another user's source.
         ExtractionSource source = requireSource(sourceId);
         if (!source.isTermsAcknowledged()) {
             throw new IllegalStateException(
                     "Source " + sourceId + " has not acknowledged the source's terms of use.");
         }
         ExtractionJob job = new ExtractionJob();
+        job.setOwnerUserId(currentUser.requireUserId());
         job.setSourceId(sourceId);
         job.setTemplateId(templateId);
         job.setDataSpec(dataSpec != null ? dataSpec : source.getDataSpec());
@@ -132,12 +139,15 @@ public class ExtractionJobUseCase {
     }
 
     public ExtractionJob get(String jobId) {
-        return jobs.getById(jobId).orElseThrow(
+        // Owner-scoped: every lifecycle method (start/pause/resume/cancel/
+        // taskCounts) routes through here, and the controller gates records/
+        // audit/bridge/infer/summary on it too, so a cross-user job is a 404.
+        return jobs.getByIdAndOwner(jobId, currentUser.requireUserId()).orElseThrow(
                 () -> new NoSuchElementException("Extraction job " + jobId + " not found."));
     }
 
     public List<ExtractionJob> list() {
-        return jobs.list();
+        return jobs.listByOwner(currentUser.requireUserId());
     }
 
     public Map<ExtractionTaskStatus, Long> taskCounts(String jobId) {
@@ -146,7 +156,7 @@ public class ExtractionJobUseCase {
     }
 
     private ExtractionSource requireSource(String sourceId) {
-        return sources.getById(sourceId).orElseThrow(
+        return sources.getByIdAndOwner(sourceId, currentUser.requireUserId()).orElseThrow(
                 () -> new NoSuchElementException("Extraction source " + sourceId + " not found."));
     }
 

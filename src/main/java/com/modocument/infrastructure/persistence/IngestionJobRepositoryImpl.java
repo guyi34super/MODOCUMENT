@@ -2,6 +2,8 @@ package com.modocument.infrastructure.persistence;
 
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.domain.entity.IngestionJob;
+import com.modocument.domain.model.JobStep;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -23,8 +25,18 @@ public class IngestionJobRepositoryImpl implements IngestionJobRepository {
     }
 
     @Override
+    public Optional<IngestionJob> getByIdAndOwner(int id, int ownerUserId) {
+        return jpa.findByIngestionJobIdAndOwnerUserId(id, ownerUserId);
+    }
+
+    @Override
     public List<IngestionJob> list() {
         return jpa.findAll();
+    }
+
+    @Override
+    public List<IngestionJob> listByOwner(int ownerUserId) {
+        return jpa.findByOwnerUserId(ownerUserId);
     }
 
     @Override
@@ -34,5 +46,16 @@ public class IngestionJobRepositoryImpl implements IngestionJobRepository {
         }
         job.setUpdatedDate(LocalDateTime.now());
         return jpa.save(job);
+    }
+
+    @Override
+    public int countByTemplateId(int templateId) {
+        return (int) jpa.countByTemplateId(templateId);
+    }
+
+    @Override
+    public List<String> listRecentMappingJson(int templateId, int ownerUserId, int limit) {
+        return jpa.findRecentMappingJson(templateId, ownerUserId,
+                List.of(JobStep.VALIDATED, JobStep.EXPORTED), PageRequest.of(0, limit));
     }
 }

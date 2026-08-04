@@ -2,9 +2,12 @@ package com.modocument.infrastructure.export;
 
 import com.modocument.application.dto.DatabaseExportRequest;
 import com.modocument.application.dto.TableData;
+import com.modocument.infrastructure.net.OutboundHostPolicy;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -22,28 +25,28 @@ import java.util.stream.Collectors;
 @Service
 public class DatabaseExportService {
 
+    private final OutboundHostPolicy egress;
+
+    public DatabaseExportService(OutboundHostPolicy egress) {
+        this.egress = egress;
+    }
+
     /** Exports all rows and returns the inserted row count. */
     public int export(TableData table, DatabaseExportRequest request) {
         if (table == null || table.isEmpty()) {
             throw new IllegalStateException("There is no data to export.");
         }
+        // SSRF guard: refuse to open a JDBC connection to an internal host.
+        egress.checkJdbcUrl(request.getJdbcUrl());
         String tableName = requireValidIdentifier(request.getTableName(), "tableName");
         List<String> columns = table.getColumns();
         for (String column : columns) {
             requireValidIdentifier(column, "column");
         }
 
-        JdbcTemplate jdbc = new JdbcTemplate(dataSourceFor(request));
+        SimpleDriverDataSource dataSource = dataSourceFor(request);
         boolean createIfMissing = request.getCreateTableIfMissing() == null
                 || request.getCreateTableIfMissing();
-
-        if (!tableExists(jdbc, tableName)) {
-            if (!createIfMissing) {
-                throw new IllegalStateException(
-                        "Table '" + tableName + "' does not exist in the target database.");
-            }
-            jdbc.execute(createTableSql(tableName, columns));
-        }
 
         String insertSql = "INSERT INTO " + quote(tableName) + " ("
                 + columns.stream().map(DatabaseExportService::quote).collect(Collectors.joining(", "))
@@ -52,7 +55,22 @@ public class DatabaseExportService {
         List<Object[]> batch = table.getRows().stream()
                 .map(row -> columns.stream().map(c -> (Object) row.getOrDefault(c, "")).toArray())
                 .toList();
-        jdbc.batchUpdate(insertSql, batch);
+
+        // All-or-nothing: a constraint violation halfway through a batch must
+        // not leave the target table holding a partial export that a retry
+        // would then duplicate.
+        DataSourceTransactionManager transactions = new DataSourceTransactionManager(dataSource);
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            if (!tableExists(jdbc, tableName)) {
+                if (!createIfMissing) {
+                    throw new IllegalStateException(
+                            "Table '" + tableName + "' does not exist in the target database.");
+                }
+                jdbc.execute(createTableSql(tableName, columns));
+            }
+            jdbc.batchUpdate(insertSql, batch);
+        });
         return batch.size();
     }
 

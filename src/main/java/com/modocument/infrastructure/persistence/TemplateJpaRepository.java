@@ -4,4 +4,8 @@ import com.modocument.domain.entity.Template;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface TemplateJpaRepository extends JpaRepository<Template, Integer> {
+
+    java.util.Optional<Template> findByTemplateIdAndOwnerUserId(int templateId, int ownerUserId);
+
+    java.util.List<Template> findByOwnerUserId(int ownerUserId);
 }

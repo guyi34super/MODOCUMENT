@@ -1,7 +1,10 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ImportDetailsRepository;
+import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.domain.entity.ImportDetails;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,20 +15,46 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
+/**
+ * ImportDetails are children of an ImportHistory, so access is scoped through
+ * the parent's owner — there is no per-detail owner column.
+ */
 @RestController
 public class ImportDetailsController {
 
     private final ImportDetailsRepository repo;
+    private final ImportHistoryRepository imports;
+    private final CurrentUserProvider currentUser;
 
-    public ImportDetailsController(ImportDetailsRepository repo) {
+    public ImportDetailsController(ImportDetailsRepository repo,
+                                   ImportHistoryRepository imports,
+                                   CurrentUserProvider currentUser) {
         this.repo = repo;
+        this.imports = imports;
+        this.currentUser = currentUser;
+    }
+
+    /** Verifies the caller owns the parent import; NoSuchElement → 404. */
+    private void requireOwnedImport(int importHistoryId) {
+        imports.getByIdAndOwner(importHistoryId, currentUser.requireUserId()).orElseThrow(
+                () -> new NoSuchElementException("Import " + importHistoryId + " not found."));
     }
 
     @GetMapping("/ImportDetails/GetAll")
     public ResponseEntity<?> getAll() {
-        return ResponseEntity.ok(repo.list());
+        // Only details whose parent import the caller owns.
+        Set<Integer> owned = imports.listByOwner(currentUser.requireUserId()).stream()
+                .map(com.modocument.domain.entity.ImportHistory::getImportHistoryId)
+                .collect(Collectors.toSet());
+        return ResponseEntity.ok(repo.list().stream()
+                .filter(d -> owned.contains(d.getImportHistoryId()))
+                .collect(Collectors.toList()));
     }
 
     @GetMapping("/ImportDetails/GetById/{id}")
@@ -34,6 +63,7 @@ public class ImportDetailsController {
         if (itemOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
+        requireOwnedImport(itemOpt.get().getImportHistoryId());
         ImportDetails item = itemOpt.get();
         ImportDetails dto = new ImportDetails();
         dto.setImportDetailsId(item.getImportDetailsId());
@@ -47,6 +77,7 @@ public class ImportDetailsController {
 
     @PostMapping("/ImportDetails/Create")
     public ResponseEntity<?> create(@RequestBody ImportDetails dto) {
+        requireOwnedImport(dto.getImportHistoryId());
         ImportDetails entity = new ImportDetails();
         entity.setImportHistoryId(dto.getImportHistoryId());
         entity.setProcessStepId(dto.getProcessStepId());
@@ -65,6 +96,8 @@ public class ImportDetailsController {
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
+        requireOwnedImport(existingOpt.get().getImportHistoryId());
+        requireOwnedImport(dto.getImportHistoryId());
         ImportDetails existing = existingOpt.get();
         existing.setImportHistoryId(dto.getImportHistoryId());
         existing.setProcessStepId(dto.getProcessStepId());
@@ -92,7 +125,13 @@ public class ImportDetailsController {
         if (existing.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
+        requireOwnedImport(existing.get().getImportHistoryId());
         repo.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @org.springframework.web.bind.annotation.ExceptionHandler(NoSuchElementException.class)
+    public ResponseEntity<?> notFound(NoSuchElementException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
     }
 }

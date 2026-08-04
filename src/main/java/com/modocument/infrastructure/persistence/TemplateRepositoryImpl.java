@@ -22,8 +22,18 @@ public class TemplateRepositoryImpl implements TemplateRepository {
     }
 
     @Override
+    public Optional<Template> getByIdAndOwner(int id, int ownerUserId) {
+        return jpa.findByTemplateIdAndOwnerUserId(id, ownerUserId);
+    }
+
+    @Override
     public List<Template> list() {
         return jpa.findAll();
+    }
+
+    @Override
+    public List<Template> listByOwner(int ownerUserId) {
+        return jpa.findByOwnerUserId(ownerUserId);
     }
 
     @Override
