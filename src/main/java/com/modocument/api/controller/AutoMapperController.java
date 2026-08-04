@@ -1,7 +1,5 @@
 package com.modocument.api.controller;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.AutoMappingPromptInput;
 import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.ImportHistoryRepository;
@@ -20,8 +18,6 @@ import java.util.Optional;
 
 @RestController
 public class AutoMapperController {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** Upper bound on the column list a caller may hand to the prompt. */
     static final int MAX_EXTRACTED_FIELDS_LENGTH = 4000;
@@ -46,8 +42,7 @@ public class AutoMapperController {
 
     @PostMapping("/api/automapper/generate")
     public ResponseEntity<?> autoMap(@RequestParam(value = "extractedFields", required = false) String extractedFields,
-                                     @RequestParam(value = "filename", required = false) String filename)
-            throws JsonProcessingException {
+                                     @RequestParam(value = "filename", required = false) String filename) {
         if (extractedFields == null || extractedFields.isBlank()
                 || filename == null || filename.isBlank()) {
             return ResponseEntity.badRequest()
@@ -68,14 +63,24 @@ public class AutoMapperController {
                     .body(Map.of("error", "No import history for file '" + filename + "'."));
         }
 
-        List<String> fieldNames = templateFieldsRepository
-                .listByTemplateId(importHistory.get().getTemplateId()).stream()
-                .map(tf -> tf.getFieldName())
+        List<com.modocument.domain.entity.TemplateFields> templateFieldEntities =
+                templateFieldsRepository.listByTemplateId(importHistory.get().getTemplateId());
+        List<String> columnNames = java.util.Arrays.stream(extractedFields.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        List<AutoMappingPromptInput.ColumnInfo> columns = columnNames.stream()
+                .map(name -> new AutoMappingPromptInput.ColumnInfo(name, List.of()))
+                .toList();
+        List<AutoMappingPromptInput.FieldInfo> fields = templateFieldEntities.stream()
+                .map(tf -> new AutoMappingPromptInput.FieldInfo(
+                        tf.getFieldName(),
+                        tf.getTemplateDataType() != null ? tf.getTemplateDataType().getDataType() : "Text",
+                        true,
+                        ""))
                 .toList();
 
-        String schemaFields = MAPPER.writeValueAsString(fieldNames);
-
-        AutoMappingPromptInput input = new AutoMappingPromptInput(extractedFields, schemaFields);
+        AutoMappingPromptInput input = new AutoMappingPromptInput(columns, fields, Map.of(), 5);
         PromptStrategy strategy = promptFactory.getPrompt("AutoMapping");
         String prompt = strategy.buildPrompt(input);
 

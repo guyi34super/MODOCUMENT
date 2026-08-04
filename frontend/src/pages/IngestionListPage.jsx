@@ -64,11 +64,15 @@ export default function IngestionListPage() {
     if (!file || !templateId) return;
     setUploading(true);
     try {
-      const job = await toast.promise(createJobFromFile(file, Number(templateId), autoRun), {
-        loading: 'Uploading & processing… this can take a moment for large or scanned files.',
-        success: 'File uploaded',
-      });
-      navigate(`/ingestion/${job.ingestionJobId}?step=mapping`);
+      const job = await toast.promise(
+        () => createJobFromFile(file, Number(templateId), autoRun, 'MAPPED', autoRun),
+        {
+          loading: autoRun ? 'Processing document…' : 'Uploading file…',
+          success: autoRun ? 'Processing complete' : 'File uploaded',
+          error: (err) => err.message,
+        }
+      );
+      navigate(`/ingestion/${job.ingestionJobId}?step=mapping`, { state: { job } });
     } catch {
       // The error toast is already shown.
     } finally {
@@ -146,7 +150,7 @@ export default function IngestionListPage() {
               checked={autoRun}
               onChange={(e) => setAutoRun(e.target.checked)}
             />
-            Start processing right away (pauses for you to review the column mapping)
+            Start processing right away (parse and map automatically)
           </label>
           <Button type="submit" disabled={uploading || !file || !templateId}>
             {uploading ? 'Uploading & processing…' : 'Upload & process'}
@@ -189,7 +193,9 @@ export default function IngestionListPage() {
           rows={jobs}
           maxHeight="65vh"
           emptyMessage="No jobs yet — click 'Upload a document' to get started."
-          onRowClick={(row) => navigate(`/ingestion/${row.ingestionJobId}`)}
+          onRowClick={(row) =>
+            navigate(`/ingestion/${row.ingestionJobId}`, { state: { job: row } })
+          }
         />
       )}
     </div>

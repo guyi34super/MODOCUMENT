@@ -12,4 +12,10 @@ public interface AiFilesService {
      * structured-output support (JSON-schema format instructions + parsing).
      */
     <T> T sendForObject(String prompt, ParameterizedTypeReference<T> type);
+
+    /**
+     * Same as {@link #sendForObject(String, ParameterizedTypeReference)} but
+     * uses {@code modelId} for this call (e.g. a chat-specific local model).
+     */
+    <T> T sendForObject(String prompt, ParameterizedTypeReference<T> type, String modelId);
 }

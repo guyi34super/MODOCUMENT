@@ -15,6 +15,8 @@ public class SpringAiConfig {
 
     @Bean
     public ChatClient chatClient(ChatClient.Builder builder) {
-        return builder.build();
+        return builder
+                .defaultSystem("Always reply in English only. Do not use any other language.")
+                .build();
     }
 }

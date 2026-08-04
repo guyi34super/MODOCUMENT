@@ -69,6 +69,10 @@ public class IngestionJob {
     private String mappingJson;
 
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name = "SuggestedMappingJson")
+    private String suggestedMappingJson;
+
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "MappedRowsJson")
     private String mappedRowsJson;
 
@@ -186,6 +190,14 @@ public class IngestionJob {
 
     public void setMappingJson(String mappingJson) {
         this.mappingJson = mappingJson;
+    }
+
+    public String getSuggestedMappingJson() {
+        return suggestedMappingJson;
+    }
+
+    public void setSuggestedMappingJson(String suggestedMappingJson) {
+        this.suggestedMappingJson = suggestedMappingJson;
     }
 
     public String getMappedRowsJson() {

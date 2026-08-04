@@ -3,6 +3,8 @@ package com.modocument.application.usecase;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.IngestionJobDto;
+import com.modocument.application.dto.ParseContext;
+import com.modocument.application.dto.ParseResult;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
@@ -21,6 +23,7 @@ import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
+import com.modocument.infrastructure.ai.AiErrorMessages;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -133,6 +136,10 @@ public class IngestionJobUseCase {
     public IngestionJob resume(int jobId, JobStep until) {
         IngestionJob job = get(jobId);
         requireActive(job);
+
+        if (job.getStatus() == JobStatus.RUNNING) {
+            return job;
+        }
 
         // Nothing to run: return before touching anything, so a no-op resume
         // cannot erase the recorded failure of an earlier one.
@@ -324,19 +331,24 @@ public class IngestionJobUseCase {
             job.setStatus(JobStatus.COMPLETED);
             return jobs.save(job);
         } catch (Exception e) {
+            String message = toJobErrorMessage(e);
             log.warn("Ingestion job {} failed during {} stage: {}",
-                    job.getIngestionJobId(), target, e.getMessage());
+                    job.getIngestionJobId(), target, message);
             job.setStatus(JobStatus.FAILED);
-            job.setErrorMessage(abbreviate(e.getMessage()));
+            job.setErrorMessage(abbreviate(message));
             return jobs.save(job);
         }
     }
 
     private void doParse(IngestionJob job) {
-        TableData table = parseStep.parse(job.getFileName());
+        ParseResult parsed = parseStep.parse(new ParseContext(
+                job.getFileName(),
+                job.getTemplateId(),
+                job.getOwnerUserId(),
+                templateFields.listByTemplateId(job.getTemplateId())));
+        TableData table = parsed.table();
         if (table != null && table.getColumns() != null && !table.getColumns().isEmpty()
                 && (table.getRows() == null || table.getRows().isEmpty())) {
-            // The file was read fine — it just has nothing under the header.
             throw new IllegalStateException("'" + job.getFileName()
                     + "' has column headers but no data rows.");
         }
@@ -346,22 +358,42 @@ public class IngestionJobUseCase {
                             + "' (empty document, unsupported content, or OCR unavailable).");
         }
         job.setParsedTableJson(toJson(table));
+        job.setSuggestedMappingJson(parsed.suggestedMapping().isEmpty()
+                ? null : toJson(parsed.suggestedMapping()));
         clearDownstream(job, JobStep.PARSED);
         recordImportDetails(job, STEP_TRANSFORMING, job.getParsedTableJson());
     }
 
     private void doMap(IngestionJob job) {
         TableData parsed = fromJson(job.getParsedTableJson(), TableData.class);
+        Map<String, String> suggested = readSuggestedMapping(job);
         Map<String, String> mapping = autoMap.map(new MappingContext(
                 parsed.getColumns(),
                 templateFields.listByTemplateId(job.getTemplateId()),
                 parsed.getRows(),
                 job.getTemplateId(),
-                job.getOwnerUserId()));
+                job.getOwnerUserId(),
+                suggested));
         job.setMappingJson(toJson(mapping));
         job.setMappedRowsJson(toJson(applyMapping(parsed, mapping)));
         clearDownstream(job, JobStep.MAPPED);
         recordImportDetails(job, STEP_MAPPING, job.getMappingJson());
+    }
+
+    private Map<String, String> readSuggestedMapping(IngestionJob job) {
+        if (job.getSuggestedMappingJson() == null || job.getSuggestedMappingJson().isBlank()) {
+            return Map.of();
+        }
+        try {
+            Map<String, String> suggested = fromJson(job.getSuggestedMappingJson(),
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {
+                    });
+            return suggested == null ? Map.of() : suggested;
+        } catch (Exception e) {
+            log.warn("Could not read suggested mapping of job {}: {}",
+                    job.getIngestionJobId(), e.getMessage());
+            return Map.of();
+        }
     }
 
     private void doValidate(IngestionJob job) {
@@ -610,6 +642,14 @@ public class IngestionJobUseCase {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Could not deserialize checkpoint payload.", e);
         }
+    }
+
+    private static String toJobErrorMessage(Exception e) {
+        String friendly = AiErrorMessages.friendlyMessage(e);
+        if (!friendly.equals(e.getMessage())) {
+            return friendly;
+        }
+        return abbreviate(e.getMessage());
     }
 
     private static String abbreviate(String message) {

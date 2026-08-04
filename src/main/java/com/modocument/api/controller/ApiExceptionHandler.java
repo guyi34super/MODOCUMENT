@@ -10,6 +10,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.dao.InvalidDataAccessResourceUsageException;
 import com.modocument.infrastructure.ratelimit.TooManyRequestsException;
+import com.modocument.infrastructure.job.JobWaitTimeoutException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -62,6 +63,11 @@ public class ApiExceptionHandler {
     public ResponseEntity<?> tooManyRequests(TooManyRequestsException e) {
         return error(HttpStatus.TOO_MANY_REQUESTS,
                 message(e, "Too many requests. Please slow down and try again."));
+    }
+
+    @ExceptionHandler(JobWaitTimeoutException.class)
+    public ResponseEntity<?> jobWaitTimeout(JobWaitTimeoutException e) {
+        return error(HttpStatus.REQUEST_TIMEOUT, message(e, "The job did not finish in time."));
     }
 
     /**

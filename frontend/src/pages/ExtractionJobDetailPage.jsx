@@ -1,22 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
 import {
   bridgeToIngestion,
   cancelJob,
-  getJob,
   getRecords,
   pauseJob,
   resumeJob,
   startJob,
+  waitForJob,
 } from '../api/extraction';
-import usePolling from '../hooks/usePolling';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
-
-const ACTIVE_STATUSES = ['PENDING', 'RUNNING'];
 
 const ACTION_MESSAGES = {
   start: { loading: 'Starting job…', success: 'Job started' },
@@ -40,23 +37,24 @@ export default function ExtractionJobDetailPage() {
   const [bridgeTemplateId, setBridgeTemplateId] = useState('');
   const [bridgeResult, setBridgeResult] = useState(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      setJob(await getJob(id));
-    } catch (err) {
-      setError(err.message);
-    }
-  }, [id]);
-
   useEffect(() => {
-    refresh();
+    let active = true;
+    setJob(null);
+    waitForJob(id)
+      .then((loaded) => {
+        if (active) {
+          setJob(loaded);
+          setError('');
+        }
+      })
+      .catch((err) => {
+        if (active) setError(err.message);
+      });
     getTemplates().then(setTemplates).catch(() => {});
-  }, [refresh]);
-
-  // Poll only while the job is actually doing work; the interval disappears
-  // the moment the job reaches a terminal or paused state.
-  const isActive = Boolean(job && ACTIVE_STATUSES.includes(job.status));
-  usePolling(refresh, 3000, isActive);
+    return () => {
+      active = false;
+    };
+  }, [id]);
 
   const runAction = async (name, fn) => {
     setBusyAction(name);
@@ -114,7 +112,7 @@ export default function ExtractionJobDetailPage() {
         actions={
           <>
             <Button
-              onClick={() => runAction('start', () => startJob(id))}
+              onClick={() => runAction('start', () => startJob(id, true))}
               disabled={Boolean(busyAction) || job.status !== 'PENDING'}
             >
               Start
@@ -128,7 +126,7 @@ export default function ExtractionJobDetailPage() {
             </Button>
             <Button
               variant="secondary"
-              onClick={() => runAction('resume', () => resumeJob(id))}
+              onClick={() => runAction('resume', () => resumeJob(id, true))}
               disabled={Boolean(busyAction) || job.status !== 'PAUSED'}
             >
               Resume
@@ -147,7 +145,6 @@ export default function ExtractionJobDetailPage() {
 
       <div className="mb-5 flex items-center gap-3">
         <Badge status={job.status} />
-        {isActive && <span className="text-xs text-muted">auto-refreshing every 3s…</span>}
       </div>
 
       {job.errorSummary && (

@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.dto.ChatEditRequest;
 import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
@@ -11,6 +12,8 @@ import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
 import com.modocument.infrastructure.file.SupportedDocumentTypes;
 import com.modocument.infrastructure.file.UploadStorage;
+import com.modocument.infrastructure.ingestion.IngestionJobRunner;
+import com.modocument.infrastructure.job.JobWaitService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class IngestionJobControllerTest {
@@ -31,8 +35,11 @@ class IngestionJobControllerTest {
     private final ChatEditTableUseCase chatEdit = mock(ChatEditTableUseCase.class);
     private final UploadStorage uploadStorage = mock(UploadStorage.class);
     private final SupportedDocumentTypes supportedTypes = mock(SupportedDocumentTypes.class);
+    private final IngestionJobRunner jobRunner = mock(IngestionJobRunner.class);
+    private final JobWaitService jobWaitService = mock(JobWaitService.class);
     private final IngestionJobController controller =
-            new IngestionJobController(useCase, chatEdit, uploadStorage, supportedTypes);
+            new IngestionJobController(useCase, chatEdit, uploadStorage, supportedTypes, jobRunner,
+                    jobWaitService);
 
     private static IngestionJob validatedJob(WizardStep wizardStep) {
         IngestionJob job = new IngestionJob();
@@ -60,7 +67,7 @@ class IngestionJobControllerTest {
         MockMultipartFile file =
                 new MockMultipartFile("file", "virus.exe", "application/octet-stream", new byte[] {1});
 
-        ResponseEntity<?> result = controller.createFromUpload(file, 1, true, "MAPPED");
+        ResponseEntity<?> result = controller.createFromUpload(file, 1, true, "MAPPED", false);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(result.getBody().toString()).contains("Supported types").contains("csv");
@@ -124,10 +131,60 @@ class IngestionJobControllerTest {
     }
 
     @Test
+    void getWithWaitDelegatesToJobWaitService() {
+        IngestionJob job = validatedJob(WizardStep.MAPPING);
+        job.setCurrentStep(JobStep.MAPPED);
+        IngestionJobDto dto = IngestionJobDto.from(
+                job, List.of(), List.of("MAPPING", "VALIDATION", "EXPORT"));
+        when(jobWaitService.waitForIngestionView(7, JobStep.MAPPED)).thenReturn(dto);
+
+        ResponseEntity<?> result = controller.get(7, true, "MAPPED");
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).isSameAs(dto);
+    }
+
+    @Test
+    void resumeBlocksAndReturnsOk() {
+        IngestionJob job = new IngestionJob();
+        job.setIngestionJobId(7);
+        job.setStatus(JobStatus.PENDING);
+        job.setCurrentStep(JobStep.UPLOADED);
+        IngestionJobDto dto = IngestionJobDto.from(job, List.of(), List.of("MAPPING"));
+        when(useCase.get(7)).thenReturn(job);
+        when(jobWaitService.waitForIngestionView(7, JobStep.VALIDATED)).thenReturn(dto);
+
+        ResponseEntity<?> result = controller.resume(7, "VALIDATED");
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).isSameAs(dto);
+    }
+
+    @Test
     void updateWizardStepRejectsUnknownValue() {
         assertThatThrownBy(() ->
                 controller.updateWizardStep(7, new UpdateWizardStepRequest("teleport")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("teleport");
+    }
+
+    @Test
+    void chatEditPassesOptionalRowAndColumnHints() {
+        IngestionJob job = validatedJob(WizardStep.VALIDATION);
+        IngestionJobDto dto = IngestionJobDto.from(
+                job, List.of(), List.of("MAPPING", "VALIDATION", "EXPORT"));
+        when(chatEdit.handle(7, "Fix it", 2, "Email")).thenReturn(job);
+        when(useCase.view(job)).thenReturn(dto);
+
+        ChatEditRequest request = new ChatEditRequest();
+        request.setInstruction("Fix it");
+        request.setRow(2);
+        request.setColumn("Email");
+
+        ResponseEntity<?> result = controller.chatEdit(7, request);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(result.getBody()).isSameAs(dto);
+        verify(chatEdit).handle(7, "Fix it", 2, "Email");
     }
 }

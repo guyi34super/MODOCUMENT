@@ -23,7 +23,16 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: Object.fromEntries(
-      proxiedPaths.map((path) => [path, { target: backend, changeOrigin: true }])
+      proxiedPaths.map((path) => [
+        path,
+        {
+          target: backend,
+          changeOrigin: true,
+          // Batched LLM extraction for large spreadsheets can exceed 5 minutes.
+          timeout: 900_000,
+          proxyTimeout: 900_000,
+        },
+      ])
     ),
   },
   test: {

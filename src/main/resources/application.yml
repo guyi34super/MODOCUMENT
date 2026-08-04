@@ -43,8 +43,8 @@ spring:
       base-url: ${aifiles.openai.base-url:https://api.openai.com}
       chat:
         options:
-          model: ${aifiles.openai.model-id:gpt-4o}
-          max-tokens: ${aifiles.openai.max-tokens:4096}
+          model: ${aifiles.openai.model-id:moonshotai/kimi-k3}
+          max-tokens: ${aifiles.openai.max-tokens:8192}
 
 modocument:
   security:
@@ -66,13 +66,25 @@ modocument:
     # (<root>/exports). Mount a volume here in containers.
     root: ${MODOCUMENT_STORAGE_ROOT:wwwroot}
   parsing:
+    llm-batch-size: ${PARSING_LLM_BATCH_SIZE:50}
+    llm-single-pass-max-rows: ${PARSING_LLM_SINGLE_PASS_MAX_ROWS:150}
+    llm-batch-concurrency: ${PARSING_LLM_BATCH_CONCURRENCY:8}
+    deterministic-enabled: ${PARSING_DETERMINISTIC_ENABLED:true}
+    combined-extraction-mapping: ${PARSING_COMBINED_EXTRACTION_MAPPING:true}
     excel:
-      # When true, Excel workbooks (.xlsx/.xls/.xlsm) are serialized (formulas
-      # evaluated, merged cells filled) and extracted by the LLM, exactly like
-      # pdf/doc/txt, so every format returns the same TableData JSON. This needs
-      # an OpenAI key (see aifiles.openai); set false to fall back to the
-      # deterministic POI parser for keyless/offline runs.
-      llm-enabled: ${EXCEL_LLM_ENABLED:true}
+      # When false, Excel workbooks use the fast POI parser instead of LLM
+      # serialization — typically seconds instead of minutes for large sheets.
+      llm-enabled: ${EXCEL_LLM_ENABLED:false}
+  job:
+    wait-timeout-seconds: ${MODOCUMENT_JOB_WAIT_TIMEOUT_SECONDS:900}
+    poll-interval-ms: ${MODOCUMENT_JOB_POLL_INTERVAL_MS:500}
+  chat-edit:
+    # Reject a full-table AI edit (no validation errors) when a non-bulk
+    # instruction would change more than this fraction of cells (0.6 = 60%).
+    # Bulk phrasing ("all"/"every") is exempt.
+    full-table-max-change-ratio: ${MODOCUMENT_CHAT_EDIT_MAX_CHANGE_RATIO:0.6}
+    # Model for validation-step chat edits (Ollama: deepseek-r1:8b).
+    model-id: ${MODOCUMENT_CHAT_EDIT_MODEL:deepseek-r1:8b}
 
 management:
   endpoints:
@@ -91,7 +103,7 @@ aifiles:
     # Set via AIFILES_OPENAI_APIKEY env var or an application-local.yml
     # (gitignored). Intentionally not defaulted here so the spring.ai bridge
     # above falls back to its "unset" sentinel when no key is configured.
-    model-id: gpt-4o
+    model-id: moonshotai/kimi-k3
   privacy:
     # PII tokenization for the LLM chat/analysis features (chat table edits,
     # schema inference, extraction summaries, LLM record cleaning, template
@@ -114,6 +126,8 @@ mapping:
   # leave unresolved, and its prompt carries column/field NAMES only — never
   # data values. Set to false for a fully code-only mapping flow.
   llm-fallback-enabled: ${MAPPING_LLMFALLBACK_ENABLED:true}
+  llm-scope: ${MAPPING_LLM_SCOPE:unresolved}
+  llm-sample-size: ${MAPPING_LLM_SAMPLE_SIZE:5}
   # Minimum candidate score (0-1) for a code-tier match to be accepted;
   # anything below stays unmapped for review in the mapping step.
   confidence-threshold: 0.7
@@ -128,7 +142,7 @@ mapping:
 docling:
   # Optional docling-serve endpoint (e.g. http://localhost:5001). When empty,
   # documents are parsed with the built-in readers (POI/CSV/PDFBox + OCR).
-  base-url: ""
+  base-url: ${DOCLING_BASEURL:}
 
 ocr:
   vision:
@@ -136,7 +150,7 @@ ocr:
     # the Tesseract fallback. Active only when an OpenAI key is configured
     # (see aifiles.openai above); without one it disables itself silently.
     enabled: ${OCR_VISION_ENABLED:true}
-    model: ${OCR_VISION_MODEL:gpt-4o}
+    model: ${OCR_VISION_MODEL:moonshotai/kimi-k3}
     # Vision-OCR page budget per PDF; pages beyond it fall back to Tesseract.
     max-pages: ${OCR_VISION_MAXPAGES:20}
     # Rasterization DPI for scanned pages and the longest image edge uploaded;

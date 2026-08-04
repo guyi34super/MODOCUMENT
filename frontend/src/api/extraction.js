@@ -9,10 +9,13 @@ export const deleteSource = (id) => api.del(`/api/extraction/sources/${id}`);
 
 export const listJobs = () => api.get('/api/extraction/jobs');
 export const getJob = (id) => api.get(`/api/extraction/jobs/${id}`);
+export const waitForJob = (id) => api.get(`/api/extraction/jobs/${id}?wait=true`);
 export const createJob = (payload) => api.post('/api/extraction/jobs', payload);
-export const startJob = (id) => api.post(`/api/extraction/jobs/${id}/start`);
+export const startJob = (id, wait = false) =>
+  api.post(`/api/extraction/jobs/${id}/start${wait ? '?wait=true' : ''}`);
 export const pauseJob = (id) => api.post(`/api/extraction/jobs/${id}/pause`);
-export const resumeJob = (id) => api.post(`/api/extraction/jobs/${id}/resume`);
+export const resumeJob = (id, wait = false) =>
+  api.post(`/api/extraction/jobs/${id}/resume${wait ? '?wait=true' : ''}`);
 export const cancelJob = (id) => api.post(`/api/extraction/jobs/${id}/cancel`);
 
 export const getRecords = (id, { kind = 'processed', afterId, limit = 50 } = {}) => {

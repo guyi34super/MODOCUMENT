@@ -32,8 +32,8 @@ import java.util.Set;
  * value-shape scoring through the template's own validation rules, and
  * mappings learned from previous jobs of the same template — combined into a
  * threshold-gated unique assignment. Only the columns the code tiers cannot
- * resolve are (optionally) offered to the LLM, and that prompt carries
- * column/field NAMES only, never data.
+ * resolve are (optionally) offered to the LLM with column samples, field
+ * types, and confirmed mappings for context.
  */
 @Service
 public class AutoMapUseCase {
@@ -109,9 +109,16 @@ public class AutoMapUseCase {
             unresolved = assignScored(context, unresolved, pool, fieldsByName, mapping);
         }
 
-        // Tier 7: the LLM sees only what code could not resolve — names only.
-        if (!unresolved.isEmpty() && !pool.isEmpty() && properties.isLlmFallbackEnabled()) {
-            unresolved = mapWithLlm(unresolved, pool, mapping);
+        // Tier 7: LLM mapping — full scope (all columns) or unresolved fallback.
+        if (properties.isLlmFallbackEnabled() && !context.columns().isEmpty() && !fieldNames.isEmpty()) {
+            if (properties.isLlmScopeAll()) {
+                applyLlmMappingAll(context, fieldsByName, mapping);
+                unresolved = context.columns().stream()
+                        .filter(c -> mapping.get(c) == null)
+                        .toList();
+            } else if (!unresolved.isEmpty() && !pool.isEmpty()) {
+                unresolved = mapWithLlm(context, unresolved, pool, fieldsByName, mapping);
+            }
         }
 
         // Unresolved columns keep explicit null entries (existing contract:
@@ -228,6 +235,10 @@ public class AutoMapUseCase {
     }
 
     private List<String> samplesFor(String column, List<Map<String, String>> rows) {
+        return samplesFor(column, rows, properties.getSampleSize());
+    }
+
+    private List<String> samplesFor(String column, List<Map<String, String>> rows, int limit) {
         List<String> samples = new ArrayList<>();
         if (rows == null) {
             return samples;
@@ -236,7 +247,7 @@ public class AutoMapUseCase {
             String value = row.get(column);
             if (value != null && !value.isBlank()) {
                 samples.add(value);
-                if (samples.size() >= properties.getSampleSize()) {
+                if (samples.size() >= limit) {
                     break;
                 }
             }
@@ -244,43 +255,122 @@ public class AutoMapUseCase {
         return samples;
     }
 
+    private void applyLlmMappingAll(MappingContext context,
+                                  Map<String, TemplateFields> fieldsByName,
+                                  Map<String, String> mapping) {
+        Set<String> allFields = new LinkedHashSet<>(
+                context.fields().stream().map(TemplateFields::getFieldName).toList());
+        Map<String, String> llmMapping = callLlm(
+                context, context.columns(), allFields, fieldsByName, mapping);
+        if (llmMapping == null) {
+            return;
+        }
+        Set<String> usedFields = new LinkedHashSet<>();
+        for (String column : context.columns()) {
+            String target = llmMapping.get(column);
+            if (target != null && allFields.contains(target) && !usedFields.contains(target)) {
+                mapping.put(column, target);
+                usedFields.add(target);
+            } else if (!mapping.containsKey(column)) {
+                mapping.put(column, null);
+            }
+        }
+    }
+
     /**
      * Returns the columns that remain unresolved. A failing LLM never fails
      * the mapping stage — the optional helper degrades to "left unmapped".
      */
-    private List<String> mapWithLlm(List<String> columns, Set<String> pool,
+    private List<String> mapWithLlm(MappingContext context, List<String> columns, Set<String> pool,
+                                    Map<String, TemplateFields> fieldsByName,
                                     Map<String, String> mapping) {
-        List<String> offeredFields = List.copyOf(pool);
-        Map<String, String> llmMapping;
-        try {
-            PromptStrategy strategy = promptStrategies.stream()
-                    .filter(s -> s.getType().equals("AutoMapping"))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("AutoMapping prompt not registered."));
-            String prompt = strategy.buildPrompt(new AutoMappingPromptInput(
-                    String.join(", ", columns), String.join(", ", offeredFields)));
-            llmMapping = aiFilesService.sendForObject(
-                    prompt, new ParameterizedTypeReference<Map<String, String>>() {
-                    });
-        } catch (Exception e) {
-            log.warn("LLM auto-mapping skipped ({}); leaving {} column(s) unmapped",
-                    e.getMessage(), columns.size());
+        Map<String, String> llmMapping = callLlm(context, columns, pool, fieldsByName, mapping);
+        if (llmMapping == null) {
             return columns;
         }
 
-        // Trust only mappings onto offered (still-unassigned) template fields.
+        Set<String> usedFields = new LinkedHashSet<>();
+        mapping.values().stream().filter(v -> v != null).forEach(usedFields::add);
+
         List<String> stillUnresolved = new ArrayList<>();
         for (String column : columns) {
-            String target = llmMapping == null ? null : llmMapping.get(column);
-            if (target != null && pool.contains(target)) {
+            String target = llmMapping.get(column);
+            if (target != null && pool.contains(target) && !usedFields.contains(target)) {
                 mapping.put(column, target);
                 pool.remove(target);
+                usedFields.add(target);
                 log.debug("Auto-map: '{}' -> '{}' via llm tier", column, target);
             } else {
                 stillUnresolved.add(column);
             }
         }
         return stillUnresolved;
+    }
+
+    private Map<String, String> callLlm(MappingContext context, List<String> columns,
+                                        Set<String> offeredFields,
+                                        Map<String, TemplateFields> fieldsByName,
+                                        Map<String, String> mapping) {
+        Map<String, List<ValidationRule>> rulesByField =
+                shapeScorer.rulesByField(context.templateId());
+        int sampleLimit = properties.getLlmSampleSize();
+
+        List<AutoMappingPromptInput.ColumnInfo> columnInfos = columns.stream()
+                .map(column -> new AutoMappingPromptInput.ColumnInfo(
+                        column, samplesFor(column, context.sampleRows(), sampleLimit)))
+                .toList();
+        boolean fullScope = properties.isLlmScopeAll();
+        List<AutoMappingPromptInput.FieldInfo> fieldInfos = context.fields().stream()
+                .map(field -> new AutoMappingPromptInput.FieldInfo(
+                        field.getFieldName(),
+                        dataTypeOf(field),
+                        fullScope || offeredFields.contains(field.getFieldName()),
+                        ruleHint(rulesByField.get(field.getFieldName()))))
+                .toList();
+        Map<String, String> confirmed = fullScope
+                ? Map.copyOf(mapping.entrySet().stream()
+                        .filter(e -> e.getValue() != null)
+                        .collect(java.util.stream.Collectors.toMap(
+                                Map.Entry::getKey, Map.Entry::getValue,
+                                (a, b) -> a, LinkedHashMap::new)))
+                : mapping.entrySet().stream()
+                        .filter(e -> e.getValue() != null && !columns.contains(e.getKey()))
+                        .collect(java.util.stream.Collectors.toMap(
+                                Map.Entry::getKey, Map.Entry::getValue,
+                                (a, b) -> a, LinkedHashMap::new));
+
+        try {
+            PromptStrategy strategy = promptStrategies.stream()
+                    .filter(s -> s.getType().equals("AutoMapping"))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("AutoMapping prompt not registered."));
+            String prompt = strategy.buildPrompt(new AutoMappingPromptInput(
+                    columnInfos, fieldInfos, confirmed, context.suggestedMappings(), sampleLimit));
+            return aiFilesService.sendForObject(
+                    prompt, new ParameterizedTypeReference<Map<String, String>>() {
+                    });
+        } catch (Exception e) {
+            log.warn("LLM auto-mapping skipped ({}); leaving {} column(s) unmapped",
+                    e.getMessage(), columns.size());
+            return null;
+        }
+    }
+
+    private static String ruleHint(List<ValidationRule> rules) {
+        if (rules == null || rules.isEmpty()) {
+            return "";
+        }
+        return rules.stream()
+                .map(r -> r.getRuleType().name().toLowerCase(Locale.ROOT).replace('_', ' '))
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    private static String dataTypeOf(TemplateFields field) {
+        if (field.getTemplateDataType() == null || field.getTemplateDataType().getDataType() == null) {
+            return "Text";
+        }
+        return field.getTemplateDataType().getDataType();
     }
 
     private static String normalize(String value) {

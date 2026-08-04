@@ -27,12 +27,11 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 
 /**
- * Chat-based table editing. When the job has validation errors, only the
- * failing rows (with their error messages) are sent to the LLM as a chunk and
- * the model returns a patch of modified rows that is merged back by row index
- * — a fraction of the tokens of a full-table round trip. Without validation
- * errors it falls back to sending the whole table. Validation and export
- * checkpoints are cleared because the data changed.
+ * Chat-based table editing. When the job has validation errors, only the cell,
+ * row, column, or error-row set implied by the instruction (plus optional UI
+ * hints) is sent to the LLM; the model returns a sparse patch merged back by
+ * row index. Without validation errors it falls back to sending the whole
+ * table. Validation and export checkpoints are cleared because the data changed.
  */
 @Service
 public class ChatEditTableUseCase {
@@ -47,24 +46,30 @@ public class ChatEditTableUseCase {
     private final AiFilesService aiFilesService;
     private final PiiTokenizer tokenizer;
     private final com.modocument.application.port.CurrentUserProvider currentUser;
+    private final ChatEditProperties properties;
 
     public ChatEditTableUseCase(IngestionJobRepository jobs,
                                 List<PromptStrategy> promptStrategies,
                                 AiFilesService aiFilesService,
                                 PiiTokenizer tokenizer,
-                                com.modocument.application.port.CurrentUserProvider currentUser) {
+                                com.modocument.application.port.CurrentUserProvider currentUser,
+                                ChatEditProperties properties) {
         this.jobs = jobs;
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
         this.tokenizer = tokenizer;
         this.currentUser = currentUser;
+        this.properties = properties;
     }
 
     public IngestionJob handle(int jobId, String instruction) {
+        return handle(jobId, instruction, null, null);
+    }
+
+    public IngestionJob handle(int jobId, String instruction, Integer hintRow, String hintColumn) {
         if (instruction == null || instruction.isBlank()) {
             throw new IllegalArgumentException("instruction is required.");
         }
-        // Owner-scoped: chat-editing another user's job is a 404, not an edit.
         IngestionJob job = jobs.getByIdAndOwner(jobId, currentUser.requireUserId()).orElseThrow(
                 () -> new NoSuchElementException("Ingestion job " + jobId + " not found."));
         if (job.getStatus() == JobStatus.CANCELLED) {
@@ -78,18 +83,14 @@ public class ChatEditTableUseCase {
         }
 
         TableData current = IngestionJobUseCase.fromJson(tableJson, TableData.class);
-        // Validation results only describe mappedRows; ignore them when the
-        // edit targets the parsed table.
         List<RowValidationResult> validation =
                 editMapped ? readValidationResults(job.getValidationResultJson()) : List.of();
         List<Integer> errorRows = errorRowIndices(validation, current.getRows().size());
 
-        // Sensitive values travel to the model only as placeholders; the
-        // session holds the mapping and restores originals in the response.
         PiiTokenizer.Session session = tokenizer.newSession();
         TableData modified = errorRows.isEmpty()
                 ? editFullTable(instruction, current, session)
-                : editErrorRows(instruction, current, validation, errorRows, session);
+                : editScopedPatch(instruction, hintRow, hintColumn, current, validation, errorRows, session);
 
         String modifiedJson = IngestionJobUseCase.toJson(modified);
         if (editMapped) {
@@ -99,7 +100,6 @@ public class ChatEditTableUseCase {
             job.setParsedTableJson(modifiedJson);
             job.setCurrentStep(JobStep.PARSED);
         }
-        // Data changed: stale validation/export checkpoints no longer apply.
         job.setValidationResultJson(null);
         job.setExportInfoJson(null);
         IngestionJobUseCase.clampWizardStep(job);
@@ -108,7 +108,6 @@ public class ChatEditTableUseCase {
         return jobs.save(job);
     }
 
-    /** Original behavior: whole table in, whole table out (values tokenized in transit). */
     private TableData editFullTable(String instruction, TableData current, PiiTokenizer.Session session) {
         if (current.getRows() != null && current.getRows().size() > MAX_ROWS) {
             throw new IllegalArgumentException(
@@ -121,106 +120,300 @@ public class ChatEditTableUseCase {
                 .buildPrompt(new ChatEditPromptInput(instruction, tokenizedJson));
         TableData modified = aiFilesService.sendForObject(
                 prompt, new ParameterizedTypeReference<TableData>() {
-                });
+                }, properties.getModelId());
         if (modified == null || modified.isEmpty()) {
             throw new IllegalStateException("The model returned an empty table; nothing was changed.");
         }
-        return applyFullTable(current, modified, session);
+        return applyFullTable(instruction, current, modified, session);
     }
 
-    /**
-     * Rebuilds the table from the model's answer while keeping the schema and
-     * the row count under our control: the persisted columns are the ones we
-     * sent, values are copied only for keys we recognize, and a row count that
-     * does not match means the model lost track of the table (dropped or
-     * invented rows) — reject the whole edit rather than persist it.
-     */
-    private static TableData applyFullTable(TableData current, TableData modified,
-                                            PiiTokenizer.Session session) {
+    private TableData applyFullTable(String instruction, TableData current, TableData modified,
+                                     PiiTokenizer.Session session) {
         List<Map<String, String>> incoming = modified.getRows();
         if (incoming.size() != current.getRows().size()) {
             throw new IllegalStateException("The model returned " + incoming.size()
                     + " rows but the table has " + current.getRows().size()
                     + "; nothing was changed.");
         }
-        // detokenizeRow walks a row's entries, so a JSON null row would NPE.
         List<Map<String, String>> sanitized = incoming.stream()
                 .map(row -> row == null ? Map.<String, String>of() : row)
                 .toList();
         List<Map<String, String>> restored = session.detokenizeRows(sanitized);
 
         List<Map<String, String>> rows = new ArrayList<>(restored.size());
+        long changed = 0;
         for (int i = 0; i < restored.size(); i++) {
             Map<String, String> answer = restored.get(i);
             Map<String, String> row = new LinkedHashMap<>(current.getRows().get(i));
             for (String column : current.getColumns()) {
                 if (answer.containsKey(column)) {
-                    String value = answer.get(column);
-                    row.put(column, value == null ? "" : value);
+                    String value = answer.get(column) == null ? "" : answer.get(column);
+                    String previous = current.getRows().get(i).getOrDefault(column, "");
+                    if (!value.equals(previous)) {
+                        changed++;
+                    }
+                    row.put(column, value);
                 }
             }
             rows.add(row);
         }
+
+        // Guardrail: a targeted instruction that rewrites most of the table is
+        // almost always the model going rogue. Bulk phrasing ("all"/"every")
+        // opts out, since those legitimately touch everything.
+        long total = (long) current.getRows().size() * current.getColumns().size();
+        if (!ChatEditScopeResolver.isBulkInstruction(instruction)
+                && total > 0
+                && (double) changed / total > properties.getFullTableMaxChangeRatio()) {
+            throw new IllegalStateException("The assistant tried to change " + changed + " of " + total
+                    + " cells, which looks broader than the instruction asked for; nothing was changed. "
+                    + "Target specific rows or columns, or say \"all\"/\"every\" for a deliberate bulk change.");
+        }
         return new TableData(current.getColumns(), rows);
     }
 
-    /** Chunked behavior: only the failing rows go to the model; its patch is merged back. */
-    private TableData editErrorRows(String instruction, TableData current,
-                                    List<RowValidationResult> validation, List<Integer> errorRows,
-                                    PiiTokenizer.Session session) {
-        if (errorRows.size() > MAX_ROWS) {
+    private TableData editScopedPatch(String instruction, Integer hintRow, String hintColumn,
+                                      TableData current, List<RowValidationResult> validation,
+                                      List<Integer> errorRows, PiiTokenizer.Session session) {
+        ChatEditScopeResolution scope = ChatEditScopeResolver.resolve(
+                instruction, hintRow, hintColumn, current.getColumns(), validation);
+        scope = normalizeScope(scope, current, validation, errorRows, hintRow, hintColumn);
+
+        int payloadRows = countPayloadRows(scope, validation);
+        if (payloadRows > MAX_ROWS) {
             throw new IllegalArgumentException(
                     "Table has more than " + MAX_ROWS + " rows needing fixes; chat editing is limited to "
                             + MAX_ROWS + " rows.");
         }
 
-        List<Map<String, Object>> payload = new ArrayList<>();
-        for (int rowNum : errorRows) {
-            Map<String, String> errors = new LinkedHashMap<>();
-            for (RowValidationResult result : validation) {
-                if (result.row() == rowNum && result.errorMessage() != null) {
-                    errors.put(result.fieldName(), result.errorMessage());
-                }
-            }
-            payload.add(Map.of(
-                    "row", rowNum,
-                    "values", session.tokenizeRow(current.getRows().get(rowNum - 1)),
-                    "errors", errors));
-        }
-
+        String columnsJson = IngestionJobUseCase.toJson(current.getColumns());
+        String payloadJson = buildPayloadJson(scope, current, validation, session);
         String prompt = strategy("ChatEditPatch").buildPrompt(new ChatEditPatchPromptInput(
-                instruction,
-                IngestionJobUseCase.toJson(current.getColumns()),
-                IngestionJobUseCase.toJson(payload)));
+                scope.scope(), instruction, columnsJson, payloadJson));
         ChatEditPatchResponse patch = aiFilesService.sendForObject(
                 prompt, new ParameterizedTypeReference<ChatEditPatchResponse>() {
-                });
+                }, properties.getModelId());
         if (patch == null || patch.rows() == null || patch.rows().isEmpty()) {
             throw new IllegalStateException("The model returned no row changes; nothing was changed.");
         }
-        // Restore real values before merging so range/column validation and
-        // the follow-up re-validation all operate on plaintext.
         List<RowPatch> detokenized = patch.rows().stream()
                 .map(p -> new RowPatch(p.row(),
                         p.values() == null ? null : session.detokenizeRow(p.values())))
                 .toList();
-        return mergePatch(current, detokenized);
+        Set<String> allowed = allowedCellsFor(scope, current, validation);
+        return mergeScopedPatch(current, detokenized, allowed);
     }
 
     /**
-     * Applies model-proposed row patches to a copy of the table. A row index
-     * outside the table means the model lost positional grounding — reject
-     * everything rather than risk corrupting the wrong rows. Unknown column
-     * keys are ignored (common LLM noise; the follow-up re-validation is the
-     * backstop).
+     * Cells the model is allowed to change for a resolved scope. Anything the
+     * model returns outside this set is dropped, so a "fix this cell" edit can
+     * never quietly rewrite other rows or columns.
      */
-    private static TableData mergePatch(TableData current, List<RowPatch> patches) {
+    private static Set<String> allowedCellsFor(ChatEditScopeResolution scope, TableData current,
+                                               List<RowValidationResult> validation) {
+        Set<String> allowed = new java.util.HashSet<>();
+        switch (scope.scope()) {
+            case CELL -> allowed.add(cellKey(scope.row(), scope.column()));
+            case ROW -> {
+                for (String column : current.getColumns()) {
+                    allowed.add(cellKey(scope.row(), column));
+                }
+            }
+            case COLUMN -> {
+                for (RowValidationResult r : validation) {
+                    if (r.errorMessage() != null && scope.columns().contains(r.fieldName())) {
+                        allowed.add(cellKey(r.row(), r.fieldName()));
+                    }
+                }
+            }
+            case ALL_ERRORS -> {
+                for (int rowNum : errorRowIndices(validation, current.getRows().size())) {
+                    for (String column : current.getColumns()) {
+                        allowed.add(cellKey(rowNum, column));
+                    }
+                }
+            }
+        }
+        return allowed;
+    }
+
+    private static String cellKey(int row, String column) {
+        return row + "\u0001" + column;
+    }
+
+    /** Clamp resolved targets to rows/columns that actually have validation errors. */
+    private static ChatEditScopeResolution normalizeScope(ChatEditScopeResolution scope,
+                                                          TableData current,
+                                                          List<RowValidationResult> validation,
+                                                          List<Integer> errorRows,
+                                                          Integer hintRow,
+                                                          String hintColumn) {
+        return switch (scope.scope()) {
+            case CELL -> {
+                int row = scope.row() != null ? scope.row() : hintRow != null ? hintRow : -1;
+                String column = scope.column() != null ? scope.column() : hintColumn;
+                if (row < 1 || row > current.getRows().size() || column == null || column.isBlank()) {
+                    yield new ChatEditScopeResolution(ChatEditScope.ALL_ERRORS, null, null, List.of());
+                }
+                if (!hasCellError(validation, row, column)) {
+                    yield new ChatEditScopeResolution(ChatEditScope.ROW, row, null, List.of());
+                }
+                yield new ChatEditScopeResolution(ChatEditScope.CELL, row, column, List.of());
+            }
+            case ROW -> {
+                int row = scope.row() != null ? scope.row() : hintRow != null ? hintRow : -1;
+                if (row < 1 || row > current.getRows().size() || !errorRows.contains(row)) {
+                    yield new ChatEditScopeResolution(ChatEditScope.ALL_ERRORS, null, null, List.of());
+                }
+                yield new ChatEditScopeResolution(ChatEditScope.ROW, row, null, List.of());
+            }
+            case COLUMN -> {
+                List<String> cols = scope.columns().isEmpty()
+                        ? (hintColumn != null && !hintColumn.isBlank() ? List.of(hintColumn) : List.of())
+                        : scope.columns();
+                List<String> withErrors = cols.stream()
+                        .filter(col -> validation.stream().anyMatch(r ->
+                                r.errorMessage() != null && col.equals(r.fieldName())))
+                        .toList();
+                if (withErrors.isEmpty()) {
+                    yield new ChatEditScopeResolution(ChatEditScope.ALL_ERRORS, null, null, List.of());
+                }
+                yield new ChatEditScopeResolution(
+                        ChatEditScope.COLUMN, null, withErrors.get(0), withErrors);
+            }
+            case ALL_ERRORS -> scope;
+        };
+    }
+
+    private static boolean hasCellError(List<RowValidationResult> validation, int row, String column) {
+        return validation.stream()
+                .anyMatch(r -> r.row() == row && column.equals(r.fieldName()) && r.errorMessage() != null);
+    }
+
+    private static int countPayloadRows(ChatEditScopeResolution scope, List<RowValidationResult> validation) {
+        return switch (scope.scope()) {
+            case CELL, ROW -> 1;
+            case COLUMN -> Math.toIntExact(validation.stream()
+                    .filter(r -> r.errorMessage() != null && scope.columns().contains(r.fieldName()))
+                    .map(RowValidationResult::row)
+                    .distinct()
+                    .count());
+            case ALL_ERRORS -> Math.toIntExact(validation.stream()
+                    .filter(r -> r.errorMessage() != null)
+                    .map(RowValidationResult::row)
+                    .distinct()
+                    .count());
+        };
+    }
+
+    private static String buildPayloadJson(ChatEditScopeResolution scope,
+                                           TableData current,
+                                           List<RowValidationResult> validation,
+                                           PiiTokenizer.Session session) {
+        return switch (scope.scope()) {
+            case CELL -> IngestionJobUseCase.toJson(buildCellPayload(
+                    scope.row(), scope.column(), current, validation, session));
+            case ROW -> IngestionJobUseCase.toJson(buildRowPayload(
+                    scope.row(), current, validation, session));
+            case COLUMN -> IngestionJobUseCase.toJson(buildColumnPayload(
+                    scope.columns(), current, validation, session));
+            case ALL_ERRORS -> IngestionJobUseCase.toJson(buildAllErrorRowsPayload(
+                    errorRowIndices(validation, current.getRows().size()), current, validation, session));
+        };
+    }
+
+    static Map<String, Object> buildCellPayload(int rowNum, String column, TableData current,
+                                                List<RowValidationResult> validation,
+                                                PiiTokenizer.Session session) {
+        Map<String, String> rowValues = session.tokenizeRow(current.getRows().get(rowNum - 1));
+        String error = validation.stream()
+                .filter(r -> r.row() == rowNum && column.equals(r.fieldName()) && r.errorMessage() != null)
+                .map(RowValidationResult::errorMessage)
+                .findFirst()
+                .orElse("");
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("row", rowNum);
+        payload.put("column", column);
+        payload.put("value", rowValues.getOrDefault(column, ""));
+        payload.put("error", error);
+        return payload;
+    }
+
+    static Map<String, Object> buildRowPayload(int rowNum, TableData current,
+                                               List<RowValidationResult> validation,
+                                               PiiTokenizer.Session session) {
+        Map<String, String> errors = errorsForRow(validation, rowNum);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("row", rowNum);
+        payload.put("values", session.tokenizeRow(current.getRows().get(rowNum - 1)));
+        payload.put("errors", errors);
+        return payload;
+    }
+
+    static Map<String, Object> buildColumnPayload(List<String> columns, TableData current,
+                                                  List<RowValidationResult> validation,
+                                                  PiiTokenizer.Session session) {
+        List<Map<String, Object>> cells = new ArrayList<>();
+        for (RowValidationResult result : validation) {
+            if (result.errorMessage() == null || !columns.contains(result.fieldName())) {
+                continue;
+            }
+            int rowNum = result.row();
+            Map<String, String> tokenized = session.tokenizeRow(current.getRows().get(rowNum - 1));
+            cells.add(Map.of(
+                    "row", rowNum,
+                    "column", result.fieldName(),
+                    "value", tokenized.getOrDefault(result.fieldName(), ""),
+                    "error", result.errorMessage()));
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("columns", columns);
+        payload.put("cells", cells);
+        return payload;
+    }
+
+    static List<Map<String, Object>> buildAllErrorRowsPayload(List<Integer> errorRows,
+                                                              TableData current,
+                                                              List<RowValidationResult> validation,
+                                                              PiiTokenizer.Session session) {
+        List<Map<String, Object>> payload = new ArrayList<>();
+        for (int rowNum : errorRows) {
+            payload.add(Map.of(
+                    "row", rowNum,
+                    "values", session.tokenizeRow(current.getRows().get(rowNum - 1)),
+                    "errors", errorsForRow(validation, rowNum)));
+        }
+        return payload;
+    }
+
+    private static Map<String, String> errorsForRow(List<RowValidationResult> validation, int rowNum) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        for (RowValidationResult result : validation) {
+            if (result.row() == rowNum && result.errorMessage() != null) {
+                errors.put(result.fieldName(), result.errorMessage());
+            }
+        }
+        return errors;
+    }
+
+    /**
+     * Applies model-proposed row patches to a copy of the table, but only for
+     * cells inside {@code allowed} (the resolved scope). A row index outside
+     * the table still means the model lost positional grounding, so that is a
+     * hard reject. Cells outside the scope, or unknown columns, are dropped so
+     * the assistant cannot quietly rewrite data the user did not target. If no
+     * targeted cell actually changed, the edit is rejected so the UI can say so.
+     */
+    private static TableData mergeScopedPatch(TableData current, List<RowPatch> patches,
+                                              Set<String> allowed) {
         List<Map<String, String>> rows = new ArrayList<>(current.getRows().size());
         for (Map<String, String> row : current.getRows()) {
             rows.add(new LinkedHashMap<>(row));
         }
         Set<String> columns = Set.copyOf(current.getColumns());
 
+        int applied = 0;
+        int dropped = 0;
         for (RowPatch patch : patches) {
             int index = patch.row() - 1;
             if (index < 0 || index >= rows.size()) {
@@ -231,13 +424,29 @@ public class ChatEditTableUseCase {
                 continue;
             }
             for (Map.Entry<String, String> entry : patch.values().entrySet()) {
-                if (!columns.contains(entry.getKey())) {
+                String column = entry.getKey();
+                if (!columns.contains(column)) {
                     log.warn("Chat edit patch for row {} contains unknown column '{}'; ignoring it.",
-                            patch.row(), entry.getKey());
+                            patch.row(), column);
                     continue;
                 }
-                rows.get(index).put(entry.getKey(), entry.getValue() == null ? "" : entry.getValue());
+                if (!allowed.contains(cellKey(patch.row(), column))) {
+                    dropped++;
+                    log.debug("Chat edit patch for row {} column '{}' is outside the requested scope; "
+                            + "dropping it.", patch.row(), column);
+                    continue;
+                }
+                String value = entry.getValue() == null ? "" : entry.getValue();
+                if (!value.equals(rows.get(index).getOrDefault(column, ""))) {
+                    applied++;
+                }
+                rows.get(index).put(column, value);
             }
+        }
+        if (applied == 0) {
+            throw new IllegalStateException(dropped > 0
+                    ? "The assistant only changed cells outside what you asked to edit; nothing was changed."
+                    : "The assistant did not change the targeted data; nothing was changed.");
         }
         return new TableData(current.getColumns(), rows);
     }
@@ -251,8 +460,7 @@ public class ChatEditTableUseCase {
                 });
     }
 
-    /** Sorted distinct 1-based row numbers that have at least one error, within table bounds. */
-    private static List<Integer> errorRowIndices(List<RowValidationResult> validation, int rowCount) {
+    static List<Integer> errorRowIndices(List<RowValidationResult> validation, int rowCount) {
         return validation.stream()
                 .filter(result -> result.errorMessage() != null)
                 .map(RowValidationResult::row)

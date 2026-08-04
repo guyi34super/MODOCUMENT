@@ -15,10 +15,20 @@ import java.util.Map;
 public class MappingProperties {
 
     /**
-     * Ask the LLM about columns the code tiers could not resolve. The prompt
-     * carries column and field NAMES only — never data values.
+     * Ask the LLM about columns for mapping. Scope and sample size are
+     * configured via {@link #llmScope} and {@link #llmSampleSize}.
      */
     private boolean llmFallbackEnabled = true;
+
+    /**
+     * {@code all} sends every source column and template field to the LLM for
+     * holistic assignment; {@code unresolved} limits the LLM to columns code
+     * tiers could not map (cheaper for cloud providers).
+     */
+    private String llmScope = "unresolved";
+
+    /** Sample values per column included in the LLM mapping prompt. */
+    private int llmSampleSize = 5;
 
     /** Minimum candidate score for a code-tier match to be accepted. */
     private double confidenceThreshold = 0.7;
@@ -50,6 +60,26 @@ public class MappingProperties {
 
     public void setLlmFallbackEnabled(boolean llmFallbackEnabled) {
         this.llmFallbackEnabled = llmFallbackEnabled;
+    }
+
+    public String getLlmScope() {
+        return llmScope;
+    }
+
+    public void setLlmScope(String llmScope) {
+        this.llmScope = llmScope;
+    }
+
+    public boolean isLlmScopeAll() {
+        return llmScope == null || llmScope.isBlank() || "all".equalsIgnoreCase(llmScope);
+    }
+
+    public int getLlmSampleSize() {
+        return llmSampleSize;
+    }
+
+    public void setLlmSampleSize(int llmSampleSize) {
+        this.llmSampleSize = llmSampleSize;
     }
 
     public double getConfidenceThreshold() {

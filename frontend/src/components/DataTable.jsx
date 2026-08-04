@@ -9,7 +9,14 @@
  * inside the wrapper and the header row stays pinned, so long tables never
  * force the page itself to scroll.
  */
-export default function DataTable({ columns, rows, emptyMessage = 'No data.', onRowClick, maxHeight }) {
+export default function DataTable({
+  columns,
+  rows,
+  emptyMessage = 'No data.',
+  onRowClick,
+  maxHeight,
+  getRowClassName,
+}) {
   if (!rows || rows.length === 0) {
     return <p className="py-6 text-sm text-muted">{emptyMessage}</p>;
   }
@@ -44,7 +51,7 @@ export default function DataTable({ columns, rows, emptyMessage = 'No data.', on
               // Index, not row.id: mapped data can contain its own "id" column,
               // and duplicate values there made React reuse the wrong row.
               key={i}
-              className={`hover:bg-sidebar/60 ${onRowClick ? 'cursor-pointer' : ''}`}
+              className={`hover:bg-sidebar/60 ${getRowClassName?.(row, i) ?? ''} ${onRowClick ? 'cursor-pointer' : ''}`}
               onClick={
                 onRowClick
                   ? (e) => {

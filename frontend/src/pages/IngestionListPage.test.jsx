@@ -14,6 +14,7 @@ vi.mock('../api/cache', () => ({
 
 vi.mock('../api/ingestion', () => ({
   createJobFromFile: vi.fn(),
+  waitForJob: vi.fn(),
   getSupportedTypes: vi.fn(),
   listJobs: vi.fn(),
 }));
@@ -69,5 +70,12 @@ describe('IngestionListPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
     expect(screen.queryByText('jobs endpoint down')).not.toBeInTheDocument();
+  });
+
+  it('describes automatic processing through validation', async () => {
+    renderPage();
+    expect(
+      await screen.findByText(/parse, map, and validate automatically/i)
+    ).toBeInTheDocument();
   });
 });

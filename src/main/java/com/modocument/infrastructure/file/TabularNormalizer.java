@@ -6,10 +6,12 @@ import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.FormulaEvaluator;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -18,6 +20,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -26,9 +29,7 @@ import java.util.Set;
 
 /**
  * Deterministic (no-LLM) normalization of structured files into {@link TableData}:
- * csv via Commons CSV, xlsx/xls via POI (first sheet, first row = header).
- * Other formats are not handled here — the ingestion pipeline sends their
- * extracted text through the LLM instead.
+ * csv via Commons CSV, xlsx/xls via POI (primary sheet, merged cells filled).
  */
 @Component
 public class TabularNormalizer {
@@ -60,12 +61,6 @@ public class TabularNormalizer {
                 "TabularNormalizer does not handle '" + name + "'.");
     }
 
-    /**
-     * The first record is taken as the header by hand rather than through
-     * {@code CSVFormat.setHeader()}: commons-csv rejects a blank header name
-     * outright, which turns an otherwise readable export into a cryptic parse
-     * failure. Naming those columns is {@link #uniqueColumns}'s job.
-     */
     private static TableData readCsv(Path file) throws IOException {
         try (Reader reader = Files.newBufferedReader(file);
              CSVParser parser = CSVParser.parse(reader, CSVFormat.DEFAULT)) {
@@ -90,20 +85,13 @@ public class TabularNormalizer {
         }
     }
 
-    /**
-     * Rows are keyed by column name, so repeated headers would collapse onto
-     * one key and silently drop a column's data. A leading byte-order mark
-     * (Excel writes one by default) is stripped for the same reason: it makes
-     * the first column name look identical while never matching a template
-     * field.
-     */
-    private static List<String> uniqueColumns(List<String> headers) {
+    static List<String> uniqueColumns(List<String> headers) {
         List<String> columns = new ArrayList<>(headers.size());
         Map<String, Integer> seen = new LinkedHashMap<>();
         for (int i = 0; i < headers.size(); i++) {
             String header = headers.get(i) == null ? "" : headers.get(i);
             if (i == 0) {
-                header = header.replace("﻿", "");
+                header = header.replace("\uFEFF", "");
             }
             header = header.trim();
             if (header.isBlank()) {
@@ -118,34 +106,41 @@ public class TabularNormalizer {
     private static TableData readExcel(Path file) throws IOException {
         DataFormatter formatter = new DataFormatter();
         try (Workbook workbook = WorkbookFactory.create(file.toFile(), null, true)) {
-            Sheet sheet = workbook.getSheetAt(0);
+            Sheet sheet = primarySheet(workbook);
+            if (sheet == null) {
+                return new TableData(List.of(), List.of());
+            }
+            FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+            Map<Long, String> merged = mergedRegionValues(sheet, formatter, evaluator);
+
             List<String> columns = new ArrayList<>();
             List<Map<String, String>> rows = new ArrayList<>();
 
-            Row headerRow = sheet.getRow(sheet.getFirstRowNum());
+            int width = sheetWidth(sheet);
+            if (width <= 0) {
+                return new TableData(columns, rows);
+            }
+            int headerRowIndex = ExcelHeaderRowDetector.detectHeaderRowIndex(
+                    sheet, width, merged, formatter, evaluator);
+            Row headerRow = sheet.getRow(headerRowIndex);
             if (headerRow == null) {
                 return new TableData(columns, rows);
             }
-            int lastCell = headerRow.getLastCellNum();
-            List<String> rawHeaders = new ArrayList<>();
-            for (int c = 0; c < lastCell; c++) {
-                Cell cell = headerRow.getCell(c);
-                rawHeaders.add(cell == null ? "" : formatter.formatCellValue(cell).trim());
-            }
+            List<String> rawHeaders = ExcelHeaderRowDetector.readRowValues(
+                    sheet, headerRowIndex, width, merged, formatter, evaluator);
             columns.addAll(uniqueColumns(rawHeaders));
 
-            for (int r = sheet.getFirstRowNum() + 1; r <= sheet.getLastRowNum(); r++) {
+            for (int r = headerRowIndex + 1; r <= sheet.getLastRowNum(); r++) {
                 Row row = sheet.getRow(r);
-                if (row == null) {
-                    continue;
-                }
                 Map<String, String> values = new LinkedHashMap<>();
                 boolean anyValue = false;
                 for (int c = 0; c < columns.size(); c++) {
-                    Cell cell = row.getCell(c);
-                    String value = cell == null ? "" : formatter.formatCellValue(cell);
-                    anyValue |= !value.isBlank();
-                    values.put(columns.get(c), value);
+                    String value = merged.get(cellKey(r, c));
+                    if (value == null) {
+                        value = cellText(row == null ? null : row.getCell(c), formatter, evaluator);
+                    }
+                    anyValue |= value != null && !value.isBlank();
+                    values.put(columns.get(c), value == null ? "" : value);
                 }
                 if (anyValue) {
                     rows.add(values);
@@ -153,5 +148,64 @@ public class TabularNormalizer {
             }
             return new TableData(columns, rows);
         }
+    }
+
+    static int sheetWidth(Sheet sheet) {
+        int width = 0;
+        for (int r = sheet.getFirstRowNum(); r <= sheet.getLastRowNum(); r++) {
+            Row row = sheet.getRow(r);
+            if (row != null) {
+                width = Math.max(width, row.getLastCellNum());
+            }
+        }
+        return width;
+    }
+
+    static Sheet primarySheet(Workbook workbook) {
+        Sheet best = null;
+        int bestRows = -1;
+        for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+            Sheet sheet = workbook.getSheetAt(i);
+            int rows = sheet.getPhysicalNumberOfRows();
+            if (rows > bestRows) {
+                bestRows = rows;
+                best = sheet;
+            }
+        }
+        return best;
+    }
+
+    static Map<Long, String> mergedRegionValues(Sheet sheet, DataFormatter formatter,
+                                                FormulaEvaluator evaluator) {
+        Map<Long, String> values = new HashMap<>();
+        for (CellRangeAddress region : sheet.getMergedRegions()) {
+            Row topRow = sheet.getRow(region.getFirstRow());
+            String value = cellText(topRow == null ? null : topRow.getCell(region.getFirstColumn()),
+                    formatter, evaluator);
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            for (int r = region.getFirstRow(); r <= region.getLastRow(); r++) {
+                for (int c = region.getFirstColumn(); c <= region.getLastColumn(); c++) {
+                    values.put(cellKey(r, c), value);
+                }
+            }
+        }
+        return values;
+    }
+
+    static String cellText(Cell cell, DataFormatter formatter, FormulaEvaluator evaluator) {
+        if (cell == null) {
+            return "";
+        }
+        try {
+            return formatter.formatCellValue(cell, evaluator);
+        } catch (RuntimeException e) {
+            return formatter.formatCellValue(cell);
+        }
+    }
+
+    static long cellKey(int row, int col) {
+        return ((long) row << 32) | (col & 0xFFFFFFFFL);
     }
 }

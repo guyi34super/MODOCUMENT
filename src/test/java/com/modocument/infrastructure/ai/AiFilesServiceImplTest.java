@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.ai;
 
+import com.modocument.application.dto.ChatEditPatchResponse;
 import com.modocument.application.dto.TableData;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
@@ -50,6 +51,21 @@ class AiFilesServiceImplTest {
 
         assertThat(table.getColumns()).containsExactly("A");
         assertThat(table.getRows()).hasSize(1);
+    }
+
+    @Test
+    void sendForObjectToleratesLeadingDecimalNumbers() {
+        // Models sometimes emit `.5` (invalid JSON) for a numeric-looking cell;
+        // strict parsing used to 500. The lenient path coerces it to "0.5".
+        modelReturns("{\"rows\":[{\"row\":7,\"values\":{\"Salary Net\":.5}}]}");
+
+        ChatEditPatchResponse patch = serviceWithKey("real-key").sendForObject(
+                "fix", new ParameterizedTypeReference<ChatEditPatchResponse>() {
+                });
+
+        assertThat(patch.rows()).hasSize(1);
+        assertThat(patch.rows().get(0).row()).isEqualTo(7);
+        assertThat(patch.rows().get(0).values()).containsEntry("Salary Net", "0.5");
     }
 
     @Test

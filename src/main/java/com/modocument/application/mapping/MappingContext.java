@@ -15,5 +15,22 @@ public record MappingContext(List<String> columns,
                              List<TemplateFields> fields,
                              List<Map<String, String>> sampleRows,
                              int templateId,
-                             int ownerUserId) {
+                             int ownerUserId,
+                             Map<String, String> suggestedMappings) {
+
+    public MappingContext(List<String> columns,
+                          List<TemplateFields> fields,
+                          List<Map<String, String>> sampleRows,
+                          int templateId,
+                          int ownerUserId) {
+        this(columns, fields, sampleRows, templateId, ownerUserId, Map.of());
+    }
+
+    public MappingContext {
+        if (suggestedMappings == null || suggestedMappings.isEmpty()) {
+            suggestedMappings = Map.of();
+        } else {
+            suggestedMappings = new java.util.LinkedHashMap<>(suggestedMappings);
+        }
+    }
 }

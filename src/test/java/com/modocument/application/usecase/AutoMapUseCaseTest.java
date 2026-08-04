@@ -11,6 +11,7 @@ import com.modocument.domain.entity.ValidationRule;
 import com.modocument.domain.model.RuleType;
 import com.modocument.infrastructure.prompt.AutoMappingPrompt;
 import com.modocument.infrastructure.rule.RegexRule;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.core.ParameterizedTypeReference;
@@ -52,6 +53,16 @@ class AutoMapUseCaseTest {
 
     private static MappingContext context(List<String> columns, List<TemplateFields> fields) {
         return new MappingContext(columns, fields, List.of(), 1, 1);
+    }
+
+    private static MappingContext context(List<String> columns, List<TemplateFields> fields,
+                                          Map<String, String> suggestedMappings) {
+        return new MappingContext(columns, fields, List.of(), 1, 1, suggestedMappings);
+    }
+
+    @BeforeEach
+    void disableFullLlmScopeByDefault() {
+        properties.setLlmScope("unresolved");
     }
 
     @Test
@@ -135,16 +146,42 @@ class AutoMapUseCaseTest {
         Map<String, String> mapping = useCase.map(
                 context(List.of("FirstName", "Start", "Nickname"), TEMPLATE_FIELDS));
 
-        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
-        // Resolved column and its assigned field never travel to the LLM.
-        assertThat(prompt.getValue()).doesNotContain("FirstName");
-        assertThat(prompt.getValue()).contains("Start").contains("Nickname");
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(ai).sendForObject(promptCaptor.capture(), any(ParameterizedTypeReference.class));
+        String prompt = promptCaptor.getValue();
+        // Resolved column stays out of "Columns to map"; field shown as TAKEN.
+        assertThat(prompt).doesNotContain("Columns to map (source header | sample values from the file):\n- \"FirstName\"");
+        assertThat(prompt).contains("Start").contains("Nickname")
+                .contains("Available template fields")
+                .contains("HireDate")
+                .contains("Already mapped");
 
         assertThat(mapping).containsEntry("FirstName", "FirstName")
                 .containsEntry("Start", "HireDate");
-        // The LLM's invented target is not an offered field, so it is unmapped.
         assertThat(mapping.get("Nickname")).isNull();
+    }
+
+    @Test
+    void fullLlmScopeMapsAllColumnsWithAllFields() {
+        properties.setLlmScope("all");
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(Map.of(
+                        "FirstName", "FirstName",
+                        "Start", "HireDate",
+                        "Nickname", "LastName"));
+
+        Map<String, String> mapping = useCase.map(
+                context(List.of("FirstName", "Start", "Nickname"), TEMPLATE_FIELDS));
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(ai).sendForObject(promptCaptor.capture(), any(ParameterizedTypeReference.class));
+        assertThat(promptCaptor.getValue()).contains("FirstName")
+                .contains("Start")
+                .contains("Nickname");
+
+        assertThat(mapping).containsEntry("FirstName", "FirstName")
+                .containsEntry("Start", "HireDate")
+                .containsEntry("Nickname", "LastName");
     }
 
     @Test
@@ -157,6 +194,25 @@ class AutoMapUseCaseTest {
                     context(List.of("Zebra_Quotient"), TEMPLATE_FIELDS));
             assertThat(mapping.get("Zebra_Quotient")).isNull();
         }).doesNotThrowAnyException();
+    }
+
+    @Test
+    void extractionSuggestionsAppearInLlmPrompt() {
+        properties.setLlmScope("all");
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+                .thenReturn(Map.of("Start", "HireDate"));
+
+        useCase.map(context(
+                List.of("Start", "Nickname"),
+                TEMPLATE_FIELDS,
+                Map.of("Start", "HireDate", "Nickname", "LastName")));
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(ai).sendForObject(promptCaptor.capture(), any(ParameterizedTypeReference.class));
+        assertThat(promptCaptor.getValue())
+                .contains("Extraction-time suggestions")
+                .contains("Start")
+                .contains("HireDate");
     }
 
     @Test

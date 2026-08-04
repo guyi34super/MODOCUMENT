@@ -18,6 +18,7 @@ public record IngestionJobDto(int ingestionJobId,
                               String wizardStep,
                               String errorMessage,
                               TableData parsedTable,
+                              Map<String, String> suggestedMapping,
                               Map<String, String> mapping,
                               TableData mappedRows,
                               List<RowValidationResult> validationResults,
@@ -40,6 +41,8 @@ public record IngestionJobDto(int ingestionJobId,
                                        List<String> unmappedFields,
                                        List<String> reachableSteps) {
         TableData parsed = read(job.getParsedTableJson(), new TypeReference<TableData>() {
+        });
+        Map<String, String> suggestedMapping = read(job.getSuggestedMappingJson(), new TypeReference<Map<String, String>>() {
         });
         Map<String, String> mapping = read(job.getMappingJson(), new TypeReference<Map<String, String>>() {
         });
@@ -65,6 +68,7 @@ public record IngestionJobDto(int ingestionJobId,
                 job.getWizardStep() == null ? null : job.getWizardStep().name(),
                 job.getErrorMessage(),
                 parsed,
+                suggestedMapping,
                 mapping,
                 mapped,
                 validation,

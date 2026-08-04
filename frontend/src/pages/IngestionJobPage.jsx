@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { downloadFile } from '../api/client';
 import { getAllFields } from '../api/templates';
 import { validationErrorRuleLabel } from '../api/validationRules';
@@ -15,6 +15,8 @@ import {
   setWizardStep,
   updateMapping,
   updateRows,
+  waitForJob,
+  needsIngestionWait,
 } from '../api/ingestion';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
@@ -24,6 +26,7 @@ import { useToast } from '../context/ToastContext';
 import useUnsavedGuard from '../hooks/useUnsavedGuard';
 
 const WIZARD_STEPS = ['mapping', 'validation', 'export'];
+const ACTIVE_STATUSES = ['PENDING', 'RUNNING'];
 
 const ACTION_MESSAGES = {
   resume: { loading: 'Resuming pipeline…', success: 'Pipeline resumed' },
@@ -406,18 +409,30 @@ function buildValidationErrorMap(validationResults) {
   return map;
 }
 
-function getSortedErrorRows(validationResults) {
-  return [
-    ...new Set(
-      (validationResults || [])
-        .filter((r) => r.errorMessage)
-        .map((r) => r.row)
-    ),
-  ].sort((a, b) => a - b);
-}
-
 function pageForRow(row, pageSize) {
   return Math.floor((row - 1) / pageSize);
+}
+
+function errorCellKey(rowIdx, col) {
+  return `${rowIdx}::${col}`;
+}
+
+function findNextErrorCell(from, errorCells, columns) {
+  if (!errorCells.length) return null;
+  const colIdx = (c) => columns.indexOf(c);
+  const i = errorCells.findIndex(
+    (c) => c.rowIdx > from.rowIdx || (c.rowIdx === from.rowIdx && colIdx(c.col) > colIdx(from.col))
+  );
+  return errorCells[i === -1 ? 0 : i];
+}
+
+function rowHasValidationError(rowIdx, errorMap, columns) {
+  const rowNum = rowIdx + 1;
+  return columns.some((col) => errorMap.has(`${rowNum}-${col}`));
+}
+
+function isSameErrorCell(a, b) {
+  return Boolean(a && b && a.rowIdx === b.rowIdx && a.col === b.col);
 }
 
 // Compact single-line error marker: the value keeps its row at normal height;
@@ -440,28 +455,60 @@ function ValidationErrorCell({ err, value }) {
   );
 }
 
-// Fixed-height one-liner keeping the active error's message visible while the
-// cell editor is open (the compact cells only carry a tooltip).
-function ErrorInspector({ activeErr, pageFirstErr }) {
-  const err = activeErr ?? pageFirstErr;
+// Focused single-error card: shows one validation error at a time (row,
+// column, rule, message) with an inline editor so the user fixes the value
+// right here. Navigation lives in the table toolbar (Previous / Next error).
+function ValidationErrorStepper({ error, index, total, value, wrapHint, inputRef, onChange, onStep, onEdit }) {
+  if (!error) return null;
   return (
-    <div className="mb-2 flex min-h-7 items-center gap-2 overflow-hidden rounded border border-danger-ink/30 bg-danger-bg/60 px-2 py-1 text-xs">
-      {err ? (
-        <>
-          <span className="shrink-0 font-medium text-danger-ink">
-            Row {err.row} · {err.fieldName}
+    <div className="mb-4 rounded-lg border border-danger-ink/30 bg-danger-bg/30 p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold text-danger-ink">
+          Error {index + 1} of {total}
+        </h4>
+        <Button
+          variant="secondary"
+          size="sm"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={onEdit}
+        >
+          Edit this cell
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <span className="font-medium text-danger-ink">
+          Row {error.row} · {error.fieldName}
+        </span>
+        {error.ruleType && (
+          <span className="rounded-full bg-white px-2 py-0.5 text-xs text-muted">
+            Rule: {validationErrorRuleLabel(error.ruleType)}
           </span>
-          <span className="truncate text-danger-ink" title={err.errorMessage}>
-            Fix: {err.errorMessage}
-          </span>
-          {err.ruleType && (
-            <span className="shrink-0 text-muted">
-              Rule: {validationErrorRuleLabel(err.ruleType)}
-            </span>
-          )}
-        </>
-      ) : (
-        <span className="text-muted">No errors on this page — use Next error.</span>
+        )}
+      </div>
+      <label className="mt-2 flex items-center gap-2 text-sm">
+        <span className="shrink-0 font-medium text-ink">Value</span>
+        <input
+          ref={inputRef}
+          aria-label="Corrected value"
+          value={value}
+          placeholder="(empty)"
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onStep(1);
+            } else if (e.key === 'Escape') {
+              e.currentTarget.blur();
+            }
+          }}
+          className={`${inputClass} max-w-md`}
+        />
+      </label>
+      <p className="mt-2 text-sm text-danger-ink">Fix: {error.errorMessage}</p>
+      {wrapHint && (
+        <p aria-live="polite" className="mt-1 text-xs text-muted">
+          {wrapHint}
+        </p>
       )}
     </div>
   );
@@ -472,8 +519,11 @@ function EditableCell({
   err,
   dirty,
   editing,
+  isActiveError,
+  pulseError,
   column,
   rowNumber,
+  cellKey,
   onStartEdit,
   onCommit,
   onCancel,
@@ -495,15 +545,22 @@ function EditableCell({
     wasEditing.current = editing;
   }, [editing]);
 
+  const activeHighlight = isActiveError
+    ? 'outline outline-2 outline-danger-ink ring-2 ring-danger-ink/30'
+    : '';
+  const pulseClass = pulseError ? 'error-flash-once' : '';
+
   if (editing) {
     return (
       <input
         autoFocus
+        data-error-cell={cellKey}
+        data-active-error={isActiveError ? 'true' : undefined}
         // An errored cell opens empty so the fix is retyped clean; a valid cell
         // keeps its value for a small tweak. The error text stays visible in the
         // ErrorInspector above, so emptying the input loses no context.
         defaultValue={err ? '' : (value ?? '')}
-        className={`${inputClass} w-full min-w-28`}
+        className={`${inputClass} w-full min-w-28 ${activeHighlight} ${pulseClass}`}
         onBlur={(e) => {
           if (handledRef.current) return;
           onCommit(e.target.value, null);
@@ -530,6 +587,8 @@ function EditableCell({
   return (
     <div
       ref={buttonRef}
+      data-error-cell={cellKey}
+      data-active-error={isActiveError ? 'true' : undefined}
       role="button"
       tabIndex={0}
       // Announce which cell this is and what is wrong with it — "Click to edit"
@@ -544,7 +603,7 @@ function EditableCell({
           onStartEdit();
         }
       }}
-      className={`min-h-5 min-w-28 cursor-text rounded ${dirty ? 'bg-pill/60 px-1 outline outline-1 outline-accent' : ''}`}
+      className={`min-h-5 min-w-28 cursor-text rounded ${dirty ? 'bg-pill/60 px-1 outline outline-1 outline-accent' : ''} ${activeHighlight} ${pulseClass}`}
     >
       {err ? (
         <ValidationErrorCell err={err} value={value} />
@@ -566,47 +625,134 @@ function ValidatedDataTable({
   onPageSizeChange,
   rowEdits,
   onEditCell,
+  onActiveErrorChange,
 }) {
   const [editingCell, setEditingCell] = useState(null);
-  const [wrapHint, setWrapHint] = useState(false);
+  const [wrapHint, setWrapHint] = useState('');
+  const [errorsOnly, setErrorsOnly] = useState(false);
+  const [pulseCellKey, setPulseCellKey] = useState(null);
+  const [currentErrorIndex, setCurrentErrorIndex] = useState(0);
+  const pendingScrollRef = useRef(null);
+  const valueInputRef = useRef(null);
 
-  // Errored cells in document order (row asc, then column order) for the
-  // Enter-to-next-error traversal.
+  const columns = mappedRows?.columns ?? [];
+  const allRows = mappedRows?.rows ?? [];
+
+  const errorMap = useMemo(
+    () => buildValidationErrorMap(validationResults),
+    [validationResults]
+  );
+
+  // Errored cells in document order (row asc, then column order) for traversal.
   const errorCells = useMemo(() => {
-    const columns = mappedRows?.columns ?? [];
     const colIdx = (c) => columns.indexOf(c);
     return (validationResults || [])
       .filter((r) => r.errorMessage)
       .sort((a, b) => a.row - b.row || colIdx(a.fieldName) - colIdx(b.fieldName))
       .map((r) => ({ rowIdx: r.row - 1, col: r.fieldName }));
-  }, [validationResults, mappedRows]);
+  }, [validationResults, columns]);
 
-  if (!mappedRows?.columns?.length) {
-    return <p className="text-sm text-muted">No mapped data.</p>;
-  }
+  const errorList = useMemo(() => {
+    const colIdx = (c) => columns.indexOf(c);
+    return (validationResults || [])
+      .filter((r) => r.errorMessage)
+      .sort((a, b) => a.row - b.row || colIdx(a.fieldName) - colIdx(b.fieldName));
+  }, [validationResults, columns]);
 
-  const allRows = mappedRows.rows;
-  const totalRows = allRows.length;
+  const indexedRows = useMemo(
+    () => allRows.map((row, rowIdx) => ({ row, rowIdx })),
+    [allRows]
+  );
+
+  const visibleRows = useMemo(() => {
+    if (!errorsOnly) return indexedRows;
+    return indexedRows.filter(({ rowIdx }) => rowHasValidationError(rowIdx, errorMap, columns));
+  }, [errorsOnly, indexedRows, errorMap, columns]);
+
+  const totalRows = visibleRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const safePage = Math.min(page, totalPages - 1);
   const start = safePage * pageSize;
   const end = Math.min(start + pageSize, totalRows);
-  const rows = allRows.slice(start, end);
-  const errorMap = buildValidationErrorMap(validationResults);
-  const errorRows = getSortedErrorRows(validationResults);
-  const pageEndRow = end;
+
+  useEffect(() => {
+    const target = pendingScrollRef.current;
+    if (!target) return;
+    const key = errorCellKey(target.rowIdx, target.col);
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-error-cell="${CSS.escape(key)}"]`);
+      if (typeof el?.scrollIntoView === 'function') {
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+      pendingScrollRef.current = null;
+    });
+  }, [editingCell, safePage, pulseCellKey]);
+
+  useEffect(() => {
+    if (!pulseCellKey) return undefined;
+    const timer = window.setTimeout(() => setPulseCellKey(null), 650);
+    return () => window.clearTimeout(timer);
+  }, [pulseCellKey]);
+
+  const activeErrorIndex = editingCell
+    ? errorCells.findIndex((c) => isSameErrorCell(c, editingCell))
+    : -1;
+
+  // Keep the stepper index in range as the error set changes.
+  useEffect(() => {
+    setCurrentErrorIndex((i) => Math.min(Math.max(i, 0), Math.max(errorCells.length - 1, 0)));
+  }, [errorCells.length]);
+
+  // Follow direct cell clicks / Enter-advance so the card and counter track the editor.
+  useEffect(() => {
+    if (activeErrorIndex >= 0) setCurrentErrorIndex(activeErrorIndex);
+  }, [activeErrorIndex]);
+
+  if (!columns.length) {
+    return <p className="text-sm text-muted">No mapped data.</p>;
+  }
+
+  const pageRows = visibleRows.slice(start, end);
 
   const changePage = (nextPage) => {
-    setWrapHint(false);
+    setWrapHint('');
     onPageChange(nextPage);
   };
 
-  const jumpToNextError = () => {
-    const next = errorRows.find((row) => row > pageEndRow);
-    const target = next ?? errorRows[0];
-    if (target == null) return;
-    setWrapHint(next == null);
-    onPageChange(pageForRow(target, pageSize));
+  const navigateToErrorCell = (next, { announceWrap = '' } = {}) => {
+    if (!next) return;
+    const targetPage = pageForRow(next.rowIdx + 1, pageSize);
+    if (targetPage !== safePage) onPageChange(targetPage);
+    setWrapHint(announceWrap);
+    pendingScrollRef.current = next;
+    setPulseCellKey(errorCellKey(next.rowIdx, next.col));
+    setEditingCell(next);
+  };
+
+  // Point the stepper at an error: sync the index, flip to its page, and
+  // scroll + pulse its table cell — without opening the in-table editor, since
+  // the card itself is now where the value is edited.
+  const goToError = (idx, { announceWrap = '' } = {}) => {
+    const next = errorCells[idx];
+    if (!next) return;
+    setCurrentErrorIndex(idx);
+    const targetPage = pageForRow(next.rowIdx + 1, pageSize);
+    if (targetPage !== safePage) onPageChange(targetPage);
+    setWrapHint(announceWrap);
+    pendingScrollRef.current = next;
+    setPulseCellKey(errorCellKey(next.rowIdx, next.col));
+  };
+
+  // Index-based stepping so the counter is stable; wraps at both ends.
+  const stepError = (delta) => {
+    const len = errorCells.length;
+    if (!len) return;
+    const raw = currentErrorIndex + delta;
+    const wrapped = raw < 0 || raw >= len;
+    const idx = ((raw % len) + len) % len;
+    goToError(idx, {
+      announceWrap: wrapped ? (delta > 0 ? 'Wrapped to first error' : 'Wrapped to last error') : '',
+    });
   };
 
   // Commit the edited value, then move the editor: Enter → next errored cell
@@ -615,43 +761,65 @@ function ValidatedDataTable({
     onEditCell(from.rowIdx, from.col, value);
     let next = null;
     if (dir === 'nextError' && errorCells.length) {
-      const columns = mappedRows.columns;
-      const colIdx = (c) => columns.indexOf(c);
-      const i = errorCells.findIndex(
-        (c) => c.rowIdx > from.rowIdx || (c.rowIdx === from.rowIdx && colIdx(c.col) > colIdx(from.col))
-      );
-      next = errorCells[i === -1 ? 0 : i];
-      if (next.rowIdx === from.rowIdx && next.col === from.col) next = null; // lone error: close
+      next = findNextErrorCell(from, errorCells, columns);
+      if (isSameErrorCell(next, from)) next = null; // lone error: close
     } else if (dir === 'right' || dir === 'left') {
-      const columns = mappedRows.columns;
       const j = columns.indexOf(from.col) + (dir === 'right' ? 1 : -1);
       if (j >= 0 && j < columns.length) next = { rowIdx: from.rowIdx, col: columns[j] };
     }
     if (next) {
-      const targetPage = pageForRow(next.rowIdx + 1, pageSize);
-      if (targetPage !== safePage) changePage(targetPage);
-      setEditingCell(next);
+      navigateToErrorCell(next);
     } else {
       setEditingCell(null);
     }
   };
 
-  const activeErr = editingCell
-    ? errorMap.get(`${editingCell.rowIdx + 1}-${editingCell.col}`)
-    : null;
-  let pageFirstErr = null;
-  for (let rowNum = start + 1; rowNum <= end && !pageFirstErr; rowNum += 1) {
-    for (const col of mappedRows.columns) {
-      const found = errorMap.get(`${rowNum}-${col}`);
-      if (found) {
-        pageFirstErr = found;
-        break;
-      }
+  const stepperIndex = Math.min(currentErrorIndex, Math.max(errorList.length - 1, 0));
+  const stepperError = errorList[stepperIndex] ?? null;
+  const stepperActiveCell = errorList.length ? errorCells[stepperIndex] : null;
+  const stepperRawValue = stepperError
+    ? (rowEdits?.[`${stepperError.row - 1}-${stepperError.fieldName}`] ?? stepperError.rawValue)
+    : '';
+  const stepperValue = stepperRawValue == null ? '' : String(stepperRawValue);
+
+  // Edit the current error's value straight from the card (live-commits into
+  // the same draft store the in-table editor uses, so both stay in sync).
+  const commitStepperValue = (value) => {
+    if (stepperError) onEditCell(stepperError.row - 1, stepperError.fieldName, value);
+  };
+
+  // "Edit this cell" keeps the card as the editor: scroll the table to the
+  // cell and focus the card input rather than opening a second editor.
+  const focusStepperInput = () => {
+    goToError(stepperIndex);
+    valueInputRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!onActiveErrorChange) return;
+    if (stepperError) {
+      onActiveErrorChange({ row: stepperError.row, column: stepperError.fieldName });
+    } else {
+      onActiveErrorChange(null);
     }
-  }
+  }, [stepperError, onActiveErrorChange]);
 
   return (
     <div>
+      {errorList.length > 0 && (
+        <ValidationErrorStepper
+          error={stepperError}
+          index={stepperIndex}
+          total={errorList.length}
+          value={stepperValue}
+          wrapHint={wrapHint}
+          inputRef={valueInputRef}
+          onChange={commitStepperValue}
+          onStep={stepError}
+          onEdit={focusStepperInput}
+        />
+      )}
+
       <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
         <label className="flex items-center gap-2">
           <span className="text-muted">Rows per page</span>
@@ -659,7 +827,7 @@ function ValidatedDataTable({
             className={`${inputClass} w-20`}
             value={pageSize}
             onChange={(e) => {
-              setWrapHint(false);
+              setWrapHint('');
               onPageSizeChange(Number(e.target.value));
             }}
           >
@@ -670,6 +838,44 @@ function ValidatedDataTable({
             ))}
           </select>
         </label>
+        {errorList.length > 0 && (
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={errorsOnly}
+              onChange={(e) => {
+                setWrapHint('');
+                setErrorsOnly(e.target.checked);
+                onPageChange(0);
+              }}
+              className="cursor-pointer accent-accent"
+            />
+            <span className="text-muted">Show rows with errors only</span>
+          </label>
+        )}
+        {errorList.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => stepError(-1)}
+              aria-label="Previous error"
+            >
+              Previous error
+            </Button>
+            <span aria-live="polite" className="min-w-16 text-center text-xs text-muted">
+              {currentErrorIndex + 1} / {errorList.length}
+            </span>
+            <Button
+              variant="secondary"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => stepError(1)}
+              aria-label="Next error"
+            >
+              Next error
+            </Button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
@@ -688,48 +894,46 @@ function ValidatedDataTable({
         </div>
         <span className="text-muted">
           Rows {totalRows === 0 ? 0 : start + 1}–{end} of {totalRows}
+          {errorsOnly ? ` (${allRows.length} total)` : ''}
         </span>
         <span className="text-muted">
           Page {safePage + 1} of {totalPages}
         </span>
-        {errorRows.length > 0 && (
-          <Button variant="secondary" onClick={jumpToNextError}>
-            Next error
-          </Button>
-        )}
-        {wrapHint && (
-          <span aria-live="polite" className="text-xs text-muted">
-            Wrapped to first error
-          </span>
-        )}
       </div>
-
-      {errorRows.length > 0 && <ErrorInspector activeErr={activeErr} pageFirstErr={pageFirstErr} />}
 
       <DataTable
         maxHeight="min(55vh, 640px)"
+        getRowClassName={(item) =>
+          rowHasValidationError(item.rowIdx, errorMap, columns) ? 'bg-danger-bg/25' : ''
+        }
         columns={[
           {
             key: '_row',
             label: 'Row',
-            render: (_row, i) => start + i + 1,
+            render: (item) => item.rowIdx + 1,
           },
-          ...mappedRows.columns.map((col) => ({
+          ...columns.map((col) => ({
             key: col,
             label: col,
-            render: (row, i) => {
-              const rowIdx = start + i; // absolute 0-based index — drafts survive paging
+            render: (item) => {
+              const { row, rowIdx } = item;
               const draftValue = rowEdits?.[`${rowIdx}-${col}`];
               const err = errorMap.get(`${rowIdx + 1}-${col}`);
               const editing = editingCell?.rowIdx === rowIdx && editingCell?.col === col;
+              const isStepperActive =
+                !!stepperActiveCell && stepperActiveCell.rowIdx === rowIdx && stepperActiveCell.col === col;
+              const key = errorCellKey(rowIdx, col);
               return (
                 <EditableCell
                   value={draftValue !== undefined ? draftValue : row[col]}
                   err={err}
                   dirty={draftValue !== undefined}
                   editing={editing}
+                  isActiveError={editing || isStepperActive}
+                  pulseError={pulseCellKey === key}
                   column={col}
                   rowNumber={rowIdx + 1}
+                  cellKey={key}
                   onStartEdit={() => setEditingCell({ rowIdx, col })}
                   onCommit={(v, dir) => commitAndMove({ rowIdx, col }, v, dir)}
                   onCancel={() => setEditingCell(null)}
@@ -738,14 +942,19 @@ function ValidatedDataTable({
             },
           })),
         ]}
-        rows={rows}
+        rows={pageRows}
+        emptyMessage={errorsOnly ? 'No rows with validation errors.' : 'No data.'}
       />
     </div>
   );
 }
 
 function MappingStep({ job, mapping, templateFields, busyAction, onMappingChange, onResume }) {
-  const needsProcessing = job.currentStep === 'UPLOADED' || job.currentStep === 'PARSED';
+  const awaitingParse = job.currentStep === 'UPLOADED';
+  const awaitingMap = job.currentStep === 'PARSED';
+  const needsPipeline = awaitingParse || awaitingMap;
+  const isActive = ACTIVE_STATUSES.includes(job.status);
+
   return (
     <Card>
       <h2 className="mb-1 text-lg font-normal">Column mapping</h2>
@@ -753,18 +962,31 @@ function MappingStep({ job, mapping, templateFields, busyAction, onMappingChange
         Review source columns mapped to template fields. Adjust mappings, then continue to validation.
       </p>
 
-      {needsProcessing && (
+      {needsPipeline && (
         <div className="mb-5">
-          <Callout variant="info" title="Processing not finished">
-            This upload hasn&apos;t been {job.currentStep === 'UPLOADED' ? 'parsed' : 'mapped'} yet.
-            Resume the pipeline to {job.currentStep === 'UPLOADED' ? 'parse the file and ' : ''}
-            auto-map its columns to your template.
-            <div className="mt-2">
-              <Button onClick={onResume} disabled={Boolean(busyAction) || job.status === 'CANCELLED'}>
-                {busyAction === 'resume' ? 'Resuming…' : 'Resume processing'}
-              </Button>
-            </div>
-          </Callout>
+          {isActive ? (
+            <Callout variant="info" title="Processing">
+              <div className="flex items-center gap-2">
+                <Spinner label="" />
+                <span>
+                  {awaitingParse
+                    ? 'Parsing file and extracting columns — this page updates automatically.'
+                    : 'Auto-mapping columns to template fields — this page updates automatically.'}
+                </span>
+              </div>
+            </Callout>
+          ) : (
+            <Callout variant="info" title="Processing not finished">
+              This upload hasn&apos;t been {awaitingParse ? 'parsed' : 'mapped'} yet.
+              Resume the pipeline to {awaitingParse ? 'parse the file and ' : ''}
+              auto-map its columns to your template.
+              <div className="mt-2">
+                <Button onClick={onResume} disabled={Boolean(busyAction) || job.status === 'CANCELLED'}>
+                  {busyAction === 'resume' ? 'Resuming…' : 'Resume processing'}
+                </Button>
+              </div>
+            </Callout>
+          )}
         </div>
       )}
 
@@ -800,6 +1022,7 @@ function ValidationStep({
 }) {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
+  const [chatContext, setChatContext] = useState(null);
 
   const handlePageSizeChange = (size) => {
     setPageSize(size);
@@ -873,6 +1096,7 @@ function ValidationStep({
               onPageSizeChange={handlePageSizeChange}
               rowEdits={rowEdits}
               onEditCell={onEditCell}
+              onActiveErrorChange={setChatContext}
             />
           </div>
         )}
@@ -883,12 +1107,13 @@ function ValidationStep({
         open={chatOpen}
         onOpenChange={onChatOpenChange}
         messages={chatMessages}
-        onSend={onChatSend}
+        onSend={(instruction) => onChatSend(instruction, chatContext)}
         busy={busyAction === 'chat-edit'}
         disabledNote={
           rowsDirty ? 'Save or discard your table edits to use the assistant.' : ''
         }
         showQuickPrompts={validationErrors.length > 0}
+        chatContext={chatContext}
       />
     </>
   );
@@ -1058,6 +1283,7 @@ function ExportStep({
 
 export default function IngestionJobPage() {
   const { id } = useParams();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
   const [job, setJob] = useState(null);
@@ -1096,35 +1322,56 @@ export default function IngestionJobPage() {
   }, []);
 
   const [reloadKey, setReloadKey] = useState(0);
+  const loadSeqRef = useRef(0);
   useEffect(() => {
     let active = true;
+    const seq = ++loadSeqRef.current;
     // Clear the previous job before fetching: rendering A's table under B's id
     // showed the wrong data and let A's wizard step be checkpointed onto B.
     setJob(null);
     setMappingDraft(null);
     setRowEdits(null);
     setChatMessages([]);
-    getJob(id)
-      .then((loaded) => {
-        if (!active) return null;
-        setJob(loaded);
-        setError('');
-        // Field names drive every mapping select, so their absence is worth
-        // saying out loud rather than silently emptying the dropdowns.
-        return getAllFields(loaded.templateId)
-          .then((fields) => {
-            if (active) setTemplateFields(fields);
-          })
-          .catch((err) =>
-            setError(`Template fields could not be loaded: ${err.message}`)
-          );
+
+    const prefetched = location.state?.job;
+    const applyLoaded = (loaded) => {
+      if (!active || seq !== loadSeqRef.current) return null;
+      setJob(loaded);
+      setError('');
+      return getAllFields(loaded.templateId)
+        .then((fields) => {
+          if (active && seq === loadSeqRef.current) setTemplateFields(fields);
+        })
+        .catch((err) => {
+          if (active && seq === loadSeqRef.current) {
+            setError(`Template fields could not be loaded: ${err.message}`);
+          }
+        });
+    };
+
+    if (prefetched && String(prefetched.ingestionJobId) === String(id)) {
+      if (!needsIngestionWait(prefetched, 'MAPPED')) {
+        applyLoaded(prefetched);
+        return () => {
+          active = false;
+        };
+      }
+    }
+
+    toast
+      .promise(() => waitForJob(id, 'MAPPED'), {
+        loading: 'Processing document…',
+        success: 'Processing complete',
+        error: (err) => err.message,
       })
+      .then((loaded) => applyLoaded(loaded))
       .catch((err) => {
-        if (active) setError(err.message);
+        if (active && seq === loadSeqRef.current) setError(err.message);
       });
     return () => {
       active = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, reloadKey]);
 
   const lastStepWrite = useRef(0);
@@ -1237,7 +1484,7 @@ export default function IngestionJobPage() {
       : 'Your cell edits have not been saved. Leave and discard them?'
   );
 
-  const mapping = mappingDraft ?? job?.mapping ?? {};
+  const mapping = mappingDraft ?? job?.mapping ?? job?.suggestedMapping ?? {};
   const validationErrors = (job?.validationResults || []).filter((r) => r.errorMessage);
   const isTerminal = job?.status === 'CANCELLED';
   // One expression for "may this job export": the same server answer that
@@ -1285,6 +1532,19 @@ export default function IngestionJobPage() {
         subtitle={job.fileName || ''}
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
+
+      {(job.status === 'RUNNING' || job.status === 'PENDING') &&
+        !(
+          activeStep === 'mapping' &&
+          (job.currentStep === 'UPLOADED' || job.currentStep === 'PARSED')
+        ) && (
+        <Callout variant="info" title="Processing">
+          <div className="flex items-center gap-2">
+            <Spinner label="" />
+            <span>Pipeline running…</span>
+          </div>
+        </Callout>
+      )}
 
       <WizardToolbar
         job={job}
@@ -1347,7 +1607,7 @@ export default function IngestionJobPage() {
           chatMessages={chatMessages}
           chatOpen={chatOpen}
           onChatOpenChange={setChatOpen}
-          onChatSend={async (instruction) => {
+          onChatSend={async (instruction, chatContext) => {
             const userMsg = {
               id: `user-${nextChatId.current++}`,
               role: 'user',
@@ -1358,7 +1618,11 @@ export default function IngestionJobPage() {
             setBusyAction('chat-edit');
             try {
               const result = await toast.promise(
-                chatEdit(id, instruction),
+                chatEdit(id, {
+                  instruction,
+                  row: chatContext?.row ?? null,
+                  column: chatContext?.column ?? null,
+                }),
                 ACTION_MESSAGES['chat-edit']
               );
               applyJob(result);

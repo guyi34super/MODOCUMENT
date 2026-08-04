@@ -13,6 +13,7 @@ import com.modocument.application.port.RawRecordStore;
 import com.modocument.domain.document.ExtractionJob;
 import com.modocument.domain.document.ProcessedRecord;
 import com.modocument.domain.document.RawRecord;
+import com.modocument.infrastructure.job.JobWaitService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -47,6 +48,7 @@ public class ExtractionJobController {
     private final RawRecordStore rawRecords;
     private final ProcessedRecordStore processedRecords;
     private final ExtractionAuditLog audit;
+    private final JobWaitService jobWaitService;
 
     public ExtractionJobController(ExtractionJobUseCase jobs,
                                    BridgeToTemplateUseCase bridge,
@@ -54,7 +56,8 @@ public class ExtractionJobController {
                                    SummarizeExtractionUseCase summarize,
                                    RawRecordStore rawRecords,
                                    ProcessedRecordStore processedRecords,
-                                   ExtractionAuditLog audit) {
+                                   ExtractionAuditLog audit,
+                                   JobWaitService jobWaitService) {
         this.jobs = jobs;
         this.bridge = bridge;
         this.inferSchema = inferSchema;
@@ -62,6 +65,7 @@ public class ExtractionJobController {
         this.rawRecords = rawRecords;
         this.processedRecords = processedRecords;
         this.audit = audit;
+        this.jobWaitService = jobWaitService;
     }
 
     /** Creates a job and (by default) starts it immediately. */
@@ -87,13 +91,22 @@ public class ExtractionJobController {
     }
 
     @GetMapping("/api/extraction/jobs/{id}")
-    public ResponseEntity<?> get(@PathVariable String id) {
+    public ResponseEntity<?> get(@PathVariable String id,
+                                 @RequestParam(defaultValue = "false") boolean wait) {
+        if (wait) {
+            return ResponseEntity.ok(jobWaitService.waitForExtractionView(id));
+        }
         return ResponseEntity.ok(dto(jobs.get(id)));
     }
 
     @PostMapping("/api/extraction/jobs/{id}/start")
-    public ResponseEntity<?> start(@PathVariable String id) {
-        return ResponseEntity.ok(dto(jobs.start(id)));
+    public ResponseEntity<?> start(@PathVariable String id,
+                                   @RequestParam(defaultValue = "false") boolean wait) {
+        jobs.start(id);
+        if (wait) {
+            return ResponseEntity.ok(jobWaitService.waitForExtractionView(id));
+        }
+        return ResponseEntity.ok(dto(jobs.get(id)));
     }
 
     @PostMapping("/api/extraction/jobs/{id}/pause")
@@ -102,8 +115,13 @@ public class ExtractionJobController {
     }
 
     @PostMapping("/api/extraction/jobs/{id}/resume")
-    public ResponseEntity<?> resume(@PathVariable String id) {
-        return ResponseEntity.ok(dto(jobs.resume(id)));
+    public ResponseEntity<?> resume(@PathVariable String id,
+                                    @RequestParam(defaultValue = "false") boolean wait) {
+        jobs.resume(id);
+        if (wait) {
+            return ResponseEntity.ok(jobWaitService.waitForExtractionView(id));
+        }
+        return ResponseEntity.ok(dto(jobs.get(id)));
     }
 
     @PostMapping("/api/extraction/jobs/{id}/cancel")

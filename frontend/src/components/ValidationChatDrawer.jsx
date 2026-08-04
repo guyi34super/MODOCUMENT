@@ -1,10 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, inputClass } from './ui';
 
-const QUICK_PROMPTS = [
-  'Fill empty required fields',
-  'Trim whitespace in name columns',
-];
+const BULK_PROMPT = 'Fill empty required fields';
+
+function buildQuickPrompts(chatContext) {
+  const prompts = [];
+  if (chatContext?.row != null && chatContext?.column) {
+    prompts.push('Fix this cell');
+  }
+  if (chatContext?.row != null) {
+    prompts.push('Fix this row');
+  }
+  if (chatContext?.column) {
+    prompts.push(`Fix ${chatContext.column} column`);
+  }
+  prompts.push(BULK_PROMPT);
+  return prompts;
+}
 
 export default function ValidationChatDrawer({
   open,
@@ -14,10 +26,12 @@ export default function ValidationChatDrawer({
   busy,
   disabledNote = '',
   showQuickPrompts,
+  chatContext = null,
 }) {
   const [draft, setDraft] = useState('');
   const listRef = useRef(null);
   const blocked = busy || Boolean(disabledNote);
+  const quickPrompts = showQuickPrompts ? buildQuickPrompts(chatContext) : [];
 
   useEffect(() => {
     if (open && listRef.current) {
@@ -43,6 +57,15 @@ export default function ValidationChatDrawer({
       submit(draft);
     }
   };
+
+  const contextLabel =
+    chatContext?.row != null && chatContext?.column
+      ? `Row ${chatContext.row} · ${chatContext.column}`
+      : chatContext?.row != null
+        ? `Row ${chatContext.row}`
+        : chatContext?.column
+          ? chatContext.column
+          : null;
 
   return (
     <>
@@ -105,9 +128,15 @@ export default function ValidationChatDrawer({
             )}
           </div>
 
-          {showQuickPrompts && (
+          {contextLabel && (
+            <p className="border-t border-line px-4 py-2 text-xs text-muted">
+              Context: {contextLabel}
+            </p>
+          )}
+
+          {showQuickPrompts && quickPrompts.length > 0 && (
             <div className="flex flex-wrap gap-1 border-t border-line px-4 py-2">
-              {QUICK_PROMPTS.map((prompt) => (
+              {quickPrompts.map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
@@ -132,7 +161,7 @@ export default function ValidationChatDrawer({
               <textarea
                 rows={2}
                 className={`${inputClass} min-h-[2.5rem] flex-1 resize-none`}
-                placeholder='e.g. "fill empty FirstName fields"'
+                placeholder='e.g. "fix this cell" or "trim Email column"'
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={handleKeyDown}

@@ -1,20 +1,31 @@
 package com.modocument.application.dto;
 
+import com.modocument.application.usecase.ChatEditScope;
+
 /**
- * Input for the ChatEditPatch prompt: a user instruction, the full table's
- * column list, and only the rows that need modifying (with their validation
- * errors) — so the model never sees rows it should not touch.
+ * Input for scoped chat-edit patch prompts: a user instruction, the full
+ * table's column list, and a scope-specific payload (one cell, one row,
+ * one column's error cells, or all error rows).
  */
 public class ChatEditPatchPromptInput extends PromptInput {
 
+    private final ChatEditScope scope;
     private final String instruction;
     private final String columnsJson;
-    private final String errorRowsJson;
+    private final String payloadJson;
 
-    public ChatEditPatchPromptInput(String instruction, String columnsJson, String errorRowsJson) {
+    public ChatEditPatchPromptInput(ChatEditScope scope,
+                                    String instruction,
+                                    String columnsJson,
+                                    String payloadJson) {
+        this.scope = scope;
         this.instruction = instruction;
         this.columnsJson = columnsJson;
-        this.errorRowsJson = errorRowsJson;
+        this.payloadJson = payloadJson;
+    }
+
+    public ChatEditScope getScope() {
+        return scope;
     }
 
     public String getInstruction() {
@@ -25,7 +36,7 @@ public class ChatEditPatchPromptInput extends PromptInput {
         return columnsJson;
     }
 
-    public String getErrorRowsJson() {
-        return errorRowsJson;
+    public String getPayloadJson() {
+        return payloadJson;
     }
 }
