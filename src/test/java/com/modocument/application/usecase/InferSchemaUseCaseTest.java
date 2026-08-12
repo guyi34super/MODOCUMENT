@@ -32,12 +32,14 @@ class InferSchemaUseCaseTest {
     private final ProcessedRecordStore records = mock(ProcessedRecordStore.class);
     private final AiFilesService ai = mock(AiFilesService.class);
     private final ExtractionAuditLog audit = mock(ExtractionAuditLog.class);
+    private final ExtractionLlmProperties extractionLlm = new ExtractionLlmProperties();
     private final InferSchemaUseCase useCase = new InferSchemaUseCase(
             jobs, records, List.of(new SchemaInferencePrompt()), ai, audit,
-            new PiiTokenizer(new PrivacyProperties()));
+            new PiiTokenizer(new PrivacyProperties()), extractionLlm);
 
     @Test
     void masksSampleValuesAndDetokenizesInferredExamples() {
+        extractionLlm.setModelId("mistral:latest");
         ExtractionJob job = mock(ExtractionJob.class);
         when(job.getDataSpec()).thenReturn(null);
         when(jobs.getById("j1")).thenReturn(Optional.of(job));
@@ -46,7 +48,7 @@ class InferSchemaUseCaseTest {
         when(record.getFields()).thenReturn(Map.of("Email", "ada@acme.com", "Age", "36"));
         when(records.findBatch(anyString(), any(), anyInt())).thenReturn(List.of(record));
 
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new InferredSchema(List.of(
                         new InferredSchema.InferredField("Email", "string", "[EMAIL_1]"),
                         new InferredSchema.InferredField("Age", "int", "36"))));
@@ -54,7 +56,8 @@ class InferSchemaUseCaseTest {
         InferredSchema schema = useCase.infer("j1");
 
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class),
+                org.mockito.ArgumentMatchers.eq("mistral:latest"));
         assertThat(prompt.getValue()).contains("[EMAIL_1]");
         assertThat(prompt.getValue()).doesNotContain("ada@acme.com");
 

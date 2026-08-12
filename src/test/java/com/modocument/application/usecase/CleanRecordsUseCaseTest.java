@@ -22,8 +22,10 @@ import static org.mockito.Mockito.when;
 class CleanRecordsUseCaseTest {
 
     private final AiFilesService ai = mock(AiFilesService.class);
+    private final ExtractionLlmProperties extractionLlm = new ExtractionLlmProperties();
     private final CleanRecordsUseCase useCase = new CleanRecordsUseCase(
-            List.of(new DataCleaningPrompt()), ai, new PiiTokenizer(new PrivacyProperties()));
+            List.of(new DataCleaningPrompt()), ai, new PiiTokenizer(new PrivacyProperties()),
+            extractionLlm);
 
     private static final List<String> COLUMNS = List.of("Email", "Amount");
     private static final List<Map<String, String>> ROWS =
@@ -31,14 +33,16 @@ class CleanRecordsUseCaseTest {
 
     @Test
     void masksSensitiveCellsInPromptAndDetokenizesResponse() {
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        extractionLlm.setModelId("mistral:latest");
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new TableData(COLUMNS,
                         List.of(Map.of("Email", "[EMAIL_1]", "Amount", "1250.00"))));
 
         List<Map<String, String>> cleaned = useCase.clean(COLUMNS, ROWS, null);
 
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class),
+                org.mockito.ArgumentMatchers.eq("mistral:latest"));
         assertThat(prompt.getValue()).contains("[EMAIL_1]");
         assertThat(prompt.getValue()).doesNotContain("ada@acme.com");
         // Non-sensitive cells travel raw so the model can actually clean them.
@@ -49,11 +53,12 @@ class CleanRecordsUseCaseTest {
 
     @Test
     void keepsOriginalRowsOnMismatchedBatchOrFailure() {
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        extractionLlm.setModelId("mistral:latest");
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenReturn(new TableData(COLUMNS, List.of()));
         assertThat(useCase.clean(COLUMNS, ROWS, null)).isEqualTo(ROWS);
 
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
                 .thenThrow(new IllegalStateException("no key"));
         assertThat(useCase.clean(COLUMNS, ROWS, null)).isEqualTo(ROWS);
     }

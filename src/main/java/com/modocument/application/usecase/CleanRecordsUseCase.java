@@ -30,13 +30,16 @@ public class CleanRecordsUseCase {
     private final List<PromptStrategy> promptStrategies;
     private final AiFilesService aiFilesService;
     private final PiiTokenizer tokenizer;
+    private final ExtractionLlmProperties extractionLlm;
 
     public CleanRecordsUseCase(List<PromptStrategy> promptStrategies,
                                AiFilesService aiFilesService,
-                               PiiTokenizer tokenizer) {
+                               PiiTokenizer tokenizer,
+                               ExtractionLlmProperties extractionLlm) {
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
         this.tokenizer = tokenizer;
+        this.extractionLlm = extractionLlm;
     }
 
     /**
@@ -65,7 +68,7 @@ public class CleanRecordsUseCase {
                         dataSpec));
                 TableData result = aiFilesService.sendForObject(prompt,
                         new ParameterizedTypeReference<TableData>() {
-                        });
+                        }, extractionLlm.getModelId());
                 if (result != null && result.getRows() != null
                         && result.getRows().size() == batch.size()) {
                     cleaned.addAll(session.detokenizeRows(result.getRows()));

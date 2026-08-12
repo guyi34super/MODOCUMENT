@@ -6,8 +6,9 @@ import com.modocument.application.port.PromptStrategy;
 import org.springframework.stereotype.Component;
 
 /**
- * Suggests a template schema (field names, data types, examples) from a
- * sample of extracted records, guided by what the user said they want.
+ * Suggests a template schema from extracted record samples. Prompt style
+ * matches {@link TableExtractionPrompt}: short steps and explicit JSON schema
+ * for local models (e.g. Mistral via Ollama).
  */
 @Component
 public class SchemaInferencePrompt implements PromptStrategy {
@@ -22,20 +23,23 @@ public class SchemaInferencePrompt implements PromptStrategy {
         if (!(input instanceof SchemaInferencePromptInput schemaInput)) {
             throw new IllegalArgumentException("Invalid input type for SchemaInferencePrompt");
         }
+        String nl = System.lineSeparator();
         StringBuilder prompt = new StringBuilder();
-        prompt.append("You are a data schema analyst.").append(System.lineSeparator());
-        prompt.append("From the sample records below, infer the most useful flat table schema: ")
-                .append("one entry per field with name (letters/digits/underscores), ")
-                .append("dataType (one of: string, int, decimal, date, datetime, boolean) ")
-                .append("and a representative example value taken from the samples.")
-                .append(System.lineSeparator());
-        prompt.append("Only include fields that actually occur in the samples; never invent data.")
-                .append(System.lineSeparator());
+        prompt.append("TASK: Infer a flat table schema from the sample records below.").append(nl);
+        prompt.append(nl).append("STEPS:").append(nl);
+        prompt.append("1. List every field that appears in the samples.").append(nl);
+        prompt.append("2. For each field set name (letters/digits/underscores), dataType, and example.").append(nl);
+        prompt.append("3. dataType must be one of: string, int, decimal, date, datetime, boolean.").append(nl);
+        prompt.append("4. example must be a real value from the samples.").append(nl);
+        prompt.append("5. Return ONE JSON object only (no markdown, no explanation).").append(nl);
+        prompt.append(nl);
+        prompt.append("JSON RULES: double-quoted keys and strings; no trailing commas.").append(nl);
+        prompt.append("Schema: {\"fields\":[{\"name\":\"FieldName\",\"dataType\":\"string\",\"example\":\"val\"}]}")
+                .append(nl);
         if (schemaInput.getDataSpec() != null && !schemaInput.getDataSpec().isBlank()) {
-            prompt.append("The user wants: ").append(schemaInput.getDataSpec())
-                    .append(System.lineSeparator());
+            prompt.append(nl).append("USER GOAL: ").append(schemaInput.getDataSpec()).append(nl);
         }
-        prompt.append("Sample records (JSON):").append(System.lineSeparator());
+        prompt.append(nl).append("SAMPLE RECORDS (JSON):").append(nl);
         prompt.append(schemaInput.getSampleRecordsJson());
         return prompt.toString();
     }

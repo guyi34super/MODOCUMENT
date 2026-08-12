@@ -85,6 +85,10 @@ modocument:
     full-table-max-change-ratio: ${MODOCUMENT_CHAT_EDIT_MAX_CHANGE_RATIO:0.6}
     # Model for validation-step chat edits (Ollama: deepseek-r1:8b).
     model-id: ${MODOCUMENT_CHAT_EDIT_MODEL:deepseek-r1:8b}
+  extraction-llm:
+    # Agentic extraction: schema inference, run summaries, record cleaning.
+    # Uses the same local Ollama endpoint as document parsing (AIFILES_OPENAI_BASEURL).
+    model-id: ${MODOCUMENT_EXTRACTION_MODEL:mistral:latest}
 
 management:
   endpoints:

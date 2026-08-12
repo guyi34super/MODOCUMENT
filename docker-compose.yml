@@ -44,6 +44,8 @@ services:
       PARSING_DETERMINISTIC_ENABLED: ${PARSING_DETERMINISTIC_ENABLED:-true}
       EXCEL_LLM_ENABLED: ${EXCEL_LLM_ENABLED:-false}
       MODOCUMENT_CHAT_EDIT_MODEL: ${MODOCUMENT_CHAT_EDIT_MODEL:-deepseek-r1:8b}
+      # Agentic extraction (schema inference, summaries, record cleaning).
+      MODOCUMENT_EXTRACTION_MODEL: ${MODOCUMENT_EXTRACTION_MODEL:-mistral:latest}
       # Only used when the scale profile is active.
       EXTRACTION_MONGO_URI: mongodb://mongodb:27017/modocument
       EXTRACTION_KAFKA_SERVERS: kafka:9092
