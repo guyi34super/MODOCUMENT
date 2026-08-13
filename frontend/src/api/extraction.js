@@ -24,5 +24,11 @@ export const getRecords = (id, { kind = 'processed', afterId, limit = 50 } = {})
   return api.get(`/api/extraction/jobs/${id}/records?${params}`);
 };
 
+export const getAudit = (id, { afterId, limit = 100 } = {}) => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (afterId) params.set('afterId', afterId);
+  return api.get(`/api/extraction/jobs/${id}/audit?${params}`);
+};
+
 export const bridgeToIngestion = (id, templateId) =>
   api.post(`/api/extraction/jobs/${id}/bridge`, { templateId });

@@ -127,7 +127,10 @@ the test suite.
   the crawler sends an honest bot User-Agent, and 401/402/403 (logins, paywalls) are
   terminal skips — never retried, never worked around, no cookies, no CAPTCHA handling.
   Every fetch attempt and every blocked/deduped/retried decision is written to a
-  queryable **audit trail** (`GET /api/extraction/jobs/{id}/audit`).
+  queryable **audit trail** (`GET /api/extraction/jobs/{id}/audit`). The job page in
+  the UI polls live progress with running/completed toasts, and shows the audit
+  trail — loaded automatically when a job completes without records, so blocked
+  fetches are never silent.
 - **Secrets are never persisted**: API auth is an env-var reference on the source, or a
   per-run token; DB credentials are supplied per-run and held in process memory only
   (DB tasks are pinned to the node that holds them).

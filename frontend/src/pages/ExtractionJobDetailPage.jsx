@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
 import {
   bridgeToIngestion,
   cancelJob,
+  getAudit,
+  getJob,
   getRecords,
   pauseJob,
   resumeJob,
   startJob,
-  waitForJob,
 } from '../api/extraction';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
@@ -22,6 +23,13 @@ const ACTION_MESSAGES = {
   cancel: { loading: 'Cancelling job…', success: 'Job cancelled' },
 };
 
+const TERMINAL_STATUSES = ['COMPLETED', 'COMPLETED_WITH_ERRORS', 'FAILED', 'CANCELLED'];
+const BLOCKED_ACTIONS = ['ROBOTS_BLOCKED', 'DOMAIN_BLOCKED', 'RATE_LIMITED'];
+const POLL_MS = 2500;
+
+const isBlockedEvent = (event) =>
+  BLOCKED_ACTIONS.includes(event.action) || event.outcome === 'blocked';
+
 export default function ExtractionJobDetailPage() {
   const { id } = useParams();
   const toast = useToast();
@@ -34,48 +42,145 @@ export default function ExtractionJobDetailPage() {
   const [nextAfterId, setNextAfterId] = useState(null);
   const [recordsLoaded, setRecordsLoaded] = useState(false);
 
+  const [auditEvents, setAuditEvents] = useState([]);
+  const [auditNextAfterId, setAuditNextAfterId] = useState(null);
+  const [auditLoaded, setAuditLoaded] = useState(false);
+
   const [bridgeTemplateId, setBridgeTemplateId] = useState('');
   const [bridgeResult, setBridgeResult] = useState(null);
 
+  const prevStatus = useRef(null);
+  const runningToast = useRef(null);
+  const autoLoaded = useRef(false);
+
+  // Load immediately, then keep polling while the job is still moving so the
+  // progress counters tick live and status changes surface as toasts.
   useEffect(() => {
     let active = true;
+    let timer = null;
+    prevStatus.current = null;
+    autoLoaded.current = false;
     setJob(null);
-    waitForJob(id)
-      .then((loaded) => {
-        if (active) {
-          setJob(loaded);
-          setError('');
+    setRecords([]);
+    setRecordsLoaded(false);
+    setAuditEvents([]);
+    setAuditLoaded(false);
+    const tick = async () => {
+      try {
+        const loaded = await getJob(id);
+        if (!active) return;
+        setJob(loaded);
+        setError('');
+        if (!TERMINAL_STATUSES.includes(loaded.status)) {
+          timer = setTimeout(tick, POLL_MS);
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         if (active) setError(err.message);
-      });
+      }
+    };
+    tick();
     getTemplates().then(setTemplates).catch(() => {});
     return () => {
       active = false;
+      if (timer) clearTimeout(timer);
     };
   }, [id]);
+
+  // Lifecycle toasts: a persistent "running" toast that morphs into the
+  // completion outcome. Jobs already terminal on arrival stay silent.
+  useEffect(() => {
+    if (!job) return;
+    const { status } = job;
+    const prev = prevStatus.current;
+    prevStatus.current = status;
+    if (status === 'RUNNING') {
+      if (runningToast.current == null) {
+        runningToast.current = toast.loading('Extraction running…');
+      }
+      return;
+    }
+    if (!TERMINAL_STATUSES.includes(status)) return;
+    const watched = runningToast.current != null || (prev && !TERMINAL_STATUSES.includes(prev));
+    if (!watched) return;
+    const processed = job.counters?.recordsProcessed ?? 0;
+    const success = status === 'COMPLETED' && processed > 0;
+    const message = success
+      ? `Extraction completed — ${processed} processed record${processed === 1 ? '' : 's'}`
+      : status === 'COMPLETED'
+        ? 'Job completed but produced no records — check the audit trail'
+        : status === 'COMPLETED_WITH_ERRORS'
+          ? 'Extraction completed with errors — check the audit trail'
+          : `Extraction ${status.toLowerCase()}`;
+    if (runningToast.current != null) {
+      toast.update(runningToast.current, { type: success ? 'success' : 'error', message });
+      runningToast.current = null;
+    } else if (success) {
+      toast.success(message);
+    } else {
+      toast.error(message);
+    }
+  }, [job, toast]);
+
+  // Don't leave an orphaned "running" toast behind when navigating away.
+  useEffect(
+    () => () => {
+      if (runningToast.current != null) {
+        toast.dismiss(runningToast.current);
+        runningToast.current = null;
+      }
+    },
+    [toast]
+  );
+
+  const loadRecords = useCallback(
+    async (afterId) => {
+      setBusyAction('records');
+      try {
+        const page = await getRecords(id, { afterId });
+        setRecords((prev) => (afterId ? [...prev, ...page.records] : page.records));
+        setNextAfterId(page.nextAfterId || null);
+        setRecordsLoaded(true);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setBusyAction('');
+      }
+    },
+    [id]
+  );
+
+  const loadAudit = useCallback(
+    async (afterId) => {
+      setBusyAction('audit');
+      try {
+        const page = await getAudit(id, { afterId });
+        setAuditEvents((prev) => (afterId ? [...prev, ...page.events] : page.events));
+        setAuditNextAfterId(page.nextAfterId || null);
+        setAuditLoaded(true);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setBusyAction('');
+      }
+    },
+    [id]
+  );
+
+  // Once the job settles, show its results without another click — and when
+  // it produced nothing, the audit trail that explains why.
+  useEffect(() => {
+    if (!job || autoLoaded.current || !TERMINAL_STATUSES.includes(job.status)) return;
+    autoLoaded.current = true;
+    loadRecords();
+    if ((job.counters?.recordsProcessed ?? 0) === 0) {
+      loadAudit();
+    }
+  }, [job, loadRecords, loadAudit]);
 
   const runAction = async (name, fn) => {
     setBusyAction(name);
     try {
       setJob(await toast.promise(fn, ACTION_MESSAGES[name] || { loading: 'Working…' }));
-    } catch {
-      // The error toast is already shown.
-    } finally {
-      setBusyAction('');
-    }
-  };
-
-  const loadRecords = async (afterId) => {
-    setBusyAction('records');
-    try {
-      const page = await toast.promise(getRecords(id, { afterId }), {
-        loading: 'Loading records…',
-      });
-      setRecords((prev) => (afterId ? [...prev, ...page.records] : page.records));
-      setNextAfterId(page.nextAfterId || null);
-      setRecordsLoaded(true);
     } catch {
       // The error toast is already shown.
     } finally {
@@ -102,6 +207,9 @@ export default function ExtractionJobDetailPage() {
   if (!job) return error ? <ErrorBanner message={error} /> : <Spinner label="Loading job…" />;
 
   const counters = job.counters || {};
+  const completedEmpty =
+    ['COMPLETED', 'COMPLETED_WITH_ERRORS'].includes(job.status) &&
+    (counters.recordsProcessed ?? 0) === 0;
 
   return (
     <div>
@@ -112,7 +220,7 @@ export default function ExtractionJobDetailPage() {
         actions={
           <>
             <Button
-              onClick={() => runAction('start', () => startJob(id, true))}
+              onClick={() => runAction('start', () => startJob(id))}
               disabled={Boolean(busyAction) || job.status !== 'PENDING'}
             >
               Start
@@ -126,7 +234,7 @@ export default function ExtractionJobDetailPage() {
             </Button>
             <Button
               variant="secondary"
-              onClick={() => runAction('resume', () => resumeJob(id, true))}
+              onClick={() => runAction('resume', () => resumeJob(id))}
               disabled={Boolean(busyAction) || job.status !== 'PAUSED'}
             >
               Resume
@@ -145,11 +253,25 @@ export default function ExtractionJobDetailPage() {
 
       <div className="mb-5 flex items-center gap-3">
         <Badge status={job.status} />
+        {!TERMINAL_STATUSES.includes(job.status) && (
+          <span className="text-sm text-muted">Updating live…</span>
+        )}
       </div>
 
       {job.errorSummary && (
         <div className="mb-5">
           <Callout variant="error" title="Errors during extraction">{job.errorSummary}</Callout>
+        </div>
+      )}
+
+      {completedEmpty && (
+        <div className="mb-5">
+          <Callout variant="error" title="Completed without records">
+            Every fetch was skipped or blocked. Common causes: robots.txt disallows the URL (or
+            could not be fetched — the crawler fails closed), the seed host is not covered by the
+            source&apos;s allowed domains, or the site answered 401/403/404. The audit trail below
+            shows the exact reason per URL.
+          </Callout>
         </div>
       )}
 
@@ -203,6 +325,83 @@ export default function ExtractionJobDetailPage() {
                 className="mt-3"
                 onClick={() => loadRecords(nextAfterId)}
                 disabled={busyAction === 'records'}
+              >
+                Load more
+              </Button>
+            )}
+          </>
+        )}
+      </Card>
+
+      <Card className="mb-5">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-normal">Audit trail</h2>
+            <p className="text-sm text-muted">Every fetch, block, retry and LLM call this job made.</p>
+          </div>
+          <Button variant="secondary" onClick={() => loadAudit()} disabled={busyAction === 'audit'}>
+            {auditLoaded ? 'Reload' : 'Load audit trail'}
+          </Button>
+        </div>
+        {auditLoaded && (
+          <>
+            <DataTable
+              columns={[
+                {
+                  key: 'timestamp',
+                  label: 'Time',
+                  render: (row) => (
+                    <span className="whitespace-nowrap text-xs">
+                      {row.timestamp ? String(row.timestamp).replace('T', ' ').slice(0, 19) : '—'}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'action',
+                  label: 'Action',
+                  render: (row) => (
+                    <span className={isBlockedEvent(row) ? 'font-semibold text-danger-ink' : ''}>
+                      {row.action}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'outcome',
+                  label: 'Outcome',
+                  render: (row) => (
+                    <span className={row.outcome === 'blocked' ? 'text-danger-ink' : ''}>
+                      {row.outcome || '—'}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'uri',
+                  label: 'URI',
+                  render: (row) => (
+                    <span className="block max-w-xs truncate font-mono text-xs" title={row.uri}>
+                      {row.uri || '—'}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'detail',
+                  label: 'Detail',
+                  render: (row) => (
+                    <span className="block max-w-sm truncate" title={row.detail}>
+                      {row.detail || '—'}
+                    </span>
+                  ),
+                },
+              ]}
+              rows={auditEvents}
+              emptyMessage="No audit events recorded for this job."
+            />
+            {auditNextAfterId && (
+              <Button
+                variant="secondary"
+                className="mt-3"
+                onClick={() => loadAudit(auditNextAfterId)}
+                disabled={busyAction === 'audit'}
               >
                 Load more
               </Button>
