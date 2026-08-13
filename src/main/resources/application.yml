@@ -98,7 +98,7 @@ management:
         include: health
   health:
     mongo:
-      # The default extraction store is in-memory, so an absent Mongo must not
+      # The default extraction store is SQL, so an absent Mongo must not
       # drag /actuator/health DOWN. The scale profile re-enables this check.
       enabled: false
 
@@ -163,10 +163,13 @@ ocr:
     max-dimension: 2048
 
 extraction:
-  # Where extraction data (sources, jobs, tasks, raw/processed records, audit)
-  # lives. "memory" keeps a single-node deployment free of extra services;
-  # set EXTRACTION_STORE=mongo (or the scale profile) for multi-instance runs.
-  store: ${EXTRACTION_STORE:memory}
+  # Where extraction data (sources, jobs, raw/processed records, audit,
+  # connector state) lives. "sql" (default) persists it in the primary
+  # database, owned per user, so it survives restarts with no extra services;
+  # "memory" is for tests, "mongo" (or the scale profile) for multi-instance
+  # runs. With "sql" the in-flight task queue stays in memory — jobs
+  # interrupted by a restart are marked FAILED at startup and can be re-run.
+  store: ${EXTRACTION_STORE:sql}
   kafka:
     # When enabled, task-available events are published to Kafka so any
     # instance in the consumer group can claim the task from the store. When

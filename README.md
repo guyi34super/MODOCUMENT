@@ -116,9 +116,13 @@ the test suite.
   (ETag/Last-Modified, API cursors, DB watermarks), pause/resume, and crash recovery
   via lease expiry come built in. Records stream through bounded batches — the whole
   dataset is never held in memory.
-- **Storage**: raw payloads, normalized records, job state, the task queue, and the
-  audit trail live in **MongoDB** (`extraction.store=mongo`); local/test profiles use
-  in-memory adapters so nothing external is needed. **Kafka** (optional,
+- **Storage**: sources, jobs, raw payloads, normalized records, and the audit trail
+  persist by default in the **primary SQL database** (`extraction.store=sql`), each
+  source/job owned by its user — so everything survives restarts with no extra
+  services (jobs interrupted mid-run are marked FAILED at startup and can be re-run).
+  **MongoDB** (`extraction.store=mongo`) remains the multi-instance/scale option and
+  also persists the task queue; `extraction.store=memory` keeps the test suite
+  self-contained. **Kafka** (optional,
   `extraction.kafka.enabled`) fans work signals across app instances — the store stays
   the source of truth, so duplicate or lost signals are harmless.
 - **Compliance is enforced in code, not just documented**: every web fetch passes one
