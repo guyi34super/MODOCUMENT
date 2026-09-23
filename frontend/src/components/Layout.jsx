@@ -17,6 +17,13 @@ const sections = [
     ],
   },
   {
+    label: 'Document Creation',
+    links: [
+      { to: '/creation/blueprints', label: 'Blueprints' },
+      { to: '/creation/documents', label: 'My Documents' },
+    ],
+  },
+  {
     label: 'Data Extraction',
     links: [
       { to: '/extraction/sources', label: 'Extraction Sources' },

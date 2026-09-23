@@ -14,9 +14,12 @@ RUN mvn -B -q -DskipTests package
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-# curl is only needed for the container healthcheck.
+# curl is only needed for the container healthcheck. LibreOffice Writer powers
+# the document-creation PDF export (headless soffice); fonts-liberation keeps
+# Arial/Times-based templates metric-compatible. Without them the app still
+# runs — PDF download just answers 409 and .docx keeps working.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl libreoffice-writer fonts-liberation \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --home-dir /app --shell /usr/sbin/nologin modocument
 

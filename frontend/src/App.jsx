@@ -9,6 +9,10 @@ import TemplateEditorPage from './pages/TemplateEditorPage';
 import ValidationRulesPage from './pages/ValidationRulesPage';
 import IngestionListPage from './pages/IngestionListPage';
 import IngestionJobPage from './pages/IngestionJobPage';
+import BlueprintListPage from './pages/BlueprintListPage';
+import BlueprintDetailPage from './pages/BlueprintDetailPage';
+import DocInstancesPage from './pages/DocInstancesPage';
+import DocBuilderPage from './pages/DocBuilderPage';
 import ExtractionSourcesPage from './pages/ExtractionSourcesPage';
 import ExtractionJobsPage from './pages/ExtractionJobsPage';
 import ExtractionJobDetailPage from './pages/ExtractionJobDetailPage';
@@ -33,6 +37,10 @@ export default function App() {
         <Route path="/validation" element={<ValidationRulesPage />} />
         <Route path="/ingestion" element={<IngestionListPage />} />
         <Route path="/ingestion/:id" element={<IngestionJobPage />} />
+        <Route path="/creation/blueprints" element={<BlueprintListPage />} />
+        <Route path="/creation/blueprints/:id" element={<BlueprintDetailPage />} />
+        <Route path="/creation/documents" element={<DocInstancesPage />} />
+        <Route path="/creation/documents/:id" element={<DocBuilderPage />} />
         <Route path="/extraction/sources" element={<ExtractionSourcesPage />} />
         <Route path="/extraction/jobs" element={<ExtractionJobsPage />} />
         <Route path="/extraction/jobs/:id" element={<ExtractionJobDetailPage />} />

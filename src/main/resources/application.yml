@@ -32,7 +32,8 @@ spring:
   servlet:
     multipart:
       max-file-size: 50MB
-      max-request-size: 50MB
+      # Bulk image upload for document creation sends many photos at once.
+      max-request-size: 200MB
   ai:
     openai:
       # Bridged from the legacy aifiles.openai.* keys so AIFILES_OPENAI_* env
@@ -89,6 +90,12 @@ modocument:
     # Agentic extraction: schema inference, run summaries, record cleaning.
     # Uses the same local Ollama endpoint as document parsing (AIFILES_OPENAI_BASEURL).
     model-id: ${MODOCUMENT_EXTRACTION_MODEL:mistral:latest}
+  doccreation:
+    # Headless LibreOffice for the document-creation PDF export. Installed in
+    # the Docker image; when the binary is absent (e.g. local dev) the .docx
+    # download keeps working and the PDF endpoint answers 409.
+    soffice-path: ${MODOCUMENT_DOCCREATION_SOFFICE_PATH:soffice}
+    soffice-timeout-seconds: ${MODOCUMENT_DOCCREATION_SOFFICE_TIMEOUT_SECONDS:120}
 
 management:
   endpoints:

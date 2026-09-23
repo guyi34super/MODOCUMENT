@@ -1564,6 +1564,361 @@ paths:
       summary: Extraction metrics
       tags:
       - Extraction
+  /api/doccreation/blueprints:
+    get:
+      description: List the caller's document-creation blueprints with section and document counts
+      operationId: listDocBlueprints
+      responses:
+        default:
+          description: OK
+      summary: List blueprints
+      tags:
+      - DocumentCreation
+    post:
+      description: Upload a .docx blueprint. The engine breaks it into sections by
+        its headings (with a bold-paragraph fallback and a single implicit section
+        for heading-less files); each section gets auto-assignment keywords seeded
+        from its title. companyId (optional) selects a company-specific flow.
+      operationId: createDocBlueprint
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+                companyId:
+                  type: string
+              required:
+              - file
+      responses:
+        '201':
+          description: Blueprint created with its parsed sections
+        '400':
+          description: Not a .docx or not readable
+      summary: Upload a blueprint
+      tags:
+      - DocumentCreation
+  /api/doccreation/blueprints/{id}:
+    get:
+      description: A blueprint with its ordered sections and keywords
+      operationId: getDocBlueprint
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        default:
+          description: OK
+      summary: Get a blueprint
+      tags:
+      - DocumentCreation
+    delete:
+      description: Delete a blueprint. Refused (409) while documents are built on it.
+      operationId: deleteDocBlueprint
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '204':
+          description: Deleted
+        '409':
+          description: Documents still reference this blueprint
+      summary: Delete a blueprint
+      tags:
+      - DocumentCreation
+  /api/doccreation/blueprints/{id}/file:
+    get:
+      description: Download the original uploaded .docx
+      operationId: downloadDocBlueprintFile
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: The stored blueprint file
+      summary: Download the blueprint file
+      tags:
+      - DocumentCreation
+  /api/doccreation/blueprints/{id}/sections/{sectionId}/keywords:
+    put:
+      description: Replace a section's image auto-assignment keywords
+      operationId: updateDocSectionKeywords
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      - {name: sectionId, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                keywords:
+                  type: array
+                  items: {type: string}
+      responses:
+        default:
+          description: OK
+      summary: Update section keywords
+      tags:
+      - DocumentCreation
+  /api/doccreation/instances:
+    get:
+      description: List the caller's documents, optionally filtered by blueprintId
+      operationId: listDocInstances
+      parameters:
+      - {name: blueprintId, in: query, required: false, schema: {type: integer}}
+      responses:
+        default:
+          description: OK
+      summary: List documents
+      tags:
+      - DocumentCreation
+    post:
+      description: Start a document from a blueprint
+      operationId: createDocInstance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                blueprintId: {type: integer}
+                title: {type: string}
+              required: [blueprintId, title]
+      responses:
+        '201':
+          description: Document created
+      summary: Create a document
+      tags:
+      - DocumentCreation
+  /api/doccreation/instances/{id}:
+    get:
+      description: The builder view - sections in document order with their content
+        blocks, the Unsorted image tray, and whether PDF conversion is available
+      operationId: getDocInstance
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        default:
+          description: OK
+      summary: Get a document (builder view)
+      tags:
+      - DocumentCreation
+    put:
+      description: Rename a document
+      operationId: renameDocInstance
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string}
+      responses:
+        default:
+          description: OK
+      summary: Rename a document
+      tags:
+      - DocumentCreation
+    delete:
+      description: Delete a document with its blocks, images and generated files
+      operationId: deleteDocInstance
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '204':
+          description: Deleted
+      summary: Delete a document
+      tags:
+      - DocumentCreation
+  /api/doccreation/instances/{id}/sections/{sectionId}/blocks:
+    post:
+      description: Append a content block to a section. PARAGRAPH takes text; IMAGE
+        takes the assetId of an Unsorted image plus an optional caption.
+      operationId: addDocBlock
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      - {name: sectionId, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                blockType: {type: string, enum: [PARAGRAPH, IMAGE]}
+                text: {type: string}
+                assetId: {type: integer}
+                caption: {type: string}
+              required: [blockType]
+      responses:
+        '201':
+          description: Block created
+      summary: Add a block
+      tags:
+      - DocumentCreation
+  /api/doccreation/instances/{id}/sections/{sectionId}/blocks/order:
+    put:
+      description: Reorder a section's blocks. blockIds must be a permutation of them.
+      operationId: reorderDocBlocks
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      - {name: sectionId, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                blockIds:
+                  type: array
+                  items: {type: integer}
+      responses:
+        default:
+          description: OK
+      summary: Reorder blocks
+      tags:
+      - DocumentCreation
+  /api/doccreation/blocks/{blockId}:
+    put:
+      description: Edit a block - text for PARAGRAPH, caption for IMAGE
+      operationId: updateDocBlock
+      parameters:
+      - {name: blockId, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text: {type: string}
+                caption: {type: string}
+      responses:
+        default:
+          description: OK
+      summary: Update a block
+      tags:
+      - DocumentCreation
+    delete:
+      description: Delete a block. An IMAGE block's asset returns to the Unsorted tray.
+      operationId: deleteDocBlock
+      parameters:
+      - {name: blockId, in: path, required: true, schema: {type: integer}}
+      responses:
+        '204':
+          description: Deleted
+      summary: Delete a block
+      tags:
+      - DocumentCreation
+  /api/doccreation/instances/{id}/assets:
+    post:
+      description: Bulk-upload images (png, jpg, jpeg, gif, bmp). With autoAssign
+        (default true) each file name is matched against the sections' keywords and
+        placed automatically; unmatched images land in the Unsorted tray. The reply
+        splits assigned / unsorted / rejected per file.
+      operationId: uploadDocAssets
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                autoAssign:
+                  type: boolean
+                  default: true
+      responses:
+        '201':
+          description: Upload outcome per file
+      summary: Bulk-upload images
+      tags:
+      - DocumentCreation
+  /api/doccreation/assets/{assetId}/content:
+    get:
+      description: The stored image bytes (for authenticated previews)
+      operationId: getDocAssetContent
+      parameters:
+      - {name: assetId, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Image bytes with the stored content type
+      summary: Get an image
+      tags:
+      - DocumentCreation
+  /api/doccreation/assets/{assetId}/assignment:
+    put:
+      description: Move an image into a section (creating or moving its IMAGE block)
+        or back to Unsorted with sectionId null
+      operationId: assignDocAsset
+      parameters:
+      - {name: assetId, in: path, required: true, schema: {type: integer}}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sectionId:
+                  type: integer
+                  nullable: true
+      responses:
+        default:
+          description: OK
+      summary: Assign an image
+      tags:
+      - DocumentCreation
+  /api/doccreation/assets/{assetId}:
+    delete:
+      description: Delete an uploaded image (and its block, if placed)
+      operationId: deleteDocAsset
+      parameters:
+      - {name: assetId, in: path, required: true, schema: {type: integer}}
+      responses:
+        '204':
+          description: Deleted
+      summary: Delete an image
+      tags:
+      - DocumentCreation
+  /api/doccreation/instances/{id}/generate:
+    post:
+      description: Reproduce the blueprint exactly with the added content spliced
+        into its sections. Always writes the .docx; also converts to PDF when
+        LibreOffice is available (pdfReady false with pdfError otherwise - never a
+        failure).
+      operationId: generateDocInstance
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200':
+          description: Generation outcome (docx name, pdf name/readiness)
+      summary: Generate the document
+      tags:
+      - DocumentCreation
+  /api/doccreation/instances/{id}/download:
+    get:
+      description: Download the generated file, regenerating first when the content
+        changed since the last generation. format=pdf answers 409 when no converter
+        is available.
+      operationId: downloadDocInstance
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      - {name: format, in: query, required: false, schema: {type: string, enum: [docx, pdf], default: docx}}
+      responses:
+        '200':
+          description: The generated file
+        '409':
+          description: PDF requested but no converter is available
+      summary: Download the generated document
+      tags:
+      - DocumentCreation
 security:
 - bearerAuth: []
 components:
