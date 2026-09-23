@@ -175,6 +175,30 @@ the test suite.
   docling-serve), non-root runtime image with a healthcheck.
 - CI: GitHub Actions runs `mvn -B verify` on every push/PR to `main`.
 
+### Document creation (blueprint → sections → fill → generate)
+- **Upload your company's report (.docx) as a blueprint** — the engine breaks it
+  down into sections by its headings (outline levels or `Heading N` styles, a
+  bold-paragraph fallback, and a single implicit section for heading-less files).
+  The uploaded file itself is kept untouched as the source of truth.
+- **Fill each section** with paragraphs and pictures. Bulk-drop all images at
+  once: file names are matched against each section's editable keywords ("roof"
+  claims `Roof_East_02.jpg`, "dc2" claims `dc2-overview.png`) and placed
+  automatically; unmatched images wait in an **Unsorted tray** instead of being
+  lost.
+- **One click reproduces the document in that exact manner** — the original
+  layout, styles, letterhead and content survive byte-for-byte (only new
+  paragraphs are spliced in), with your paragraphs, images and captions inserted
+  into their sections. Output: an editable **.docx** always, plus **PDF** when
+  LibreOffice is available (it ships in the Docker image; without it the PDF
+  endpoint answers 409 and the .docx keeps working).
+- **Per-company flows:** the flow behind the engine is a strategy bean selected
+  by the blueprint's `companyId` (`DocumentCreationFlow` → section parsing,
+  image auto-assignment, generation decoration). The DEFAULT flow covers
+  everything above; giving a company its own flow is one new `@Component`
+  implementing the interface — nothing else changes. There is no Company table
+  yet: `companyId` is a free-form key, and every blueprint/document is owned by
+  the user who created it like all other data.
+
 ## Quick start
 
 ### Run locally (no OpenAI key needed)
@@ -399,6 +423,26 @@ contract at `/swagger/spec.yaml`. Summary:
 | `POST /Validation/validate` | Run rows through a template's rule engine |
 | `POST /api/aifiles/send` | Send a raw prompt to the chat model |
 | `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*` | Legacy CRUD |
+
+### Document creation
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/doccreation/blueprints` | Upload a .docx blueprint (multipart `file` + optional `name`, `companyId`); parsed into sections |
+| `GET /api/doccreation/blueprints[/{id}]` | List / get blueprints with their sections |
+| `GET /api/doccreation/blueprints/{id}/file` | Download the original blueprint |
+| `PUT .../blueprints/{id}/sections/{sectionId}/keywords` | Tune a section's image auto-assignment keywords |
+| `DELETE /api/doccreation/blueprints/{id}` | Delete (409 while documents build on it) |
+| `POST /api/doccreation/instances` | Start a document from a blueprint |
+| `GET /api/doccreation/instances/{id}` | Builder view: sections + blocks + Unsorted tray + `pdfAvailable` |
+| `POST .../instances/{id}/sections/{sectionId}/blocks` | Add a paragraph or image block |
+| `PUT /api/doccreation/blocks/{blockId}` / `DELETE` | Edit / remove a block (an image block's asset returns to Unsorted) |
+| `PUT .../instances/{id}/sections/{sectionId}/blocks/order` | Reorder a section's blocks |
+| `POST /api/doccreation/instances/{id}/assets` | Bulk image upload with keyword auto-assignment |
+| `GET /api/doccreation/assets/{assetId}/content` | Image bytes for authenticated previews |
+| `PUT /api/doccreation/assets/{assetId}/assignment` | Place an image in a section or back to Unsorted |
+| `POST /api/doccreation/instances/{id}/generate` | Reproduce the document (.docx always, PDF when available) |
+| `GET /api/doccreation/instances/{id}/download?format=docx\|pdf` | Download the generated file (regenerates when stale) |
 
 ## Ingestion walkthrough
 

@@ -1,0 +1,186 @@
+package com.modocument.doccreation.usecase;
+
+import com.modocument.doccreation.dto.BlueprintDto;
+import com.modocument.doccreation.dto.BlueprintSummaryDto;
+import com.modocument.doccreation.dto.SectionDto;
+import com.modocument.doccreation.entity.DocBlueprint;
+import com.modocument.doccreation.entity.DocBlueprintSection;
+import com.modocument.doccreation.flow.DocumentCreationFlow;
+import com.modocument.doccreation.flow.DocumentCreationFlowRegistry;
+import com.modocument.doccreation.parse.BlueprintSectionParser;
+import com.modocument.doccreation.parse.ParsedSection;
+import com.modocument.doccreation.repo.DocBlueprintRepository;
+import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
+import com.modocument.doccreation.repo.DocInstanceRepository;
+import com.modocument.infrastructure.file.UploadStorage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Locale;
+import java.util.NoSuchElementException;
+
+/**
+ * Blueprint lifecycle: upload the company's source document, break it into
+ * sections through the company's flow, keep section keywords editable, and
+ * guard deletion while documents are still built on it.
+ */
+@Service
+public class DocBlueprintUseCase {
+
+    private static final Logger log = LoggerFactory.getLogger(DocBlueprintUseCase.class);
+    private static final int MAX_KEYWORDS_LENGTH = 1000;
+
+    private final DocBlueprintRepository blueprints;
+    private final DocBlueprintSectionRepository sections;
+    private final DocInstanceRepository instances;
+    private final DocCreationOwnership ownership;
+    private final BlueprintSectionParser parser;
+    private final DocumentCreationFlowRegistry flows;
+    private final UploadStorage uploadStorage;
+
+    public DocBlueprintUseCase(DocBlueprintRepository blueprints,
+                               DocBlueprintSectionRepository sections,
+                               DocInstanceRepository instances,
+                               DocCreationOwnership ownership,
+                               BlueprintSectionParser parser,
+                               DocumentCreationFlowRegistry flows,
+                               UploadStorage uploadStorage) {
+        this.blueprints = blueprints;
+        this.sections = sections;
+        this.instances = instances;
+        this.ownership = ownership;
+        this.parser = parser;
+        this.flows = flows;
+        this.uploadStorage = uploadStorage;
+    }
+
+    @Transactional
+    public BlueprintDto create(MultipartFile file, String name, String companyId) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("No file uploaded.");
+        }
+        String originalName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
+        if (!originalName.toLowerCase(Locale.ROOT).endsWith(".docx")) {
+            throw new IllegalArgumentException("Only .docx blueprints are supported.");
+        }
+        String storedName = uploadStorage.store(file);
+        Path storedPath = uploadStorage.resolve(storedName);
+
+        String blueprintName = name == null || name.isBlank() ? baseName(originalName) : name.strip();
+        String normalizedCompanyId = companyId == null || companyId.isBlank() ? null : companyId.strip();
+        DocumentCreationFlow flow = flows.flowFor(normalizedCompanyId);
+
+        DocBlueprint blueprint = new DocBlueprint();
+        blueprint.setOwnerUserId(ownership.requireUserId());
+        blueprint.setCompanyId(normalizedCompanyId);
+        blueprint.setName(blueprintName);
+        blueprint.setFileName(storedName);
+        blueprint.setOriginalFileName(originalName);
+        blueprint.setFlowKey(flow.flowKey());
+        blueprint.setCreatedDate(LocalDateTime.now());
+        blueprint.setUpdatedDate(blueprint.getCreatedDate());
+
+        List<ParsedSection> parsed;
+        try {
+            parsed = flow.customizeSections(parser.parse(storedPath, blueprintName), blueprint);
+        } catch (RuntimeException e) {
+            deleteFileQuietly(storedPath);
+            throw e;
+        }
+
+        blueprint = blueprints.save(blueprint);
+        List<DocBlueprintSection> saved = new java.util.ArrayList<>();
+        for (ParsedSection section : parsed) {
+            DocBlueprintSection entity = new DocBlueprintSection();
+            entity.setBlueprintId(blueprint.getDocBlueprintId());
+            entity.setOrderIndex(section.orderIndex());
+            entity.setTitle(section.title());
+            entity.setHeadingLevel(section.headingLevel());
+            entity.setAnchorParagraphIndex(section.anchorParagraphIndex());
+            entity.setAnchorText(section.anchorText());
+            entity.setKeywords(joinKeywords(section.keywords()));
+            saved.add(sections.save(entity));
+        }
+        return BlueprintDto.from(blueprint, saved);
+    }
+
+    public List<BlueprintSummaryDto> list() {
+        return blueprints.listByOwner(ownership.requireUserId()).stream()
+                .map(b -> BlueprintSummaryDto.from(b,
+                        sections.listByBlueprint(b.getDocBlueprintId()).size(),
+                        instances.countByBlueprint(b.getDocBlueprintId())))
+                .toList();
+    }
+
+    public BlueprintDto get(int blueprintId) {
+        DocBlueprint blueprint = ownership.requireBlueprint(blueprintId);
+        return BlueprintDto.from(blueprint, sections.listByBlueprint(blueprintId));
+    }
+
+    /** The stored source file, for the "download original" action. */
+    public StoredFile getFile(int blueprintId) {
+        DocBlueprint blueprint = ownership.requireBlueprint(blueprintId);
+        return new StoredFile(uploadStorage.resolve(blueprint.getFileName()),
+                blueprint.getOriginalFileName() == null || blueprint.getOriginalFileName().isBlank()
+                        ? blueprint.getName() + ".docx" : blueprint.getOriginalFileName());
+    }
+
+    @Transactional
+    public SectionDto updateKeywords(int blueprintId, int sectionId, List<String> keywords) {
+        ownership.requireBlueprint(blueprintId);
+        DocBlueprintSection section = sections.getById(sectionId)
+                .filter(s -> s.getBlueprintId() == blueprintId)
+                .orElseThrow(() -> new NoSuchElementException("Section " + sectionId + " not found."));
+        String joined = joinKeywords(keywords == null ? List.of() : keywords);
+        section.setKeywords(joined);
+        return SectionDto.from(sections.save(section));
+    }
+
+    @Transactional
+    public void delete(int blueprintId) {
+        DocBlueprint blueprint = ownership.requireBlueprint(blueprintId);
+        if (instances.countByBlueprint(blueprintId) > 0) {
+            throw new IllegalStateException(
+                    "This blueprint still has documents built on it; delete those documents first.");
+        }
+        sections.deleteByBlueprint(blueprintId);
+        blueprints.delete(blueprintId);
+        deleteFileQuietly(uploadStorage.resolve(blueprint.getFileName()));
+    }
+
+    private static String joinKeywords(List<String> keywords) {
+        String joined = String.join(",", keywords.stream()
+                .map(k -> k == null ? "" : k.strip().toLowerCase(Locale.ROOT))
+                .filter(k -> !k.isEmpty() && !k.contains(","))
+                .toList());
+        if (joined.length() > MAX_KEYWORDS_LENGTH) {
+            throw new IllegalArgumentException("Too many keywords for one section.");
+        }
+        return joined;
+    }
+
+    private static String baseName(String fileName) {
+        int dot = fileName.lastIndexOf('.');
+        String base = dot > 0 ? fileName.substring(0, dot) : fileName;
+        return base.isBlank() ? "Blueprint" : base;
+    }
+
+    private static void deleteFileQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException e) {
+            log.warn("Could not delete stored file {}", path, e);
+        }
+    }
+
+    public record StoredFile(Path path, String downloadName) {
+    }
+}
