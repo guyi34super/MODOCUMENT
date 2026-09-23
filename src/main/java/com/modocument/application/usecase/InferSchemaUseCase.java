@@ -35,17 +35,19 @@ public class InferSchemaUseCase {
     private final AiFilesService aiFilesService;
     private final ExtractionAuditLog audit;
     private final PiiTokenizer tokenizer;
+    private final ExtractionLlmProperties extractionLlm;
 
     public InferSchemaUseCase(ExtractionJobStore jobs, ProcessedRecordStore processedRecords,
                               List<PromptStrategy> promptStrategies,
                               AiFilesService aiFilesService, ExtractionAuditLog audit,
-                              PiiTokenizer tokenizer) {
+                              PiiTokenizer tokenizer, ExtractionLlmProperties extractionLlm) {
         this.jobs = jobs;
         this.processedRecords = processedRecords;
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
         this.audit = audit;
         this.tokenizer = tokenizer;
+        this.extractionLlm = extractionLlm;
     }
 
     public InferredSchema infer(String jobId) {
@@ -73,7 +75,7 @@ public class InferSchemaUseCase {
                 IngestionJobUseCase.toJson(sampleFields), job.getDataSpec()));
         InferredSchema schema = aiFilesService.sendForObject(prompt,
                 new ParameterizedTypeReference<InferredSchema>() {
-                });
+                }, extractionLlm.getModelId());
         audit.add(ExtractionAuditEvent.of(jobId, job.getSourceId(), AuditAction.LLM_CALL, null,
                 "schema inference over " + sample.size() + " sample record(s)", null));
         if (schema == null || schema.fields() == null) {

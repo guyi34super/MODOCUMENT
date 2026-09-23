@@ -1,14 +1,15 @@
 # Local development: same PostgreSQL + Flyway setup as production (inherited
 # from application.yml — jdbc:postgresql://localhost:5432/modocument by
 # default, override via MODOCUMENT_DB_*), with dev conveniences layered on:
-# dev JWT secret, Swagger, in-memory extraction, no Mongo/Kafka.
+# dev JWT secret, Swagger, SQL-backed extraction in the same database, no
+# Mongo/Kafka.
 # Start a database first (docker compose up -d postgres), then run:
 #   SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 spring:
   config:
     import: optional:file:./application-local-secrets.yml
   autoconfigure:
-    # No Mongo/Kafka needed locally: extraction uses in-memory adapters.
+    # No Mongo/Kafka needed locally: extraction persists to the primary database.
     exclude:
       - org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration
       - org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
@@ -33,6 +34,7 @@ springdoc:
     enabled: true
 
 extraction:
-  store: memory
+  # Sources/jobs/records persist in the local PostgreSQL and survive restarts.
+  store: sql
   kafka:
     enabled: false

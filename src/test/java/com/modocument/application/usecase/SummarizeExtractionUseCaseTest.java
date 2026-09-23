@@ -32,24 +32,26 @@ class SummarizeExtractionUseCaseTest {
     private final ProcessedRecordStore records = mock(ProcessedRecordStore.class);
     private final AiFilesService ai = mock(AiFilesService.class);
     private final ExtractionAuditLog audit = mock(ExtractionAuditLog.class);
+    private final ExtractionLlmProperties extractionLlm = new ExtractionLlmProperties();
     private final SummarizeExtractionUseCase useCase = new SummarizeExtractionUseCase(
             jobs, queue, records, List.of(new ExtractionSummaryPrompt()), ai, audit,
-            new PiiTokenizer(new PrivacyProperties()));
+            new PiiTokenizer(new PrivacyProperties()), extractionLlm);
 
     @Test
     void masksSampleValuesAndDetokenizesTheProseSummary() {
+        extractionLlm.setModelId("mistral:latest");
         ExtractionJob job = mock(ExtractionJob.class);
         when(jobs.getById("j1")).thenReturn(Optional.of(job));
         ProcessedRecord record = mock(ProcessedRecord.class);
         when(record.getFields()).thenReturn(Map.of("Email", "ada@acme.com"));
         when(records.findBatch(anyString(), any(), anyInt())).thenReturn(List.of(record));
-        when(ai.sendPrompt(anyString()))
+        when(ai.sendPrompt(anyString(), anyString()))
                 .thenReturn("Most records look like [EMAIL_1] with clean data.");
 
         String summary = useCase.summarize("j1");
 
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendPrompt(prompt.capture());
+        verify(ai).sendPrompt(prompt.capture(), org.mockito.ArgumentMatchers.eq("mistral:latest"));
         assertThat(prompt.getValue()).contains("[EMAIL_1]");
         assertThat(prompt.getValue()).doesNotContain("ada@acme.com");
 

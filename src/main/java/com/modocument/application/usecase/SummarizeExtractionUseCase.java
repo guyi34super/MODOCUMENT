@@ -32,12 +32,13 @@ public class SummarizeExtractionUseCase {
     private final AiFilesService aiFilesService;
     private final ExtractionAuditLog audit;
     private final PiiTokenizer tokenizer;
+    private final ExtractionLlmProperties extractionLlm;
 
     public SummarizeExtractionUseCase(ExtractionJobStore jobs, ExtractionTaskQueue queue,
                                       ProcessedRecordStore processedRecords,
                                       List<PromptStrategy> promptStrategies,
                                       AiFilesService aiFilesService, ExtractionAuditLog audit,
-                                      PiiTokenizer tokenizer) {
+                                      PiiTokenizer tokenizer, ExtractionLlmProperties extractionLlm) {
         this.jobs = jobs;
         this.queue = queue;
         this.processedRecords = processedRecords;
@@ -45,6 +46,7 @@ public class SummarizeExtractionUseCase {
         this.aiFilesService = aiFilesService;
         this.audit = audit;
         this.tokenizer = tokenizer;
+        this.extractionLlm = extractionLlm;
     }
 
     /**
@@ -78,7 +80,8 @@ public class SummarizeExtractionUseCase {
         String prompt = strategy.buildPrompt(new ExtractionSummaryPromptInput(
                 IngestionJobUseCase.toJson(stats), IngestionJobUseCase.toJson(sample),
                 job.getDataSpec()));
-        String summary = session.detokenize(aiFilesService.sendPrompt(prompt));
+        String summary = session.detokenize(
+                aiFilesService.sendPrompt(prompt, extractionLlm.getModelId()));
         audit.add(ExtractionAuditEvent.of(jobId, job.getSourceId(), AuditAction.LLM_CALL, null,
                 "run summary generated", null));
         return summary;

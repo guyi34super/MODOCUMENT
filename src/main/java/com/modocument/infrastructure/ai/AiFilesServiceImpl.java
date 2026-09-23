@@ -27,8 +27,17 @@ public class AiFilesServiceImpl implements AiFilesService {
 
     @Override
     public String sendPrompt(String prompt) {
+        return sendPrompt(prompt, null);
+    }
+
+    @Override
+    public String sendPrompt(String prompt, String modelId) {
         requireConfigured(prompt);
-        String response = chatClient.prompt().user(prompt).call().content();
+        ChatClientRequestSpec request = chatClient.prompt();
+        if (modelId != null && !modelId.isBlank()) {
+            request = request.options(OpenAiChatOptions.builder().model(modelId).build());
+        }
+        String response = request.user(prompt).call().content();
         return response == null ? "" : response;
     }
 
