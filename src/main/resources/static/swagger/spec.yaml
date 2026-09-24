@@ -1575,10 +1575,13 @@ paths:
       tags:
       - DocumentCreation
     post:
-      description: Upload a .docx blueprint. The engine breaks it into sections by
-        its headings (with a bold-paragraph fallback and a single implicit section
-        for heading-less files); each section gets auto-assignment keywords seeded
-        from its title. companyId (optional) selects a company-specific flow.
+      description: Upload a .docx blueprint. An AI breakdown identifies the
+        document's logical sections first (anchors validated against the real
+        document); a heading-heuristic parser takes over when AI is disabled,
+        unconfigured or its reply doesn't validate. Each section gets
+        auto-assignment keywords. companyId (optional) selects a
+        company-specific flow. The response's sectionSource says which engine
+        produced the sections (AI or HEURISTIC).
       operationId: createDocBlueprint
       requestBody:
         content:

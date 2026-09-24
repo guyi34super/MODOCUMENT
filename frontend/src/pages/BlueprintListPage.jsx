@@ -46,7 +46,10 @@ export default function BlueprintListPage() {
         () => uploadBlueprint(file, name.trim() || undefined, companyId.trim() || undefined),
         {
           loading: 'Uploading & breaking the document into sections…',
-          success: (b) => `Blueprint ready — ${b.sections.length} section${b.sections.length === 1 ? '' : 's'} found`,
+          success: (b) =>
+            `Blueprint ready — ${b.sections.length} section${b.sections.length === 1 ? '' : 's'} found${
+              b.sectionSource === 'AI' ? ' by AI' : ''
+            }`,
           error: (err) => err.message,
         }
       );

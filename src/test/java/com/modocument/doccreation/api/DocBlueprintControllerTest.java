@@ -26,7 +26,8 @@ class DocBlueprintControllerTest {
     void createReturns201WithLocation() {
         MockMultipartFile file = new MockMultipartFile("file", "report.docx", null, new byte[]{1});
         when(useCase.create(any(), isNull(), isNull()))
-                .thenReturn(new BlueprintDto(5, "report", null, "DEFAULT", "report.docx", null, List.of()));
+                .thenReturn(new BlueprintDto(5, "report", null, "DEFAULT", "report.docx", null,
+                        List.of(), "AI"));
 
         ResponseEntity<?> result = controller.create(file, null, null);
 

@@ -177,9 +177,17 @@ the test suite.
 
 ### Document creation (blueprint → sections → fill → generate)
 - **Upload your company's report (.docx) as a blueprint** — the engine breaks it
-  down into sections by its headings (outline levels or `Heading N` styles, a
-  bold-paragraph fallback, and a single implicit section for heading-less files).
-  The uploaded file itself is kept untouched as the source of truth.
+  down into sections. An **AI breakdown runs first**: the LLM reads the
+  document's paragraph listing and identifies every logical section the way a
+  human reader would (styled headings, numbered lines, bold titles, labelled
+  parts), returning validated anchors into the real document. When AI is
+  disabled, unconfigured, over quota, or returns anything that doesn't check
+  out, a deterministic heuristic takes over (outline levels or `Heading N`
+  styles, a bold-paragraph fallback, and a single implicit section for
+  heading-less files) — uploads never fail for lack of an API key. The
+  uploaded file itself is kept untouched as the source of truth.
+  Configure with `MODOCUMENT_DOCCREATION_SECTION_AI` (default `true`) and
+  `MODOCUMENT_DOCCREATION_SECTION_MODEL` (default: the global model).
 - **Fill each section** with paragraphs and pictures. Bulk-drop all images at
   once: file names are matched against each section's editable keywords ("roof"
   claims `Roof_East_02.jpg`, "dc2" claims `dc2-overview.png`) and placed

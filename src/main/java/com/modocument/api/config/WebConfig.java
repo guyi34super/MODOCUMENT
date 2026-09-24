@@ -29,6 +29,9 @@ public class WebConfig implements WebMvcConfigurer {
                 "/api/aifiles/send",
                 "/api/automapper/generate",
                 "/api/ingestion/jobs/*/chat-edit");
+        // Blueprint upload's AI section breakdown meters the same per-user
+        // quota inside AiSectionSplitter (an interceptor on the path would
+        // also meter GET list requests, which spend nothing).
     }
 
     @Override

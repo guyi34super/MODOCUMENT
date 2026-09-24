@@ -7,7 +7,7 @@ import com.modocument.doccreation.entity.DocBlueprint;
 import com.modocument.doccreation.entity.DocBlueprintSection;
 import com.modocument.doccreation.flow.DocumentCreationFlow;
 import com.modocument.doccreation.flow.DocumentCreationFlowRegistry;
-import com.modocument.doccreation.parse.BlueprintSectionParser;
+import com.modocument.doccreation.parse.BlueprintSectionExtractor;
 import com.modocument.doccreation.parse.ParsedSection;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
 import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
@@ -42,7 +42,7 @@ public class DocBlueprintUseCase {
     private final DocBlueprintSectionRepository sections;
     private final DocInstanceRepository instances;
     private final DocCreationOwnership ownership;
-    private final BlueprintSectionParser parser;
+    private final BlueprintSectionExtractor sectionExtractor;
     private final DocumentCreationFlowRegistry flows;
     private final UploadStorage uploadStorage;
 
@@ -50,14 +50,14 @@ public class DocBlueprintUseCase {
                                DocBlueprintSectionRepository sections,
                                DocInstanceRepository instances,
                                DocCreationOwnership ownership,
-                               BlueprintSectionParser parser,
+                               BlueprintSectionExtractor sectionExtractor,
                                DocumentCreationFlowRegistry flows,
                                UploadStorage uploadStorage) {
         this.blueprints = blueprints;
         this.sections = sections;
         this.instances = instances;
         this.ownership = ownership;
-        this.parser = parser;
+        this.sectionExtractor = sectionExtractor;
         this.flows = flows;
         this.uploadStorage = uploadStorage;
     }
@@ -89,8 +89,12 @@ public class DocBlueprintUseCase {
         blueprint.setUpdatedDate(blueprint.getCreatedDate());
 
         List<ParsedSection> parsed;
+        String sectionSource;
         try {
-            parsed = flow.customizeSections(parser.parse(storedPath, blueprintName), blueprint);
+            BlueprintSectionExtractor.Extraction extraction =
+                    sectionExtractor.extract(storedPath, blueprintName);
+            parsed = flow.customizeSections(extraction.sections(), blueprint);
+            sectionSource = extraction.source();
         } catch (RuntimeException e) {
             deleteFileQuietly(storedPath);
             throw e;
@@ -109,7 +113,7 @@ public class DocBlueprintUseCase {
             entity.setKeywords(joinKeywords(section.keywords()));
             saved.add(sections.save(entity));
         }
-        return BlueprintDto.from(blueprint, saved);
+        return BlueprintDto.from(blueprint, saved, sectionSource);
     }
 
     public List<BlueprintSummaryDto> list() {
