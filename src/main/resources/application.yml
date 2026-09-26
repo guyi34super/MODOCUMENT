@@ -103,6 +103,14 @@ modocument:
     section-ai-enabled: ${MODOCUMENT_DOCCREATION_SECTION_AI:true}
     # Model for the breakdown; empty uses the global aifiles.openai.model-id.
     section-model-id: ${MODOCUMENT_DOCCREATION_SECTION_MODEL:}
+    # AI-composed generation: the LLM is given the template plus everything
+    # the user added and returns the complete final document as an assembly
+    # plan, validated to reproduce the template exactly. The deterministic
+    # engine carries generation whenever AI is disabled, unconfigured, over
+    # quota, or the plan doesn't validate.
+    generate-ai-enabled: ${MODOCUMENT_DOCCREATION_GENERATE_AI:true}
+    # Model for composition; empty uses the global aifiles.openai.model-id.
+    generate-model-id: ${MODOCUMENT_DOCCREATION_GENERATE_MODEL:}
 
 management:
   endpoints:

@@ -6,5 +6,6 @@ public record GenerationResultDto(String docxFileName,
                                   String pdfFileName,
                                   boolean pdfReady,
                                   String pdfError,
-                                  LocalDateTime generatedDate) {
+                                  LocalDateTime generatedDate,
+                                  String composedBy) {
 }

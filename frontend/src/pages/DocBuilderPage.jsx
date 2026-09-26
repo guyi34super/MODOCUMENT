@@ -300,7 +300,9 @@ export default function DocBuilderPage() {
       await toast.promise(() => generateInstance(id), {
         loading: 'Generating the document…',
         success: (r) =>
-          r.pdfReady ? 'Document generated (.docx + PDF)' : 'Document generated (.docx only)',
+          `Document generated (${r.pdfReady ? '.docx + PDF' : '.docx only'})${
+            r.composedBy === 'AI' ? ' · composed by AI' : ''
+          }`,
         error: (err) => err.message,
       });
       load();

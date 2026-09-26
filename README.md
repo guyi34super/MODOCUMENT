@@ -193,12 +193,18 @@ the test suite.
   claims `Roof_East_02.jpg`, "dc2" claims `dc2-overview.png`) and placed
   automatically; unmatched images wait in an **Unsorted tray** instead of being
   lost.
-- **One click reproduces the document in that exact manner** — the original
-  layout, styles, letterhead and content survive byte-for-byte (only new
-  paragraphs are spliced in), with your paragraphs, images and captions inserted
-  into their sections. Output: an editable **.docx** always, plus **PDF** when
-  LibreOffice is available (it ships in the Docker image; without it the PDF
-  endpoint answers 409 and the .docx keeps working).
+- **One click reproduces the document in that exact manner** — the **AI
+  composes the final document**: it is handed the full template plus everything
+  you added and returns the complete document as an assembly plan (where each
+  paragraph and image goes, wording polished into the document's tone). The
+  plan is validated so the output is provably exact — every original element
+  kept once, in order; every user block placed exactly once; nothing invented —
+  and rendered onto the original file, so layout, styles and letterhead survive
+  byte-for-byte. The deterministic engine takes over whenever AI is disabled
+  (`MODOCUMENT_DOCCREATION_GENERATE_AI=false`), unconfigured, over quota, or
+  its plan fails validation. Output: an editable **.docx** always, plus **PDF**
+  when LibreOffice is available (it ships in the Docker image; without it the
+  PDF endpoint answers 409 and the .docx keeps working).
 - **Per-company flows:** the flow behind the engine is a strategy bean selected
   by the blueprint's `companyId` (`DocumentCreationFlow` → section parsing,
   image auto-assignment, generation decoration). The DEFAULT flow covers

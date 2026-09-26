@@ -1892,10 +1892,15 @@ paths:
       - DocumentCreation
   /api/doccreation/instances/{id}/generate:
     post:
-      description: Reproduce the blueprint exactly with the added content spliced
-        into its sections. Always writes the .docx; also converts to PDF when
-        LibreOffice is available (pdfReady false with pdfError otherwise - never a
-        failure).
+      description: Generate the final document. The AI composes it first - it is
+        given the full template and everything the user added and returns the
+        complete document as an assembly plan, validated to reproduce the
+        template exactly (every original element kept once, in order; every user
+        block placed exactly once; no invented content) - with the deterministic
+        engine taking over whenever AI is disabled, unconfigured, over quota, or
+        the plan fails validation (composedBy AI/ENGINE in the response). Always
+        writes the .docx; also converts to PDF when LibreOffice is available
+        (pdfReady false with pdfError otherwise - never a failure).
       operationId: generateDocInstance
       parameters:
       - {name: id, in: path, required: true, schema: {type: integer}}

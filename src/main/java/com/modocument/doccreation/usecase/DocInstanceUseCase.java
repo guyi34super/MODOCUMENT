@@ -14,6 +14,7 @@ import com.modocument.doccreation.entity.DocImageAsset;
 import com.modocument.doccreation.entity.DocInstance;
 import com.modocument.doccreation.flow.DocumentCreationFlow;
 import com.modocument.doccreation.flow.DocumentCreationFlowRegistry;
+import com.modocument.doccreation.generate.AiDocumentComposer;
 import com.modocument.doccreation.generate.DocumentAssembler;
 import com.modocument.doccreation.pdf.PdfConverter;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
@@ -77,6 +78,7 @@ public class DocInstanceUseCase {
     private final DocCreationOwnership ownership;
     private final DocumentCreationFlowRegistry flows;
     private final DocumentAssembler assembler;
+    private final AiDocumentComposer aiComposer;
     private final PdfConverter pdfConverter;
     private final UploadStorage uploadStorage;
     private final StorageProperties storage;
@@ -89,6 +91,7 @@ public class DocInstanceUseCase {
                               DocCreationOwnership ownership,
                               DocumentCreationFlowRegistry flows,
                               DocumentAssembler assembler,
+                              AiDocumentComposer aiComposer,
                               PdfConverter pdfConverter,
                               UploadStorage uploadStorage,
                               StorageProperties storage) {
@@ -100,6 +103,7 @@ public class DocInstanceUseCase {
         this.ownership = ownership;
         this.flows = flows;
         this.assembler = assembler;
+        this.aiComposer = aiComposer;
         this.pdfConverter = pdfConverter;
         this.uploadStorage = uploadStorage;
         this.storage = storage;
@@ -418,7 +422,20 @@ public class DocInstanceUseCase {
         Map<Integer, DocImageAsset> assetsById = assets.listByInstance(instanceId).stream()
                 .collect(Collectors.toMap(DocImageAsset::getDocImageAssetId, Function.identity()));
 
-        byte[] docxBytes = assembleWithFlow(blueprint, sectionList, blocksBySection, assetsById);
+        Path blueprintPath = requireBlueprintFile(blueprint);
+        Function<Integer, byte[]> assetLoader = assetBytesLoader(assetsById);
+        // AI composes the final document from the template + all the user's
+        // content (validated to reproduce the template exactly); the
+        // deterministic engine carries generation whenever AI can't.
+        String composedBy = "AI";
+        byte[] docxBytes = aiComposer
+                .compose(blueprintPath, sectionList, blocksBySection, assetsById, assetLoader)
+                .orElse(null);
+        if (docxBytes == null) {
+            composedBy = "ENGINE";
+            docxBytes = assembler.assemble(blueprintPath, sectionList, blocksBySection,
+                    assetsById, assetLoader);
+        }
 
         try {
             Files.createDirectories(storage.exportsDir());
@@ -442,7 +459,7 @@ public class DocInstanceUseCase {
             instance.setLastGeneratedPdf(pdfName);
             instance.setLastGeneratedDate(now);
             instances.save(instance);
-            return new GenerationResultDto(docxName, pdfName, pdfName != null, pdfError, now);
+            return new GenerationResultDto(docxName, pdfName, pdfName != null, pdfError, now, composedBy);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write the generated document.", e);
         }
@@ -494,15 +511,16 @@ public class DocInstanceUseCase {
         return !Files.exists(storage.exportsDir().resolve(fileName));
     }
 
-    private byte[] assembleWithFlow(DocBlueprint blueprint,
-                                    List<DocBlueprintSection> sectionList,
-                                    Map<Integer, List<DocContentBlock>> blocksBySection,
-                                    Map<Integer, DocImageAsset> assetsById) {
+    private Path requireBlueprintFile(DocBlueprint blueprint) {
         Path blueprintPath = uploadStorage.resolve(blueprint.getFileName());
         if (!Files.exists(blueprintPath)) {
             throw new IllegalStateException("The blueprint's source file is missing; re-upload the blueprint.");
         }
-        return assembler.assemble(blueprintPath, sectionList, blocksBySection, assetsById, assetId -> {
+        return blueprintPath;
+    }
+
+    private Function<Integer, byte[]> assetBytesLoader(Map<Integer, DocImageAsset> assetsById) {
+        return assetId -> {
             DocImageAsset asset = assetsById.get(assetId);
             try {
                 return Files.readAllBytes(uploadStorage.resolve(asset.getFileName()));
@@ -510,7 +528,7 @@ public class DocInstanceUseCase {
                 throw new IllegalStateException(
                         "Image " + asset.getOriginalFileName() + " is missing; upload it again.", e);
             }
-        });
+        };
     }
 
     // ---------------------------------------------------------------- shared

@@ -141,8 +141,8 @@ public class AiSectionSplitter {
         return validate(reply, elements);
     }
 
-    /** One line per body element, capped per paragraph and in total. */
-    static String digest(List<IBodyElement> elements) {
+    /** One line per body element, capped per paragraph and in total (shared with AI composition). */
+    public static String digest(List<IBodyElement> elements) {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < elements.size(); i++) {
             if (out.length() >= MAX_DIGEST_CHARS) {
