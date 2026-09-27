@@ -48,7 +48,7 @@ public class DocContentBlock {
     @Column(name = "AssetId")
     private Integer assetId;
 
-    @Column(name = "Caption")
+    @Column(name = "Caption", length = 500)
     private String caption;
 
     public DocContentBlock() {

@@ -26,6 +26,12 @@ public class AiFilesServiceImpl implements AiFilesService {
     }
 
     @Override
+    public boolean isConfigured() {
+        String apiKey = properties.getApiKey();
+        return apiKey != null && !apiKey.isBlank() && !UNSET_API_KEY.equals(apiKey);
+    }
+
+    @Override
     public String sendPrompt(String prompt) {
         return sendPrompt(prompt, null);
     }

@@ -56,7 +56,14 @@ public class UploadStorage {
             baseName = truncate(baseName, MAX_BASE_NAME_LENGTH);
             extension = truncate(extension, MAX_EXTENSION_LENGTH);
 
-            String storedName = baseName + "_" + LocalDateTime.now().format(TIMESTAMP) + extension;
+            String stamp = LocalDateTime.now().format(TIMESTAMP);
+            String storedName = baseName + "_" + stamp + extension;
+            // Same base name in the same second (typical in a bulk photo
+            // upload) must not collapse onto one file: two records pointing at
+            // the same bytes means deleting one silently breaks the other.
+            for (int attempt = 2; Files.exists(uploadsDir.resolve(storedName)); attempt++) {
+                storedName = baseName + "_" + stamp + "-" + attempt + extension;
+            }
             file.transferTo(uploadsDir.resolve(storedName).toAbsolutePath());
             return storedName;
         } catch (IOException e) {

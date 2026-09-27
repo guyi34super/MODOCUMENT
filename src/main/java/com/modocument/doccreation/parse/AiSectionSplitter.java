@@ -46,6 +46,8 @@ public class AiSectionSplitter {
     /** Keep the paragraph digest within a local model's context window. */
     static final int MAX_PARAGRAPH_CHARS = 200;
     static final int MAX_DIGEST_CHARS = 24_000;
+    /** Appended when the listing was cut; AI steps aside rather than work blind. */
+    public static final String TRUNCATION_MARKER = "(listing truncated)";
     private static final int MAX_TITLE_LENGTH = 500;
     private static final int MAX_KEYWORDS_PER_SECTION = 12;
 
@@ -106,7 +108,7 @@ public class AiSectionSplitter {
      *     real document — the caller then uses the heuristic parser.
      */
     public Optional<List<ParsedSection>> split(Path docxPath) {
-        if (!enabled) {
+        if (!enabled || !ai.isConfigured()) {
             return Optional.empty();
         }
         List<IBodyElement> elements;
@@ -121,6 +123,13 @@ public class AiSectionSplitter {
             throw new IllegalArgumentException("The uploaded file is not a readable .docx document.", e);
         }
         if (digest.isBlank()) {
+            return Optional.empty();
+        }
+        if (digest.contains(TRUNCATION_MARKER)) {
+            // The model can only anchor to paragraphs it was shown; a cut
+            // listing would silently lose every section past the cap. The
+            // heuristic parser sees the whole document.
+            log.info("Blueprint too large for the AI listing; using the heuristic parser");
             return Optional.empty();
         }
 
@@ -146,7 +155,7 @@ public class AiSectionSplitter {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < elements.size(); i++) {
             if (out.length() >= MAX_DIGEST_CHARS) {
-                out.append("[…] (listing truncated)\n");
+                out.append("[…] ").append(TRUNCATION_MARKER).append('\n');
                 break;
             }
             if (elements.get(i) instanceof XWPFParagraph paragraph) {

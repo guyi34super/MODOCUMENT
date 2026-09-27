@@ -25,6 +25,11 @@ function ParagraphBlock({ block, onChanged }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Follow server refreshes while not editing (another tab may have saved).
+  useEffect(() => {
+    if (!editing) setText(block.text || '');
+  }, [block.text, editing]);
+
   const save = async () => {
     setSaving(true);
     try {
@@ -87,6 +92,12 @@ function ImageBlock({ block, onChanged }) {
   const toast = useToast();
   const [caption, setCaption] = useState(block.caption || '');
   const dirty = caption !== (block.caption || '');
+  const [serverCaption, setServerCaption] = useState(block.caption || '');
+  // Follow server refreshes while the field isn't dirty.
+  if (serverCaption !== (block.caption || '')) {
+    setServerCaption(block.caption || '');
+    if (!dirty) setCaption(block.caption || '');
+  }
 
   const saveCaption = async () => {
     try {
@@ -148,6 +159,7 @@ function ImageBlock({ block, onChanged }) {
 function SectionCard({ instanceId, section, onChanged }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [reordering, setReordering] = useState(false);
 
   const addParagraph = async () => {
     setBusy(true);
@@ -165,15 +177,19 @@ function SectionCard({ instanceId, section, onChanged }) {
   };
 
   const move = async (index, delta) => {
+    if (reordering) return; // a second click would race on stale order
     const ids = section.blocks.map((b) => b.blockId);
     const target = index + delta;
     if (target < 0 || target >= ids.length) return;
     [ids[index], ids[target]] = [ids[target], ids[index]];
+    setReordering(true);
     try {
       await reorderBlocks(instanceId, section.sectionId, ids);
       onChanged();
     } catch (err) {
       toast.error(err.message);
+    } finally {
+      setReordering(false);
     }
   };
 
@@ -197,7 +213,7 @@ function SectionCard({ instanceId, section, onChanged }) {
                 type="button"
                 aria-label="Move up"
                 className="rounded px-1 text-xs text-muted hover:bg-pill disabled:opacity-30"
-                disabled={index === 0}
+                disabled={index === 0 || reordering}
                 onClick={() => move(index, -1)}
               >
                 ▲
@@ -206,7 +222,7 @@ function SectionCard({ instanceId, section, onChanged }) {
                 type="button"
                 aria-label="Move down"
                 className="rounded px-1 text-xs text-muted hover:bg-pill disabled:opacity-30"
-                disabled={index === section.blocks.length - 1}
+                disabled={index === section.blocks.length - 1 || reordering}
                 onClick={() => move(index, 1)}
               >
                 ▼

@@ -76,8 +76,12 @@ public class DocumentAssembler {
                 DocBlueprintSection section = sectionsInOrder.get(i);
                 if (i + 1 < sectionsInOrder.size()) {
                     int nextAnchor = sectionsInOrder.get(i + 1).getAnchorParagraphIndex();
-                    insertBeforeBySectionId.put(section.getDocBlueprintSectionId(),
-                            (XWPFParagraph) elements.get(nextAnchor));
+                    // An implicit (-1) neighbor — possible via a custom flow's
+                    // customizeSections — means "append", like the last section.
+                    if (nextAnchor >= 0) {
+                        insertBeforeBySectionId.put(section.getDocBlueprintSectionId(),
+                                (XWPFParagraph) elements.get(nextAnchor));
+                    }
                 }
             }
 
@@ -259,7 +263,7 @@ public class DocumentAssembler {
         paragraph.setAlignment(ParagraphAlignment.CENTER);
         XWPFRun run = paragraph.createRun();
         try {
-            run.addPicture(new ByteArrayInputStream(bytes), pictureType(asset.getOriginalFileName()),
+            run.addPicture(new ByteArrayInputStream(bytes), pictureType(asset),
                     asset.getOriginalFileName(), (int) widthEmu, (int) heightEmu);
         } catch (org.apache.poi.openxml4j.exceptions.InvalidFormatException e) {
             throw new IllegalArgumentException("Unsupported image format: " + asset.getOriginalFileName(), e);
@@ -273,6 +277,18 @@ public class DocumentAssembler {
         XWPFRun run = paragraph.createRun();
         run.setItalic(true);
         run.setText(caption);
+    }
+
+    /** The stored (byte-sniffed) content type decides; the extension is the fallback. */
+    static int pictureType(DocImageAsset asset) {
+        String contentType = asset.getContentType() == null ? "" : asset.getContentType();
+        switch (contentType) {
+            case "image/png": return Document.PICTURE_TYPE_PNG;
+            case "image/jpeg": return Document.PICTURE_TYPE_JPEG;
+            case "image/gif": return Document.PICTURE_TYPE_GIF;
+            case "image/bmp": return Document.PICTURE_TYPE_BMP;
+            default: return pictureType(asset.getOriginalFileName());
+        }
     }
 
     static int pictureType(String fileName) {

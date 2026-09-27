@@ -20,7 +20,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AiSectionSplitterTest {
@@ -55,6 +56,11 @@ class AiSectionSplitterTest {
 
     private void aiReturns(List<AiSectionSplitter.AiSection> sections) {
         when(ai.sendForObject(anyString(), any(), anyString())).thenReturn(sections);
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    void aiIsConfigured() {
+        when(ai.isConfigured()).thenReturn(true);
     }
 
     @Test
@@ -121,11 +127,21 @@ class AiSectionSplitterTest {
     }
 
     @Test
+    void anUnconfiguredDeploymentSpendsNoQuotaSlot() {
+        when(ai.isConfigured()).thenReturn(false);
+        LlmRateLimiter oneSlot = new LlmRateLimiter(1, 3_600_000, 100);
+        AiSectionSplitter unconfigured = new AiSectionSplitter(ai, oneSlot, () -> USER, true, "");
+
+        assertThat(unconfigured.split(docx)).isEmpty();
+        oneSlot.check(USER); // the slot was NOT consumed by the skipped AI call
+    }
+
+    @Test
     void disabledSplitterNeverCallsTheModel() {
         AiSectionSplitter disabled = new AiSectionSplitter(ai, quota, () -> USER, false, "");
 
         assertThat(disabled.split(docx)).isEmpty();
-        verifyNoInteractions(ai);
+        verify(ai, never()).sendForObject(anyString(), any(), anyString());
     }
 
     @Test
@@ -135,7 +151,7 @@ class AiSectionSplitterTest {
         AiSectionSplitter limited = new AiSectionSplitter(ai, exhausted, () -> USER, true, "");
 
         assertThat(limited.split(docx)).isEmpty();
-        verifyNoInteractions(ai);
+        verify(ai, never()).sendForObject(anyString(), any(), anyString());
     }
 
     @Test

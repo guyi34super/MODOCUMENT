@@ -114,9 +114,7 @@ public class DocInstanceUseCase {
     @Transactional
     public InstanceSummaryDto create(int blueprintId, String title) {
         DocBlueprint blueprint = ownership.requireBlueprint(blueprintId);
-        if (title == null || title.isBlank()) {
-            throw new IllegalArgumentException("A document title is required.");
-        }
+        requireTitle(title);
         DocInstance instance = new DocInstance();
         instance.setOwnerUserId(ownership.requireUserId());
         instance.setBlueprintId(blueprintId);
@@ -174,9 +172,7 @@ public class DocInstanceUseCase {
     @Transactional
     public InstanceSummaryDto rename(int instanceId, String title) {
         DocInstance instance = ownership.requireInstance(instanceId);
-        if (title == null || title.isBlank()) {
-            throw new IllegalArgumentException("A document title is required.");
-        }
+        requireTitle(title);
         instance.setTitle(title.strip());
         touch(instance);
         DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
@@ -190,11 +186,15 @@ public class DocInstanceUseCase {
         blocks.deleteByInstance(instanceId);
         assets.deleteByInstance(instanceId);
         instances.delete(instanceId);
+        List<Path> files = new ArrayList<>();
         for (DocImageAsset asset : assetList) {
-            deleteFileQuietly(uploadStorage.resolve(asset.getFileName()));
+            files.add(uploadStorage.resolve(asset.getFileName()));
         }
-        deleteFileQuietly(storage.exportsDir().resolve(exportName(instanceId, "docx")));
-        deleteFileQuietly(storage.exportsDir().resolve(exportName(instanceId, "pdf")));
+        files.add(storage.exportsDir().resolve(exportName(instanceId, "docx")));
+        files.add(storage.exportsDir().resolve(exportName(instanceId, "pdf")));
+        // Only after commit: a rollback must not orphan the surviving rows'
+        // files.
+        StoredFileCleanup.deleteAfterCommit(files);
     }
 
     // ---------------------------------------------------------------- blocks
@@ -224,7 +224,7 @@ public class DocInstanceUseCase {
             }
             block.setBlockType(DocContentBlock.TYPE_IMAGE);
             block.setAssetId(asset.getDocImageAssetId());
-            block.setCaption(request.getCaption());
+            block.setCaption(requireCaption(request.getCaption()));
             asset.setAssignedSectionId(sectionId);
             assets.save(asset);
             assetFileName = asset.getOriginalFileName();
@@ -247,7 +247,7 @@ public class DocInstanceUseCase {
             }
         } else {
             if (caption != null) {
-                block.setCaption(caption);
+                block.setCaption(requireCaption(caption));
             }
             assetFileName = block.getAssetId() == null ? null
                     : assets.getById(block.getAssetId()).map(DocImageAsset::getOriginalFileName).orElse(null);
@@ -310,18 +310,21 @@ public class DocInstanceUseCase {
 
         for (MultipartFile file : files) {
             String originalName = file.getOriginalFilename() == null ? "image" : file.getOriginalFilename();
-            String contentType = contentTypeFor(originalName);
-            if (contentType == null) {
+            if (contentTypeFor(originalName) == null) {
                 rejected.add(new BulkUploadResultDto.RejectedDto(originalName,
                         "Unsupported image type; use png, jpg, jpeg, gif or bmp."));
                 continue;
             }
+            // The stored content type comes from the BYTES, not the file name:
+            // a PNG renamed .jpg would otherwise be embedded with the wrong
+            // OOXML picture type and can break PDF conversion.
+            String contentType;
             try {
-                if (file.isEmpty() || ImageIO.read(new ByteArrayInputStream(file.getBytes())) == null) {
-                    rejected.add(new BulkUploadResultDto.RejectedDto(originalName, "Not a readable image."));
-                    continue;
-                }
+                contentType = file.isEmpty() ? null : sniffImageContentType(file.getBytes());
             } catch (IOException e) {
+                contentType = null;
+            }
+            if (contentType == null) {
                 rejected.add(new BulkUploadResultDto.RejectedDto(originalName, "Not a readable image."));
                 continue;
             }
@@ -329,6 +332,8 @@ public class DocInstanceUseCase {
             DocImageAsset asset = new DocImageAsset();
             asset.setInstanceId(instanceId);
             asset.setFileName(uploadStorage.store(file));
+            // A rollback of this bulk upload must not orphan the stored bytes.
+            StoredFileCleanup.deleteOnRollback(uploadStorage.resolve(asset.getFileName()));
             asset.setOriginalFileName(originalName);
             asset.setContentType(contentType);
             asset.setUploadedDate(LocalDateTime.now());
@@ -405,14 +410,20 @@ public class DocInstanceUseCase {
         DocInstance instance = ownership.requireInstance(asset.getInstanceId());
         blocks.findByAsset(assetId).ifPresent(b -> blocks.delete(b.getDocContentBlockId()));
         assets.delete(assetId);
-        deleteFileQuietly(uploadStorage.resolve(asset.getFileName()));
+        StoredFileCleanup.deleteAfterCommit(List.of(uploadStorage.resolve(asset.getFileName())));
         touch(instance);
         instances.save(instance);
     }
 
     // ------------------------------------------------------------ generation
 
-    @Transactional
+    /**
+     * Deliberately NOT {@code @Transactional}: composing (an LLM call) and PDF
+     * conversion (LibreOffice) can take minutes, and pinning a pooled DB
+     * connection across them exhausts the pool under a handful of concurrent
+     * generations. Every read stands alone and the only write is the final
+     * status save.
+     */
     public GenerationResultDto generate(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
         DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
@@ -436,19 +447,20 @@ public class DocInstanceUseCase {
             docxBytes = assembler.assemble(blueprintPath, sectionList, blocksBySection,
                     assetsById, assetLoader);
         }
+        docxBytes = decorate(docxBytes, blueprint, instance);
 
         try {
             Files.createDirectories(storage.exportsDir());
             String docxName = exportName(instanceId, "docx");
             Path docxPath = storage.exportsDir().resolve(docxName);
-            Files.write(docxPath, docxBytes);
+            writeAtomically(docxPath, docxBytes);
 
             String pdfName = null;
             String pdfError = null;
             try {
                 byte[] pdfBytes = pdfConverter.convert(docxPath);
                 pdfName = exportName(instanceId, "pdf");
-                Files.write(storage.exportsDir().resolve(pdfName), pdfBytes);
+                writeAtomically(storage.exportsDir().resolve(pdfName), pdfBytes);
             } catch (IllegalStateException e) {
                 pdfError = e.getMessage();
             }
@@ -470,7 +482,6 @@ public class DocInstanceUseCase {
      * generated yet or the content changed since (GET-safe: a re-download just
      * overwrites the same export files).
      */
-    @Transactional
     public DownloadFile download(int instanceId, String format) {
         boolean pdf = "pdf".equalsIgnoreCase(format);
         if (!pdf && !"docx".equalsIgnoreCase(format)) {
@@ -509,6 +520,40 @@ public class DocInstanceUseCase {
         }
         String fileName = pdf ? instance.getLastGeneratedPdf() : instance.getLastGeneratedDocx();
         return !Files.exists(storage.exportsDir().resolve(fileName));
+    }
+
+    /** The company flow's last touch on the assembled document (stamps, footers, ...). */
+    private byte[] decorate(byte[] docxBytes, DocBlueprint blueprint, DocInstance instance) {
+        DocumentCreationFlow flow = flows.flowFor(blueprint.getCompanyId());
+        try (var doc = new org.apache.poi.xwpf.usermodel.XWPFDocument(
+                new java.io.ByteArrayInputStream(docxBytes))) {
+            flow.decorateGeneratedDocument(doc, instance, blueprint);
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            doc.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not finalize the generated document.", e);
+        }
+    }
+
+    /**
+     * Exports live at fixed per-instance paths that downloads stream while
+     * regenerations overwrite; an atomic move means a reader always sees a
+     * complete file, never a truncated one.
+     */
+    private static void writeAtomically(Path target, byte[] bytes) throws IOException {
+        Path temp = Files.createTempFile(target.getParent(), target.getFileName().toString(), ".tmp");
+        try {
+            Files.write(temp, bytes);
+            try {
+                Files.move(temp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(temp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            Files.deleteIfExists(temp);
+        }
     }
 
     private Path requireBlueprintFile(DocBlueprint blueprint) {
@@ -576,6 +621,22 @@ public class DocInstanceUseCase {
                 .orElse(-1) + 1;
     }
 
+    private static void requireTitle(String title) {
+        if (title == null || title.isBlank()) {
+            throw new IllegalArgumentException("A document title is required.");
+        }
+        if (title.strip().length() > 255) {
+            throw new IllegalArgumentException("The title is too long (255 characters max).");
+        }
+    }
+
+    private static String requireCaption(String caption) {
+        if (caption != null && caption.length() > 500) {
+            throw new IllegalArgumentException("The caption is too long (500 characters max).");
+        }
+        return caption;
+    }
+
     private static void touch(DocInstance instance) {
         instance.setUpdatedDate(LocalDateTime.now());
     }
@@ -586,6 +647,22 @@ public class DocInstanceUseCase {
             return null;
         }
         return IMAGE_CONTENT_TYPES.get(fileName.substring(dot + 1).toLowerCase(Locale.ROOT));
+    }
+
+    /** The image type according to its bytes, or null when unreadable/unsupported. */
+    static String sniffImageContentType(byte[] bytes) throws IOException {
+        try (javax.imageio.stream.ImageInputStream in =
+                     ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            var readers = ImageIO.getImageReaders(in);
+            if (!readers.hasNext()) {
+                return null;
+            }
+            String format = readers.next().getFormatName().toLowerCase(Locale.ROOT);
+            String contentType = IMAGE_CONTENT_TYPES.get("jpeg".equals(format) ? "jpg" : format);
+            // Confirm it actually decodes, not just that a header matched.
+            return contentType != null && ImageIO.read(new ByteArrayInputStream(bytes)) != null
+                    ? contentType : null;
+        }
     }
 
     static String exportName(int instanceId, String extension) {

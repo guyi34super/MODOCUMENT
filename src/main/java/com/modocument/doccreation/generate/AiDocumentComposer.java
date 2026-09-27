@@ -110,7 +110,7 @@ public class AiDocumentComposer {
                                     Map<Integer, List<DocContentBlock>> blocksBySectionId,
                                     Map<Integer, DocImageAsset> assetsById,
                                     Function<Integer, byte[]> assetBytesLoader) {
-        if (!enabled) {
+        if (!enabled || !ai.isConfigured()) {
             return Optional.empty();
         }
         List<DocContentBlock> allBlocks = sectionsInOrder.stream()
@@ -127,7 +127,14 @@ public class AiDocumentComposer {
              XWPFDocument doc = new XWPFDocument(in)) {
             List<IBodyElement> elements = List.copyOf(doc.getBodyElements());
             elementCount = elements.size();
-            prompt = PROMPT + AiSectionSplitter.digest(elements)
+            String digest = AiSectionSplitter.digest(elements);
+            if (digest.contains(AiSectionSplitter.TRUNCATION_MARKER)) {
+                // A cut listing can never yield a full-coverage plan; skip the
+                // wasted call and let the deterministic engine generate.
+                log.info("Blueprint too large for the AI listing; using the deterministic engine");
+                return Optional.empty();
+            }
+            prompt = PROMPT + digest
                     + userContentDigest(sectionsInOrder, blocksBySectionId, assetsById);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not read the blueprint document.", e);
@@ -213,7 +220,7 @@ public class AiDocumentComposer {
             if (op == null || op.op() == null) {
                 return invalid("an operation without an op type");
             }
-            switch (op.op().toUpperCase()) {
+            switch (op.op().toUpperCase(java.util.Locale.ROOT)) {
                 case "KEEP" -> {
                     if (op.from() == null || op.to() == null) {
                         return invalid("a KEEP without from/to");
@@ -234,9 +241,7 @@ public class AiDocumentComposer {
                         return invalid("paragraph blockId " + op.blockId()
                                 + " is unknown, duplicated, or invented");
                     }
-                    String text = op.text() == null || op.text().isBlank()
-                            ? block.getTextContent() : op.text();
-                    ops.add(PlanOp.paragraph(text == null ? "" : text));
+                    ops.add(PlanOp.paragraph(boundedRewrite(op.text(), block.getTextContent())));
                 }
                 case "IMAGE" -> {
                     DocContentBlock block = op.assetId() == null ? null
@@ -247,7 +252,10 @@ public class AiDocumentComposer {
                                 + " is unknown, duplicated, or invented");
                     }
                     String caption = op.caption() == null || op.caption().isBlank()
-                            ? block.getCaption() : op.caption();
+                            ? block.getCaption() : boundedRewrite(op.caption(), block.getCaption());
+                    if (caption != null && caption.length() > 500) {
+                        caption = caption.substring(0, 500);
+                    }
                     ops.add(PlanOp.image(op.assetId(), caption));
                 }
                 default -> {
@@ -271,5 +279,39 @@ public class AiDocumentComposer {
     private static Optional<List<PlanOp>> invalid(String why) {
         log.warn("AI-composed plan rejected ({}), using the deterministic engine", why);
         return Optional.empty();
+    }
+
+    /**
+     * The wording bound: the model may polish the user's text, never replace
+     * it. When the rewrite no longer carries most of the user's own words
+     * (which is also what a prompt-injecting template would produce), the
+     * user's verbatim text wins.
+     */
+    static String boundedRewrite(String aiText, String userText) {
+        String original = userText == null ? "" : userText;
+        if (aiText == null || aiText.isBlank()) {
+            return original;
+        }
+        Set<String> significant = significantTokens(original);
+        if (significant.isEmpty()) {
+            return aiText.strip();
+        }
+        Set<String> rewritten = significantTokens(aiText);
+        long kept = significant.stream().filter(rewritten::contains).count();
+        if (kept * 10 >= significant.size() * 6) { // >= 60% of the user's words survive
+            return aiText.strip();
+        }
+        log.warn("AI rewrite dropped too much of the user's own text; keeping the original wording");
+        return original;
+    }
+
+    private static Set<String> significantTokens(String text) {
+        Set<String> tokens = new HashSet<>();
+        for (String token : text.toLowerCase(java.util.Locale.ROOT).split("[^\\p{L}\\p{Nd}]+")) {
+            if (token.length() >= 4) {
+                tokens.add(token);
+            }
+        }
+        return tokens;
     }
 }
