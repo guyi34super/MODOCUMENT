@@ -12,11 +12,19 @@ public record BlueprintDto(int blueprintId,
                            String flowKey,
                            String originalFileName,
                            LocalDateTime createdDate,
-                           List<SectionDto> sections) {
+                           List<SectionDto> sections,
+                           String sectionSource) {
 
     public static BlueprintDto from(DocBlueprint blueprint, List<DocBlueprintSection> sections) {
+        return from(blueprint, sections, null);
+    }
+
+    /** {@code sectionSource} ("AI"/"HEURISTIC") is known only at upload time. */
+    public static BlueprintDto from(DocBlueprint blueprint, List<DocBlueprintSection> sections,
+                                    String sectionSource) {
         return new BlueprintDto(blueprint.getDocBlueprintId(), blueprint.getName(),
                 blueprint.getCompanyId(), blueprint.getFlowKey(), blueprint.getOriginalFileName(),
-                blueprint.getCreatedDate(), sections.stream().map(SectionDto::from).toList());
+                blueprint.getCreatedDate(), sections.stream().map(SectionDto::from).toList(),
+                sectionSource);
     }
 }

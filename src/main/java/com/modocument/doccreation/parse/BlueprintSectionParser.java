@@ -168,7 +168,9 @@ public class BlueprintSectionParser {
      */
     static List<String> seedKeywords(String title) {
         Set<String> keywords = new LinkedHashSet<>();
-        for (String token : title.toLowerCase().split("[^a-z0-9]+")) {
+        // Locale.ROOT and a Unicode split: "Toiture Étanchéité" and Turkish
+        // "INVERTER" must tokenize the same on every JVM locale.
+        for (String token : title.toLowerCase(java.util.Locale.ROOT).split("[^\\p{L}\\p{Nd}]+")) {
             if (token.length() >= 2 && !KEYWORD_STOPWORDS.contains(token)) {
                 keywords.add(token);
             }

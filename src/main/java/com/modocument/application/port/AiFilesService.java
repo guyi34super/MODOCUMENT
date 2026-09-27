@@ -5,6 +5,13 @@ import org.springframework.core.ParameterizedTypeReference;
 /** Sends prompts to the LLM (OpenAI chat completion) and returns the raw reply. */
 public interface AiFilesService {
 
+    /**
+     * Whether an API key is configured at all. Features that degrade
+     * gracefully check this first so an unconfigured deployment doesn't spend
+     * per-user quota (or a request) on calls guaranteed to fail.
+     */
+    boolean isConfigured();
+
     String sendPrompt(String prompt);
 
     /**

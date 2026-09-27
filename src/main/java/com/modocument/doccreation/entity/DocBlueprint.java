@@ -32,7 +32,7 @@ public class DocBlueprint {
      * Free-form company key with no Company table behind it yet; null means
      * the owner acts as their own company. Selects the DocumentCreationFlow.
      */
-    @Column(name = "CompanyId")
+    @Column(name = "CompanyId", length = 64)
     private String companyId;
 
     @Column(name = "Name")
@@ -46,7 +46,7 @@ public class DocBlueprint {
     private String originalFileName;
 
     /** Which DocumentCreationFlow handled this blueprint (DEFAULT unless a company flow matched). */
-    @Column(name = "FlowKey")
+    @Column(name = "FlowKey", length = 40)
     private String flowKey;
 
     @Column(name = "CreatedDate")

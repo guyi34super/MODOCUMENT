@@ -24,7 +24,13 @@ export default function AuthedImage({ path, alt = '', className = '' }) {
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
         const blob = await res.blob();
         objectUrl = URL.createObjectURL(blob);
-        if (active) setUrl(objectUrl);
+        if (active) {
+          setUrl(objectUrl);
+        } else {
+          // Resolved after unmount/path change: nothing will ever revoke it.
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+        }
       } catch {
         if (active) setFailed(true);
       }

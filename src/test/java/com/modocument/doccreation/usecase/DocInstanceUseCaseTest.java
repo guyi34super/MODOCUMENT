@@ -10,10 +10,13 @@ import com.modocument.doccreation.entity.DocBlueprintSection;
 import com.modocument.doccreation.entity.DocContentBlock;
 import com.modocument.doccreation.entity.DocImageAsset;
 import com.modocument.doccreation.entity.DocInstance;
+import com.modocument.application.port.AiFilesService;
 import com.modocument.doccreation.flow.DefaultDocumentCreationFlow;
 import com.modocument.doccreation.flow.DocumentCreationFlowRegistry;
 import com.modocument.doccreation.flow.KeywordSectionMatcher;
+import com.modocument.doccreation.generate.AiDocumentComposer;
 import com.modocument.doccreation.generate.DocumentAssembler;
+import com.modocument.infrastructure.ratelimit.LlmRateLimiter;
 import com.modocument.doccreation.pdf.PdfConverter;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
 import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
@@ -79,8 +82,14 @@ class DocInstanceUseCaseTest {
         DocCreationOwnership ownership = new DocCreationOwnership(blueprints, instances, () -> USER);
         DocumentCreationFlowRegistry flows = new DocumentCreationFlowRegistry(
                 List.of(new DefaultDocumentCreationFlow(new KeywordSectionMatcher())));
+        DocumentAssembler assembler = new DocumentAssembler();
+        // AI composition disabled here: these tests cover the deterministic
+        // engine; the AI path has its own suite (AiDocumentComposerTest).
+        AiDocumentComposer disabledComposer = new AiDocumentComposer(
+                org.mockito.Mockito.mock(AiFilesService.class),
+                new LlmRateLimiter(1000, 3_600_000, 100), () -> USER, assembler, false, "");
         useCase = new DocInstanceUseCase(instances, blueprints, sections, blocks, assets,
-                ownership, flows, new DocumentAssembler(), pdf, uploadStorage, storage);
+                ownership, flows, assembler, disabledComposer, pdf, uploadStorage, storage);
 
         // A real blueprint file, so generate() runs the real assembler.
         Files.createDirectories(storage.uploadsDir());

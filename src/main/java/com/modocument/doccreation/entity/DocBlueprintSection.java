@@ -28,7 +28,7 @@ public class DocBlueprintSection {
     @Column(name = "OrderIndex")
     private int orderIndex;
 
-    @Column(name = "Title")
+    @Column(name = "Title", length = 500)
     private String title;
 
     /** 1..9 from the heading outline level; 0 for the implicit section. */
@@ -39,11 +39,11 @@ public class DocBlueprintSection {
     private int anchorParagraphIndex;
 
     /** Heading text at parse time — verified before generation to catch a changed file. */
-    @Column(name = "AnchorText")
+    @Column(name = "AnchorText", length = 500)
     private String anchorText;
 
     /** Comma-separated, lowercase; drives image auto-assignment. Admin-editable. */
-    @Column(name = "Keywords")
+    @Column(name = "Keywords", length = 1000)
     private String keywords;
 
     public DocBlueprintSection() {

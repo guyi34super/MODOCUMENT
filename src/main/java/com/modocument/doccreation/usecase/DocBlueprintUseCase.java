@@ -7,7 +7,7 @@ import com.modocument.doccreation.entity.DocBlueprint;
 import com.modocument.doccreation.entity.DocBlueprintSection;
 import com.modocument.doccreation.flow.DocumentCreationFlow;
 import com.modocument.doccreation.flow.DocumentCreationFlowRegistry;
-import com.modocument.doccreation.parse.BlueprintSectionParser;
+import com.modocument.doccreation.parse.BlueprintSectionExtractor;
 import com.modocument.doccreation.parse.ParsedSection;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
 import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
@@ -42,7 +42,7 @@ public class DocBlueprintUseCase {
     private final DocBlueprintSectionRepository sections;
     private final DocInstanceRepository instances;
     private final DocCreationOwnership ownership;
-    private final BlueprintSectionParser parser;
+    private final BlueprintSectionExtractor sectionExtractor;
     private final DocumentCreationFlowRegistry flows;
     private final UploadStorage uploadStorage;
 
@@ -50,14 +50,14 @@ public class DocBlueprintUseCase {
                                DocBlueprintSectionRepository sections,
                                DocInstanceRepository instances,
                                DocCreationOwnership ownership,
-                               BlueprintSectionParser parser,
+                               BlueprintSectionExtractor sectionExtractor,
                                DocumentCreationFlowRegistry flows,
                                UploadStorage uploadStorage) {
         this.blueprints = blueprints;
         this.sections = sections;
         this.instances = instances;
         this.ownership = ownership;
-        this.parser = parser;
+        this.sectionExtractor = sectionExtractor;
         this.flows = flows;
         this.uploadStorage = uploadStorage;
     }
@@ -73,9 +73,17 @@ public class DocBlueprintUseCase {
         }
         String storedName = uploadStorage.store(file);
         Path storedPath = uploadStorage.resolve(storedName);
+        // A DB rollback after this point must not orphan the stored file.
+        StoredFileCleanup.deleteOnRollback(storedPath);
 
         String blueprintName = name == null || name.isBlank() ? baseName(originalName) : name.strip();
+        if (blueprintName.length() > 255) {
+            blueprintName = blueprintName.substring(0, 255);
+        }
         String normalizedCompanyId = companyId == null || companyId.isBlank() ? null : companyId.strip();
+        if (normalizedCompanyId != null && normalizedCompanyId.length() > 64) {
+            throw new IllegalArgumentException("companyId is too long (64 characters max).");
+        }
         DocumentCreationFlow flow = flows.flowFor(normalizedCompanyId);
 
         DocBlueprint blueprint = new DocBlueprint();
@@ -89,8 +97,12 @@ public class DocBlueprintUseCase {
         blueprint.setUpdatedDate(blueprint.getCreatedDate());
 
         List<ParsedSection> parsed;
+        String sectionSource;
         try {
-            parsed = flow.customizeSections(parser.parse(storedPath, blueprintName), blueprint);
+            BlueprintSectionExtractor.Extraction extraction =
+                    sectionExtractor.extract(storedPath, blueprintName);
+            parsed = flow.customizeSections(extraction.sections(), blueprint);
+            sectionSource = extraction.source();
         } catch (RuntimeException e) {
             deleteFileQuietly(storedPath);
             throw e;
@@ -109,7 +121,7 @@ public class DocBlueprintUseCase {
             entity.setKeywords(joinKeywords(section.keywords()));
             saved.add(sections.save(entity));
         }
-        return BlueprintDto.from(blueprint, saved);
+        return BlueprintDto.from(blueprint, saved, sectionSource);
     }
 
     public List<BlueprintSummaryDto> list() {
@@ -128,9 +140,13 @@ public class DocBlueprintUseCase {
     /** The stored source file, for the "download original" action. */
     public StoredFile getFile(int blueprintId) {
         DocBlueprint blueprint = ownership.requireBlueprint(blueprintId);
+        String rawName = blueprint.getOriginalFileName() == null || blueprint.getOriginalFileName().isBlank()
+                ? blueprint.getName() + ".docx" : blueprint.getOriginalFileName();
+        // The original name is browser-supplied: sanitized before it travels
+        // back out in a Content-Disposition header.
+        String safeName = DocInstanceUseCase.sanitizeFileName(rawName);
         return new StoredFile(uploadStorage.resolve(blueprint.getFileName()),
-                blueprint.getOriginalFileName() == null || blueprint.getOriginalFileName().isBlank()
-                        ? blueprint.getName() + ".docx" : blueprint.getOriginalFileName());
+                safeName.endsWith(".docx") ? safeName : safeName + ".docx");
     }
 
     @Transactional
@@ -153,7 +169,9 @@ public class DocBlueprintUseCase {
         }
         sections.deleteByBlueprint(blueprintId);
         blueprints.delete(blueprintId);
-        deleteFileQuietly(uploadStorage.resolve(blueprint.getFileName()));
+        // Only after commit: a rollback (e.g. a racing instance create hitting
+        // the FK) must not leave a live blueprint without its source file.
+        StoredFileCleanup.deleteAfterCommit(java.util.List.of(uploadStorage.resolve(blueprint.getFileName())));
     }
 
     private static String joinKeywords(List<String> keywords) {

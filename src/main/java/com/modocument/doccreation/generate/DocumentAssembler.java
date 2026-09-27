@@ -10,6 +10,7 @@ import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.xmlbeans.XmlCursor;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
@@ -75,8 +76,12 @@ public class DocumentAssembler {
                 DocBlueprintSection section = sectionsInOrder.get(i);
                 if (i + 1 < sectionsInOrder.size()) {
                     int nextAnchor = sectionsInOrder.get(i + 1).getAnchorParagraphIndex();
-                    insertBeforeBySectionId.put(section.getDocBlueprintSectionId(),
-                            (XWPFParagraph) elements.get(nextAnchor));
+                    // An implicit (-1) neighbor — possible via a custom flow's
+                    // customizeSections — means "append", like the last section.
+                    if (nextAnchor >= 0) {
+                        insertBeforeBySectionId.put(section.getDocBlueprintSectionId(),
+                                (XWPFParagraph) elements.get(nextAnchor));
+                    }
                 }
             }
 
@@ -109,6 +114,82 @@ public class DocumentAssembler {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not assemble the document.", e);
         }
+    }
+
+    /**
+     * Renders an AI-composed plan (validated by the caller: KEEP ranges cover
+     * every original element exactly once, in order). Since the original
+     * elements are already in the document, rendering only inserts the plan's
+     * PARAGRAPH/IMAGE ops at their boundaries — before the first original
+     * element that follows them in the plan, or at the body end after the last
+     * KEEP — so the original is reproduced exactly with the additions in place.
+     */
+    public byte[] render(Path blueprintDocx,
+                         List<PlanOp> ops,
+                         Map<Integer, DocImageAsset> assetsById,
+                         Function<Integer, byte[]> assetBytesLoader) {
+        try (InputStream in = Files.newInputStream(blueprintDocx);
+             XWPFDocument doc = new XWPFDocument(in)) {
+
+            List<IBodyElement> elements = List.copyOf(doc.getBodyElements());
+            // Resolve each insertion's target BEFORE the first insert (inserts
+            // shift indexes; element references stay valid).
+            IBodyElement[] insertBefore = new IBodyElement[ops.size()];
+            for (int i = 0; i < ops.size(); i++) {
+                if (ops.get(i).kind() == PlanOp.Kind.KEEP) {
+                    continue;
+                }
+                for (int j = i + 1; j < ops.size(); j++) {
+                    if (ops.get(j).kind() == PlanOp.Kind.KEEP) {
+                        insertBefore[i] = elements.get(ops.get(j).from());
+                        break;
+                    }
+                }
+            }
+
+            int usableWidthEmu = usableWidthEmu(doc);
+            for (int i = 0; i < ops.size(); i++) {
+                PlanOp op = ops.get(i);
+                if (op.kind() == PlanOp.Kind.PARAGRAPH) {
+                    writeParagraph(newParagraphBeforeElement(doc, insertBefore[i]), op.text());
+                } else if (op.kind() == PlanOp.Kind.IMAGE) {
+                    DocImageAsset asset = assetsById.get(op.assetId());
+                    byte[] bytes = assetBytesLoader.apply(asset.getDocImageAssetId());
+                    writeImage(newParagraphBeforeElement(doc, insertBefore[i]), asset, bytes, usableWidthEmu);
+                    if (op.caption() != null && !op.caption().isBlank()) {
+                        writeCaption(newParagraphBeforeElement(doc, insertBefore[i]), op.caption());
+                    }
+                }
+            }
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            doc.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not assemble the document.", e);
+        }
+    }
+
+    /** Like {@link #newParagraph}, but the boundary may also be a table. */
+    private static XWPFParagraph newParagraphBeforeElement(XWPFDocument doc, IBodyElement insertBefore) {
+        if (insertBefore == null) {
+            return doc.createParagraph();
+        }
+        if (insertBefore instanceof XWPFParagraph paragraph) {
+            return newParagraph(doc, paragraph);
+        }
+        if (insertBefore instanceof XWPFTable table) {
+            try (XmlCursor cursor = table.getCTTbl().newCursor()) {
+                XWPFParagraph paragraph = doc.insertNewParagraph(cursor);
+                if (paragraph == null) {
+                    throw new IllegalStateException(
+                            "Could not insert a paragraph into the blueprint document.");
+                }
+                return paragraph;
+            }
+        }
+        // SDT blocks and other exotic elements: append rather than fail.
+        return doc.createParagraph();
     }
 
     /** Belt-and-braces: the stored blueprint file must still match the parsed anchors. */
@@ -182,7 +263,7 @@ public class DocumentAssembler {
         paragraph.setAlignment(ParagraphAlignment.CENTER);
         XWPFRun run = paragraph.createRun();
         try {
-            run.addPicture(new ByteArrayInputStream(bytes), pictureType(asset.getOriginalFileName()),
+            run.addPicture(new ByteArrayInputStream(bytes), pictureType(asset),
                     asset.getOriginalFileName(), (int) widthEmu, (int) heightEmu);
         } catch (org.apache.poi.openxml4j.exceptions.InvalidFormatException e) {
             throw new IllegalArgumentException("Unsupported image format: " + asset.getOriginalFileName(), e);
@@ -196,6 +277,18 @@ public class DocumentAssembler {
         XWPFRun run = paragraph.createRun();
         run.setItalic(true);
         run.setText(caption);
+    }
+
+    /** The stored (byte-sniffed) content type decides; the extension is the fallback. */
+    static int pictureType(DocImageAsset asset) {
+        String contentType = asset.getContentType() == null ? "" : asset.getContentType();
+        switch (contentType) {
+            case "image/png": return Document.PICTURE_TYPE_PNG;
+            case "image/jpeg": return Document.PICTURE_TYPE_JPEG;
+            case "image/gif": return Document.PICTURE_TYPE_GIF;
+            case "image/bmp": return Document.PICTURE_TYPE_BMP;
+            default: return pictureType(asset.getOriginalFileName());
+        }
     }
 
     static int pictureType(String fileName) {
