@@ -101,16 +101,17 @@ modocument:
     # Falls back to the heuristic heading parser when disabled, when no API
     # key is configured, or when the model's reply doesn't validate.
     section-ai-enabled: ${MODOCUMENT_DOCCREATION_SECTION_AI:true}
-    # Model for the breakdown; empty uses the global aifiles.openai.model-id.
-    section-model-id: ${MODOCUMENT_DOCCREATION_SECTION_MODEL:}
+    # Model for the breakdown. Document creation defaults to a local qwen 7B
+    # (Ollama tag); the document flow's extraction features keep mistral.
+    section-model-id: ${MODOCUMENT_DOCCREATION_SECTION_MODEL:qwen:7b}
     # AI-composed generation: the LLM is given the template plus everything
     # the user added and returns the complete final document as an assembly
     # plan, validated to reproduce the template exactly. The deterministic
     # engine carries generation whenever AI is disabled, unconfigured, over
     # quota, or the plan doesn't validate.
     generate-ai-enabled: ${MODOCUMENT_DOCCREATION_GENERATE_AI:true}
-    # Model for composition; empty uses the global aifiles.openai.model-id.
-    generate-model-id: ${MODOCUMENT_DOCCREATION_GENERATE_MODEL:}
+    # Model for composition; same qwen 7B default as the breakdown.
+    generate-model-id: ${MODOCUMENT_DOCCREATION_GENERATE_MODEL:qwen:7b}
 
 management:
   endpoints:

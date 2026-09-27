@@ -53,14 +53,20 @@ public class AiSectionSplitter {
 
     private static final String PROMPT = """
             You are an expert document-structure analyst. Below is the full body listing of a \
-            business document (.docx). Each line is one body element: "[index] text" for a \
-            paragraph (with STYLE= and BOLD markers when present) or "[index] <TABLE>" for a table.
+            .docx document of UNKNOWN kind — it may be a report, contract, policy, manual, \
+            invoice, proposal, meeting minutes, or anything else, in any language. Never assume \
+            a domain. Each line is one body element: "[index] text" for a paragraph, with \
+            structure markers appended when present (STYLE=..., BOLD, CAPS, UNDERLINE, SIZE+, \
+            NUM=numbering prefix), or "[index] <TABLE>" for a table.
 
             Break the ENTIRE document into its logical sections — exactly the sections a careful \
-            human reader would use as chapters to file photos and notes under. Follow every rule:
+            human reader would use as chapters to file content (photos, notes) under. Follow \
+            every rule:
             - A section starts at the paragraph that acts as its heading or title line. Headings \
-            come in many disguises: styled headings, numbered lines ("3.1 Earthing"), short \
-            standalone lines in bold or capitals, labelled parts ("Scope of Works:"), etc.
+            come in many disguises: styled headings, numbered clauses ("3.1 Term"), short bold \
+            or ALL-CAPS or underlined or larger-font lines, label lines ending with a colon \
+            ("Client Information:"), lines prefixed with a symbol or bullet ("■ Roof:"). The \
+            markers on each line are strong hints.
             - anchorIndex is the exact [index] of that heading paragraph. Never invent an index, \
             never point at a <TABLE> line, never reuse an index. anchorIndex values must be \
             strictly increasing.
@@ -71,7 +77,8 @@ public class AiSectionSplitter {
             table content as sections.
             - headingLevel: 1 for top-level sections, 2-9 for nested ones (from numbering depth, \
             styles or indentation).
-            - title: the heading's clean text, kept faithful to the document.
+            - title: the heading's clean text — WITHOUT leading bullets/symbols and WITHOUT a \
+            trailing colon ("■ Roof:" has the title "Roof"). Keep it otherwise faithful.
             - keywords: 3-8 short lowercase tokens someone would put in a photo file name meant \
             for that section (e.g. "roof", "dc2", "inverter", "earthing"). Always include codes \
             and abbreviations appearing in the heading.
@@ -171,15 +178,46 @@ public class AiSectionSplitter {
                 if (style != null && !style.isBlank()) {
                     out.append("  STYLE=").append(style);
                 }
-                if (isAllBold(paragraph)) {
-                    out.append("  BOLD");
-                }
+                appendEmphasisMarkers(out, paragraph, text);
                 out.append('\n');
             } else {
                 out.append('[').append(i).append("] <TABLE>\n");
             }
         }
         return out.toString();
+    }
+
+    /** Generic emphasis markers so a small model can read structure like a human. */
+    private static void appendEmphasisMarkers(StringBuilder out, XWPFParagraph paragraph, String text) {
+        if (isAllBold(paragraph)) {
+            out.append("  BOLD");
+        }
+        int letters = 0;
+        boolean anyLowercase = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.isLetter(c)) {
+                letters++;
+                anyLowercase |= Character.isLowerCase(c);
+            }
+        }
+        if (letters >= 3 && !anyLowercase) {
+            out.append("  CAPS");
+        }
+        boolean underlined = false;
+        for (XWPFRun run : paragraph.getRuns()) {
+            String runText = run.text();
+            if (runText != null && !runText.isBlank()) {
+                underlined = run.getUnderline() != null
+                        && run.getUnderline() != org.apache.poi.xwpf.usermodel.UnderlinePatterns.NONE;
+                if (!underlined) {
+                    break;
+                }
+            }
+        }
+        if (underlined) {
+            out.append("  UNDERLINE");
+        }
     }
 
     private static boolean isAllBold(XWPFParagraph paragraph) {
@@ -224,8 +262,9 @@ public class AiSectionSplitter {
             if (paragraphText.isEmpty()) {
                 return invalid("anchorIndex " + anchor + " points at an empty paragraph");
             }
-            String title = section.title() == null || section.title().isBlank()
-                    ? paragraphText : section.title().strip();
+            String title = BlueprintSectionParser.cleanTitle(
+                    section.title() == null || section.title().isBlank()
+                            ? paragraphText : section.title());
             int level = section.headingLevel() == null ? 1
                     : Math.max(1, Math.min(9, section.headingLevel()));
             sections.add(new ParsedSection(sections.size(), truncate(title), level, anchor,

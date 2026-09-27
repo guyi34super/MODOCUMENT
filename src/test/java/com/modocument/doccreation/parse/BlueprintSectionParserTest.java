@@ -46,6 +46,13 @@ class BlueprintSectionParserTest {
         p.createRun().setText(text);
     }
 
+    private static void bold(XWPFDocument doc, String text) {
+        XWPFParagraph p = doc.createParagraph();
+        XWPFRun run = p.createRun();
+        run.setBold(true);
+        run.setText(text);
+    }
+
     @Test
     void splitsByHeadingStylesWithBodyElementAnchors() throws IOException {
         Path docx = write("styled.docx", doc -> {
@@ -136,6 +143,112 @@ class BlueprintSectionParserTest {
 
         assertThat(sections).hasSize(1);
         assertThat(sections.get(0).headingLevel()).isZero();
+    }
+
+    // ---- universality: one fixture per document KIND, none using styles ----
+
+    @Test
+    void fieldReport_boldSymbolPrefixedColonLabelsAreSectionsWithCleanTitles() throws IOException {
+        Path docx = write("fieldreport.docx", doc -> {
+            XWPFParagraph title = doc.createParagraph();
+            XWPFRun tr = title.createRun();
+            tr.setBold(true);
+            tr.setText("PV Survey Report: Hybrid PV System");
+            bold(doc, "\u25A0 Client Information:");
+            doc.createTable(1, 1);
+            bold(doc, "\u25A0 PV panel layout:");
+            paragraph(doc, "Total: 5 panels (2.975 kWp) - target 3.5 kWp.");
+            bold(doc, "\u25A0 Roof:");
+            doc.createTable(1, 1);
+            bold(doc, "\u25A0 DC cable routing:");
+            bold(doc, "\u25A0 Earthing:");
+            bold(doc, "\u25A0 Installation scope");
+            paragraph(doc, "Supply, delivery and installation of the system described above.");
+            bold(doc, "\u25A0 Warranty & exclusions");
+        });
+
+        List<ParsedSection> sections = parser.parse(docx, "fallback");
+
+        assertThat(sections).extracting(ParsedSection::title).containsExactly(
+                "PV Survey Report: Hybrid PV System",
+                "Client Information", "PV panel layout", "Roof", "DC cable routing",
+                "Earthing", "Installation scope", "Warranty & exclusions");
+        // Anchor text stays RAW so generation still matches the document.
+        assertThat(sections.get(1).anchorText()).isEqualTo("\u25A0 Client Information:");
+        assertThat(sections.get(1).keywords()).contains("client", "information");
+    }
+
+    @Test
+    void contract_handTypedNumberedClausesAreSectionsWithNumberingDepthLevels() throws IOException {
+        Path docx = write("contract.docx", doc -> {
+            bold(doc, "1. Definitions");
+            paragraph(doc, "In this agreement the following terms apply to everything below.");
+            bold(doc, "2. Term");
+            paragraph(doc, "This agreement runs for twelve months from signature date here.");
+            bold(doc, "2.1 Renewal");
+            paragraph(doc, "It renews automatically unless terminated in writing beforehand.");
+        });
+
+        List<ParsedSection> sections = parser.parse(docx, "fallback");
+
+        assertThat(sections).extracting(ParsedSection::title)
+                .containsExactly("1. Definitions", "2. Term", "2.1 Renewal");
+        assertThat(sections).extracting(ParsedSection::headingLevel).containsExactly(1, 1, 2);
+    }
+
+    @Test
+    void policy_allCapsLinesAreSectionsEvenWithoutBold() throws IOException {
+        Path docx = write("policy.docx", doc -> {
+            paragraph(doc, "SCOPE");
+            paragraph(doc, "This policy applies to all employees of the organisation as a whole.");
+            paragraph(doc, "RESPONSIBILITIES");
+            paragraph(doc, "Managers must ensure their teams follow this policy at all times.");
+        });
+
+        List<ParsedSection> sections = parser.parse(docx, "fallback");
+
+        assertThat(sections).extracting(ParsedSection::title)
+                .containsExactly("SCOPE", "RESPONSIBILITIES");
+    }
+
+    @Test
+    void mixed_styledTitlePlusUnstyledBoldLabelsMergeInDocumentOrder() throws IOException {
+        Path docx = write("mixed.docx", doc -> {
+            heading(doc, "Quarterly Review", "Title");
+            bold(doc, "Financials:");
+            paragraph(doc, "Revenue grew twelve percent over the previous quarter overall.");
+            bold(doc, "Hiring:");
+            paragraph(doc, "Three engineers joined the platform team during the period there.");
+        });
+
+        List<ParsedSection> sections = parser.parse(docx, "fallback");
+
+        assertThat(sections).extracting(ParsedSection::title)
+                .containsExactly("Quarterly Review", "Financials", "Hiring");
+        assertThat(sections).extracting(ParsedSection::orderIndex).containsExactly(0, 1, 2);
+    }
+
+    @Test
+    void prose_unemphasizedColonLinesAreNotSections() throws IOException {
+        Path docx = write("prose.docx", doc -> {
+            paragraph(doc, "Note: this is just a remark");
+            paragraph(doc, "The rest of the page continues in ordinary flowing prose text here.");
+            paragraph(doc, "Total: 5 panels");
+        });
+
+        List<ParsedSection> sections = parser.parse(docx, "Plain Doc");
+
+        assertThat(sections).hasSize(1);
+        assertThat(sections.get(0).headingLevel()).isZero(); // implicit whole document
+    }
+
+    @Test
+    void cleanTitleStripsDecorationButNeverTheMeaning() {
+        assertThat(BlueprintSectionParser.cleanTitle("\u25A0 Client Information:"))
+                .isEqualTo("Client Information");
+        assertThat(BlueprintSectionParser.cleanTitle("\u2022 Roof")).isEqualTo("Roof");
+        assertThat(BlueprintSectionParser.cleanTitle("3.2 Earthing")).isEqualTo("3.2 Earthing");
+        assertThat(BlueprintSectionParser.cleanTitle("\u25A0\u25A0\u25A0")).isEqualTo("\u25A0\u25A0\u25A0");
     }
 
     @Test

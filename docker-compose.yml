@@ -46,6 +46,10 @@ services:
       # Document-creation PDF export: LibreOffice ships in the app image, so
       # the default "soffice" just works; point elsewhere for a custom binary.
       MODOCUMENT_DOCCREATION_SOFFICE_PATH: ${MODOCUMENT_DOCCREATION_SOFFICE_PATH:-soffice}
+      # Document-creation AI (section breakdown + composition) runs on a local
+      # qwen 7B by default; the document flow's extraction stays on mistral.
+      MODOCUMENT_DOCCREATION_SECTION_MODEL: ${MODOCUMENT_DOCCREATION_SECTION_MODEL:-qwen:7b}
+      MODOCUMENT_DOCCREATION_GENERATE_MODEL: ${MODOCUMENT_DOCCREATION_GENERATE_MODEL:-qwen:7b}
       MODOCUMENT_CHAT_EDIT_MODEL: ${MODOCUMENT_CHAT_EDIT_MODEL:-deepseek-r1:8b}
       # Agentic extraction (schema inference, summaries, record cleaning).
       MODOCUMENT_EXTRACTION_MODEL: ${MODOCUMENT_EXTRACTION_MODEL:-mistral:latest}

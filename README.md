@@ -186,8 +186,13 @@ the test suite.
   styles, a bold-paragraph fallback, and a single implicit section for
   heading-less files) — uploads never fail for lack of an API key. The
   uploaded file itself is kept untouched as the source of truth.
-  Configure with `MODOCUMENT_DOCCREATION_SECTION_AI` (default `true`) and
-  `MODOCUMENT_DOCCREATION_SECTION_MODEL` (default: the global model).
+  The heuristic itself is convention-agnostic: it reads generic emphasis
+  signals (bold, ALL-CAPS, hand-typed numbering like "3.2", underline, larger
+  font, colon labels, symbol-prefixed labels) so reports, contracts, policies
+  and manuals all break down without heading styles. Configure with
+  `MODOCUMENT_DOCCREATION_SECTION_AI` (default `true`) and
+  `MODOCUMENT_DOCCREATION_SECTION_MODEL` (default `qwen:7b`, a local Ollama
+  tag; the document flow's extraction features stay on mistral).
 - **Fill each section** with paragraphs and pictures. Bulk-drop all images at
   once: file names are matched against each section's editable keywords ("roof"
   claims `Roof_East_02.jpg`, "dc2" claims `dc2-overview.png`) and placed
