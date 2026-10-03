@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ExtractionSourceDto;
 import com.modocument.application.dto.SaveExtractionSourceRequest;
@@ -36,7 +37,7 @@ public class ExtractionSourceController {
 
     @RequiresPermission(Permission.EXTRACTION_WRITE)
     @PostMapping("/api/extraction/sources")
-    public ResponseEntity<?> create(@RequestBody SaveExtractionSourceRequest request) {
+    public ResponseEntity<?> create(@Valid @RequestBody SaveExtractionSourceRequest request) {
         ExtractionSourceDto dto = ExtractionSourceDto.from(useCase.create(request));
         return ResponseEntity.created(URI.create("/api/extraction/sources/" + dto.id())).body(dto);
     }
@@ -56,7 +57,7 @@ public class ExtractionSourceController {
     @RequiresPermission(Permission.EXTRACTION_WRITE)
     @PutMapping("/api/extraction/sources/{id}")
     public ResponseEntity<?> update(@PathVariable String id,
-                                    @RequestBody SaveExtractionSourceRequest request) {
+                                    @Valid @RequestBody SaveExtractionSourceRequest request) {
         return ResponseEntity.ok(ExtractionSourceDto.from(useCase.update(id, request)));
     }
 

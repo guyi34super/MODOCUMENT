@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ChangePasswordRequest;
 import com.modocument.domain.model.Permission;
@@ -52,7 +53,7 @@ public class AuthController {
     }
 
     @PostMapping("/api/auth/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request,
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request,
                                    HttpServletRequest httpRequest) {
         // Throttled per IP and per email to blunt password guessing (F-004).
         rateLimiter.check(clientIp(httpRequest), request.getEmail());
@@ -128,7 +129,7 @@ public class AuthController {
     @RequiresPermission(Permission.PROFILE_SELF)
     @PutMapping("/api/auth/profile")
     public ResponseEntity<?> updateProfile(@AuthenticationPrincipal Jwt jwt,
-                                           @RequestBody UpdateProfileRequest request) {
+                                           @Valid @RequestBody UpdateProfileRequest request) {
         return ResponseEntity.ok(
                 auth.updateProfile(userId(jwt), request.getDisplayName(), request.getSettings()));
     }
@@ -136,7 +137,7 @@ public class AuthController {
     @RequiresPermission(Permission.PROFILE_SELF)
     @PutMapping("/api/auth/password")
     public ResponseEntity<?> changePassword(@AuthenticationPrincipal Jwt jwt,
-                                            @RequestBody ChangePasswordRequest request) {
+                                            @Valid @RequestBody ChangePasswordRequest request) {
         // Ends every session (TokenVersion bump + refresh revocation inside
         // the use case): the user signs in again with the new password.
         auth.changePassword(userId(jwt), request.getCurrentPassword(), request.getNewPassword());

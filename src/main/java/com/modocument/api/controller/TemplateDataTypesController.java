@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.application.port.TemplateDataTypeRepository;
@@ -45,7 +46,7 @@ public class TemplateDataTypesController {
 
     @RequiresPermission(Permission.LOOKUP_ADMIN)
     @PostMapping("/TemplateDataTypes/Create")
-    public ResponseEntity<?> createTemplateDataType(@RequestBody TemplateDataType dto) {
+    public ResponseEntity<?> createTemplateDataType(@Valid @RequestBody TemplateDataType dto) {
         TemplateDataType entity = new TemplateDataType(0, dto.getDataType());
         repo.add(entity);
         return ResponseEntity
@@ -55,7 +56,7 @@ public class TemplateDataTypesController {
 
     @RequiresPermission(Permission.LOOKUP_ADMIN)
     @PutMapping("/TemplateDataTypes/Update")
-    public ResponseEntity<?> updateTemplateDataType(@RequestBody TemplateDataType dto) {
+    public ResponseEntity<?> updateTemplateDataType(@Valid @RequestBody TemplateDataType dto) {
         Optional<TemplateDataType> existingOpt = repo.getById(dto.getTemplateDataTypeId());
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();

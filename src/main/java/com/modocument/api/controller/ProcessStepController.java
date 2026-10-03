@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.application.port.ProcessStepRepository;
@@ -45,7 +46,7 @@ public class ProcessStepController {
 
     @RequiresPermission(Permission.LOOKUP_ADMIN)
     @PostMapping("/ProcessStep/Create")
-    public ResponseEntity<?> create(@RequestBody ProcessStep dto) {
+    public ResponseEntity<?> create(@Valid @RequestBody ProcessStep dto) {
         ProcessStep entity = new ProcessStep(0, dto.getName(), dto.getDescription());
         repo.add(entity);
         return ResponseEntity
@@ -55,7 +56,7 @@ public class ProcessStepController {
 
     @RequiresPermission(Permission.LOOKUP_ADMIN)
     @PutMapping("/ProcessStep/Update")
-    public ResponseEntity<?> update(@RequestBody ProcessStep dto) {
+    public ResponseEntity<?> update(@Valid @RequestBody ProcessStep dto) {
         Optional<ProcessStep> existingOpt = repo.getById(dto.getProcessStepId());
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();

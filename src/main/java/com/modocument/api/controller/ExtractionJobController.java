@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.BridgeRequest;
 import com.modocument.application.dto.CreateExtractionJobRequest;
@@ -73,7 +74,7 @@ public class ExtractionJobController {
     /** Creates a job and (by default) starts it immediately. */
     @RequiresPermission(Permission.EXTRACTION_WRITE)
     @PostMapping("/api/extraction/jobs")
-    public ResponseEntity<?> create(@RequestBody CreateExtractionJobRequest request) {
+    public ResponseEntity<?> create(@Valid @RequestBody CreateExtractionJobRequest request) {
         if (request.getSourceId() == null || request.getSourceId().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "sourceId is required."));
         }
@@ -179,7 +180,7 @@ public class ExtractionJobController {
     /** Hands the extracted records to the document pipeline. */
     @RequiresPermission(Permission.EXTRACTION_RUN)
     @PostMapping("/api/extraction/jobs/{id}/bridge")
-    public ResponseEntity<?> bridge(@PathVariable String id, @RequestBody BridgeRequest request) {
+    public ResponseEntity<?> bridge(@PathVariable String id, @Valid @RequestBody BridgeRequest request) {
         jobs.get(id); // owner gate: 404 before the pipeline reads another user's job
         return ResponseEntity.ok(bridge.bridge(id, request.getTemplateId(),
                 request.getMaxRows(), request.isLlmClean()));

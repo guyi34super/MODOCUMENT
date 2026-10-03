@@ -1,5 +1,6 @@
 package com.modocument.domain.entity;
 
+import jakarta.validation.constraints.Size;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -34,6 +35,7 @@ public class ImportHistory {
     private LocalDateTime importDate;
 
     @Column(name = "FileName")
+    @Size(max = 255)
     private String fileName;
 
     @Column(name = "CompanyId")

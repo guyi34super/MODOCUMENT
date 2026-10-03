@@ -1,14 +1,27 @@
 package com.modocument.application.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+
 import java.util.Map;
 
 /** Request body of PUT /ValidationRules/Upsert. */
 public class UpsertValidationRuleRequest {
 
+    @Positive
     private int templateId;
+
+    @NotBlank
+    @Size(max = 255)
     private String fieldName;
+
     /** RuleType enum name (e.g. "REGEX"); never an ordinal. */
+    @NotBlank
+    @Size(max = 40)
     private String ruleType;
+
+    @Size(max = 100)
     private Map<String, Object> config;
 
     public UpsertValidationRuleRequest() {

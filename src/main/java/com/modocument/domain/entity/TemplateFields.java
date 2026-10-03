@@ -9,9 +9,16 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import jakarta.validation.constraints.Size;
 
 @Entity
-@Table(name = "TemplateFields")
+// SCHEMA PARITY with V30 (uq_templatefields_templateid_fieldname): no two
+// fields of one template share a name. The app blocks duplicates up front
+// (CreateTemplateWithFieldsUseCase); this is the DB truth for the race.
+@Table(name = "TemplateFields", uniqueConstraints = @UniqueConstraint(
+        name = "uq_templatefields_templateid_fieldname",
+        columnNames = {"TemplateId", "FieldName"}))
 public class TemplateFields {
 
     @Id
@@ -26,6 +33,8 @@ public class TemplateFields {
     @Column(name = "BankId")
     private int bankId;
 
+    /** Doubles as the request schema cap when the entity arrives as a body. */
+    @Size(max = 255)
     @Column(name = "FieldName")
     private String fieldName;
 

@@ -6,6 +6,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Check;
 
 import java.time.LocalDateTime;
 
@@ -18,6 +19,8 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "UploadedFile")
+// SCHEMA PARITY with V30 (ck_uploadedfile_sizebytes) on the H2 test schema.
+@Check(name = "ck_uploadedfile_sizebytes", constraints = "SizeBytes >= 0")
 public class UploadedFile {
 
     @Id
@@ -43,6 +46,13 @@ public class UploadedFile {
 
     @Column(name = "SizeBytes", nullable = false)
     private long sizeBytes;
+
+    /**
+     * SHA-256 of the stored content (V31): the duplicate-upload probe is
+     * (owner, hash, original name). Null only on rows that predate V31.
+     */
+    @Column(name = "Sha256Hex", length = 64)
+    private String sha256Hex;
 
     @Column(name = "UploadedAt", nullable = false)
     private LocalDateTime uploadedAt;
@@ -96,6 +106,14 @@ public class UploadedFile {
 
     public void setSizeBytes(long sizeBytes) {
         this.sizeBytes = sizeBytes;
+    }
+
+    public String getSha256Hex() {
+        return sha256Hex;
+    }
+
+    public void setSha256Hex(String sha256Hex) {
+        this.sha256Hex = sha256Hex;
     }
 
     public LocalDateTime getUploadedAt() {

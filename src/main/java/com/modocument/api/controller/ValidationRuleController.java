@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.api.security.RequiresPermission;
@@ -46,7 +47,7 @@ public class ValidationRuleController {
 
     @RequiresPermission(Permission.VALIDATION_WRITE)
     @PutMapping("/ValidationRules/Upsert")
-    public ResponseEntity<?> upsert(@RequestBody UpsertValidationRuleRequest request) {
+    public ResponseEntity<?> upsert(@Valid @RequestBody UpsertValidationRuleRequest request) {
         if (request.getFieldName() == null || request.getFieldName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "fieldName is required."));
         }

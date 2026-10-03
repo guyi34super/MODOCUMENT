@@ -39,7 +39,12 @@ public class ExtractionJobEntity {
     @Column(name = "BankId", nullable = false)
     private int bankId;
 
-    @Column(name = "SourceId", length = 64)
+    /**
+     * Always populated (ExtractionJobUseCase.create requires a source); made
+     * NOT NULL in V30. Still no FK on purpose — V8 design: deleting a source
+     * keeps its historical jobs.
+     */
+    @Column(name = "SourceId", length = 64, nullable = false)
     private String sourceId;
 
     @Column(name = "TemplateId")

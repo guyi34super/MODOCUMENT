@@ -1,5 +1,8 @@
 package com.modocument.application.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 /**
  * Body of POST /api/ingestion/jobs/{id}/export/database: connection details
  * for the user's target database. Credentials are used for the one export and
@@ -7,9 +10,19 @@ package com.modocument.application.dto;
  */
 public class DatabaseExportRequest {
 
+    @NotBlank
+    @Size(max = 2000)
     private String jdbcUrl;
+
+    @Size(max = 255)
     private String username;
+
+    @Size(max = 512)
     private String password;
+
+    /** DatabaseExportService#requireValidIdentifier owns the character rules. */
+    @NotBlank
+    @Size(max = 128)
     private String tableName;
     private Boolean createTableIfMissing;
 

@@ -1,26 +1,30 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.InvalidDataAccessApiUsageException;
-import org.springframework.dao.InvalidDataAccessResourceUsageException;
 import com.modocument.infrastructure.ratelimit.TooManyRequestsException;
 import com.modocument.infrastructure.job.JobWaitTimeoutException;
+import com.modocument.infrastructure.security.RequestIdFilter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.ErrorResponse;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.io.UncheckedIOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -84,6 +88,36 @@ public class ApiExceptionHandler {
                         + "fields have the expected types.");
     }
 
+    /**
+     * Bean Validation on a {@code @Valid} request body (C6): 400 with a
+     * field→message map. Only the declared constraint messages travel — never
+     * the rejected values, which may be the very PII the constraint caught.
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<?> invalidRequestBody(MethodArgumentNotValidException e) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        for (FieldError fieldError : e.getBindingResult().getFieldErrors()) {
+            fields.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage());
+        }
+        e.getBindingResult().getGlobalErrors().forEach(
+                error -> fields.putIfAbsent(error.getObjectName(), error.getDefaultMessage()));
+        return ResponseEntity.badRequest()
+                .body(Map.of("error", "Validation failed.", "fields", fields));
+    }
+
+    /** Bean Validation on method parameters (@Validated): same 400 shape. */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<?> invalidRequestParameters(ConstraintViolationException e) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        e.getConstraintViolations().forEach(violation -> {
+            String path = String.valueOf(violation.getPropertyPath());
+            String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
+            fields.putIfAbsent(field, violation.getMessage());
+        });
+        return ResponseEntity.badRequest()
+                .body(Map.of("error", "Validation failed.", "fields", fields));
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<?> tooLarge(MaxUploadSizeExceededException e) {
         return error(HttpStatus.PAYLOAD_TOO_LARGE,
@@ -92,39 +126,48 @@ public class ApiExceptionHandler {
     }
 
     /**
-     * Database trouble is either the caller's (a bad target table, a
-     * constraint, unusable credentials) or the environment's (host down). The
-     * first is a 400, the second a 502 — never an opaque 500.
+     * A violated database constraint (duplicate key, broken FK, CHECK): 409
+     * with a generic message. The raw driver text is logged but NEVER echoed —
+     * PostgreSQL spells out the offending VALUES, which can be PII. The
+     * requestId lets support correlate the answer with the logged cause.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<?> dataConflict(DataIntegrityViolationException e) {
+        log.warn("Database integrity violation: {}", rootMessage(e));
+        return error(HttpStatus.CONFLICT, "The request conflicts with existing data.");
+    }
+
+    /**
+     * Other database trouble — host down, bad SQL, unusable credentials. The
+     * raw driver message can carry SQL fragments and parameter values, so the
+     * client gets a generic answer plus the requestId; the detail is in the
+     * server log under the same id.
      */
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<?> databaseProblem(DataAccessException e) {
-        String detail = rootMessage(e);
         if (e instanceof DataAccessResourceFailureException) {
-            log.warn("Database unreachable: {}", detail);
-            return error(HttpStatus.BAD_GATEWAY,
-                    "The database could not be reached: " + detail);
+            log.warn("Database unreachable: {}", rootMessage(e));
+            return error(HttpStatus.BAD_GATEWAY, "The database could not be reached.");
         }
-        if (e instanceof DataIntegrityViolationException
-                || e instanceof InvalidDataAccessApiUsageException
-                || e instanceof InvalidDataAccessResourceUsageException) {
-            log.warn("Database rejected the request: {}", detail);
-            return error(HttpStatus.BAD_REQUEST, "The database rejected the request: " + detail);
-        }
-        log.error("Unexpected database failure", e);
-        return error(HttpStatus.BAD_GATEWAY, "The database request failed: " + detail);
+        log.error("Database request failed", e);
+        return error(HttpStatus.BAD_GATEWAY, "The database request failed.");
     }
 
     @ExceptionHandler(UncheckedIOException.class)
     public ResponseEntity<?> ioProblem(UncheckedIOException e) {
+        // The root message is a file-system path — server internals, logged
+        // but not echoed.
         log.error("File system failure", e);
-        return error(HttpStatus.INTERNAL_SERVER_ERROR,
-                "A file could not be read or written: " + rootMessage(e));
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "A file could not be read or written.");
     }
 
     /**
      * Anything still unhandled. Spring's own web exceptions already carry a
      * correct status, so they are rethrown for the framework's resolver rather
-     * than flattened into a 500.
+     * than flattened into a 500. Everything else answers a generic message —
+     * the root cause of an arbitrary failure can quote SQL, paths or payload
+     * data — plus the requestId, so support can correlate with the logged
+     * stack trace (every log line of the request carries the same id).
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> unexpected(Exception e) throws Exception {
@@ -139,16 +182,23 @@ public class ApiExceptionHandler {
             throw e;
         }
         log.error("Unhandled failure", e);
-        return error(HttpStatus.INTERNAL_SERVER_ERROR,
-                "Something went wrong: " + rootMessage(e));
+        return error(HttpStatus.INTERNAL_SERVER_ERROR, "Something went wrong.");
     }
 
     private static String message(Throwable e, String fallback) {
         return e.getMessage() == null || e.getMessage().isBlank() ? fallback : e.getMessage();
     }
 
+    /**
+     * {"error": message, "requestId": id} — the id (RequestIdFilter's MDC key,
+     * echoed in the X-Request-Id header too) is what support greps the logs
+     * for; the message itself stays free of internals.
+     */
     private static ResponseEntity<?> error(HttpStatus status, String message) {
-        return ResponseEntity.status(status).body(Map.of("error", message));
+        String requestId = MDC.get(RequestIdFilter.MDC_REQUEST_ID);
+        return ResponseEntity.status(status).body(requestId == null
+                ? Map.of("error", message)
+                : Map.of("error", message, "requestId", requestId));
     }
 
     /** Innermost message — the outer wrapper rarely says anything useful. */

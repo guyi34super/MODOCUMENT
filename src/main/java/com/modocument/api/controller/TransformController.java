@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.api.security.RequiresPermission;
@@ -14,6 +15,8 @@ import com.modocument.application.usecase.UploadOwnership;
 import com.modocument.domain.entity.ImportDetails;
 import com.modocument.domain.model.Permission;
 import com.modocument.domain.entity.ImportHistory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,6 +32,7 @@ import java.util.NoSuchElementException;
 @RequiresPermission(Permission.AI_USE)
 public class TransformController {
 
+    private static final Logger log = LoggerFactory.getLogger(TransformController.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final TransformService transformService;
@@ -53,7 +57,7 @@ public class TransformController {
     }
 
     @PostMapping("/api/transform/transform")
-    public ResponseEntity<?> transformFile(@RequestBody(required = false) TransformRequest request)
+    public ResponseEntity<?> transformFile(@Valid @RequestBody(required = false) TransformRequest request)
             throws JsonProcessingException {
         if (request == null || request.getFileName() == null || request.getFileName().isBlank()) {
             return ResponseEntity.badRequest().body("FileName is required in the request body.");
@@ -102,8 +106,12 @@ public class TransformController {
         } catch (UnsupportedOperationException unsupported) {
             return ResponseEntity.badRequest().body(unsupported.getMessage());
         } catch (Exception ex) {
+            // The message of an arbitrary failure can quote SQL, paths or the
+            // file's content — log it, answer generically (requestId is in the
+            // X-Request-Id response header for correlation).
+            log.error("Transform failed", ex);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("An unexpected error occurred: " + ex.getMessage());
+                    .body("An unexpected error occurred.");
         }
     }
 }

@@ -84,6 +84,14 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Bean Validation (C6): declarative request-schema checks (@Valid +
+             constraint annotations on request DTOs) as the outer layer in
+             front of the hand-written use-case validation -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
         <!-- LLM access via Spring AI (OpenAI chat model + structured output) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>

@@ -32,15 +32,37 @@ public class UploadOwnership {
     }
 
     /** Records the caller as owner of a file just stored by UploadStorage. */
-    public UploadedFile record(String storedName, String originalName, long sizeBytes) {
+    public UploadedFile record(String storedName, String originalName, long sizeBytes,
+                               String sha256Hex) {
         UploadedFile entity = new UploadedFile();
         entity.setStoredName(storedName);
         entity.setOriginalName(originalName);
         entity.setOwnerUserId(currentUser.requireUserId());
         entity.setBankId(currentUser.requireBankId());
         entity.setSizeBytes(sizeBytes);
+        entity.setSha256Hex(sha256Hex);
         entity.setUploadedAt(LocalDateTime.now(ZoneOffset.UTC));
         return uploads.add(entity);
+    }
+
+    /**
+     * Duplicate-upload gate (C6): the SAME owner re-uploading the SAME bytes
+     * under the SAME original name is a mistake worth stopping before anything
+     * is written — the earlier upload already serves every purpose of the new
+     * one. The same bytes under a DIFFERENT name stay allowed on purpose: a
+     * copy deliberately saved under a new name is a new upload, and template
+     * test runs against renamed copies are a real workflow.
+     *
+     * @throws IllegalStateException surfaced as 409.
+     */
+    public void rejectDuplicate(String originalName, String sha256Hex) {
+        uploads.getDuplicate(currentUser.requireUserId(), sha256Hex, originalName)
+                .ifPresent(existing -> {
+                    throw new IllegalStateException("You already uploaded '" + originalName
+                            + "' with identical content (stored as '" + existing.getStoredName()
+                            + "'). Re-use that upload or rename the file if this copy is "
+                            + "intentional.");
+                });
     }
 
     /**

@@ -8,4 +8,7 @@ import java.util.Optional;
 public interface UploadedFileJpaRepository extends JpaRepository<UploadedFile, Integer> {
 
     Optional<UploadedFile> findByStoredNameAndOwnerUserId(String storedName, int ownerUserId);
+
+    Optional<UploadedFile> findFirstByOwnerUserIdAndSha256HexAndOriginalName(
+            int ownerUserId, String sha256Hex, String originalName);
 }

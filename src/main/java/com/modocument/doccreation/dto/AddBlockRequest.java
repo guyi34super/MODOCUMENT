@@ -1,11 +1,22 @@
 package com.modocument.doccreation.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 public class AddBlockRequest {
 
     /** PARAGRAPH | IMAGE. */
+    @NotBlank
+    @Size(max = 20)
     private String blockType;
+
+    @Size(max = 100_000)
     private String text;
+
     private Integer assetId;
+
+    /** DocContentBlock.Caption is varchar(500). */
+    @Size(max = 500)
     private String caption;
 
     public String getBlockType() {

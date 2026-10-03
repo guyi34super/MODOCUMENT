@@ -1,5 +1,6 @@
 package com.modocument.doccreation.api;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.doccreation.dto.AddBlockRequest;
@@ -54,7 +55,7 @@ public class DocInstanceController {
 
     @RequiresPermission(Permission.DOC_WRITE)
     @PostMapping("/api/doccreation/instances")
-    public ResponseEntity<?> create(@RequestBody CreateDocInstanceRequest request) {
+    public ResponseEntity<?> create(@Valid @RequestBody CreateDocInstanceRequest request) {
         InstanceSummaryDto created = useCase.create(request.getBlueprintId(), request.getTitle());
         return ResponseEntity
                 .created(URI.create("/api/doccreation/instances/" + created.instanceId()))
@@ -75,7 +76,7 @@ public class DocInstanceController {
 
     @RequiresPermission(Permission.DOC_WRITE)
     @PutMapping("/api/doccreation/instances/{id}")
-    public ResponseEntity<?> rename(@PathVariable int id, @RequestBody UpdateDocInstanceRequest request) {
+    public ResponseEntity<?> rename(@PathVariable int id, @Valid @RequestBody UpdateDocInstanceRequest request) {
         return ResponseEntity.ok(useCase.rename(id, request.getTitle()));
     }
 
@@ -92,13 +93,13 @@ public class DocInstanceController {
     @PostMapping("/api/doccreation/instances/{id}/sections/{sectionId}/blocks")
     public ResponseEntity<?> addBlock(@PathVariable int id,
                                       @PathVariable int sectionId,
-                                      @RequestBody AddBlockRequest request) {
+                                      @Valid @RequestBody AddBlockRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(useCase.addBlock(id, sectionId, request));
     }
 
     @RequiresPermission(Permission.DOC_WRITE)
     @PutMapping("/api/doccreation/blocks/{blockId}")
-    public ResponseEntity<?> updateBlock(@PathVariable int blockId, @RequestBody UpdateBlockRequest request) {
+    public ResponseEntity<?> updateBlock(@PathVariable int blockId, @Valid @RequestBody UpdateBlockRequest request) {
         return ResponseEntity.ok(useCase.updateBlock(blockId, request.getText(), request.getCaption()));
     }
 
@@ -106,7 +107,7 @@ public class DocInstanceController {
     @PutMapping("/api/doccreation/instances/{id}/sections/{sectionId}/blocks/order")
     public ResponseEntity<?> reorderBlocks(@PathVariable int id,
                                            @PathVariable int sectionId,
-                                           @RequestBody ReorderBlocksRequest request) {
+                                           @Valid @RequestBody ReorderBlocksRequest request) {
         useCase.reorderBlocks(id, sectionId, request.getBlockIds());
         return ResponseEntity.ok().build();
     }
@@ -148,7 +149,7 @@ public class DocInstanceController {
 
     @RequiresPermission(Permission.DOC_WRITE)
     @PutMapping("/api/doccreation/assets/{assetId}/assignment")
-    public ResponseEntity<?> assignAsset(@PathVariable int assetId, @RequestBody AssignAssetRequest request) {
+    public ResponseEntity<?> assignAsset(@PathVariable int assetId, @Valid @RequestBody AssignAssetRequest request) {
         useCase.assignAsset(assetId, request.getSectionId());
         return ResponseEntity.ok().build();
     }

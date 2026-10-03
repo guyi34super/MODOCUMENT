@@ -24,4 +24,11 @@ public class UploadedFileRepositoryImpl implements UploadedFileRepository {
     public Optional<UploadedFile> getByStoredNameAndOwner(String storedName, int ownerUserId) {
         return jpa.findByStoredNameAndOwnerUserId(storedName, ownerUserId);
     }
+
+    @Override
+    public Optional<UploadedFile> getDuplicate(int ownerUserId, String sha256Hex,
+                                               String originalName) {
+        return jpa.findFirstByOwnerUserIdAndSha256HexAndOriginalName(
+                ownerUserId, sha256Hex, originalName);
+    }
 }

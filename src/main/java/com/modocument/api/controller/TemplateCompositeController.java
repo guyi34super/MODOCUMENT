@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.application.dto.CreateTemplateRequest;
@@ -30,7 +31,7 @@ public class TemplateCompositeController {
     }
 
     @PostMapping("/Templates/CreateWithFields")
-    public ResponseEntity<?> createWithFields(@RequestBody CreateTemplateRequest request) {
+    public ResponseEntity<?> createWithFields(@Valid @RequestBody CreateTemplateRequest request) {
         try {
             CreateTemplateResponse response = useCase.handle(request);
             return ResponseEntity

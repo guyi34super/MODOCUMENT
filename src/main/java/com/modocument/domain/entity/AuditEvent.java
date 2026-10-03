@@ -8,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Check;
 import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -39,6 +40,9 @@ import java.util.UUID;
 @Table(name = "AuditEvent", indexes = {
         @Index(name = "ix_auditevent_bankid_occurredat", columnList = "BankId, OccurredAt"),
         @Index(name = "ix_auditevent_entitytype_entityid", columnList = "EntityType, EntityId")})
+// SCHEMA PARITY with V30 (ck_auditevent_outcome) on the H2 test schema.
+@Check(name = "ck_auditevent_outcome",
+        constraints = "Outcome in ('SUCCESS', 'DENIED', 'FAILED')")
 public class AuditEvent {
 
     /** UUIDv7 (time-ordered), generated app-side by the recorder. */

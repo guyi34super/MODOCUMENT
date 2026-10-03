@@ -118,9 +118,11 @@ class PermissionEnforcementTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"t\",\"description\":\"d\"}"))
                 .andExpect(status().isForbidden());
-        // VALIDATION_WRITE
+        // VALIDATION_WRITE (well-formed body: Bean Validation answers 400
+        // before method security runs, and this test is about the 403)
         mvc.perform(put("/ValidationRules/Upsert").header("Authorization", auth)
-                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"templateId\":1,\"fieldName\":\"f\",\"ruleType\":\"REQUIRED\"}"))
                 .andExpect(status().isForbidden());
         // IMPORT_WRITE
         mvc.perform(post("/ImportHistory/Create").header("Authorization", auth)
@@ -131,9 +133,10 @@ class PermissionEnforcementTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"mapping\":{\"a\":\"b\"}}"))
                 .andExpect(status().isForbidden());
-        // EXTRACTION_WRITE
+        // EXTRACTION_WRITE (well-formed body, same reason as the Upsert above)
         mvc.perform(post("/api/extraction/sources").header("Authorization", auth)
-                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"s\",\"type\":\"WEBSITE\",\"termsAcknowledged\":true}"))
                 .andExpect(status().isForbidden());
         // EXTRACTION_RUN
         mvc.perform(post("/api/extraction/jobs/some-id/start").header("Authorization", auth))

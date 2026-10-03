@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.application.dto.RowValidationResult;
@@ -30,7 +31,7 @@ public class ValidationController {
 
     @RequiresPermission(Permission.VALIDATION_READ)
     @PostMapping("/Validation/validate")
-    public ResponseEntity<?> validate(@RequestBody ValidationRequest request) {
+    public ResponseEntity<?> validate(@Valid @RequestBody ValidationRequest request) {
         // The template whose rules are being applied must belong to the caller —
         // otherwise a user could probe another template's rules through the
         // validation results.

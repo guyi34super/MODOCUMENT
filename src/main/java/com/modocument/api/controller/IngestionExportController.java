@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
@@ -90,7 +91,7 @@ public class IngestionExportController {
 
     @PostMapping("/api/ingestion/jobs/{id}/export/database")
     public ResponseEntity<?> exportDatabase(@PathVariable int id,
-                                            @RequestBody DatabaseExportRequest request) {
+                                            @Valid @RequestBody DatabaseExportRequest request) {
         IngestionJob job = jobs.get(id);
         TableData table = exportableTable(job);
 

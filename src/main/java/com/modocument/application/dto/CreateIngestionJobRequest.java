@@ -1,12 +1,25 @@
 package com.modocument.application.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+
 /** JSON body of POST /api/ingestion/jobs when referencing an already-uploaded file. */
 public class CreateIngestionJobRequest {
 
+    /** A stored name (varchar(255) everywhere it is recorded). */
+    @NotBlank
+    @Size(max = 255)
     private String fileName;
+
+    @Positive
     private int templateId;
+
     private Boolean autoRun;
+
+    @Size(max = 20)
     private String runUntil;
+
     private Boolean wait;
 
     public CreateIngestionJobRequest() {

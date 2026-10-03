@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.AiFilesService;
 import com.modocument.domain.model.Permission;
@@ -29,7 +31,7 @@ public class AiFilesController {
         this.aiFilesService = aiFilesService;
     }
 
-    public record PromptRequest(String prompt) {
+    public record PromptRequest(@Size(max = MAX_PROMPT_LENGTH) String prompt) {
     }
 
     /**
@@ -37,7 +39,7 @@ public class AiFilesController {
      * Body (JSON): { "prompt": "Your prompt here..." }
      */
     @PostMapping("/api/aifiles/send")
-    public ResponseEntity<?> sendPrompt(@RequestBody(required = false) PromptRequest body) {
+    public ResponseEntity<?> sendPrompt(@Valid @RequestBody(required = false) PromptRequest body) {
         if (body == null || body.prompt() == null || body.prompt().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Prompt must not be empty."));
         }

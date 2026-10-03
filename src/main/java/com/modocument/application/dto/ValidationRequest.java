@@ -1,12 +1,20 @@
 package com.modocument.application.dto;
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 public class ValidationRequest {
 
+    @Positive
     private int templateId;
+
+    @NotNull
+    @Size(max = 50_000)
     private List<Map<String, String>> rows = new ArrayList<>();
 
     public ValidationRequest() {

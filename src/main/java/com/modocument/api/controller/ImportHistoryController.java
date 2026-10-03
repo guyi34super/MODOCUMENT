@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ImportHistoryRepository;
@@ -54,7 +55,7 @@ public class ImportHistoryController {
 
     @RequiresPermission(Permission.IMPORT_WRITE)
     @PostMapping("/ImportHistory/Create")
-    public ResponseEntity<?> create(@RequestBody ImportHistory dto) {
+    public ResponseEntity<?> create(@Valid @RequestBody ImportHistory dto) {
         ImportHistory entity = new ImportHistory();
         entity.setOwnerUserId(currentUser.requireUserId());
         entity.setBankId(currentUser.requireBankId());
@@ -70,7 +71,7 @@ public class ImportHistoryController {
 
     @RequiresPermission(Permission.IMPORT_WRITE)
     @PutMapping("/ImportHistory/Update/{id}")
-    public ResponseEntity<?> update(@PathVariable int id, @RequestBody ImportHistory dto) {
+    public ResponseEntity<?> update(@PathVariable int id, @Valid @RequestBody ImportHistory dto) {
         Optional<ImportHistory> existingOpt =
                 repo.getByIdAndOwner(dto.getImportHistoryId(), currentUser.requireUserId());
         if (existingOpt.isEmpty()) {

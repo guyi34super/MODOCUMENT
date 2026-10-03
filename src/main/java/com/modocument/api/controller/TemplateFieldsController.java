@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.application.port.TemplateFieldsRepository;
@@ -68,7 +69,7 @@ public class TemplateFieldsController {
 
     @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PostMapping("/TemplateFields/Create")
-    public ResponseEntity<?> create(@RequestBody TemplateFields dto) {
+    public ResponseEntity<?> create(@Valid @RequestBody TemplateFields dto) {
         ownership.require(dto.getTemplateId());
         TemplateFields entity = new TemplateFields();
         entity.setTemplateId(dto.getTemplateId());
@@ -82,7 +83,7 @@ public class TemplateFieldsController {
 
     @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PutMapping("/TemplateFields/Update/{id}")
-    public ResponseEntity<?> update(@PathVariable int id, @RequestBody TemplateFields dto) {
+    public ResponseEntity<?> update(@PathVariable int id, @Valid @RequestBody TemplateFields dto) {
         Optional<TemplateFields> existingOpt = repo.getById(dto.getTemplateFieldsId());
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();

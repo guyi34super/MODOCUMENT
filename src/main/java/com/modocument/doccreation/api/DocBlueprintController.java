@@ -1,5 +1,6 @@
 package com.modocument.doccreation.api;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.doccreation.dto.BlueprintDto;
@@ -86,7 +87,7 @@ public class DocBlueprintController {
     @PutMapping("/api/doccreation/blueprints/{id}/sections/{sectionId}/keywords")
     public ResponseEntity<?> updateKeywords(@PathVariable int id,
                                             @PathVariable int sectionId,
-                                            @RequestBody UpdateKeywordsRequest request) {
+                                            @Valid @RequestBody UpdateKeywordsRequest request) {
         return ResponseEntity.ok(useCase.updateKeywords(id, sectionId, request.getKeywords()));
     }
 

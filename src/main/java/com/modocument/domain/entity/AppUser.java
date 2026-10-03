@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Check;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -17,6 +18,10 @@ import java.time.LocalDateTime;
 /** An application user account for JWT authentication. */
 @Entity
 @Table(name = "AppUsers")
+// SCHEMA PARITY with V30 (ck_appusers_role) on the H2 test schema: the Role
+// vocabulary is closed — see com.modocument.domain.model.Role.
+@Check(name = "ck_appusers_role",
+        constraints = "Role in ('ADMIN', 'APPROVER', 'READ_WRITE', 'READ_ONLY')")
 public class AppUser {
 
     @Id

@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.application.port.AuditRecorder;
@@ -59,7 +60,7 @@ public class TemplateController {
 
     @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PostMapping("/Templates/Create")
-    public ResponseEntity<?> create(@RequestBody Template dto) {
+    public ResponseEntity<?> create(@Valid @RequestBody Template dto) {
         Template entity = new Template(0, dto.getName(), dto.getDescription());
         entity.setOwnerUserId(currentUser.requireUserId());
         entity.setBankId(currentUser.requireBankId());
@@ -71,7 +72,7 @@ public class TemplateController {
 
     @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PutMapping("/Templates/Update")
-    public ResponseEntity<?> update(@RequestBody Template dto) {
+    public ResponseEntity<?> update(@Valid @RequestBody Template dto) {
         // Owner-scoped: updating another user's template is a 404, not an edit.
         Optional<Template> existingOpt =
                 repo.getByIdAndOwner(dto.getTemplateId(), currentUser.requireUserId());
