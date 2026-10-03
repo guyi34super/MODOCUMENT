@@ -39,12 +39,21 @@ class RoutePermissionCoverageTest {
     private static final Set<String> PUBLIC_ROUTES = Set.of(
             "/api/auth/login",
             "/api/auth/refresh",
+            // ws07 OIDC: SSO discovery for the anonymous login page (which
+            // providers exist — ids + display names, nothing secret).
+            "/api/auth/providers",
             "/error");
 
     private static final List<String> PUBLIC_PREFIXES = List.of(
             "/actuator",
             "/v3/api-docs",
-            "/swagger");
+            "/swagger",
+            // ws07 OIDC handshake endpoints (/oauth2/authorization/*,
+            // /login/oauth2/code/*): served by Spring Security's own filters,
+            // not annotated handlers — listed for the record; they only exist
+            // when modocument.oidc.providers is configured.
+            "/oauth2/",
+            "/login/oauth2/");
 
     /** Permissions reserved for later workstreams — in the matrix, no routes yet. */
     private static final Set<Permission> RESERVED = EnumSet.of(

@@ -43,6 +43,13 @@ import java.util.concurrent.Callable;
  *   <li>{@code BootstrapAdminRunner#run} — startup first-admin seeding,
  *       {@code runAsSystem} (reads/creates the default Bank row before any
  *       tenant exists).</li>
+ *   <li>{@code OidcLoginService#login} — OIDC JIT provisioning,
+ *       {@code runAsSystem} (resolves the provider's Bank and links/creates
+ *       the user before any tenant context exists — the caller is
+ *       anonymous until MoDocument issues its own tokens).</li>
+ *   <li>{@code OidcClientConfig#oidcBankCodeValidator} — startup check that
+ *       every configured OIDC provider's bank-code names an existing Bank,
+ *       {@code runAsSystem} (reads the RLS-protected Bank table).</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker

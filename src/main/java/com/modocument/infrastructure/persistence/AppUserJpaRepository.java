@@ -10,4 +10,8 @@ public interface AppUserJpaRepository extends JpaRepository<AppUser, Integer> {
     Optional<AppUser> findByEmailIgnoreCase(String email);
 
     boolean existsByEmailIgnoreCase(String email);
+
+    /** OIDC identity link (ws07): returning users match by (provider, subject) first. */
+    Optional<AppUser> findByAuthProviderAndProviderSubject(String authProvider,
+                                                           String providerSubject);
 }

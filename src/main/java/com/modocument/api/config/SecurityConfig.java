@@ -2,6 +2,9 @@ package com.modocument.api.config;
 
 import com.modocument.infrastructure.security.IdentityContextFilter;
 import com.modocument.infrastructure.security.RevocationValidator;
+import com.modocument.infrastructure.security.oidc.OidcLoginFailureHandler;
+import com.modocument.infrastructure.security.oidc.OidcLoginSuccessHandler;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,6 +15,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -19,6 +23,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
@@ -70,7 +75,14 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(
+            HttpSecurity http,
+            // ws07 OIDC front door: these beans exist ONLY when
+            // modocument.oidc.providers is configured (OidcClientConfig);
+            // without them oauth2Login stays off and this chain is unchanged.
+            ObjectProvider<ClientRegistrationRepository> oidcRegistrations,
+            ObjectProvider<OidcLoginSuccessHandler> oidcSuccessHandler,
+            ObjectProvider<OidcLoginFailureHandler> oidcFailureHandler) throws Exception {
         // A JSON API serves no markup, so the strictest CSP applies; when the
         // dev tooling (Swagger UI, H2 console) is enabled, relax it just enough
         // for those pages to load their own assets.
@@ -93,6 +105,12 @@ public class SecurityConfig {
                 .authorizeHttpRequests(a -> {
                     a.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                             .requestMatchers("/api/auth/login", "/api/auth/refresh").permitAll()
+                            // ws07 OIDC: SSO discovery for the login page, the
+                            // authorization-redirect entry points and the
+                            // provider callback (Spring's own filters; inert
+                            // 404s when no OIDC provider is configured).
+                            .requestMatchers("/api/auth/providers").permitAll()
+                            .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
                             .requestMatchers("/actuator/health", "/error").permitAll();
                     if (permitDevPaths) {
                         a.requestMatchers("/swagger/**", "/swagger-ui/**", "/swagger-ui.html",
@@ -107,6 +125,23 @@ public class SecurityConfig {
                 // filter's finally block. (RequestIdFilter runs much earlier,
                 // as a HIGHEST_PRECEDENCE servlet filter outside this chain.)
                 .addFilterAfter(new IdentityContextFilter(), BearerTokenAuthenticationFilter.class);
+        // ws07 OIDC front door (bridge pattern): external IdPs authenticate
+        // the browser at /oauth2/authorization/{registrationId} ->
+        // /login/oauth2/code/*, then the success handler issues MoDocument's
+        // OWN refresh cookie and redirects into the SPA — the resource-server
+        // side above keeps validating only our HS256 tokens. Configured only
+        // when registrations exist; otherwise this chain is exactly as before.
+        ClientRegistrationRepository registrations = oidcRegistrations.getIfAvailable();
+        if (registrations != null) {
+            http.oauth2Login(o -> o
+                            .clientRegistrationRepository(registrations)
+                            .successHandler(oidcSuccessHandler.getObject())
+                            .failureHandler(oidcFailureHandler.getObject()))
+                    // Keep the API's 401 contract: oauth2Login must not swap
+                    // the Bearer entry point for a login-page redirect.
+                    .exceptionHandling(e ->
+                            e.authenticationEntryPoint(new BearerTokenAuthenticationEntryPoint()));
+        }
         return http.build();
     }
 

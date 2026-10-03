@@ -4,6 +4,19 @@ import { api } from './client';
 
 export const login = (email, password) => api.post('/api/auth/login', { email, password });
 
+/**
+ * Configured OIDC providers ([{ id, name }]) for the login page's SSO
+ * buttons; public, answers [] when no provider is configured.
+ */
+export const providers = () => api.get('/api/auth/providers');
+
+/**
+ * Exchanges the httpOnly refresh cookie for a fresh access token
+ * ({ token, user }). Used by the OIDC landing page (/login/complete) — the
+ * token never travels in the redirect URL, only in this response body.
+ */
+export const refresh = () => api.post('/api/auth/refresh');
+
 /** Revokes the access token and every refresh token server-side. */
 export const logout = () => api.post('/api/auth/logout');
 

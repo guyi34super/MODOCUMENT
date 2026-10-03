@@ -1,0 +1,115 @@
+{
+  "realm": "modocument",
+  "enabled": true,
+  "displayName": "MoDocument",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "bruteForceProtected": true,
+
+  "passwordPolicy": "length(12) and notUsername and notEmail",
+
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "otpPolicyLookAheadWindow": 1,
+  "otpPolicyInitialCounter": 0,
+
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": true,
+      "priority": 10,
+      "config": {}
+    }
+  ],
+
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "MoDocument application role: full administration."
+      },
+      {
+        "name": "APPROVER",
+        "description": "MoDocument application role: approves changes/releases."
+      },
+      {
+        "name": "READ_WRITE",
+        "description": "MoDocument application role: creates and edits documents."
+      },
+      {
+        "name": "READ_ONLY",
+        "description": "MoDocument application role: read-only access."
+      }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "modocument-app",
+      "name": "MoDocument",
+      "description": "MoDocument OIDC front door (bridge pattern: the app issues its own tokens after this realm authenticates the browser).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "change-me-modocument-keycloak-secret",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8080/login/oauth2/code/keycloak",
+        "http://localhost:3000/login/oauth2/code/keycloak",
+        "https://localhost:8080/login/oauth2/code/keycloak",
+        "https://localhost:3000/login/oauth2/code/keycloak"
+      ],
+      "webOrigins": [
+        "http://localhost:8080",
+        "http://localhost:3000"
+      ],
+      "defaultClientScopes": ["profile", "email", "roles"],
+      "protocolMappers": [
+        {
+          "name": "modocument-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "modocument_roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "example.analyst",
+      "email": "example.analyst@bank.example",
+      "firstName": "Example",
+      "lastName": "Analyst",
+      "emailVerified": true,
+      "enabled": false,
+      "attributes": {
+        "comment": [
+          "Disabled template user. To onboard a real bank user: duplicate (or enable) this entry, set a real email, assign one MoDocument realm role, and set a temporary password with the UPDATE_PASSWORD required action. On first login the realm forces TOTP enrollment (Configure OTP is a default required action) and the 12+ char password policy applies."
+        ]
+      },
+      "realmRoles": ["READ_ONLY"],
+      "requiredActions": ["UPDATE_PASSWORD", "CONFIGURE_TOTP"]
+    }
+  ]
+}

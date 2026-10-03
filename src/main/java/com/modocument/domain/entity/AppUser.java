@@ -9,6 +9,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.Check;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -17,7 +18,13 @@ import java.time.LocalDateTime;
 
 /** An application user account for JWT authentication. */
 @Entity
-@Table(name = "AppUsers")
+// SCHEMA PARITY with V50 (ux_appusers_provider_subject) on the H2 test
+// schema: best-effort mirror of the PostgreSQL partial unique index — plain
+// unique constraints skip rows with NULLs on both engines, so local accounts
+// (ProviderSubject NULL) stay unaffected.
+@Table(name = "AppUsers", uniqueConstraints = @UniqueConstraint(
+        name = "ux_appusers_provider_subject",
+        columnNames = {"AuthProvider", "ProviderSubject"}))
 // SCHEMA PARITY with V30 (ck_appusers_role) on the H2 test schema: the Role
 // vocabulary is closed — see com.modocument.domain.model.Role.
 @Check(name = "ck_appusers_role",
@@ -46,6 +53,18 @@ public class AppUser {
 
     @Column(name = "LastLoginAt")
     private LocalDateTime lastLoginAt;
+
+    /**
+     * External identity link (V50, ws07 OIDC): which front door this account
+     * signs in through — NULL means local password login (break-glass), else
+     * the OIDC registrationId ('entra', 'keycloak', ...).
+     */
+    @Column(name = "AuthProvider", length = 40)
+    private String authProvider;
+
+    /** The IdP's stable subject (sub claim); unique per AuthProvider. */
+    @Column(name = "ProviderSubject", length = 255)
+    private String providerSubject;
 
     @Column(name = "Email", length = 256, nullable = false, unique = true)
     private String email;
@@ -114,6 +133,22 @@ public class AppUser {
 
     public void setLastLoginAt(LocalDateTime lastLoginAt) {
         this.lastLoginAt = lastLoginAt;
+    }
+
+    public String getAuthProvider() {
+        return authProvider;
+    }
+
+    public void setAuthProvider(String authProvider) {
+        this.authProvider = authProvider;
+    }
+
+    public String getProviderSubject() {
+        return providerSubject;
+    }
+
+    public void setProviderSubject(String providerSubject) {
+        this.providerSubject = providerSubject;
     }
 
     public String getEmail() {

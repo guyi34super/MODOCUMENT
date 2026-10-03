@@ -54,6 +54,14 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
+        <!-- OIDC front door (ws07): Entra ID / Keycloak authenticate the
+             browser, then MoDocument issues its OWN tokens (bridge pattern).
+             Purely additive: with no modocument.oidc.providers configured, no
+             ClientRegistrationRepository bean exists and oauth2Login stays off. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
 
         <!-- Database drivers: PostgreSQL for production, H2 for local/test profiles -->
         <dependency>

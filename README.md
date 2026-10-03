@@ -315,6 +315,16 @@ short, or (in production) set to the old dev default. No secret is committed for
 `local`; set the env var or the gitignored `application-local-secrets.yml`. Only
 the `test` profile ships a fixed dev-only key, so the suite is deterministic.
 
+**Single sign-on (OIDC, optional)**: bank users are expected to sign in
+through an external identity provider — Entra ID for Microsoft banks,
+Keycloak (shipped behind the `keycloak` compose profile) for everyone else —
+with MFA enforced at the provider. The IdP only authenticates; the app then
+issues its own tokens exactly as above (the same refresh cookie; the SPA
+lands on `/login/complete` — no token ever travels in a URL). Password login
+stays as the break-glass path. Nothing is active until
+`modocument.oidc.providers.*` is configured: see
+`application-oidc.yml.example` and `docs/security/identity-providers.md`.
+
 Both open auth endpoints are rate-limited per IP and per email
 (`modocument.security.rate-limit.auth.*`), and the LLM-backed endpoints
 (`/api/aifiles/send`, `/api/automapper/generate`, chat-edit) carry a per-user

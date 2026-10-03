@@ -1055,6 +1055,22 @@ paths:
       summary: Refresh tokens
       tags:
       - Auth
+  /api/auth/providers:
+    get:
+      description: Configured OIDC single sign-on providers for the login
+        page's buttons — registration ids plus display names, nothing secret.
+        Empty list when no provider is configured. The browser starts an SSO
+        login by navigating to /oauth2/authorization/{id}; after the external
+        IdP authenticates, the app issues its OWN tokens (refresh cookie +
+        /api/auth/refresh) — no external token is ever an API credential.
+      operationId: authProviders
+      security: []
+      responses:
+        "200":
+          description: 'Array of { id, name }; empty when OIDC is not configured'
+      summary: OIDC providers
+      tags:
+      - Auth
   /api/auth/logout:
     post:
       description: Revoke the current access token (jti denylist) and every
