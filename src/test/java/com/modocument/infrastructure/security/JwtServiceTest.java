@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The access-token claim contract: lean claims only (sub/jti/roles/bank_id/
  * token_ver), no profile data, short TTL. Anything downstream — the
- * RevocationValidator, the TenantContextFilter, RBAC — reads exactly these.
+ * RevocationValidator, the IdentityContextFilter, RBAC — reads exactly these.
  */
 class JwtServiceTest {
 

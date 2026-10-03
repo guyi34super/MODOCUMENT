@@ -1,7 +1,10 @@
 package com.modocument.infrastructure.bootstrap;
 
+import com.modocument.application.port.AuditEventSpec;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.TenantContext;
 import com.modocument.domain.entity.AppUser;
+import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
@@ -15,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * Seeds the very first administrator. Public self-registration is gone, so a
@@ -36,6 +40,7 @@ public class BootstrapAdminRunner implements ApplicationRunner {
     private final AppUserJpaRepository users;
     private final BankJpaRepository banks;
     private final PasswordEncoder passwordEncoder;
+    private final AuditRecorder audit;
     private final String adminEmail;
     private final String adminPassword;
     private final boolean permitDevPaths;
@@ -43,12 +48,14 @@ public class BootstrapAdminRunner implements ApplicationRunner {
     public BootstrapAdminRunner(AppUserJpaRepository users,
                                 BankJpaRepository banks,
                                 PasswordEncoder passwordEncoder,
+                                AuditRecorder audit,
                                 @Value("${MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL:}") String adminEmail,
                                 @Value("${MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD:}") String adminPassword,
                                 @Value("${modocument.security.permit-dev-paths:false}") boolean permitDevPaths) {
         this.users = users;
         this.banks = banks;
         this.passwordEncoder = passwordEncoder;
+        this.audit = audit;
         this.adminEmail = adminEmail;
         this.adminPassword = adminPassword;
         this.permitDevPaths = permitDevPaths;
@@ -94,6 +101,17 @@ public class BootstrapAdminRunner implements ApplicationRunner {
         admin.setCreatedDate(LocalDateTime.now());
         admin.setUpdatedDate(LocalDateTime.now());
         users.save(admin);
+        // Audited as SYSTEM (no ActorUserId - the thread runs under
+        // runAsSystem); the bank is pinned explicitly since the SYSTEM
+        // context carries none.
+        audit.record(AuditEventSpec.builder("BOOTSTRAP_ADMIN_CREATED", AuditOutcome.SUCCESS)
+                .bankId(defaultBank.getBankId())
+                .entity("AppUser", String.valueOf(admin.getAppUserId()))
+                .newValues(Map.of(
+                        "email", admin.getEmail(),
+                        "role", Role.ADMIN.name(),
+                        "bankCode", defaultBank.getCode()))
+                .build());
         log.info("Bootstrap ADMIN '{}' created in bank '{}'.",
                 admin.getEmail(), defaultBank.getCode());
     }

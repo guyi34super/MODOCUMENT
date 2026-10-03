@@ -6,7 +6,7 @@ import com.modocument.domain.entity.Bank;
 /**
  * Resolves the BankId to stamp on an extraction row. Request threads carry
  * the caller's bank in {@link TenantContext} (populated from the JWT by the
- * TenantContextFilter); worker threads carry the job's bank (the extraction
+ * IdentityContextFilter); worker threads carry the job's bank (the extraction
  * task runner wraps itself in TenantContext.runAs). Anything genuinely
  * tenant-less lands in the default bank rather than failing the V11 NOT NULL
  * constraint.

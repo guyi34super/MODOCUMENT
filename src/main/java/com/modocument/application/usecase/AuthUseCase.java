@@ -3,10 +3,13 @@ package com.modocument.application.usecase;
 import com.modocument.application.dto.AuthResponse;
 import com.modocument.application.dto.UserDto;
 import com.modocument.application.port.AppUserRepository;
+import com.modocument.application.port.AuditEventSpec;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.RefreshTokenRepository;
 import com.modocument.application.port.RevokedTokenRepository;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.RefreshToken;
+import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.model.Hashing;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.security.JwtService;
@@ -51,15 +54,20 @@ public class AuthUseCase {
     private final JwtService jwtService;
     private final RefreshTokenRepository refreshTokens;
     private final RevokedTokenRepository revokedTokens;
+    private final AuditRecorder audit;
 
     public AuthUseCase(AppUserRepository users, PasswordEncoder passwordEncoder,
                        JwtService jwtService, RefreshTokenRepository refreshTokens,
-                       RevokedTokenRepository revokedTokens) {
+                       RevokedTokenRepository revokedTokens, AuditRecorder audit) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.refreshTokens = refreshTokens;
         this.revokedTokens = revokedTokens;
+        // Identity events are recorded HERE because login is a custom use
+        // case, not Spring's AuthenticationManager - there is no
+        // AuthenticationEventPublisher to listen to.
+        this.audit = audit;
     }
 
     /**
@@ -99,14 +107,28 @@ public class AuthUseCase {
      * access token (response body) plus a new refresh-token family (cookie).
      */
     public AuthSession login(String email, String password, String ip, String userAgent) {
-        AppUser user = users.getByEmail(email == null ? "" : email.trim()).orElse(null);
+        String attempted = email == null ? "" : email.trim();
+        AppUser user = users.getByEmail(attempted).orElse(null);
         if (user == null) {
             // Same BCrypt cost and same message as a wrong password, so the
-            // timing/response reveals nothing about which emails exist.
+            // timing/response reveals nothing about which emails exist. The
+            // audit row records what actually happened (C7): the attempted
+            // email with no user id - an unknown account.
             passwordEncoder.matches(password == null ? "" : password, DUMMY_HASH);
+            audit.record(AuditEventSpec.builder("LOGIN_FAILED", AuditOutcome.FAILED)
+                    .actorEmail(attempted)
+                    .build());
             throw new BadCredentialsException("Invalid email or password.");
         }
         if (!passwordEncoder.matches(password == null ? "" : password, user.getPasswordHash())) {
+            // Known account, wrong password - distinguishable from the
+            // unknown-email row by the present ActorUserId.
+            audit.record(AuditEventSpec.builder("LOGIN_FAILED", AuditOutcome.FAILED)
+                    .actorUserId(user.getAppUserId())
+                    .actorEmail(user.getEmail())
+                    .actorRole(user.getRole() == null ? null : user.getRole().name())
+                    .bankId(user.getBankId())
+                    .build());
             throw new BadCredentialsException("Invalid email or password.");
         }
         user.setLastLoginAt(LocalDateTime.now());
@@ -114,8 +136,17 @@ public class AuthUseCase {
         Instant familyExpiry = Instant.now().plus(REFRESH_FAMILY_DAYS, ChronoUnit.DAYS);
         IssuedRefreshToken refresh =
                 issueRefreshToken(user, UUID.randomUUID(), familyExpiry, ip, userAgent);
-        return new AuthSession(
+        AuthSession session = new AuthSession(
                 new AuthResponse(jwtService.issueToken(user), UserDto.from(user)), refresh.value());
+        audit.record(AuditEventSpec.builder("LOGIN_SUCCESS", AuditOutcome.SUCCESS)
+                .actorUserId(user.getAppUserId())
+                .actorEmail(user.getEmail())
+                .actorRole(user.getRole() == null ? null : user.getRole().name())
+                .bankId(user.getBankId())
+                .sessionJti(refresh.jti())
+                .entity("AppUser", String.valueOf(user.getAppUserId()))
+                .build());
+        return session;
     }
 
     /**
@@ -137,6 +168,16 @@ public class AuthUseCase {
             // rotated away. Kill the whole family — whichever side is the
             // thief, nobody keeps the session.
             refreshTokens.revokeFamily(current.getFamilyId(), now);
+            // Security signal (SEC-034): record the owner and the killed
+            // family; DENIED writes in its own transaction, surviving the 401.
+            AuditEventSpec.Builder reuse = AuditEventSpec
+                    .builder("TOKEN_REFRESH_REUSE_DETECTED", AuditOutcome.DENIED)
+                    .actorUserId(current.getUserId())
+                    .entity("RefreshTokenFamily", current.getFamilyId().toString());
+            users.getById(current.getUserId()).ifPresent(owner -> reuse
+                    .actorEmail(owner.getEmail())
+                    .bankId(owner.getBankId()));
+            audit.record(reuse.build());
             throw new BadCredentialsException("Refresh token has been revoked.");
         }
         if (!now.isBefore(current.getExpiresAt())) {
@@ -172,6 +213,13 @@ public class AuthUseCase {
             }
         }
         refreshTokens.revokeAllForUser(userId, Instant.now());
+        // Actor/bank/role/session jti are enriched from the caller's JWT by
+        // the recorder; the email lookup just completes the "who" (B1).
+        AuditEventSpec.Builder logout = AuditEventSpec
+                .builder("LOGOUT", AuditOutcome.SUCCESS)
+                .actorUserId(userId);
+        users.getById(userId).ifPresent(user -> logout.actorEmail(user.getEmail()));
+        audit.record(logout.build());
     }
 
     public UserDto me(int userId) {
@@ -211,6 +259,13 @@ public class AuthUseCase {
         user.setUpdatedDate(LocalDateTime.now());
         users.save(user);
         refreshTokens.revokeAllForUser(userId, Instant.now());
+        // No old/new values on purpose: hashes never reach the audit trail.
+        audit.record(AuditEventSpec.builder("PASSWORD_CHANGED", AuditOutcome.SUCCESS)
+                .actorUserId(userId)
+                .actorEmail(user.getEmail())
+                .bankId(user.getBankId())
+                .entity("AppUser", String.valueOf(userId))
+                .build());
     }
 
     private IssuedRefreshToken issueRefreshToken(AppUser user, UUID familyId, Instant expiresAt,

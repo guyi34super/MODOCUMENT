@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.bootstrap;
 
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.Role;
@@ -32,9 +33,11 @@ class BootstrapAdminRunnerTest {
     private BankJpaRepository banks;
     @Autowired
     private PasswordEncoder passwordEncoder;
+    @Autowired
+    private AuditRecorder audit;
 
     private BootstrapAdminRunner runner(String email, String password, boolean permitDevPaths) {
-        return new BootstrapAdminRunner(users, banks, passwordEncoder, email, password,
+        return new BootstrapAdminRunner(users, banks, passwordEncoder, audit, email, password,
                 permitDevPaths);
     }
 

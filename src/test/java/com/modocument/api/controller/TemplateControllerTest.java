@@ -1,6 +1,7 @@
 package com.modocument.api.controller;
 
 import com.modocument.testsupport.FixedUser;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.usecase.DeleteTemplateUseCase;
 import com.modocument.domain.entity.Template;
@@ -24,9 +25,10 @@ class TemplateControllerTest {
     private static final int USER = 1;
     private final TemplateRepository repo = mock(TemplateRepository.class);
     private final DeleteTemplateUseCase deleteTemplate = mock(DeleteTemplateUseCase.class);
+    private final AuditRecorder audit = mock(AuditRecorder.class);
     // CurrentUserProvider is a functional interface — a fixed caller is enough.
     private final TemplateController controller =
-            new TemplateController(repo, deleteTemplate, FixedUser.provider(USER));
+            new TemplateController(repo, deleteTemplate, FixedUser.provider(USER), audit);
 
     @Test
     void getAllReturnsOkWithListOfTemplates() {
@@ -94,6 +96,13 @@ class TemplateControllerTest {
         assertThat(existing.getName()).isEqualTo("NewName");
         assertThat(existing.getDescription()).isEqualTo("NewDescription");
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        // The C7 exemplar: old and new field-level snapshots are audited.
+        verify(audit).success(
+                org.mockito.ArgumentMatchers.eq("TEMPLATE_UPDATED"),
+                org.mockito.ArgumentMatchers.eq("Template"),
+                org.mockito.ArgumentMatchers.eq("1"),
+                org.mockito.ArgumentMatchers.argThat(old -> old.toString().contains("OldName")),
+                org.mockito.ArgumentMatchers.argThat(now -> now.toString().contains("NewName")));
     }
 
     @Test

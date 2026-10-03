@@ -248,3 +248,22 @@ springdoc:
 logging:
   level:
     root: info
+
+---
+# Structured logging (E9/SEC-015): activate the `structured-logs` profile
+# (e.g. SPRING_PROFILES_ACTIVE=structured-logs) to switch the console
+# appender in logback-spring.xml from the human-readable pattern (the
+# default, extended with [requestId] [u:userId b:bankId] from the MDC) to
+# Spring Boot's native structured output for log aggregation. The document
+# format defaults to Elastic Common Schema and can be overridden with
+# MODOCUMENT_LOG_FORMAT (ecs | logstash | gelf). MDC keys — requestId, ip
+# (RequestIdFilter), userId, role (IdentityContextFilter), bankId
+# (TenantContext; '*' for system work) — become fields of every document.
+spring:
+  config:
+    activate:
+      on-profile: structured-logs
+logging:
+  structured:
+    format:
+      console: ${MODOCUMENT_LOG_FORMAT:ecs}

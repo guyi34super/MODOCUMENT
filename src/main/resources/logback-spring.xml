@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  E9 logging spine: every console line carries the request id and the
+  caller's identity so one action is traceable end-to-end (log lines +
+  the AuditEvent row share the same requestId/userId/bankId).
+
+  * Spring Boot's defaults are preserved (defaults.xml: %clr/%wEx conversion
+    rules, noise-suppression logger levels, CONSOLE_LOG_* properties).
+  * Default profile: Boot 3.5's standard human-readable console pattern,
+    extended with "[requestId] [u:userId b:bankId]" from the MDC, which
+    RequestIdFilter (requestId/ip), IdentityContextFilter (userId/role) and
+    TenantContext (bankId; "*" for system work) maintain and
+    TenantTaskDecorator copies onto async threads. Unauthenticated or
+    startup lines simply render the fields empty.
+  * structured-logs profile: Boot's native structured logging
+    (StructuredLogEncoder). The format comes from
+    logging.structured.format.console, which the structured-logs YAML
+    profile sets to ${MODOCUMENT_LOG_FORMAT:ecs} - see application.yml.
+    MDC entries (requestId, userId, bankId, role, ip) become fields of
+    every JSON log document automatically.
+-->
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- ===================================================================
+         ws13 REDACTION INSERTION POINT: declare the sensitive-data masking
+         converter here, e.g.
+           <conversionRule conversionWord="mask"
+                           class="com.modocument.infrastructure.logging.RedactingConverter"/>
+         and replace "%m" with "%mask" in the pattern below (and the
+         structured encoder once it supports it).
+         =================================================================== -->
+
+    <springProfile name="!structured-logs">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                <level>${CONSOLE_LOG_THRESHOLD:-TRACE}</level>
+            </filter>
+            <encoder>
+                <!-- Boot 3.5's default console pattern (defaults.xml) with the
+                     identity segment inserted after the thread name. -->
+                <pattern>%clr(%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd'T'HH:mm:ss.SSSXXX}}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}){} %clr(${PID:-}){magenta} %clr(--- %esb(){APPLICATION_NAME}%esb{APPLICATION_GROUP}[%15.15t] ${LOG_CORRELATION_PATTERN:-}){faint}%clr([%X{requestId}] [u:%X{userId} b:%X{bankId}] ){faint}%clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}</pattern>
+                <charset>${CONSOLE_LOG_CHARSET:-UTF-8}</charset>
+            </encoder>
+        </appender>
+    </springProfile>
+
+    <springProfile name="structured-logs">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                <level>${CONSOLE_LOG_THRESHOLD:-TRACE}</level>
+            </filter>
+            <encoder class="org.springframework.boot.logging.logback.StructuredLogEncoder">
+                <format>${CONSOLE_LOG_STRUCTURED_FORMAT}</format>
+                <charset>${CONSOLE_LOG_CHARSET:-UTF-8}</charset>
+            </encoder>
+        </appender>
+    </springProfile>
+
+    <!-- Initial level only; logging.level.* from application.yml still
+         applies on top (Boot sets levels programmatically after init). -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

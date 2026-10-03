@@ -1,5 +1,7 @@
 package com.modocument.application.port;
 
+import org.slf4j.MDC;
+
 import java.util.Optional;
 import java.util.concurrent.Callable;
 
@@ -20,11 +22,17 @@ import java.util.concurrent.Callable;
  * zero rows (fail closed); {@link #runAsSystem} maps to the {@code '*'}
  * wildcard the policies accept for maintenance work.
  *
+ * <p>LOG CORRELATION (E9): this class also owns the {@code bankId} MDC key —
+ * every mutation mirrors the bound tenant onto the logging context (a real
+ * bank id, {@code *} for SYSTEM, removed when unbound), so request threads,
+ * decorated async threads (TenantTaskDecorator copies the MDC map) and
+ * {@code runAsSystem} maintenance work all log the tenant they act for.
+ *
  * <p>CALL-SITE REGISTRY — every place that deliberately establishes a tenant
  * context outside a web request (grep for the class name to re-audit):
  * <ul>
- *   <li>{@code TenantContextFilter} — request threads, from the JWT bank_id
- *       claim (cleared in a finally block).</li>
+ *   <li>{@code IdentityContextFilter} — request threads, from the JWT
+ *       bank_id claim (cleared in a finally block).</li>
  *   <li>{@code ExecuteExtractionTaskUseCase#run} — extraction worker
  *       threads: {@code runAsSystem} to resolve whose job a queued task is,
  *       then {@code runAs(job.getBankId())} for the actual work.</li>
@@ -45,6 +53,9 @@ public final class TenantContext {
 
     /** Sentinel stored by {@link #runAsSystem}; never a real BankId. */
     private static final int SYSTEM = Integer.MIN_VALUE;
+
+    /** MDC key mirroring the bound tenant on every log line (E9). */
+    public static final String MDC_BANK_ID = "bankId";
 
     private static final ThreadLocal<Integer> CURRENT = new ThreadLocal<>();
 
@@ -67,7 +78,7 @@ public final class TenantContext {
 
     public static void runAs(int bankId, Runnable action) {
         Integer previous = CURRENT.get();
-        CURRENT.set(bankId);
+        bind(bankId);
         try {
             action.run();
         } finally {
@@ -77,7 +88,7 @@ public final class TenantContext {
 
     public static <T> T runAs(int bankId, Callable<T> action) throws Exception {
         Integer previous = CURRENT.get();
-        CURRENT.set(bankId);
+        bind(bankId);
         try {
             return action.call();
         } finally {
@@ -87,7 +98,7 @@ public final class TenantContext {
 
     public static void runAsSystem(Runnable action) {
         Integer previous = CURRENT.get();
-        CURRENT.set(SYSTEM);
+        bind(SYSTEM);
         try {
             action.run();
         } finally {
@@ -97,7 +108,7 @@ public final class TenantContext {
 
     public static <T> T runAsSystem(Callable<T> action) throws Exception {
         Integer previous = CURRENT.get();
-        CURRENT.set(SYSTEM);
+        bind(SYSTEM);
         try {
             return action.call();
         } finally {
@@ -118,11 +129,7 @@ public final class TenantContext {
     public static void runWith(Snapshot snapshot, Runnable action) {
         Integer previous = CURRENT.get();
         Integer value = snapshot == null ? null : snapshot.bankId;
-        if (value == null) {
-            CURRENT.remove();
-        } else {
-            CURRENT.set(value);
-        }
+        bind(value);
         try {
             action.run();
         } finally {
@@ -145,19 +152,29 @@ public final class TenantContext {
      * should prefer the runAs wrappers, which restore the previous value.
      */
     public static void open(int bankId) {
-        CURRENT.set(bankId);
+        bind(bankId);
     }
 
     /** Clears the context (the filter's finally block). */
     public static void clear() {
-        CURRENT.remove();
+        bind(null);
     }
 
     private static void restore(Integer previous) {
-        if (previous == null) {
+        bind(previous);
+    }
+
+    /**
+     * The one place the thread local changes: keeps the {@link #MDC_BANK_ID}
+     * logging key in lockstep with the bound tenant.
+     */
+    private static void bind(Integer value) {
+        if (value == null) {
             CURRENT.remove();
+            MDC.remove(MDC_BANK_ID);
         } else {
-            CURRENT.set(previous);
+            CURRENT.set(value);
+            MDC.put(MDC_BANK_ID, value == SYSTEM ? "*" : String.valueOf(value));
         }
     }
 }

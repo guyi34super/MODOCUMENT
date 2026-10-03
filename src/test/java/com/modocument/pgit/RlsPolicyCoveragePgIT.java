@@ -39,10 +39,12 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
             List<String> tenantTables = tenantTables(owner);
 
             // The full current inventory: V10/V11 roots and children, plus
-            // the Bank registry itself and the V20 UploadedFile (which only
-            // the afterMigrate callback can cover on a fresh database).
+            // the Bank registry itself, the V14 append-only audit trail and
+            // the V20 UploadedFile (which only the afterMigrate callback can
+            // cover on a fresh database).
             assertThat(tenantTables).containsExactlyInAnyOrder(
                     "bank",
+                    "auditevent",
                     "template", "templatefields", "validationrules",
                     "importhistory", "importdetails", "ingestionjob",
                     "extractionsource", "extractionjob", "extractionjobcounter",

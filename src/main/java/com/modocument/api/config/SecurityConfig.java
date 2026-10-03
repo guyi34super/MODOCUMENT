@@ -1,7 +1,7 @@
 package com.modocument.api.config;
 
+import com.modocument.infrastructure.security.IdentityContextFilter;
 import com.modocument.infrastructure.security.RevocationValidator;
-import com.modocument.infrastructure.security.TenantContextFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -101,9 +101,12 @@ public class SecurityConfig {
                     a.anyRequest().authenticated();
                 })
                 .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()))
-                // After bearer auth so the validated JWT's bank_id claim is in
-                // the security context; cleared in the filter's finally block.
-                .addFilterAfter(new TenantContextFilter(), BearerTokenAuthenticationFilter.class);
+                // After bearer auth so the validated JWT's claims are in the
+                // security context: opens TenantContext (bank_id) and the
+                // userId/bankId/role logging MDC in one place; cleared in the
+                // filter's finally block. (RequestIdFilter runs much earlier,
+                // as a HIGHEST_PRECEDENCE servlet filter outside this chain.)
+                .addFilterAfter(new IdentityContextFilter(), BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 

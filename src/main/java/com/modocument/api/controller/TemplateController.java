@@ -2,6 +2,7 @@ package com.modocument.api.controller;
 
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.usecase.DeleteTemplateUseCase;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -27,12 +29,14 @@ public class TemplateController {
     private final TemplateRepository repo;
     private final DeleteTemplateUseCase deleteTemplate;
     private final CurrentUserProvider currentUser;
+    private final AuditRecorder audit;
 
     public TemplateController(TemplateRepository repo, DeleteTemplateUseCase deleteTemplate,
-                              CurrentUserProvider currentUser) {
+                              CurrentUserProvider currentUser, AuditRecorder audit) {
         this.repo = repo;
         this.deleteTemplate = deleteTemplate;
         this.currentUser = currentUser;
+        this.audit = audit;
     }
 
     @RequiresPermission(Permission.TEMPLATE_READ)
@@ -75,10 +79,16 @@ public class TemplateController {
             return notFound(dto.getTemplateId());
         }
         Template existing = existingOpt.get();
+        // Exemplar of the C7 old/new pattern other domains should copy: a
+        // small field-level snapshot before and after, via AuditRecorder's
+        // one-liner (actor/bank/request enrichment happens in the recorder).
+        Map<String, Object> before = snapshot(existing);
         existing.setName(dto.getName());
         existing.setDescription(dto.getDescription());
 
         Template response = repo.update(existing);
+        audit.success("TEMPLATE_UPDATED", "Template", String.valueOf(response.getTemplateId()),
+                before, snapshot(response));
         Template updated = new Template(response.getTemplateId(), response.getName(),
                 response.getDescription());
 
@@ -103,6 +113,14 @@ public class TemplateController {
                     .body(Map.of("error", e.getMessage()));
         }
         return ResponseEntity.noContent().build();
+    }
+
+    /** The audited field-level view of a template (C7 old/new values). */
+    private static Map<String, Object> snapshot(Template template) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("name", template.getName());
+        values.put("description", template.getDescription());
+        return values;
     }
 
     /** A body the frontend can render; an empty 404 degrades to "Request failed (404)". */
