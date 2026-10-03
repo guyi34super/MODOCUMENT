@@ -94,6 +94,15 @@ public class ExecuteExtractionTaskUseCase implements ExtractionTaskRunner {
 
     @Override
     public void run(ExtractionTask task, String workerId) {
+        // runAsSystem: a queued task carries no tenant, so resolving WHOSE
+        // job it is — and the skip/release bookkeeping on it — is a
+        // deliberate cross-tenant read; without it row-level security would
+        // hide every job from the worker (see the call-site registry in
+        // TenantContext). The actual work adopts the job's own bank below.
+        TenantContext.runAsSystem(() -> dispatch(task, workerId));
+    }
+
+    private void dispatch(ExtractionTask task, String workerId) {
         ExtractionJob job = jobs.getById(task.getJobId()).orElse(null);
         ExtractionSource source = job == null ? null
                 : sources.getById(task.getSourceId()).orElse(null);
@@ -111,7 +120,8 @@ public class ExecuteExtractionTaskUseCase implements ExtractionTaskRunner {
         }
         // Worker threads carry no request context, so adopt the job's bank:
         // every row this task writes (raw/processed records, audit events,
-        // counters, connector state) is stamped with it.
+        // counters, connector state) is stamped with it, and row-level
+        // security scopes every read to it.
         TenantContext.runAs(job.getBankId(), () -> execute(task, workerId, job, source));
     }
 

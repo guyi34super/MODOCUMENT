@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.bootstrap;
 
+import com.modocument.application.port.TenantContext;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.Role;
@@ -55,6 +56,13 @@ public class BootstrapAdminRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        // runAsSystem: startup seeding runs before any tenant exists and
+        // must read/create the RLS-protected default Bank row, so it runs
+        // with the wildcard (see the call-site registry in TenantContext).
+        TenantContext.runAsSystem(this::bootstrapFirstAdmin);
+    }
+
+    private void bootstrapFirstAdmin() {
         if (users.count() > 0) {
             return;
         }

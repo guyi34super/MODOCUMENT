@@ -4,6 +4,7 @@ import com.modocument.application.port.ExtractionTaskQueue;
 import com.modocument.application.port.ExtractionTaskRunner;
 import com.modocument.application.port.TaskEventBus;
 import com.modocument.domain.document.ExtractionTask;
+import com.modocument.infrastructure.async.TenantTaskDecorator;
 import com.modocument.infrastructure.extraction.ExtractionProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,7 @@ public class ExtractionWorkerPool implements SmartLifecycle {
     private final ExtractionProperties properties;
 
     private final String workerId = "worker-" + UUID.randomUUID();
+    private final TenantTaskDecorator tenantDecorator = new TenantTaskDecorator();
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
     private final AtomicInteger activeCount = new AtomicInteger();
     private final Object wakeLock = new Object();
@@ -106,7 +108,11 @@ public class ExtractionWorkerPool implements SmartLifecycle {
     private void submit(ExtractionTask task) {
         inFlight.add(task.getId());
         activeCount.incrementAndGet();
-        executor.execute(() -> {
+        // The decorator guarantees each task starts tenant-clean (the
+        // dispatcher thread carries no tenant) and restores afterwards; the
+        // task's REAL tenant is bound inside ExecuteExtractionTaskUseCase,
+        // which wraps the run in TenantContext.runAs(job.getBankId()).
+        executor.execute(tenantDecorator.decorate(() -> {
             try {
                 runner.run(task, workerId);
             } catch (Exception e) {
@@ -116,7 +122,7 @@ public class ExtractionWorkerPool implements SmartLifecycle {
                 activeCount.decrementAndGet();
                 wake();
             }
-        });
+        }));
     }
 
     /** Extends leases of in-flight tasks every third of the lease duration. */

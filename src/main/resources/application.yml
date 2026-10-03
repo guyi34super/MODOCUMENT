@@ -13,6 +13,13 @@ spring:
     # Production database: PostgreSQL. Override via MODOCUMENT_DB_* (or the
     # standard SPRING_DATASOURCE_* variables, which take precedence over any
     # profile). MODOCUMENT_DB_* is ignored by the H2 local/test profiles.
+    #
+    # TWO-ROLE MODEL (row-level security): at runtime the app should connect
+    # as the RLS-subject role `modocument_app` (created by V12, policies in
+    # V13), while Flyway connects as the schema OWNER below. Table owners
+    # bypass the (non-FORCE) policies; modocument_app cannot. Single-user
+    # setups keep working — the owner just isn't tenant-filtered, and the
+    # TenantAwareJpaTransactionManager still stamps app.tenant either way.
     url: ${MODOCUMENT_DB_URL:jdbc:postgresql://localhost:5432/modocument}
     username: ${MODOCUMENT_DB_USERNAME:modocument}
     password: ${MODOCUMENT_DB_PASSWORD:}
@@ -20,7 +27,13 @@ spring:
   flyway:
     # Flyway owns the schema in production (src/main/resources/db/migration);
     # the H2 local/test profiles disable it and use ddl-auto: create instead.
+    # Migrations run as the schema owner: set MODOCUMENT_FLYWAY_USERNAME /
+    # MODOCUMENT_FLYWAY_PASSWORD when the datasource user is the restricted
+    # `modocument_app` role (docker-compose does); unset, Flyway falls back
+    # to the datasource credentials so plain dev setups keep working.
     enabled: true
+    user: ${MODOCUMENT_FLYWAY_USERNAME:${spring.datasource.username}}
+    password: ${MODOCUMENT_FLYWAY_PASSWORD:${spring.datasource.password}}
   jpa:
     open-in-view: false
     hibernate:

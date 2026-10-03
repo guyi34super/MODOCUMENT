@@ -18,6 +18,21 @@ jobs:
           cache: maven
       - run: mvn -B verify
 
+  # Real-PostgreSQL integration suite (Flyway chain, RLS coverage, the C1
+  # tenant-isolation gate). ubuntu-latest ships Docker, so the *PgIT classes
+  # start a Testcontainers postgres:17; point MODOCUMENT_IT_JDBC_URL at an
+  # external server to run them without Docker.
+  backend-postgres:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B verify -Ppostgres-it
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

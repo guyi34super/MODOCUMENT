@@ -20,8 +20,14 @@ services:
       # `--profile extraction` so Mongo + Kafka come up too.
       SPRING_PROFILES_ACTIVE: ${APP_PROFILES:-}
       MODOCUMENT_DB_URL: jdbc:postgresql://postgres:5432/modocument
-      MODOCUMENT_DB_USERNAME: ${POSTGRES_USER:-modocument}
-      MODOCUMENT_DB_PASSWORD: ${POSTGRES_PASSWORD:-modocument}
+      # Two-role model: the app runs as modocument_app, which is subject to
+      # the row-level-security tenant policies (V13); Flyway migrates as the
+      # schema owner below, which bypasses them. The app role is created by
+      # the postgres init script (first boot) and by migration V12.
+      MODOCUMENT_DB_USERNAME: modocument_app
+      MODOCUMENT_DB_PASSWORD: ${MODOCUMENT_APP_DB_PASSWORD:-modocument_app}
+      MODOCUMENT_FLYWAY_USERNAME: ${POSTGRES_USER:-modocument}
+      MODOCUMENT_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-modocument}
       # REQUIRED: JWT signing key, at least 32 bytes. Generate one with
       # `openssl rand -base64 48` and export it before `docker compose up`.
       MODOCUMENT_JWT_SECRET: ${MODOCUMENT_JWT_SECRET:?Set MODOCUMENT_JWT_SECRET (openssl rand -base64 48)}
@@ -80,10 +86,18 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-modocument}
       # Change this for any deployment reachable from outside your machine.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-modocument}
+      # Password for the RLS-subject runtime role created by the init script
+      # below (and kept in sync with the app service's datasource password).
+      MODOCUMENT_APP_DB_PASSWORD: ${MODOCUMENT_APP_DB_PASSWORD:-modocument_app}
     ports:
       - "5432:5432"
     volumes:
       - modocument-postgres:/var/lib/postgresql/data
+      # First-boot init only (fresh volume): creates the modocument_app role
+      # with the real password. On existing volumes migration V12 creates the
+      # role with a placeholder password — set it with ALTER ROLE, or reset
+      # the volume (pre-launch there is no data worth preserving).
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s

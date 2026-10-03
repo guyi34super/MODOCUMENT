@@ -168,6 +168,20 @@
             <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- PostgreSQL integration suite (-Ppostgres-it, **/*PgIT.java):
+             starts a disposable postgres:17 when MODOCUMENT_IT_JDBC_URL does
+             not point at an external server (see PgItSupport). -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -176,6 +190,51 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- The PostgreSQL integration classes (*PgIT) belong to
+                         failsafe in the postgres-it profile, never to the
+                         default H2 unit run. -->
+                    <excludes>
+                        <exclude>**/*PgIT.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- mvn -B verify -Ppostgres-it — runs the real-PostgreSQL suite
+             (Flyway/RLS/tenant-isolation gate) via failsafe, on an external
+             server when MODOCUMENT_IT_JDBC_URL (+ MODOCUMENT_IT_SUPERUSER /
+             MODOCUMENT_IT_SUPERUSER_PASSWORD) is set, otherwise on a
+             Testcontainers postgres:17 (requires Docker, as on CI). -->
+        <profile>
+            <id>postgres-it</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/*PgIT.java</include>
+                            </includes>
+                            <groups>postgres</groups>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.extraction.sql;
 
+import com.modocument.application.port.TenantContext;
 import com.modocument.domain.model.ExtractionJobStatus;
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionJobEntity;
 import org.slf4j.Logger;
@@ -37,6 +38,13 @@ public class SqlExtractionStartupRecovery implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        // runAsSystem: startup recovery crosses tenants by design — it must
+        // see and settle EVERY tenant's interrupted jobs, so it runs with
+        // the RLS wildcard (see the call-site registry in TenantContext).
+        TenantContext.runAsSystem(this::settleInterruptedJobs);
+    }
+
+    private void settleInterruptedJobs() {
         List<ExtractionJobEntity> interrupted = jobs.findByStatusIn(
                 List.of(ExtractionJobStatus.RUNNING, ExtractionJobStatus.PAUSED));
         if (interrupted.isEmpty()) {
