@@ -1,6 +1,8 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.domain.model.Permission;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +17,7 @@ import java.util.Map;
  * echoed back verbatim.
  */
 @RestController
+@RequiresPermission(Permission.AI_USE)
 public class AiFilesController {
 
     /** Enough for a diagnostic prompt, far short of a way to burn credits. */

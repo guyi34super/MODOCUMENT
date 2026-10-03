@@ -6,6 +6,7 @@ import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
 import com.modocument.application.usecase.ChatEditTableUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
+import com.modocument.application.usecase.UploadOwnership;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
@@ -37,9 +38,10 @@ class IngestionJobControllerTest {
     private final SupportedDocumentTypes supportedTypes = mock(SupportedDocumentTypes.class);
     private final IngestionJobRunner jobRunner = mock(IngestionJobRunner.class);
     private final JobWaitService jobWaitService = mock(JobWaitService.class);
+    private final UploadOwnership uploadOwnership = mock(UploadOwnership.class);
     private final IngestionJobController controller =
             new IngestionJobController(useCase, chatEdit, uploadStorage, supportedTypes, jobRunner,
-                    jobWaitService);
+                    jobWaitService, uploadOwnership);
 
     private static IngestionJob validatedJob(WizardStep wizardStep) {
         IngestionJob job = new IngestionJob();

@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.port.ExtractionTaskQueue;
 import com.modocument.infrastructure.extraction.worker.ExtractionMetrics;
 import com.modocument.infrastructure.extraction.worker.ExtractionWorkerPool;
@@ -13,6 +15,7 @@ import java.util.Map;
 
 /** Operational view of the extraction machinery on this instance. */
 @RestController
+@RequiresPermission(Permission.METRICS_READ)
 public class ExtractionMonitoringController {
 
     private final ExtractionTaskQueue queue;

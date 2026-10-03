@@ -131,6 +131,13 @@ public class ApiExceptionHandler {
         if (e instanceof ErrorResponse) {
             throw e;
         }
+        // Method-security denials (@RequiresPermission) and authentication
+        // failures must reach the security filter chain's translation into
+        // 403/401 — flattening them into a 500 would hide every RBAC denial.
+        if (e instanceof org.springframework.security.access.AccessDeniedException
+                || e instanceof org.springframework.security.core.AuthenticationException) {
+            throw e;
+        }
         log.error("Unhandled failure", e);
         return error(HttpStatus.INTERNAL_SERVER_ERROR,
                 "Something went wrong: " + rootMessage(e));

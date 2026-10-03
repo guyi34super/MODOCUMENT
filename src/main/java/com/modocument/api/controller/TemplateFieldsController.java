@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.domain.entity.TemplateFields;
@@ -34,6 +36,7 @@ public class TemplateFieldsController {
      * every user's field definitions, so {@code templateId} is required and
      * ownership is enforced.
      */
+    @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/TemplateFields/GetAll")
     public ResponseEntity<?> getAll(
             @RequestParam(value = "templateId", required = false) Integer templateId) {
@@ -44,6 +47,7 @@ public class TemplateFieldsController {
         return ResponseEntity.ok(repo.listByTemplateId(templateId));
     }
 
+    @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/TemplateFields/GetById/{id}")
     public ResponseEntity<?> getTemplateFieldsById(@PathVariable int id) {
         Optional<TemplateFields> itemOpt = repo.getById(id);
@@ -62,6 +66,7 @@ public class TemplateFieldsController {
         return ResponseEntity.ok(dto);
     }
 
+    @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PostMapping("/TemplateFields/Create")
     public ResponseEntity<?> create(@RequestBody TemplateFields dto) {
         ownership.require(dto.getTemplateId());
@@ -75,6 +80,7 @@ public class TemplateFieldsController {
                 .body(entity);
     }
 
+    @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PutMapping("/TemplateFields/Update/{id}")
     public ResponseEntity<?> update(@PathVariable int id, @RequestBody TemplateFields dto) {
         Optional<TemplateFields> existingOpt = repo.getById(dto.getTemplateFieldsId());
@@ -101,6 +107,7 @@ public class TemplateFieldsController {
                 .body(updated);
     }
 
+    @RequiresPermission(Permission.TEMPLATE_WRITE)
     @DeleteMapping("/TemplateFields/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         Optional<TemplateFields> existing = repo.getById(id);

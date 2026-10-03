@@ -1,6 +1,8 @@
 package com.modocument.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.dto.DatabaseExportRequest;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.usecase.IngestionJobUseCase;
@@ -36,6 +38,7 @@ import java.util.NoSuchElementException;
  * user-supplied database.
  */
 @RestController
+@RequiresPermission(Permission.EXPORT_RUN)
 public class IngestionExportController {
 
     private static final Logger log = LoggerFactory.getLogger(IngestionExportController.class);
@@ -59,6 +62,8 @@ public class IngestionExportController {
     @GetMapping("/api/ingestion/jobs/{id}/export/file")
     public ResponseEntity<?> exportFile(@PathVariable int id,
                                         @RequestParam(defaultValue = "csv") String format) {
+        // jobs.get is owner-scoped (getByIdAndOwner): only the job owner can
+        // export or re-download — anyone else gets a 404 here.
         IngestionJob job = jobs.get(id);
         TableData table = exportableTable(job);
         FileExportService.Format exportFormat = FileExportService.Format.parse(format);
@@ -68,7 +73,7 @@ public class IngestionExportController {
         // it: a timestamped name piled up a new archive copy every time. One
         // copy per job and format, overwritten, is the useful artifact.
         String exportName = "job" + job.getIngestionJobId() + exportFormat.extension();
-        archiveCopy(exportName, bytes);
+        archiveCopy(job.getOwnerUserId(), exportName, bytes);
 
         Map<String, Object> exportInfo = new LinkedHashMap<>();
         exportInfo.put("type", "file");
@@ -130,10 +135,18 @@ public class IngestionExportController {
         }
     }
 
-    private void archiveCopy(String exportName, byte[] bytes) {
+    /**
+     * Archive copies are scoped per owner (exports/u{ownerId}/...): the
+     * exports folder is shared infrastructure, so nothing that later serves
+     * or syncs it can hand one user's export to another. Nothing in the API
+     * reads these back today — the download endpoint above regenerates from
+     * the job (owner-scoped) instead of serving the archive.
+     */
+    private void archiveCopy(int ownerUserId, String exportName, byte[] bytes) {
         try {
-            Files.createDirectories(exportsDir);
-            Files.write(exportsDir.resolve(exportName), bytes);
+            Path ownerDir = exportsDir.resolve("u" + ownerUserId);
+            Files.createDirectories(ownerDir);
+            Files.write(ownerDir.resolve(exportName), bytes);
         } catch (IOException e) {
             // The download itself succeeded; a missing archive copy must not
             // fail the user's export.

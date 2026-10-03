@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.BridgeRequest;
 import com.modocument.application.dto.CreateExtractionJobRequest;
 import com.modocument.application.dto.ExtractionJobDto;
@@ -11,6 +12,7 @@ import com.modocument.application.port.ExtractionAuditLog;
 import com.modocument.application.port.ProcessedRecordStore;
 import com.modocument.application.port.RawRecordStore;
 import com.modocument.domain.document.ExtractionJob;
+import com.modocument.domain.model.Permission;
 import com.modocument.domain.document.ProcessedRecord;
 import com.modocument.domain.document.RawRecord;
 import com.modocument.infrastructure.job.JobWaitService;
@@ -69,6 +71,7 @@ public class ExtractionJobController {
     }
 
     /** Creates a job and (by default) starts it immediately. */
+    @RequiresPermission(Permission.EXTRACTION_WRITE)
     @PostMapping("/api/extraction/jobs")
     public ResponseEntity<?> create(@RequestBody CreateExtractionJobRequest request) {
         if (request.getSourceId() == null || request.getSourceId().isBlank()) {
@@ -83,6 +86,7 @@ public class ExtractionJobController {
                 .body(dto(job));
     }
 
+    @RequiresPermission(Permission.EXTRACTION_READ)
     @GetMapping("/api/extraction/jobs")
     public ResponseEntity<?> list() {
         return ResponseEntity.ok(jobs.list().stream()
@@ -90,6 +94,7 @@ public class ExtractionJobController {
                 .toList());
     }
 
+    @RequiresPermission(Permission.EXTRACTION_READ)
     @GetMapping("/api/extraction/jobs/{id}")
     public ResponseEntity<?> get(@PathVariable String id,
                                  @RequestParam(defaultValue = "false") boolean wait) {
@@ -99,6 +104,7 @@ public class ExtractionJobController {
         return ResponseEntity.ok(dto(jobs.get(id)));
     }
 
+    @RequiresPermission(Permission.EXTRACTION_RUN)
     @PostMapping("/api/extraction/jobs/{id}/start")
     public ResponseEntity<?> start(@PathVariable String id,
                                    @RequestParam(defaultValue = "false") boolean wait) {
@@ -109,11 +115,13 @@ public class ExtractionJobController {
         return ResponseEntity.ok(dto(jobs.get(id)));
     }
 
+    @RequiresPermission(Permission.EXTRACTION_RUN)
     @PostMapping("/api/extraction/jobs/{id}/pause")
     public ResponseEntity<?> pause(@PathVariable String id) {
         return ResponseEntity.ok(dto(jobs.pause(id)));
     }
 
+    @RequiresPermission(Permission.EXTRACTION_RUN)
     @PostMapping("/api/extraction/jobs/{id}/resume")
     public ResponseEntity<?> resume(@PathVariable String id,
                                     @RequestParam(defaultValue = "false") boolean wait) {
@@ -124,12 +132,14 @@ public class ExtractionJobController {
         return ResponseEntity.ok(dto(jobs.get(id)));
     }
 
+    @RequiresPermission(Permission.EXTRACTION_RUN)
     @PostMapping("/api/extraction/jobs/{id}/cancel")
     public ResponseEntity<?> cancel(@PathVariable String id) {
         return ResponseEntity.ok(dto(jobs.cancel(id)));
     }
 
     /** Cursor-paged peek at the job's records (kind=raw|processed). */
+    @RequiresPermission(Permission.EXTRACTION_READ)
     @GetMapping("/api/extraction/jobs/{id}/records")
     public ResponseEntity<?> records(@PathVariable String id,
                                      @RequestParam(defaultValue = "processed") String kind,
@@ -153,6 +163,7 @@ public class ExtractionJobController {
     }
 
     /** Cursor-paged audit trail (every fetch, block, retry, LLM call). */
+    @RequiresPermission(Permission.EXTRACTION_READ)
     @GetMapping("/api/extraction/jobs/{id}/audit")
     public ResponseEntity<?> auditTrail(@PathVariable String id,
                                         @RequestParam(required = false) String afterId,
@@ -166,6 +177,7 @@ public class ExtractionJobController {
     }
 
     /** Hands the extracted records to the document pipeline. */
+    @RequiresPermission(Permission.EXTRACTION_RUN)
     @PostMapping("/api/extraction/jobs/{id}/bridge")
     public ResponseEntity<?> bridge(@PathVariable String id, @RequestBody BridgeRequest request) {
         jobs.get(id); // owner gate: 404 before the pipeline reads another user's job
@@ -174,6 +186,7 @@ public class ExtractionJobController {
     }
 
     /** LLM: suggest a template schema from sample records. */
+    @RequiresPermission(Permission.AI_USE)
     @PostMapping("/api/extraction/jobs/{id}/infer-schema")
     public ResponseEntity<?> inferSchema(@PathVariable String id) {
         jobs.get(id); // owner gate: 404 before the LLM reads another user's records
@@ -181,6 +194,7 @@ public class ExtractionJobController {
     }
 
     /** LLM: short human summary of the run. */
+    @RequiresPermission(Permission.AI_USE)
     @GetMapping("/api/extraction/jobs/{id}/summary")
     public ResponseEntity<?> summary(@PathVariable String id) {
         jobs.get(id); // owner gate: 404 before summarizing another user's job

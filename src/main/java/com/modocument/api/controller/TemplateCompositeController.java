@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.dto.CreateTemplateRequest;
 import com.modocument.application.dto.CreateTemplateResponse;
 import com.modocument.application.usecase.CreateTemplateWithFieldsUseCase;
@@ -18,6 +20,7 @@ import java.util.Map;
  * the legacy CRUD contract stays untouched.
  */
 @RestController
+@RequiresPermission(Permission.TEMPLATE_WRITE)
 public class TemplateCompositeController {
 
     private final CreateTemplateWithFieldsUseCase useCase;

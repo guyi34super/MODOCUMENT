@@ -1,6 +1,8 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ChangePasswordRequest;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.dto.LoginRequest;
 import com.modocument.application.dto.UpdateProfileRequest;
 import com.modocument.application.usecase.AuthUseCase;
@@ -74,6 +76,7 @@ public class AuthController {
                 .body(session.response());
     }
 
+    @RequiresPermission(Permission.PROFILE_SELF)
     @PostMapping("/api/auth/logout")
     public ResponseEntity<?> logout(@AuthenticationPrincipal Jwt jwt) {
         auth.logout(userId(jwt), jwt.getId(), jwt.getExpiresAt());
@@ -116,11 +119,13 @@ public class AuthController {
                 .build();
     }
 
+    @RequiresPermission(Permission.PROFILE_SELF)
     @GetMapping("/api/auth/me")
     public ResponseEntity<?> me(@AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(auth.me(userId(jwt)));
     }
 
+    @RequiresPermission(Permission.PROFILE_SELF)
     @PutMapping("/api/auth/profile")
     public ResponseEntity<?> updateProfile(@AuthenticationPrincipal Jwt jwt,
                                            @RequestBody UpdateProfileRequest request) {
@@ -128,6 +133,7 @@ public class AuthController {
                 auth.updateProfile(userId(jwt), request.getDisplayName(), request.getSettings()));
     }
 
+    @RequiresPermission(Permission.PROFILE_SELF)
     @PutMapping("/api/auth/password")
     public ResponseEntity<?> changePassword(@AuthenticationPrincipal Jwt jwt,
                                             @RequestBody ChangePasswordRequest request) {

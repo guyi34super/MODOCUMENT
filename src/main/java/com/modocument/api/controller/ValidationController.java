@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.ValidationRequest;
 import com.modocument.application.usecase.TemplateOwnership;
@@ -26,6 +28,7 @@ public class ValidationController {
         this.ownership = ownership;
     }
 
+    @RequiresPermission(Permission.VALIDATION_READ)
     @PostMapping("/Validation/validate")
     public ResponseEntity<?> validate(@RequestBody ValidationRequest request) {
         // The template whose rules are being applied must belong to the caller —

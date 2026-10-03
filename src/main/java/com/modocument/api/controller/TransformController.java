@@ -2,6 +2,7 @@ package com.modocument.api.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.TransformRequest;
 import com.modocument.application.dto.TransformResult;
 import com.modocument.application.port.ImportDetailsRepository;
@@ -9,7 +10,9 @@ import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.port.TransformService;
 import com.modocument.application.usecase.TemplateOwnership;
+import com.modocument.application.usecase.UploadOwnership;
 import com.modocument.domain.entity.ImportDetails;
+import com.modocument.domain.model.Permission;
 import com.modocument.domain.entity.ImportHistory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 @RestController
+@RequiresPermission(Permission.AI_USE)
 public class TransformController {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -32,17 +36,20 @@ public class TransformController {
     private final ImportHistoryRepository importHistoryRepository;
     private final ImportDetailsRepository importDetailsRepository;
     private final TemplateOwnership ownership;
+    private final UploadOwnership uploadOwnership;
 
     public TransformController(TransformService transformService,
                                TemplateFieldsRepository templateFieldsRepository,
                                ImportHistoryRepository importHistoryRepository,
                                ImportDetailsRepository importDetailsRepository,
-                               TemplateOwnership ownership) {
+                               TemplateOwnership ownership,
+                               UploadOwnership uploadOwnership) {
         this.transformService = transformService;
         this.templateFieldsRepository = templateFieldsRepository;
         this.importHistoryRepository = importHistoryRepository;
         this.importDetailsRepository = importDetailsRepository;
         this.ownership = ownership;
+        this.uploadOwnership = uploadOwnership;
     }
 
     @PostMapping("/api/transform/transform")
@@ -53,6 +60,11 @@ public class TransformController {
         }
 
         try {
+            // The referenced upload must belong to the caller — checked before
+            // a single byte is read or any LLM call is spent on it. Another
+            // user's (or an unknown/pre-V20) stored name is a 404.
+            uploadOwnership.require(request.getFileName());
+
             int templateId = transformService.getTemplateId(request);
             // The transform target template must belong to the caller.
             int owner = ownership.require(templateId);

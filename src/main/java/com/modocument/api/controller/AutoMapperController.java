@@ -1,6 +1,8 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.AutoMappingPromptInput;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.PromptStrategy;
@@ -17,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
+@RequiresPermission(Permission.AI_USE)
 public class AutoMapperController {
 
     /** Upper bound on the column list a caller may hand to the prompt. */

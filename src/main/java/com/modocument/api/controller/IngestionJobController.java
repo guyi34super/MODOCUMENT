@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ChatEditRequest;
 import com.modocument.application.dto.CreateIngestionJobRequest;
 import com.modocument.application.dto.UpdateMappingRequest;
@@ -7,8 +8,10 @@ import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
 import com.modocument.application.usecase.ChatEditTableUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
+import com.modocument.application.usecase.UploadOwnership;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
+import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
 import com.modocument.infrastructure.file.SupportedDocumentTypes;
@@ -45,22 +48,26 @@ public class IngestionJobController {
     private final SupportedDocumentTypes supportedTypes;
     private final IngestionJobRunner jobRunner;
     private final JobWaitService jobWaitService;
+    private final UploadOwnership uploadOwnership;
 
     public IngestionJobController(IngestionJobUseCase useCase,
                                   ChatEditTableUseCase chatEdit,
                                   UploadStorage uploadStorage,
                                   SupportedDocumentTypes supportedTypes,
                                   IngestionJobRunner jobRunner,
-                                  JobWaitService jobWaitService) {
+                                  JobWaitService jobWaitService,
+                                  UploadOwnership uploadOwnership) {
         this.useCase = useCase;
         this.chatEdit = chatEdit;
         this.uploadStorage = uploadStorage;
         this.supportedTypes = supportedTypes;
         this.jobRunner = jobRunner;
         this.jobWaitService = jobWaitService;
+        this.uploadOwnership = uploadOwnership;
     }
 
     /** Multipart creation: uploads the file and (by default) runs the pipeline. */
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping(value = "/api/ingestion/jobs", consumes = "multipart/form-data")
     public ResponseEntity<?> createFromUpload(@RequestParam("file") MultipartFile file,
                                               @RequestParam("templateId") int templateId,
@@ -78,10 +85,14 @@ public class IngestionJobController {
                     "Unsupported file type. Supported types: " + supportedTypes.describeSupported() + "."));
         }
         String storedName = uploadStorage.store(file);
+        // Ownership row (V20): the uploader owns the stored file, so the JSON
+        // create path can later reference it by name.
+        uploadOwnership.record(storedName, file.getOriginalFilename(), file.getSize());
         return created(storedName, templateId, autoRun, parseUntil(runUntil), wait);
     }
 
     /** JSON creation for a file already stored via /api/fileupload/upload. */
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping(value = "/api/ingestion/jobs", consumes = "application/json")
     public ResponseEntity<?> createFromExisting(@RequestBody CreateIngestionJobRequest request) {
         if (request.getFileName() == null || request.getFileName().isBlank()) {
@@ -91,6 +102,10 @@ public class IngestionJobController {
             return ResponseEntity.badRequest().body(Map.of("error",
                     "Unsupported file type. Supported types: " + supportedTypes.describeSupported() + "."));
         }
+        // The referenced upload must belong to the caller — another user's (or
+        // an unknown/pre-V20) stored name is a 404, so the pipeline never reads
+        // a file the caller does not own.
+        uploadOwnership.require(request.getFileName());
         boolean autoRun = request.getAutoRun() == null || request.getAutoRun();
         JobStep until = request.getRunUntil() == null || request.getRunUntil().isBlank()
                 ? JobStep.MAPPED
@@ -99,6 +114,7 @@ public class IngestionJobController {
         return created(request.getFileName(), request.getTemplateId(), autoRun, until, wait);
     }
 
+    @RequiresPermission(Permission.INGESTION_READ)
     @GetMapping("/api/ingestion/supported-types")
     public ResponseEntity<?> supportedTypes() {
         return ResponseEntity.ok(Map.of(
@@ -107,11 +123,13 @@ public class IngestionJobController {
                 "description", supportedTypes.describeSupported()));
     }
 
+    @RequiresPermission(Permission.INGESTION_READ)
     @GetMapping("/api/ingestion/jobs")
     public ResponseEntity<?> list() {
         return ResponseEntity.ok(useCase.views(useCase.list()));
     }
 
+    @RequiresPermission(Permission.INGESTION_READ)
     @GetMapping("/api/ingestion/jobs/{id}")
     public ResponseEntity<?> get(@PathVariable int id,
                                  @RequestParam(defaultValue = "false") boolean wait,
@@ -122,6 +140,7 @@ public class IngestionJobController {
         return ResponseEntity.ok(useCase.view(useCase.get(id)));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping("/api/ingestion/jobs/{id}/resume")
     public ResponseEntity<?> resume(@PathVariable int id,
                                     @RequestParam(value = "until", defaultValue = "VALIDATED")
@@ -134,21 +153,25 @@ public class IngestionJobController {
         return ResponseEntity.ok(jobWaitService.waitForIngestionView(id, target));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping("/api/ingestion/jobs/{id}/remap")
     public ResponseEntity<?> remap(@PathVariable int id) {
         return ResponseEntity.ok(useCase.view(useCase.remap(id)));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping("/api/ingestion/jobs/{id}/revalidate")
     public ResponseEntity<?> revalidate(@PathVariable int id) {
         return ResponseEntity.ok(useCase.view(useCase.revalidate(id)));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping("/api/ingestion/jobs/{id}/cancel")
     public ResponseEntity<?> cancel(@PathVariable int id) {
         return ResponseEntity.ok(useCase.view(useCase.cancel(id)));
     }
 
+    @RequiresPermission(Permission.AI_USE)
     @PostMapping("/api/ingestion/jobs/{id}/chat-edit")
     public ResponseEntity<?> chatEdit(@PathVariable int id, @RequestBody ChatEditRequest request) {
         return ResponseEntity.ok(useCase.view(
@@ -159,6 +182,7 @@ public class IngestionJobController {
                         request == null ? null : request.getColumn())));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PutMapping("/api/ingestion/jobs/{id}/mapping")
     public ResponseEntity<?> updateMapping(@PathVariable int id,
                                            @RequestBody UpdateMappingRequest request) {
@@ -168,6 +192,7 @@ public class IngestionJobController {
         return ResponseEntity.ok(useCase.view(useCase.updateMapping(id, request.getMapping())));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PutMapping("/api/ingestion/jobs/{id}/rows")
     public ResponseEntity<?> updateRows(@PathVariable int id,
                                         @RequestBody UpdateRowsRequest request) {
@@ -177,6 +202,7 @@ public class IngestionJobController {
         return ResponseEntity.ok(useCase.view(useCase.updateRows(id, request.getRows())));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PutMapping("/api/ingestion/jobs/{id}/wizard-step")
     public ResponseEntity<?> updateWizardStep(@PathVariable int id,
                                               @RequestBody UpdateWizardStepRequest request) {

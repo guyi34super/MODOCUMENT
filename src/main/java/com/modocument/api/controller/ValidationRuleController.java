@@ -2,12 +2,14 @@ package com.modocument.api.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.UpsertValidationRuleRequest;
 import com.modocument.application.port.ValidationRuleRepository;
 import com.modocument.application.usecase.CreateTemplateWithFieldsUseCase;
 import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.application.validation.RegexPatternChecker;
 import com.modocument.domain.entity.ValidationRule;
+import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.RuleType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -35,12 +37,14 @@ public class ValidationRuleController {
         this.ownership = ownership;
     }
 
+    @RequiresPermission(Permission.VALIDATION_READ)
     @GetMapping("/ValidationRules/GetByTemplate/{templateId}")
     public ResponseEntity<?> getByTemplate(@PathVariable int templateId) {
         ownership.require(templateId);
         return ResponseEntity.ok(repo.getRulesByTemplate(templateId));
     }
 
+    @RequiresPermission(Permission.VALIDATION_WRITE)
     @PutMapping("/ValidationRules/Upsert")
     public ResponseEntity<?> upsert(@RequestBody UpsertValidationRuleRequest request) {
         if (request.getFieldName() == null || request.getFieldName().isBlank()) {
@@ -80,6 +84,7 @@ public class ValidationRuleController {
      * cannot be expressed as a path segment (Spring's firewall rejects the
      * encoded slash), which made the rule undeletable through the UI.
      */
+    @RequiresPermission(Permission.VALIDATION_WRITE)
     @DeleteMapping("/ValidationRules")
     public ResponseEntity<?> delete(@RequestParam int templateId,
                                     @RequestParam String fieldName,
@@ -88,6 +93,7 @@ public class ValidationRuleController {
     }
 
     /** Original path form, kept for callers that already use it. */
+    @RequiresPermission(Permission.VALIDATION_WRITE)
     @DeleteMapping("/ValidationRules/{templateId}/{fieldName}/{ruleType}")
     public ResponseEntity<?> deleteByPath(@PathVariable int templateId,
                                           @PathVariable String fieldName,

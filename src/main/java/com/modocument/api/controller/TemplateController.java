@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.usecase.DeleteTemplateUseCase;
@@ -33,11 +35,13 @@ public class TemplateController {
         this.currentUser = currentUser;
     }
 
+    @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/Templates/GetAll")
     public ResponseEntity<?> getAll() {
         return ResponseEntity.ok(repo.listByOwner(currentUser.requireUserId()));
     }
 
+    @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/Templates/GetById/{id}")
     public ResponseEntity<?> getTemplateById(@PathVariable int id) {
         Optional<Template> item = repo.getByIdAndOwner(id, currentUser.requireUserId());
@@ -49,6 +53,7 @@ public class TemplateController {
         return ResponseEntity.ok(dto);
     }
 
+    @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PostMapping("/Templates/Create")
     public ResponseEntity<?> create(@RequestBody Template dto) {
         Template entity = new Template(0, dto.getName(), dto.getDescription());
@@ -60,6 +65,7 @@ public class TemplateController {
                 .body(entity);
     }
 
+    @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PutMapping("/Templates/Update")
     public ResponseEntity<?> update(@RequestBody Template dto) {
         // Owner-scoped: updating another user's template is a 404, not an edit.
@@ -82,6 +88,7 @@ public class TemplateController {
                 .body(updated);
     }
 
+    @RequiresPermission(Permission.TEMPLATE_WRITE)
     @DeleteMapping("/Templates/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         try {

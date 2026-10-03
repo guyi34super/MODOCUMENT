@@ -1,0 +1,14 @@
+package com.modocument.application.port;
+
+import com.modocument.domain.entity.UploadedFile;
+
+import java.util.Optional;
+
+/** Ownership records for files in the shared uploads/ folder (V20). */
+public interface UploadedFileRepository {
+
+    UploadedFile add(UploadedFile entity);
+
+    /** Owner-scoped lookup: empty for a file the caller does not own. */
+    Optional<UploadedFile> getByStoredNameAndOwner(String storedName, int ownerUserId);
+}

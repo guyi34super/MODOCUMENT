@@ -11,7 +11,17 @@ import com.modocument.domain.model.Role;
  */
 public record FixedUser(int userId, int bankId, Role userRole) implements CurrentUserProvider {
 
+    /**
+     * The default fixture is a READ_WRITE user — the ordinary authoring role.
+     * Tests that exercise admin surfaces (shared-lookup mutations, metrics)
+     * use {@link #admin(int)} explicitly, so a test that accidentally relies
+     * on admin powers is visible at the fixture.
+     */
     public static CurrentUserProvider provider(int userId) {
+        return new FixedUser(userId, Bank.DEFAULT_BANK_ID, Role.READ_WRITE);
+    }
+
+    public static CurrentUserProvider admin(int userId) {
         return new FixedUser(userId, Bank.DEFAULT_BANK_ID, Role.ADMIN);
     }
 

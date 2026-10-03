@@ -8,7 +8,7 @@ import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.DocumentParser;
 import com.modocument.application.port.PromptStrategy;
 import com.modocument.application.port.TransformService;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.prompt.PromptFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,16 +26,16 @@ public class TransformServiceImpl implements TransformService {
     private final PromptFactory promptFactory;
     private final AiFilesService aiFilesService;
     private final DocumentParser documentParser;
-    private final StorageProperties storage;
+    private final UploadStorage uploadStorage;
 
     public TransformServiceImpl(PromptFactory promptFactory,
                                 AiFilesService aiFilesService,
                                 DocumentParser documentParser,
-                                StorageProperties storage) {
+                                UploadStorage uploadStorage) {
         this.promptFactory = promptFactory;
         this.aiFilesService = aiFilesService;
         this.documentParser = documentParser;
-        this.storage = storage;
+        this.uploadStorage = uploadStorage;
     }
 
     @Override
@@ -78,7 +78,9 @@ public class TransformServiceImpl implements TransformService {
         if (request.getFileName() == null || request.getFileName().isBlank()) {
             throw new IllegalArgumentException("FileName must be provided.");
         }
-        return storage.uploadsDir().resolve(request.getFileName());
+        // UploadStorage.resolve rejects names that escape the uploads folder
+        // ("../..."), closing the path-traversal hole a raw resolve left open.
+        return uploadStorage.resolve(request.getFileName());
     }
 
     static String extractBetween(String input, String start, String end) {

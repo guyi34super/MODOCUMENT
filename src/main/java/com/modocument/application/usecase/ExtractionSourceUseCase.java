@@ -7,6 +7,7 @@ import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.document.ExtractionSource;
 import com.modocument.domain.model.SourceType;
 import com.modocument.domain.model.UrlNormalizer;
+import com.modocument.infrastructure.extraction.connector.RestApiConnector;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -128,6 +129,19 @@ public class ExtractionSourceUseCase {
         if (request.getApi() == null || request.getApi().getBaseUrl() == null
                 || request.getApi().getBaseUrl().isBlank()) {
             throw new IllegalArgumentException("api.baseUrl is required for REST_API sources.");
+        }
+        // Secret-exfiltration guard: authEnvVar names an env var whose value
+        // the connector sends as an Authorization header to the configured
+        // host. Without an allowlist that is "read me any server secret", so
+        // only the dedicated connector-secret namespace is accepted. The
+        // connector enforces the same rule again at fetch time.
+        String authEnvVar = request.getApi().getAuthEnvVar();
+        if (authEnvVar != null && !authEnvVar.isBlank()
+                && !RestApiConnector.isAllowedAuthEnvVar(authEnvVar.trim())) {
+            throw new IllegalArgumentException("api.authEnvVar '" + authEnvVar
+                    + "' is not allowed: connector secrets must be provided in environment "
+                    + "variables starting with '" + RestApiConnector.ALLOWED_AUTH_ENV_PREFIX
+                    + "' (e.g. " + RestApiConnector.ALLOWED_AUTH_ENV_PREFIX + "GITHUB_TOKEN).");
         }
     }
 
