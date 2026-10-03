@@ -22,6 +22,10 @@ public class TemplateFields {
     @Column(name = "TemplateId")
     private int templateId;
 
+    /** The owning template's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     @Column(name = "FieldName")
     private String fieldName;
 
@@ -41,6 +45,14 @@ public class TemplateFields {
 
     public int getTemplateFieldsId() {
         return templateFieldsId;
+    }
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public void setTemplateFieldsId(int templateFieldsId) {

@@ -1,5 +1,6 @@
 package com.modocument.application.usecase;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.application.dto.ParseResult;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
@@ -108,7 +109,7 @@ class IngestionJobUseCaseTest {
 
     private final IngestionJobUseCase useCase = new IngestionJobUseCase(
             jobs, templates, templateFields, importHistory, importDetails,
-            parseStep, autoMap, validateRows, () -> USER);
+            parseStep, autoMap, validateRows, FixedUser.provider(USER));
 
     private static final TableData PARSED = new TableData(
             List.of("first_name"), List.of(Map.of("first_name", "Ada")));

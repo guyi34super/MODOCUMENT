@@ -35,6 +35,7 @@ public class ExtractionSourceUseCase {
     public ExtractionSource create(SaveExtractionSourceRequest request) {
         ExtractionSource source = new ExtractionSource();
         source.setOwnerUserId(currentUser.requireUserId());
+        source.setBankId(currentUser.requireBankId());
         apply(source, request);
         return sources.save(source);
     }

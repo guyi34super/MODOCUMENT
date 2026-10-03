@@ -23,6 +23,7 @@ public class SqlExtractionAuditLog implements ExtractionAuditLog {
     @Override
     public void add(ExtractionAuditEvent event) {
         ExtractionAuditEventEntity entity = new ExtractionAuditEventEntity();
+        entity.setBankId(BankStamp.current());
         entity.setJobId(event.getJobId());
         entity.setSourceId(event.getSourceId());
         entity.setAction(event.getAction());

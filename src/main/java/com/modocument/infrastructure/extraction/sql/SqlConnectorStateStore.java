@@ -31,6 +31,7 @@ public class SqlConnectorStateStore implements ConnectorStateStore {
         state.setUpdatedDate(Instant.now());
         ExtractionConnectorStateEntity entity = new ExtractionConnectorStateEntity();
         entity.setSourceId(state.getSourceId());
+        entity.setBankId(BankStamp.current());
         entity.setEtagsJson(JsonColumns.toJson(state.getEtags()));
         entity.setLastModifiedJson(JsonColumns.toJson(state.getLastModified()));
         entity.setLastCursor(state.getLastCursor());

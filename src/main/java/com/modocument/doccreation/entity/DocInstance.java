@@ -27,6 +27,10 @@ public class DocInstance {
     @Column(name = "OwnerUserId")
     private int ownerUserId;
 
+    /** The owner's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     @Column(name = "BlueprintId")
     private int blueprintId;
 
@@ -54,6 +58,15 @@ public class DocInstance {
     private LocalDateTime updatedDate;
 
     public DocInstance() {
+    }
+
+    @JsonIgnore
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public int getDocInstanceId() {

@@ -36,6 +36,10 @@ public class IngestionJob {
     @Column(name = "OwnerUserId")
     private int ownerUserId;
 
+    /** The owner's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     @Column(name = "TemplateId")
     private int templateId;
 
@@ -118,6 +122,15 @@ public class IngestionJob {
 
     public void setOwnerUserId(int ownerUserId) {
         this.ownerUserId = ownerUserId;
+    }
+
+    @JsonIgnore
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public int getTemplateId() {

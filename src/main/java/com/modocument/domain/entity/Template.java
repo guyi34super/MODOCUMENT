@@ -21,6 +21,10 @@ public class Template {
     @Column(name = "OwnerUserId")
     private int ownerUserId;
 
+    /** The owner's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     @Column(name = "Name")
     private String name;
 
@@ -51,6 +55,15 @@ public class Template {
 
     public void setOwnerUserId(int ownerUserId) {
         this.ownerUserId = ownerUserId;
+    }
+
+    @JsonIgnore
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public String getName() {

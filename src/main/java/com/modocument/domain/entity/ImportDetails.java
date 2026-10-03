@@ -24,6 +24,10 @@ public class ImportDetails {
     @Column(name = "ImportHistoryId")
     private int importHistoryId;
 
+    /** The owning import's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     @Column(name = "ProcessStepId")
     private int processStepId;
 
@@ -42,6 +46,14 @@ public class ImportDetails {
     private ProcessStep processStep;
 
     public ImportDetails() {
+    }
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public int getImportDetailsId() {

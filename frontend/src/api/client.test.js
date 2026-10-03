@@ -95,7 +95,7 @@ describe('api request wrapper', () => {
     await expect(api.get('/Templates/GetAll')).rejects.toThrow('Request failed (500)');
   });
 
-  it('clears the session and redirects to /login on 401', async () => {
+  it('on 401 attempts one refresh, then clears the session and redirects to /login', async () => {
     setSession('expired', { userId: 1 });
     const assign = vi.fn();
     const original = window.location;
@@ -104,13 +104,40 @@ describe('api request wrapper', () => {
       writable: true,
       configurable: true,
     });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
 
     await expect(api.get('/Templates/GetAll')).rejects.toThrow('Session expired');
     expect(getToken()).toBeNull();
     expect(assign).toHaveBeenCalledWith('/login');
 
+    // Exactly one silent refresh attempt (credentials included), no retry loop.
+    const refreshCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh');
+    expect(refreshCalls).toHaveLength(1);
+    expect(refreshCalls[0][1]).toMatchObject({ method: 'POST', credentials: 'include' });
+
     Object.defineProperty(window, 'location', { value: original, configurable: true });
+  });
+
+  it('on 401 retries the original request once after a successful refresh', async () => {
+    setSession('stale-token', { userId: 1 });
+    const fetchMock = vi
+      .fn()
+      // original request: expired access token
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      // silent refresh: new access token
+      .mockResolvedValueOnce(jsonResponse({ token: 'fresh-token', user: { userId: 1 } }))
+      // replayed request succeeds
+      .mockResolvedValueOnce(jsonResponse([{ templateId: 7 }]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await api.get('/Templates/GetAll');
+
+    expect(result).toEqual([{ templateId: 7 }]);
+    expect(getToken()).toBe('fresh-token');
+    const [retryUrl, retryOpts] = fetchMock.mock.calls[2];
+    expect(retryUrl).toBe('/Templates/GetAll');
+    expect(retryOpts.headers.Authorization).toBe('Bearer fresh-token');
   });
 
   it('does NOT redirect on 401 from the login endpoint itself', async () => {

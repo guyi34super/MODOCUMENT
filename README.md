@@ -232,8 +232,10 @@ SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 Runs against PostgreSQL exactly like production: Flyway creates and updates the
 schema on startup (`src/main/resources/db/migration`), lookup data is seeded by
 the migrations, and your data survives restarts. Users, templates, fields and
-validation rules are created through the app — register your first account via
-the UI or `POST /api/auth/register`. All CRUD, template, validation, job, and
+validation rules are created through the app — accounts are admin-created, and
+the first administrator is seeded at startup from
+`MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD` when
+the user table is empty. All CRUD, template, validation, job, and
 export endpoints work immediately; only LLM-dependent paths (unstructured
 extraction, automap leftovers, chat edit) need an API key:
 
@@ -247,6 +249,9 @@ AIFILES_OPENAI_APIKEY=<your-openai-key> SPRING_PROFILES_ACTIVE=local mvn spring-
 # production-style stack: app + PostgreSQL (Flyway-managed schema).
 # The JWT signing secret is required — the app refuses to boot without one.
 export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
+# First-run administrator (self-registration is disabled):
+export MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+export MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD=<a-strong-password>
 docker compose up --build
 
 # with an API key for the LLM features (OpenRouter by default; any
@@ -280,15 +285,14 @@ npm test             # unit tests (Vitest + React Testing Library)
 
 ### Authentication
 
-All API endpoints (except `/api/auth/login`, `/api/auth/register`, and
-`/actuator/health`) require a JWT Bearer token. No accounts are seeded — register
-the first user, then log in:
+All API endpoints (except `/api/auth/login`, `/api/auth/refresh`, and
+`/actuator/health`) require a JWT Bearer token. Public self-registration is
+disabled: the first administrator is created at startup from
+`MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD`
+(required when the user table is empty), and further accounts are
+admin-created. Log in with that account:
 
 ```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"<your-password>","displayName":"You"}'
-
 curl -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"<your-password>"}'
@@ -297,9 +301,14 @@ curl -X POST http://localhost:8080/api/auth/login \
 curl http://localhost:8080/Templates/GetAll -H "Authorization: Bearer <token>"
 ```
 
-Endpoints: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`,
-`PUT /api/auth/profile`, `PUT /api/auth/password`. Logout is client-side (discard
-the token; it expires after `modocument.security.jwt.ttl-hours`, default 24h).
+Endpoints: `POST /api/auth/login`, `POST /api/auth/refresh`,
+`POST /api/auth/logout`, `GET /api/auth/me`, `PUT /api/auth/profile`,
+`PUT /api/auth/password`. Access tokens are short-lived
+(`modocument.security.jwt.ttl-minutes`, default 15); login also sets a rotating
+7-day refresh token in an httpOnly `modoc_refresh` cookie scoped to
+`/api/auth/refresh`. Logout revokes the access token's jti and every refresh
+token server-side, and a password change invalidates every outstanding token
+(sign in again).
 `MODOCUMENT_JWT_SECRET` (≥32 bytes, e.g. `openssl rand -base64 48`) is **required**
 in production and on `local` — the app fails fast at startup if it is missing, too
 short, or (in production) set to the old dev default. No secret is committed for

@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.domain.entity.ImportHistory;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,7 @@ class ImportHistoryControllerTest {
 
     private static final int USER = 1;
     private final ImportHistoryRepository repo = mock(ImportHistoryRepository.class);
-    private final ImportHistoryController controller = new ImportHistoryController(repo, () -> USER);
+    private final ImportHistoryController controller = new ImportHistoryController(repo, FixedUser.provider(USER));
 
     private static ImportHistory importHistory(int id, String fileName) {
         ImportHistory history = new ImportHistory();

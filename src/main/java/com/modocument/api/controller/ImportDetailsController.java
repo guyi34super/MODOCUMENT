@@ -80,6 +80,7 @@ public class ImportDetailsController {
         requireOwnedImport(dto.getImportHistoryId());
         ImportDetails entity = new ImportDetails();
         entity.setImportHistoryId(dto.getImportHistoryId());
+        entity.setBankId(currentUser.requireBankId());
         entity.setProcessStepId(dto.getProcessStepId());
         entity.setRawJson(dto.getRawJson());
         entity.setImportHistory(dto.getImportHistory());

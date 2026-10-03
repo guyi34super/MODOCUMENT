@@ -54,7 +54,10 @@ modocument:
       # refuses to start without it (generate one: openssl rand -base64 48).
       # The local/test profiles set their own dev-only secret.
       secret: ${MODOCUMENT_JWT_SECRET:}
-      ttl-hours: 24
+      # Access tokens are short-lived; the refresh-cookie rotation flow
+      # (/api/auth/refresh) keeps sessions alive. (The legacy ttl-hours key is
+      # still honored when set explicitly.)
+      ttl-minutes: ${MODOCUMENT_JWT_TTL_MINUTES:15}
     # Permits /swagger/**, /v3/api-docs/** and /h2-console/** without auth.
     # Off in production; the local/test profiles turn it on.
     permit-dev-paths: false

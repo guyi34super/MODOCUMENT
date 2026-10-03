@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.application.dto.ExtractionSourceDto;
 import com.modocument.application.dto.SaveExtractionSourceRequest;
 import com.modocument.application.port.TemplateRepository;
@@ -21,7 +22,7 @@ class ExtractionSourceControllerTest {
 
     private final ExtractionSourceController controller = new ExtractionSourceController(
             new ExtractionSourceUseCase(new InMemoryExtractionSourceStore(),
-                    mock(TemplateRepository.class), () -> 1));
+                    mock(TemplateRepository.class), FixedUser.provider(1)));
 
     private SaveExtractionSourceRequest websiteRequest(boolean termsAcknowledged) {
         SaveExtractionSourceRequest request = new SaveExtractionSourceRequest();

@@ -117,6 +117,7 @@ public class DocInstanceUseCase {
         requireTitle(title);
         DocInstance instance = new DocInstance();
         instance.setOwnerUserId(ownership.requireUserId());
+        instance.setBankId(ownership.requireBankId());
         instance.setBlueprintId(blueprintId);
         instance.setTitle(title.strip());
         instance.setStatus(DocInstance.STATUS_DRAFT);
@@ -206,6 +207,7 @@ public class DocInstanceUseCase {
 
         DocContentBlock block = new DocContentBlock();
         block.setInstanceId(instanceId);
+        block.setBankId(instance.getBankId());
         block.setSectionId(section.getDocBlueprintSectionId());
         block.setOrderIndex(nextOrderIndex(instanceId, sectionId));
 
@@ -331,6 +333,7 @@ public class DocInstanceUseCase {
 
             DocImageAsset asset = new DocImageAsset();
             asset.setInstanceId(instanceId);
+            asset.setBankId(instance.getBankId());
             asset.setFileName(uploadStorage.store(file));
             // A rollback of this bulk upload must not orphan the stored bytes.
             StoredFileCleanup.deleteOnRollback(uploadStorage.resolve(asset.getFileName()));
@@ -344,6 +347,7 @@ public class DocInstanceUseCase {
             if (sectionId.isPresent()) {
                 DocContentBlock block = new DocContentBlock();
                 block.setInstanceId(instanceId);
+                block.setBankId(instance.getBankId());
                 block.setSectionId(sectionId.get());
                 block.setBlockType(DocContentBlock.TYPE_IMAGE);
                 block.setOrderIndex(nextOrderIndex(instanceId, sectionId.get()));
@@ -392,6 +396,7 @@ public class DocInstanceUseCase {
         } else {
             DocContentBlock block = new DocContentBlock();
             block.setInstanceId(asset.getInstanceId());
+            block.setBankId(instance.getBankId());
             block.setSectionId(sectionId);
             block.setBlockType(DocContentBlock.TYPE_IMAGE);
             block.setOrderIndex(nextOrderIndex(asset.getInstanceId(), sectionId));

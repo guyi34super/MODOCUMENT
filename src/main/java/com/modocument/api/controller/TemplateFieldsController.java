@@ -67,6 +67,7 @@ public class TemplateFieldsController {
         ownership.require(dto.getTemplateId());
         TemplateFields entity = new TemplateFields();
         entity.setTemplateId(dto.getTemplateId());
+        entity.setBankId(ownership.requireBankId());
         entity.setFieldName(dto.getFieldName());
         repo.add(entity);
         return ResponseEntity

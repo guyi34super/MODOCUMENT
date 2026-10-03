@@ -89,8 +89,10 @@ public class IngestionJobUseCase {
         templates.getByIdAndOwner(templateId, owner).orElseThrow(
                 () -> new NoSuchElementException("Template " + templateId + " not found."));
 
+        int bankId = currentUser.requireBankId();
         ImportHistory history = new ImportHistory();
         history.setOwnerUserId(owner);
+        history.setBankId(bankId);
         history.setFileName(fileName);
         history.setTemplateId(templateId);
         history.setImportDate(LocalDateTime.now(ZoneOffset.UTC));
@@ -98,6 +100,7 @@ public class IngestionJobUseCase {
 
         IngestionJob job = new IngestionJob();
         job.setOwnerUserId(owner);
+        job.setBankId(bankId);
         job.setFileName(fileName);
         job.setTemplateId(templateId);
         job.setImportHistoryId(savedHistory.getImportHistoryId());
@@ -615,6 +618,7 @@ public class IngestionJobUseCase {
         }
         ImportDetails details = new ImportDetails();
         details.setImportHistoryId(job.getImportHistoryId());
+        details.setBankId(job.getBankId());
         details.setProcessStepId(processStepId);
         details.setRawJson(rawJson);
         importDetails.add(details);

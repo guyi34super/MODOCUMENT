@@ -12,6 +12,7 @@ import com.modocument.application.port.JobSecrets;
 import com.modocument.application.port.ProcessedRecordStore;
 import com.modocument.application.port.RawRecordStore;
 import com.modocument.application.port.TaskEventBus;
+import com.modocument.application.port.TenantContext;
 import com.modocument.domain.document.ConnectorState;
 import com.modocument.domain.document.ExtractionAuditEvent;
 import com.modocument.domain.document.ExtractionJob;
@@ -108,7 +109,14 @@ public class ExecuteExtractionTaskUseCase implements ExtractionTaskRunner {
             queue.release(task.getId(), workerId);
             return;
         }
+        // Worker threads carry no request context, so adopt the job's bank:
+        // every row this task writes (raw/processed records, audit events,
+        // counters, connector state) is stamped with it.
+        TenantContext.runAs(job.getBankId(), () -> execute(task, workerId, job, source));
+    }
 
+    private void execute(ExtractionTask task, String workerId, ExtractionJob job,
+                         ExtractionSource source) {
         ConnectorResult result;
         try {
             ConnectorState state = states.get(source.getId()).orElse(null);

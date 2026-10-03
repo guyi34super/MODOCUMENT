@@ -35,6 +35,10 @@ public class ExtractionJobEntity {
     @Column(name = "OwnerUserId", nullable = false)
     private int ownerUserId;
 
+    /** Tenant bank (V11), stamped on every insert; RLS substrate. */
+    @Column(name = "BankId", nullable = false)
+    private int bankId;
+
     @Column(name = "SourceId", length = 64)
     private String sourceId;
 
@@ -61,6 +65,14 @@ public class ExtractionJobEntity {
 
     @Column(name = "UpdatedDate")
     private Instant updatedDate;
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
+    }
 
     public Long getId() {
         return id;

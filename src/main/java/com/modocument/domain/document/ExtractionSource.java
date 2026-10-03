@@ -19,6 +19,8 @@ public class ExtractionSource {
     private String id;
     /** The AppUser who owns this source — every read/write is scoped to it. */
     private int ownerUserId;
+    /** The owner's bank, stamped on create; RLS substrate. */
+    private int bankId;
     private String name;
     private SourceType type;
     /** Caller's confirmation that access to this source is authorized. */
@@ -53,6 +55,15 @@ public class ExtractionSource {
 
     public void setOwnerUserId(int ownerUserId) {
         this.ownerUserId = ownerUserId;
+    }
+
+    @JsonIgnore
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public String getName() {

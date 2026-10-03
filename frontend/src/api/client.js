@@ -46,7 +46,33 @@ function errorList(data) {
     .join('\n');
 }
 
-async function request(path, { method = 'GET', body, raw = false } = {}) {
+/**
+ * One in-flight refresh at a time: concurrent 401s all wait on the same
+ * rotation instead of racing (a reused refresh token revokes the family
+ * server-side). Resolves to the new access token, or null when the refresh
+ * cookie is missing/expired/revoked.
+ */
+let refreshPromise = null;
+
+function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        const data = await res.json().catch(() => null);
+        if (!data || !data.token) return null;
+        setSession(data.token, data.user || getStoredUser());
+        return data.token;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+async function request(path, { method = 'GET', body, raw = false, retried = false } = {}) {
   const opts = { method, headers: {} };
   const token = getToken();
   if (token) opts.headers.Authorization = `Bearer ${token}`;
@@ -61,7 +87,15 @@ async function request(path, { method = 'GET', body, raw = false } = {}) {
 
   const res = await fetch(path, opts);
 
-  if (res.status === 401 && !path.startsWith('/api/auth/login')) {
+  if (res.status === 401 && !path.startsWith('/api/auth/login') && !path.startsWith('/api/auth/refresh')) {
+    // The short-lived access token probably just expired: try ONE silent
+    // refresh (httpOnly cookie) and replay the request with the new token.
+    if (!retried) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        return request(path, { method, body, raw, retried: true });
+      }
+    }
     clearSession();
     window.location.assign('/login');
     throw new Error('Session expired. Please sign in again.');

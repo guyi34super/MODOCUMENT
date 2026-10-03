@@ -38,4 +38,9 @@ public class TemplateOwnership {
                 () -> new NoSuchElementException("Template " + templateId + " not found."));
         return userId;
     }
+
+    /** The caller's bank, for stamping BankId on owned children. */
+    public int requireBankId() {
+        return currentUser.requireBankId();
+    }
 }

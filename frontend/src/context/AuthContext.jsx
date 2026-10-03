@@ -14,13 +14,14 @@ export function AuthProvider({ children }) {
     setUser(loggedIn);
   }, []);
 
-  const register = useCallback(async (email, password, displayName) => {
-    const { token, user: created } = await authApi.register(email, password, displayName);
-    setSession(token, created);
-    setUser(created);
-  }, []);
-
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      // Best-effort server-side revocation (access-token jti + refresh
+      // family); the local session is cleared regardless.
+      await authApi.logout();
+    } catch {
+      /* already signed out server-side, or offline */
+    }
     clearSession();
     clearCaches();
     setUser(null);
@@ -32,8 +33,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: Boolean(getToken()), login, register, logout, updateUser }),
-    [user, login, register, logout, updateUser]
+    () => ({ user, isAuthenticated: Boolean(getToken()), login, logout, updateUser }),
+    [user, login, logout, updateUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

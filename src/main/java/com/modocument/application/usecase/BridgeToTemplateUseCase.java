@@ -154,9 +154,11 @@ public class BridgeToTemplateUseCase {
                 validateRows.handle(new ValidationRequest(templateId, mapped.getRows()));
         int invalid = (int) results.stream().filter(r -> r.errorMessage() != null).count();
 
+        int bankId = currentUser.requireBankId();
         String fileName = "extraction:" + extractionJobId;
         ImportHistory history = new ImportHistory();
         history.setOwnerUserId(owner);
+        history.setBankId(bankId);
         history.setFileName(fileName);
         history.setTemplateId(templateId);
         history.setImportDate(LocalDateTime.now(ZoneOffset.UTC));
@@ -164,6 +166,7 @@ public class BridgeToTemplateUseCase {
 
         IngestionJob ingestionJob = new IngestionJob();
         ingestionJob.setOwnerUserId(owner);
+        ingestionJob.setBankId(bankId);
         ingestionJob.setFileName(fileName);
         ingestionJob.setTemplateId(templateId);
         ingestionJob.setImportHistoryId(savedHistory.getImportHistoryId());
@@ -175,11 +178,11 @@ public class BridgeToTemplateUseCase {
         ingestionJob.setStatus(JobStatus.COMPLETED);
         IngestionJob savedJob = ingestionJobs.save(ingestionJob);
 
-        recordDetails(savedHistory.getImportHistoryId(), STEP_TRANSFORMING,
+        recordDetails(savedHistory.getImportHistoryId(), bankId, STEP_TRANSFORMING,
                 ingestionJob.getParsedTableJson());
-        recordDetails(savedHistory.getImportHistoryId(), STEP_MAPPING,
+        recordDetails(savedHistory.getImportHistoryId(), bankId, STEP_MAPPING,
                 ingestionJob.getMappingJson());
-        recordDetails(savedHistory.getImportHistoryId(), STEP_VALIDATING,
+        recordDetails(savedHistory.getImportHistoryId(), bankId, STEP_VALIDATING,
                 ingestionJob.getValidationResultJson());
 
         extractionJob.setTemplateId(templateId);
@@ -196,9 +199,11 @@ public class BridgeToTemplateUseCase {
                 rows.size(), available, truncated, invalid, mapping);
     }
 
-    private void recordDetails(Integer importHistoryId, int processStepId, String rawJson) {
+    private void recordDetails(Integer importHistoryId, int bankId, int processStepId,
+                               String rawJson) {
         ImportDetails details = new ImportDetails();
         details.setImportHistoryId(importHistoryId);
+        details.setBankId(bankId);
         details.setProcessStepId(processStepId);
         details.setRawJson(rawJson);
         importDetails.add(details);

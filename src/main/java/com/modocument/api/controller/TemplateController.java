@@ -53,6 +53,7 @@ public class TemplateController {
     public ResponseEntity<?> create(@RequestBody Template dto) {
         Template entity = new Template(0, dto.getName(), dto.getDescription());
         entity.setOwnerUserId(currentUser.requireUserId());
+        entity.setBankId(currentUser.requireBankId());
         repo.add(entity);
         return ResponseEntity
                 .created(URI.create("/Templates/GetById/" + entity.getTemplateId()))

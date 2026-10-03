@@ -33,6 +33,10 @@ public class ValidationRule {
     @Column(name = "ConfigJson", nullable = false)
     private String configJson = "";
 
+    /** The owning template's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     public ValidationRule() {
     }
 
@@ -49,6 +53,14 @@ public class ValidationRule {
 
     public void setTemplateId(int templateId) {
         this.templateId = templateId;
+    }
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public String getFieldName() {

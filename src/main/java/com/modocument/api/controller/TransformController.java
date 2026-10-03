@@ -71,6 +71,7 @@ public class TransformController {
 
             ImportHistory importHistory = new ImportHistory();
             importHistory.setOwnerUserId(owner);
+            importHistory.setBankId(ownership.requireBankId());
             importHistory.setTemplateId(templateId);
             importHistory.setFileName(request.getFileName());
             importHistory.setImportDate(LocalDateTime.now(ZoneOffset.UTC));
@@ -78,6 +79,7 @@ public class TransformController {
 
             ImportDetails details = new ImportDetails();
             details.setImportHistoryId(saved.getImportHistoryId());
+            details.setBankId(saved.getBankId());
             details.setRawJson(resultDto.getJsonPayload());
             details.setProcessStepId(1);
             importDetailsRepository.add(details);

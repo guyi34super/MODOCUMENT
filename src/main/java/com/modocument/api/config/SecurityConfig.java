@@ -1,5 +1,7 @@
 package com.modocument.api.config;
 
+import com.modocument.infrastructure.security.RevocationValidator;
+import com.modocument.infrastructure.security.TenantContextFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -10,11 +12,14 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 
@@ -25,10 +30,13 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Stateless JWT security: /api/auth/login|register and the health probe are
- * open, the dev tooling paths (Swagger, H2 console) only when
- * modocument.security.permit-dev-paths is on (local/test profiles), and
- * everything else requires a Bearer token.
+ * Stateless JWT security: /api/auth/login, /api/auth/refresh (cookie-driven
+ * rotation) and the health probe are open, the dev tooling paths (Swagger, H2
+ * console) only when modocument.security.permit-dev-paths is on (local/test
+ * profiles), and everything else requires a Bearer token. Registration is no
+ * longer public — users are admin-created (bootstrap admin + future admin
+ * endpoint). Every accepted token additionally passes the
+ * {@link RevocationValidator} (jti denylist + TokenVersion check).
  */
 @Configuration
 public class SecurityConfig {
@@ -84,7 +92,7 @@ public class SecurityConfig {
                                 .maxAgeInSeconds(31_536_000)))
                 .authorizeHttpRequests(a -> {
                     a.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                            .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
+                            .requestMatchers("/api/auth/login", "/api/auth/refresh").permitAll()
                             .requestMatchers("/actuator/health", "/error").permitAll();
                     if (permitDevPaths) {
                         a.requestMatchers("/swagger/**", "/swagger-ui/**", "/swagger-ui.html",
@@ -92,7 +100,10 @@ public class SecurityConfig {
                     }
                     a.anyRequest().authenticated();
                 })
-                .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()));
+                .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()))
+                // After bearer auth so the validated JWT's bank_id claim is in
+                // the security context; cleared in the filter's finally block.
+                .addFilterAfter(new TenantContextFilter(), BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 
@@ -107,7 +118,13 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder() {
-        return NimbusJwtDecoder.withSecretKey(secretKey).macAlgorithm(MacAlgorithm.HS256).build();
+    public JwtDecoder jwtDecoder(RevocationValidator revocationValidator) {
+        NimbusJwtDecoder decoder =
+                NimbusJwtDecoder.withSecretKey(secretKey).macAlgorithm(MacAlgorithm.HS256).build();
+        // Signature/exp checks first (createDefault), then the server-side
+        // revocation checks (jti denylist, TokenVersion, user existence).
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefault(), revocationValidator));
+        return decoder;
     }
 }

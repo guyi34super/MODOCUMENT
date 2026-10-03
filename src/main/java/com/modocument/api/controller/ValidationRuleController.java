@@ -68,8 +68,10 @@ public class ValidationRuleController {
             return ResponseEntity.badRequest().body(Map.of("error", "config cannot be serialized."));
         }
 
-        ValidationRule saved = repo.save(new ValidationRule(
-                request.getTemplateId(), request.getFieldName().trim(), ruleType.get(), configJson));
+        ValidationRule rule = new ValidationRule(
+                request.getTemplateId(), request.getFieldName().trim(), ruleType.get(), configJson);
+        rule.setBankId(ownership.requireBankId());
+        ValidationRule saved = repo.save(rule);
         return ResponseEntity.ok(saved);
     }
 

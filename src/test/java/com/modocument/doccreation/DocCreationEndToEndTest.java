@@ -79,7 +79,8 @@ class DocCreationEndToEndTest {
 
     private static void authenticate(int userId) {
         Jwt jwt = Jwt.withTokenValue("test-token").header("alg", "none")
-                .subject(String.valueOf(userId)).claim("email", "e2e@example.com").build();
+                .subject(String.valueOf(userId))
+                .claim("bank_id", 1).claim("roles", List.of("ADMIN")).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
     }
 

@@ -29,6 +29,10 @@ public class DocContentBlock {
     @Column(name = "InstanceId")
     private int instanceId;
 
+    /** The owning root's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     @Column(name = "SectionId")
     private int sectionId;
 
@@ -52,6 +56,14 @@ public class DocContentBlock {
     private String caption;
 
     public DocContentBlock() {
+    }
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public int getDocContentBlockId() {

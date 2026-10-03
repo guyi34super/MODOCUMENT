@@ -1,9 +1,11 @@
 import { api } from './client';
 
+// Registration is admin-only now — there is no public register endpoint.
+
 export const login = (email, password) => api.post('/api/auth/login', { email, password });
 
-export const register = (email, password, displayName) =>
-  api.post('/api/auth/register', { email, password, displayName });
+/** Revokes the access token and every refresh token server-side. */
+export const logout = () => api.post('/api/auth/logout');
 
 export const me = () => api.get('/api/auth/me');
 

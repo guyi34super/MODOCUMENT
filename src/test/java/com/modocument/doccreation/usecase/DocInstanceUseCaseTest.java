@@ -1,5 +1,6 @@
 package com.modocument.doccreation.usecase;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.doccreation.dto.AddBlockRequest;
 import com.modocument.doccreation.dto.BlockDto;
 import com.modocument.doccreation.dto.BulkUploadResultDto;
@@ -79,7 +80,7 @@ class DocInstanceUseCaseTest {
     void setUp() throws IOException {
         storage = new StorageProperties(tempDir.toString());
         UploadStorage uploadStorage = new UploadStorage(storage);
-        DocCreationOwnership ownership = new DocCreationOwnership(blueprints, instances, () -> USER);
+        DocCreationOwnership ownership = new DocCreationOwnership(blueprints, instances, FixedUser.provider(USER));
         DocumentCreationFlowRegistry flows = new DocumentCreationFlowRegistry(
                 List.of(new DefaultDocumentCreationFlow(new KeywordSectionMatcher())));
         DocumentAssembler assembler = new DocumentAssembler();

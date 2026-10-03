@@ -1,5 +1,6 @@
 package com.modocument.application.usecase;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.port.ImportDetailsRepository;
@@ -56,7 +57,7 @@ class BridgeToTemplateUseCaseTest {
     private final BridgeToTemplateUseCase useCase = new BridgeToTemplateUseCase(
             extractionJobs, processedRecords, templates, templateFields, autoMap, validateRows,
             cleanRecords, ingestionJobs, importHistory, importDetails,
-            new InMemoryExtractionAuditLog(), () -> USER, 500);
+            new InMemoryExtractionAuditLog(), FixedUser.provider(USER), 500);
 
     private ExtractionJob job;
 

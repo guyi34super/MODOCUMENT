@@ -49,4 +49,9 @@ public class DocCreationOwnership {
     public int requireUserId() {
         return currentUser.requireUserId();
     }
+
+    /** The caller's bank, for stamping BankId on created rows. */
+    public int requireBankId() {
+        return currentUser.requireBankId();
+    }
 }

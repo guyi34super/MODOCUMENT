@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.usecase.DeleteTemplateUseCase;
 import com.modocument.domain.entity.Template;
@@ -25,7 +26,7 @@ class TemplateControllerTest {
     private final DeleteTemplateUseCase deleteTemplate = mock(DeleteTemplateUseCase.class);
     // CurrentUserProvider is a functional interface — a fixed caller is enough.
     private final TemplateController controller =
-            new TemplateController(repo, deleteTemplate, () -> USER);
+            new TemplateController(repo, deleteTemplate, FixedUser.provider(USER));
 
     @Test
     void getAllReturnsOkWithListOfTemplates() {

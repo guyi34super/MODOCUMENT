@@ -79,8 +79,8 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [drawer]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 

@@ -51,6 +51,7 @@ public class SqlRawRecordStore implements RawRecordStore {
     private static ExtractionRawRecordEntity toEntity(RawRecord record) {
         ExtractionRawRecordEntity entity = new ExtractionRawRecordEntity();
         entity.setId(JsonColumns.parseId(record.getId()));
+        entity.setBankId(BankStamp.current());
         entity.setJobId(record.getJobId());
         entity.setSourceId(record.getSourceId());
         entity.setUri(record.getUri());

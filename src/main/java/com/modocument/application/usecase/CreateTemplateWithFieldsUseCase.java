@@ -68,6 +68,8 @@ public class CreateTemplateWithFieldsUseCase {
 
         Template template = new Template(0, request.getName().trim(), request.getDescription());
         template.setOwnerUserId(currentUser.requireUserId());
+        int bankId = currentUser.requireBankId();
+        template.setBankId(bankId);
         templateRepository.add(template);
 
         List<CreateTemplateResponse.CreatedField> createdFields = new ArrayList<>();
@@ -76,6 +78,7 @@ public class CreateTemplateWithFieldsUseCase {
 
             TemplateFields field = new TemplateFields();
             field.setTemplateId(template.getTemplateId());
+            field.setBankId(bankId);
             field.setFieldName(fieldDto.getFieldName().trim());
             field.setTemplateDataTypeId(dataType.getTemplateDataTypeId());
             templateFieldsRepository.add(field);
@@ -84,8 +87,10 @@ public class CreateTemplateWithFieldsUseCase {
             for (CreateTemplateRuleDto ruleDto : rulesOf(fieldDto)) {
                 RuleType ruleType = parseRuleType(ruleDto.getRuleType()).orElseThrow();
                 String configJson = toConfigJson(ruleDto.getConfig());
-                validationRuleRepository.save(new ValidationRule(
-                        template.getTemplateId(), field.getFieldName(), ruleType, configJson));
+                ValidationRule rule = new ValidationRule(
+                        template.getTemplateId(), field.getFieldName(), ruleType, configJson);
+                rule.setBankId(bankId);
+                validationRuleRepository.save(rule);
                 createdRules.add(new CreateTemplateResponse.CreatedRule(ruleType.name(), configJson));
             }
 

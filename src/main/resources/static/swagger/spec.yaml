@@ -1024,30 +1024,46 @@ paths:
       summary: Export to a custom database
       tags:
       - IngestionJobs
-  /api/auth/register:
-    post:
-      description: Create an account and return a bearer token
-      operationId: register
-      security: []
-      responses:
-        "200":
-          description: Token and user profile
-        "400":
-          description: Email already registered or password too weak
-      summary: Register
-      tags:
-      - Auth
   /api/auth/login:
     post:
-      description: Exchange credentials for a bearer token
+      description: Exchange credentials for a short-lived bearer token; also
+        sets the httpOnly rotating refresh cookie (modoc_refresh, path
+        /api/auth/refresh). Accounts are admin-created — there is no public
+        registration endpoint.
       operationId: login
       security: []
       responses:
         "200":
-          description: Token and user profile
+          description: Token and user profile (incl. role and bankId)
         "401":
           description: Invalid credentials
       summary: Log in
+      tags:
+      - Auth
+  /api/auth/refresh:
+    post:
+      description: Rotate the refresh cookie and return a fresh access token.
+        Presenting an already-rotated or revoked cookie revokes the whole
+        token family.
+      operationId: refresh
+      security: []
+      responses:
+        "200":
+          description: New token and user profile; new refresh cookie
+        "401":
+          description: Missing, expired, revoked, or reused refresh token
+      summary: Refresh tokens
+      tags:
+      - Auth
+  /api/auth/logout:
+    post:
+      description: Revoke the current access token (jti denylist) and every
+        refresh token of the user; clears the refresh cookie
+      operationId: logout
+      responses:
+        "204":
+          description: Session revoked
+      summary: Log out
       tags:
       - Auth
   /api/auth/me:
@@ -1935,7 +1951,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT issued by /api/auth/login or /api/auth/register
+      description: JWT issued by /api/auth/login or /api/auth/refresh
   schemas:
     TemplateDataTypesCreate:
       description: TemplateDataTypesCreate object

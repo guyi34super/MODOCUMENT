@@ -1,7 +1,10 @@
 package com.modocument.domain.entity;
 
+import com.modocument.domain.model.Role;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -20,6 +23,24 @@ public class AppUser {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "AppUserId")
     private int appUserId;
+
+    /** The bank this user belongs to (V10); carried in the JWT bank_id claim. */
+    @Column(name = "BankId", nullable = false)
+    private int bankId = Bank.DEFAULT_BANK_ID;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "Role", length = 20, nullable = false)
+    private Role role = Role.READ_ONLY;
+
+    /**
+     * Bumped on password change (and later on role change); access tokens
+     * whose token_ver claim is older are rejected by the RevocationValidator.
+     */
+    @Column(name = "TokenVersion", nullable = false)
+    private int tokenVersion;
+
+    @Column(name = "LastLoginAt")
+    private LocalDateTime lastLoginAt;
 
     @Column(name = "Email", length = 256, nullable = false, unique = true)
     private String email;
@@ -56,6 +77,38 @@ public class AppUser {
 
     public void setAppUserId(int appUserId) {
         this.appUserId = appUserId;
+    }
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
+    public void setRole(Role role) {
+        this.role = role;
+    }
+
+    public int getTokenVersion() {
+        return tokenVersion;
+    }
+
+    public void setTokenVersion(int tokenVersion) {
+        this.tokenVersion = tokenVersion;
+    }
+
+    public LocalDateTime getLastLoginAt() {
+        return lastLoginAt;
+    }
+
+    public void setLastLoginAt(LocalDateTime lastLoginAt) {
+        this.lastLoginAt = lastLoginAt;
     }
 
     public String getEmail() {

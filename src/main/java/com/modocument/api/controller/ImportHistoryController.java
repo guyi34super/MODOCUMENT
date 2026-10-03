@@ -52,6 +52,7 @@ public class ImportHistoryController {
     public ResponseEntity<?> create(@RequestBody ImportHistory dto) {
         ImportHistory entity = new ImportHistory();
         entity.setOwnerUserId(currentUser.requireUserId());
+        entity.setBankId(currentUser.requireBankId());
         entity.setImportDate(dto.getImportDate());
         entity.setFileName(dto.getFileName());
         entity.setTemplateId(dto.getTemplateId());

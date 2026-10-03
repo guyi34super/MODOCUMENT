@@ -84,8 +84,14 @@ public class SqlExtractionJobStore implements ExtractionJobStore {
         if (counters.increment(entityId, counter, delta) > 0) {
             return;
         }
+        // First increment of this counter: the row inherits the job's bank
+        // (one extra read, only ever on this rare insert path).
+        int bankId = jobs.findById(entityId)
+                .map(ExtractionJobEntity::getBankId)
+                .filter(bank -> bank > 0)
+                .orElseGet(BankStamp::current);
         try {
-            counters.saveAndFlush(new ExtractionJobCounterEntity(entityId, counter, delta));
+            counters.saveAndFlush(new ExtractionJobCounterEntity(entityId, counter, delta, bankId));
         } catch (DataIntegrityViolationException raced) {
             // Another worker inserted the row between our UPDATE and INSERT.
             counters.increment(entityId, counter, delta);
@@ -120,6 +126,7 @@ public class SqlExtractionJobStore implements ExtractionJobStore {
         ExtractionJob job = new ExtractionJob();
         job.setId(String.valueOf(entity.getId()));
         job.setOwnerUserId(entity.getOwnerUserId());
+        job.setBankId(entity.getBankId());
         job.setSourceId(entity.getSourceId());
         job.setTemplateId(entity.getTemplateId());
         job.setDataSpec(entity.getDataSpec());
@@ -136,6 +143,7 @@ public class SqlExtractionJobStore implements ExtractionJobStore {
         ExtractionJobEntity entity = new ExtractionJobEntity();
         entity.setId(JsonColumns.parseId(job.getId()));
         entity.setOwnerUserId(job.getOwnerUserId());
+        entity.setBankId(BankStamp.effective(job.getBankId()));
         entity.setSourceId(job.getSourceId());
         entity.setTemplateId(job.getTemplateId());
         entity.setDataSpec(job.getDataSpec());

@@ -1,29 +1,63 @@
 package com.modocument.infrastructure.security;
 
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.domain.model.Role;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 /**
- * Derives the caller's id from the validated JWT in the security context. The
- * subject is the AppUser id (see JwtService.issueToken), mirroring the existing
- * AuthController.userId(Jwt) helper — kept in one place so ownership scoping has
- * a single source of truth.
+ * Derives the caller's id, bank and role from the validated JWT in the
+ * security context. The subject is the AppUser id, bank_id and roles are the
+ * custom claims JwtService stamps (see JwtService.issueToken) — kept in one
+ * place so ownership/tenant scoping has a single source of truth.
  */
 @Component
 public class SecurityContextCurrentUserProvider implements CurrentUserProvider {
 
     @Override
     public int requireUserId() {
+        Jwt jwt = requireJwt();
+        try {
+            return Integer.parseInt(jwt.getSubject());
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("Authenticated token has a non-numeric subject.", e);
+        }
+    }
+
+    @Override
+    public int requireBankId() {
+        Object bankId = requireJwt().getClaims().get(JwtService.CLAIM_BANK_ID);
+        if (bankId instanceof Number number) {
+            return number.intValue();
+        }
+        // Every token issued since the bank rollout carries the claim, so a
+        // missing one means a stale/foreign token — fail loud, never guess a
+        // tenant.
+        throw new IllegalStateException("Authenticated token carries no bank_id claim.");
+    }
+
+    @Override
+    public Role role() {
+        Object roles = requireJwt().getClaims().get(JwtService.CLAIM_ROLES);
+        if (roles instanceof List<?> list && !list.isEmpty()) {
+            try {
+                return Role.valueOf(String.valueOf(list.get(0)));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException(
+                        "Authenticated token carries an unknown role: " + list.get(0), e);
+            }
+        }
+        throw new IllegalStateException("Authenticated token carries no roles claim.");
+    }
+
+    private static Jwt requireJwt() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
-            try {
-                return Integer.parseInt(jwt.getSubject());
-            } catch (NumberFormatException e) {
-                throw new IllegalStateException("Authenticated token has a non-numeric subject.", e);
-            }
+            return jwt;
         }
         // Every domain endpoint is behind authentication, so reaching here means
         // a filter was misconfigured — fail loud rather than leak another user.
