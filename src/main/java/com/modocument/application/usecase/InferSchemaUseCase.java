@@ -3,6 +3,8 @@ package com.modocument.application.usecase;
 import com.modocument.application.dto.InferredSchema;
 import com.modocument.application.dto.SchemaInferencePromptInput;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.ExtractionAuditLog;
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ProcessedRecordStore;
@@ -73,9 +75,14 @@ public class InferSchemaUseCase {
                         "SchemaInference prompt not registered."));
         String prompt = strategy.buildPrompt(new SchemaInferencePromptInput(
                 IngestionJobUseCase.toJson(sampleFields), job.getDataSpec()));
-        InferredSchema schema = aiFilesService.sendForObject(prompt,
+        InferredSchema schema = aiFilesService.sendForObject(
+                PromptEnvelope.builder(AiPurpose.SCHEMA_INFERENCE)
+                        .bank(job.getBankId())
+                        .part(prompt, job.getBankId())
+                        .model(extractionLlm.getModelId())
+                        .build(),
                 new ParameterizedTypeReference<InferredSchema>() {
-                }, extractionLlm.getModelId());
+                });
         audit.add(ExtractionAuditEvent.of(jobId, job.getSourceId(), AuditAction.LLM_CALL, null,
                 "schema inference over " + sample.size() + " sample record(s)", null));
         if (schema == null || schema.fields() == null) {

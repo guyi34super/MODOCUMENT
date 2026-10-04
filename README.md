@@ -30,11 +30,12 @@ the test suite.
   endpoint is configured, `pdf`, `doc`, `docx`, `pptx`, `html`, and images/scans
   (`png`, `jpg`, `tiff`, `bmp`, `webp`) are converted to markdown with OCR.
 - **Automatic fallback readers** when docling is absent or fails: PDFBox for PDFs,
-  POI for `.docx`/`.doc`, plus a two-tier OCR chain for standalone images and scanned
-  PDF pages — **LLM vision OCR** (the configured OpenAI model, `gpt-4o` by default,
-  reading rasterized pages/images) first, then per-page **Tesseract** as the offline
-  fallback. Each tier degrades gracefully: no OpenAI key disables vision OCR, no
-  native Tesseract library disables local OCR — parsing never fails because of OCR.
+  POI for `.docx`/`.doc`, plus an OCR chain for standalone images and scanned PDF
+  pages — per-page **Tesseract** by default, with optional **LLM vision OCR**
+  (rasterized pages/images sent to a vision-capable model) ahead of it. Vision OCR
+  is **off by default** (`OCR_VISION_ENABLED=false`): page images cannot be
+  pseudonymised the way text prompts are, so sending them to a model is an explicit
+  opt-in. Each tier degrades gracefully — parsing never fails because of OCR.
 - **LLM table extraction** (Spring AI structured output) turns the extracted text of
   unstructured documents into the same table shape.
 
@@ -64,7 +65,9 @@ the test suite.
   (`mapping.confidence-threshold`): each template field is used at most once, and
   low-confidence columns stay unmapped for review instead of being guessed.
 - Only the columns code cannot resolve go to the **LLM automapper** (column/field
-  names only, never data; disable entirely with `mapping.llm-fallback-enabled=false`);
+  names plus **pseudonymised sample values** — identifiers are replaced with
+  `[ID_1]`-style tokens before the prompt, so the shape signal survives but no raw
+  value leaves the backend; disable entirely with `mapping.llm-fallback-enabled=false`);
   invented targets are discarded, and an LLM outage degrades to "left unmapped"
   instead of failing the mapping stage.
 - **Review and override** the mapping: `PUT /api/ingestion/jobs/{id}/mapping`
@@ -149,19 +152,37 @@ the test suite.
   renders JS-heavy pages when `extraction.web.render-js-enabled=true` and its browsers
   are installed, degrading to HTTP otherwise.
 
-### AI integration (Spring AI)
-- All LLM access goes through **Spring AI's `ChatClient`** (OpenAI chat model) behind a
-  single application port, with structured output for extraction, mapping, and chat
-  edits.
-- The same `ChatClient` and key also power **multimodal vision OCR** of images and
-  scanned PDF pages (`ocr.vision.*` settings); it switches itself off when no key is
-  configured.
-- Legacy config keys are bridged, so `AIFILES_OPENAI_APIKEY` / `AIFILES_OPENAI_MODELID`
-  keep working. The app **boots without an API key** — only LLM-dependent endpoints
-  return an error until one is set.
-- Legacy AI endpoints preserved: `POST /api/aifiles/send` (raw prompt),
-  `POST /api/transform/transform` (classify + extract to JSON),
-  `POST /api/automapper/generate` (column mapping).
+### AI integration (Spring AI) — local by default, gated and audited
+- **Local models are the default** (gate C8): out of the box the app talks to a
+  local [Ollama](https://ollama.com) endpoint (`http://localhost:11434`, models
+  `qwen2.5` + `mistral`) — **no document content leaves the machine unless an
+  operator explicitly configures an external endpoint** via
+  `MODOCUMENT_AI_BASE_URL` / `MODOCUMENT_AI_API_KEY` / `MODOCUMENT_AI_MODEL`
+  (the legacy `AIFILES_OPENAI_*` names keep working). The app boots and passes
+  its suite with **no AI endpoint reachable at all** — every AI feature degrades
+  to its non-AI path.
+- **One gateway, no raw paths** (gate C9): every LLM call goes through the single
+  `AiGateway` (`infrastructure/ai`) — a guard test fails the build on any other
+  class touching the Spring AI chat types. Call sites pseudonymise identifiers
+  (NIC/account/email/phone shapes → reversible `[ID_1]`-style tokens) before the
+  prompt; the gateway re-scans the assembled prompt and refuses anything still
+  carrying a raw identifier shape, anything whose bound tenant is missing or
+  mismatched, and any prompt that would mix two banks' data.
+- **Output scanning** (gate C10): every completion is scanned before it is
+  returned — identifier shapes that were never in the request and
+  instruction-injection echoes are rejected (strict purposes fall back to their
+  non-AI path) or scrubbed and flagged (lenient purposes), with audit events
+  either way.
+- **Prompts and completions are not stored and never logged**: logs and
+  `AI_CALL` audit evidence carry purposes, models and lengths only.
+- **Vision OCR is off by default** (`OCR_VISION_ENABLED=false`): page images
+  cannot be pseudonymised, so sending them to a vision model is an explicit
+  opt-in; local Tesseract OCR remains the default.
+- Legacy AI endpoints preserved (all through the gateway, tokenized):
+  `POST /api/aifiles/send` (diagnostics prompt — pseudonymised before sending,
+  detokenized in the reply), `POST /api/transform/transform` (classify + extract
+  to JSON), `POST /api/automapper/generate` (column mapping).
+- Full control description: [docs/security/ai-controls.md](docs/security/ai-controls.md).
 
 ### Platform
 - Legacy CRUD APIs: `/Templates/*`, `/TemplateFields/*`, `/TemplateDataTypes/*`,
@@ -215,7 +236,7 @@ the test suite.
 
 ## Quick start
 
-### Run locally (no OpenAI key needed)
+### Run locally (no API key, no AI endpoint needed)
 
 ```bash
 # start a database once (or point MODOCUMENT_DB_* at your own PostgreSQL)
@@ -236,11 +257,26 @@ validation rules are created through the app — accounts are admin-created, and
 the first administrator is seeded at startup from
 `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD` when
 the user table is empty. All CRUD, template, validation, job, and
-export endpoints work immediately; only LLM-dependent paths (unstructured
-extraction, automap leftovers, chat edit) need an API key:
+export endpoints work immediately. The LLM-dependent paths (unstructured
+extraction, automap leftovers, chat edit) expect a **local Ollama** at
+`http://localhost:11434` by default — no account, no key, nothing leaves your
+machine:
 
 ```bash
-AIFILES_OPENAI_APIKEY=<your-openai-key> SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
+# once: install Ollama and pull the default models
+ollama pull qwen2.5 && ollama pull mistral && ollama pull deepseek-r1:8b
+SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
+```
+
+Without Ollama running, those paths simply degrade (heuristics / "left
+unmapped" / an error on the explicitly-AI endpoints) — nothing else breaks.
+An **external** OpenAI-compatible endpoint is an explicit opt-in:
+
+```bash
+MODOCUMENT_AI_BASE_URL=https://openrouter.ai/api \
+MODOCUMENT_AI_API_KEY=<your-key> \
+MODOCUMENT_AI_MODEL=<model-id> \
+SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
 
 ### Run with Docker
@@ -254,9 +290,17 @@ export MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 export MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD=<a-strong-password>
 docker compose up --build
 
-# with an API key for the LLM features (OpenRouter by default; any
-# OpenAI-compatible endpoint works via AIFILES_OPENAI_BASEURL)
-AIFILES_OPENAI_APIKEY=<your-key> docker compose up --build
+# with LOCAL AI (the default endpoint): add the ollama service, then pull
+# the models once — prompts never leave the compose network
+docker compose --profile ai-local up --build
+docker compose exec ollama ollama pull qwen2.5
+docker compose exec ollama ollama pull mistral
+docker compose exec ollama ollama pull deepseek-r1:8b
+
+# EXTERNAL endpoint (explicit opt-in; any OpenAI-compatible API)
+MODOCUMENT_AI_BASE_URL=https://openrouter.ai/api \
+MODOCUMENT_AI_API_KEY=<your-key> \
+MODOCUMENT_AI_MODEL=<model-id> docker compose up --build
 
 # dev mode against the same PostgreSQL (dev JWT secret, Swagger enabled)
 APP_PROFILES=local docker compose up --build
@@ -346,16 +390,16 @@ mvn -B verify
 
 | Setting | Key / env var | Default |
 |---|---|---|
-| OpenAI API key | `aifiles.openai.api-key` / `AIFILES_OPENAI_APIKEY` | empty (LLM endpoints error until set) |
-| OpenAI model | `aifiles.openai.model-id` / `AIFILES_OPENAI_MODELID` | `gpt-4o` |
-| OpenAI base URL | `aifiles.openai.base-url` / `AIFILES_OPENAI_BASEURL` | `https://api.openai.com` (host root, no `/v1`) |
+| AI API key | `aifiles.openai.api-key` / `MODOCUMENT_AI_API_KEY` (legacy `AIFILES_OPENAI_APIKEY`) | `ollama` (local endpoint needs no real key; set empty to disable the LLM endpoints) |
+| AI model | `aifiles.openai.model-id` / `MODOCUMENT_AI_MODEL` (legacy `AIFILES_OPENAI_MODELID`) | `qwen2.5` (local Ollama) |
+| AI base URL | `aifiles.openai.base-url` / `MODOCUMENT_AI_BASE_URL` (legacy `AIFILES_OPENAI_BASEURL`) | `http://localhost:11434` — **local by default**; an external endpoint is an explicit opt-in (host root, no `/v1`) |
 | PII tokenization | `aifiles.privacy.tokenize-pii` / `AIFILES_PRIVACY_TOKENIZEPII` | `true` (fail closed) |
 | Mapping LLM fallback | `mapping.llm-fallback-enabled` / `MAPPING_LLMFALLBACK_ENABLED` | `true` (code tiers always run first) |
 | Mapping confidence | `mapping.confidence-threshold` (+ `sample-size`, `history-jobs`, `aliases`) | `0.7`, 20 samples, 25 jobs |
 | Extra sensitive fields | `aifiles.privacy.extra-sensitive-fields` | empty (substring match, case/punct-insensitive) |
 | docling-serve URL | `docling.base-url` / `DOCLING_BASEURL` | empty (built-in readers only) |
-| Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | `true` (active only when an OpenAI key is set) |
-| Vision OCR model | `ocr.vision.model` / `OCR_VISION_MODEL` | `gpt-4o` |
+| Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | **`false`** (page images cannot be pseudonymised — explicit opt-in; Tesseract remains the offline default) |
+| Vision OCR model | `ocr.vision.model` / `OCR_VISION_MODEL` | `qwen2.5vl` (must be vision-capable on the configured endpoint) |
 | Vision OCR page budget | `ocr.vision.max-pages` / `OCR_VISION_MAXPAGES` (+ `dpi`, `max-dimension`) | 20 pages/PDF, 200 DPI, 2048px longest edge |
 | JWT signing secret | `modocument.security.jwt.secret` / `MODOCUMENT_JWT_SECRET` | **required** in production and `local` (≥32 bytes; not committed); fixed dev secret on `test` only |
 | Auth rate limit | `modocument.security.rate-limit.auth.*` (`per-ip-max`, `per-email-max`, `window-millis`) | 30/IP, 10/email per 15 min → `429` |

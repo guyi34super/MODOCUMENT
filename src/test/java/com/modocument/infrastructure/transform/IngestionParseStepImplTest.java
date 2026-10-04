@@ -8,6 +8,7 @@ import com.modocument.application.dto.TableExtractionHints;
 import com.modocument.application.dto.TableExtractionPlan;
 import com.modocument.application.dto.TableRowBatch;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.DocumentParser;
 import com.modocument.application.port.PromptStrategy;
 import com.modocument.application.privacy.PiiTokenizer;
@@ -100,12 +101,12 @@ class IngestionParseStepImplTest {
                 .thenReturn(TableExtractionPlan.singlePass("Row 1: Name\tCity\nRow 2: Ada\tLondon", 1, 2));
         when(structuredMaterializer.tryMaterialize(any(), anyString(), any(), any()))
                 .thenReturn(Optional.empty());
-        doReturn(LLM_TABLE).when(aiFilesService).sendForObject(anyString(), any());
+        doReturn(LLM_TABLE).when(aiFilesService).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test
     void excelGoesThroughTheLlmByDefault() {
-        when(aiFilesService.sendPrompt(anyString())).thenReturn("""
+        when(aiFilesService.sendPrompt(any(PromptEnvelope.class))).thenReturn("""
                 {"columns":["Name","City"],"mapping":{"Name":"FirstName","City":null},
                 "rows":[{"Name":"Ada","City":"London"}]}
                 """);
@@ -142,7 +143,7 @@ class IngestionParseStepImplTest {
                 .thenReturn(new TableExtractionHints(".csv", "local", 2, List.of("Name", "City"), 1));
         when(batchPlanner.plan(anyString(), any(), any()))
                 .thenReturn(TableExtractionPlan.singlePass("Name,City\nAda,London", 1, 2));
-        when(aiFilesService.sendPrompt(anyString())).thenReturn("""
+        when(aiFilesService.sendPrompt(any(PromptEnvelope.class))).thenReturn("""
                 {"columns":["Name","City"],"mapping":{"Name":"FirstName","City":null},
                 "rows":[{"Name":"Ada","City":"London"}]}
                 """);
@@ -151,7 +152,7 @@ class IngestionParseStepImplTest {
 
         assertThat(result.table().getColumns()).containsExactly("Name", "City");
         verify(documentParser).extract(any());
-        verify(aiFilesService).sendPrompt(anyString());
+        verify(aiFilesService).sendPrompt(any(PromptEnvelope.class));
         verify(tabularNormalizer, never()).normalize(any());
     }
 
@@ -168,7 +169,7 @@ class IngestionParseStepImplTest {
 
     @Test
     void llmJsonFailureThrowsInsteadOfPoiFallback() {
-        when(aiFilesService.sendPrompt(anyString()))
+        when(aiFilesService.sendPrompt(any(PromptEnvelope.class)))
                 .thenThrow(new RuntimeException(
                         "com.fasterxml.jackson.databind.JsonMappingException: Unexpected end-of-input"));
 
@@ -193,7 +194,7 @@ class IngestionParseStepImplTest {
                 2,
                 2,
                 "full text"));
-        when(aiFilesService.sendPrompt(anyString()))
+        when(aiFilesService.sendPrompt(any(PromptEnvelope.class)))
                 .thenReturn("""
                         {"columns":["Emp ID","Name"],"mapping":{"Emp ID":"FirstName","Name":null},
                         "rows":[{"Emp ID":"E001","Name":"Ada"}]}
@@ -204,7 +205,7 @@ class IngestionParseStepImplTest {
 
         assertThat(result.table().getRows()).hasSize(2);
         assertThat(result.suggestedMapping()).containsEntry("Emp ID", "FirstName");
-        verify(aiFilesService, times(2)).sendPrompt(anyString());
+        verify(aiFilesService, times(2)).sendPrompt(any(PromptEnvelope.class));
         verify(tabularNormalizer, never()).normalize(any());
     }
 
@@ -221,7 +222,7 @@ class IngestionParseStepImplTest {
                 "full text"));
         when(hintsBuilder.build(any(), anyString(), anyString()))
                 .thenReturn(new TableExtractionHints(".txt", "local", 2, List.of(), 1));
-        when(aiFilesService.sendPrompt(anyString()))
+        when(aiFilesService.sendPrompt(any(PromptEnvelope.class)))
                 .thenReturn("[\"Name\",\"City\"]")
                 .thenReturn("[{\"Name\":\"Ada\",\"City\":\"London\"}]");
 
@@ -229,6 +230,6 @@ class IngestionParseStepImplTest {
 
         assertThat(result.table().getColumns()).containsExactly("Name", "City");
         assertThat(result.suggestedMapping()).isEmpty();
-        verify(aiFilesService, times(2)).sendPrompt(anyString());
+        verify(aiFilesService, times(2)).sendPrompt(any(PromptEnvelope.class));
     }
 }

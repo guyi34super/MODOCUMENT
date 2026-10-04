@@ -8,6 +8,8 @@ import com.modocument.application.dto.RowPatch;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.application.port.PromptStrategy;
@@ -88,9 +90,11 @@ public class ChatEditTableUseCase {
         List<Integer> errorRows = errorRowIndices(validation, current.getRows().size());
 
         PiiTokenizer.Session session = tokenizer.newSession();
+        int bankId = job.getBankId();
         TableData modified = errorRows.isEmpty()
-                ? editFullTable(instruction, current, session)
-                : editScopedPatch(instruction, hintRow, hintColumn, current, validation, errorRows, session);
+                ? editFullTable(instruction, current, session, bankId)
+                : editScopedPatch(instruction, hintRow, hintColumn, current, validation, errorRows,
+                        session, bankId);
 
         String modifiedJson = IngestionJobUseCase.toJson(modified);
         if (editMapped) {
@@ -108,7 +112,8 @@ public class ChatEditTableUseCase {
         return jobs.save(job);
     }
 
-    private TableData editFullTable(String instruction, TableData current, PiiTokenizer.Session session) {
+    private TableData editFullTable(String instruction, TableData current,
+                                    PiiTokenizer.Session session, int bankId) {
         if (current.getRows() != null && current.getRows().size() > MAX_ROWS) {
             throw new IllegalArgumentException(
                     "Table has more than " + MAX_ROWS + " rows; chat editing is limited to "
@@ -119,8 +124,13 @@ public class ChatEditTableUseCase {
         String prompt = strategy("ChatEdit")
                 .buildPrompt(new ChatEditPromptInput(instruction, tokenizedJson));
         TableData modified = aiFilesService.sendForObject(
-                prompt, new ParameterizedTypeReference<TableData>() {
-                }, properties.getModelId());
+                PromptEnvelope.builder(AiPurpose.CHAT_EDIT)
+                        .bank(bankId)
+                        .part(prompt, bankId)
+                        .model(properties.getModelId())
+                        .build(),
+                new ParameterizedTypeReference<TableData>() {
+                });
         if (modified == null || modified.isEmpty()) {
             throw new IllegalStateException("The model returned an empty table; nothing was changed.");
         }
@@ -174,7 +184,8 @@ public class ChatEditTableUseCase {
 
     private TableData editScopedPatch(String instruction, Integer hintRow, String hintColumn,
                                       TableData current, List<RowValidationResult> validation,
-                                      List<Integer> errorRows, PiiTokenizer.Session session) {
+                                      List<Integer> errorRows, PiiTokenizer.Session session,
+                                      int bankId) {
         ChatEditScopeResolution scope = ChatEditScopeResolver.resolve(
                 instruction, hintRow, hintColumn, current.getColumns(), validation);
         scope = normalizeScope(scope, current, validation, errorRows, hintRow, hintColumn);
@@ -191,8 +202,13 @@ public class ChatEditTableUseCase {
         String prompt = strategy("ChatEditPatch").buildPrompt(new ChatEditPatchPromptInput(
                 scope.scope(), instruction, columnsJson, payloadJson));
         ChatEditPatchResponse patch = aiFilesService.sendForObject(
-                prompt, new ParameterizedTypeReference<ChatEditPatchResponse>() {
-                }, properties.getModelId());
+                PromptEnvelope.builder(AiPurpose.CHAT_EDIT)
+                        .bank(bankId)
+                        .part(prompt, bankId)
+                        .model(properties.getModelId())
+                        .build(),
+                new ParameterizedTypeReference<ChatEditPatchResponse>() {
+                });
         if (patch == null || patch.rows() == null || patch.rows().isEmpty()) {
             throw new IllegalStateException("The model returned no row changes; nothing was changed.");
         }

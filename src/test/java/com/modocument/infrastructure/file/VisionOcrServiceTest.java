@@ -1,7 +1,10 @@
 package com.modocument.infrastructure.file;
 
+import com.modocument.application.port.AuditRecorder;
+import com.modocument.application.port.TenantContext;
 import com.modocument.infrastructure.ai.AiFilesProperties;
-import com.modocument.infrastructure.ai.AiFilesServiceImpl;
+import com.modocument.infrastructure.ai.AiGateway;
+import com.modocument.infrastructure.ai.AiOutputScanner;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
@@ -28,14 +31,28 @@ import static org.mockito.Mockito.when;
 
 class VisionOcrServiceTest {
 
+    private static final int BANK = 1;
+
     private final ChatModel chatModel = mock(ChatModel.class);
 
+    /** Vision OCR now routes through the real AI gateway (SUP-S13). */
     private VisionOcrService service(String apiKey, boolean enabled) {
         VisionOcrProperties properties = new VisionOcrProperties();
         properties.setEnabled(enabled);
         AiFilesProperties aiProperties = new AiFilesProperties();
         aiProperties.setApiKey(apiKey);
-        return new VisionOcrService(ChatClient.create(chatModel), properties, aiProperties);
+        AiGateway gateway = new AiGateway(aiProperties, ChatClient.create(chatModel),
+                new AiOutputScanner(), mock(AuditRecorder.class));
+        return new VisionOcrService(gateway, properties);
+    }
+
+    /** The gateway refuses tenant-less prompts, so every call binds a bank. */
+    private String extract(VisionOcrService service, BufferedImage image) {
+        try {
+            return TenantContext.runAs(BANK, () -> service.extractText(image));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private void modelReturns(String text) {
@@ -51,16 +68,22 @@ class VisionOcrServiceTest {
     void returnsModelTextWhenEnabledWithRealKey() {
         modelReturns("INVOICE #42");
 
-        assertThat(service("real-key", true).extractText(image(100, 60)))
+        assertThat(extract(service("real-key", true), image(100, 60)))
                 .isEqualTo("INVOICE #42");
     }
 
     @Test
     void disabledWithoutRealKey() {
-        assertThat(service(AiFilesServiceImpl.UNSET_API_KEY, true).extractText(image(10, 10)))
+        assertThat(extract(service(AiGateway.UNSET_API_KEY, true), image(10, 10)))
                 .isEmpty();
-        assertThat(service("", true).extractText(image(10, 10))).isEmpty();
+        assertThat(extract(service("", true), image(10, 10))).isEmpty();
         verify(chatModel, never()).call(any(Prompt.class));
+    }
+
+    @Test
+    void disabledByDefaultGateC8() {
+        // Page images cannot be tokenized, so vision OCR is an explicit opt-in.
+        assertThat(new VisionOcrProperties().isEnabled()).isFalse();
     }
 
     @Test
@@ -68,7 +91,17 @@ class VisionOcrServiceTest {
         VisionOcrService service = service("real-key", false);
 
         assertThat(service.isEnabled()).isFalse();
-        assertThat(service.extractText(image(10, 10))).isEmpty();
+        assertThat(extract(service, image(10, 10))).isEmpty();
+        verify(chatModel, never()).call(any(Prompt.class));
+    }
+
+    @Test
+    void noTenantContextMeansNoModelCall() {
+        // Gate C9: the gateway refuses the call outright; the OCR tier
+        // degrades to "no text" instead of failing the transform.
+        modelReturns("should never be used");
+
+        assertThat(service("real-key", true).extractText(image(10, 10))).isEmpty();
         verify(chatModel, never()).call(any(Prompt.class));
     }
 
@@ -76,14 +109,14 @@ class VisionOcrServiceTest {
     void returnsEmptyWhenModelFails() {
         when(chatModel.call(any(Prompt.class))).thenThrow(new IllegalStateException("boom"));
 
-        assertThat(service("real-key", true).extractText(image(10, 10))).isEmpty();
+        assertThat(extract(service("real-key", true), image(10, 10))).isEmpty();
     }
 
     @Test
     void sendsSinglePngMediaWithOcrPrompt() {
         modelReturns("text");
 
-        service("real-key", true).extractText(image(80, 40));
+        extract(service("real-key", true), image(80, 40));
 
         UserMessage userMessage = capturedUserMessage();
         assertThat(userMessage.getText()).isEqualTo(VisionOcrService.OCR_PROMPT);
@@ -95,7 +128,7 @@ class VisionOcrServiceTest {
     void downscalesOversizedImagesBeforeUpload() throws IOException {
         modelReturns("text");
 
-        service("real-key", true).extractText(image(5000, 2500));
+        extract(service("real-key", true), image(5000, 2500));
 
         Media media = capturedUserMessage().getMedia().get(0);
         BufferedImage sent = ImageIO.read(new ByteArrayInputStream(media.getDataAsByteArray()));

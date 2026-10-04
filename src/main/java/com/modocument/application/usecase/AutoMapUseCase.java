@@ -7,8 +7,11 @@ import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.mapping.MappingProperties;
 import com.modocument.application.mapping.ValueShapeScorer;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
 import com.modocument.application.port.IngestionJobRepository;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.entity.ValidationRule;
 import org.slf4j.Logger;
@@ -56,17 +59,20 @@ public class AutoMapUseCase {
     private final ValueShapeScorer shapeScorer;
     private final IngestionJobRepository jobs;
     private final MappingProperties properties;
+    private final PiiTokenizer tokenizer;
 
     public AutoMapUseCase(List<PromptStrategy> promptStrategies,
                           AiFilesService aiFilesService,
                           ValueShapeScorer shapeScorer,
                           IngestionJobRepository jobs,
-                          MappingProperties properties) {
+                          MappingProperties properties,
+                          PiiTokenizer tokenizer) {
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
         this.shapeScorer = shapeScorer;
         this.jobs = jobs;
         this.properties = properties;
+        this.tokenizer = tokenizer;
     }
 
     public Map<String, String> map(MappingContext context) {
@@ -315,9 +321,16 @@ public class AutoMapUseCase {
                 shapeScorer.rulesByField(context.templateId());
         int sampleLimit = properties.getLlmSampleSize();
 
+        // C9: sample VALUES are tokenized before they enter the prompt — the
+        // model sees [ID_1]/[EMAIL_2]-style placeholders whose shape still
+        // carries the mapping signal; the reply is column/field names only,
+        // so nothing needs detokenizing.
+        PiiTokenizer.Session session = tokenizer.newSession();
         List<AutoMappingPromptInput.ColumnInfo> columnInfos = columns.stream()
                 .map(column -> new AutoMappingPromptInput.ColumnInfo(
-                        column, samplesFor(column, context.sampleRows(), sampleLimit)))
+                        column, samplesFor(column, context.sampleRows(), sampleLimit).stream()
+                                .map(value -> session.tokenizeValue(column, value))
+                                .toList()))
                 .toList();
         boolean fullScope = properties.isLlmScopeAll();
         List<AutoMappingPromptInput.FieldInfo> fieldInfos = context.fields().stream()
@@ -347,7 +360,8 @@ public class AutoMapUseCase {
             String prompt = strategy.buildPrompt(new AutoMappingPromptInput(
                     columnInfos, fieldInfos, confirmed, context.suggestedMappings(), sampleLimit));
             return aiFilesService.sendForObject(
-                    prompt, new ParameterizedTypeReference<Map<String, String>>() {
+                    PromptEnvelope.of(AiPurpose.AUTO_MAP, prompt),
+                    new ParameterizedTypeReference<Map<String, String>>() {
                     });
         } catch (Exception e) {
             log.warn("LLM auto-mapping skipped ({}); leaving {} column(s) unmapped",

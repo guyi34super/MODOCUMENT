@@ -47,14 +47,25 @@ services:
       MODOCUMENT_CORS_ALLOWED_ORIGINS: ${MODOCUMENT_CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       # Docling is opt-in only. Empty = local readers + LLM for all supported formats.
       DOCLING_BASEURL: ${DOCLING_BASEURL:-}
-      # Passed through from the host environment; empty keeps the app booting
-      # with the LLM endpoints disabled. The default model id must exist on
-      # the configured endpoint and be vision-capable (it also does OCR).
-      AIFILES_OPENAI_APIKEY: ${AIFILES_OPENAI_APIKEY:-}
-      AIFILES_OPENAI_BASEURL: ${AIFILES_OPENAI_BASEURL:-https://openrouter.ai/api}
-      AIFILES_OPENAI_MODELID: ${AIFILES_OPENAI_MODELID:-moonshotai/kimi-k3}
-      OCR_VISION_MODEL: ${OCR_VISION_MODEL:-moonshotai/kimi-k3}
-      OCR_VISION_ENABLED: ${OCR_VISION_ENABLED:-true}
+      # LOCAL AI BY DEFAULT (gate C8): the defaults point at the compose
+      # `ollama` service (start it with `docker compose --profile ai-local up`,
+      # then pull the models once: `docker compose exec ollama ollama pull
+      # qwen2.5` — plus mistral and deepseek-r1:8b for extraction/chat-edit).
+      # An EXTERNAL endpoint is an explicit opt-in: export MODOCUMENT_AI_BASE_URL,
+      # MODOCUMENT_AI_API_KEY and MODOCUMENT_AI_MODEL (passed through below) —
+      # no document content leaves the machine unless you do.
+      AIFILES_OPENAI_APIKEY: ${AIFILES_OPENAI_APIKEY:-ollama}
+      AIFILES_OPENAI_BASEURL: ${AIFILES_OPENAI_BASEURL:-http://ollama:11434}
+      AIFILES_OPENAI_MODELID: ${AIFILES_OPENAI_MODELID:-qwen2.5}
+      # Null-valued = passed through from the host only when actually set
+      # there (an empty value would otherwise override the local defaults).
+      MODOCUMENT_AI_API_KEY:
+      MODOCUMENT_AI_BASE_URL:
+      MODOCUMENT_AI_MODEL:
+      # Vision OCR sends page IMAGES (which cannot be pseudonymised) to the
+      # model — off by default, explicit opt-in (gate C8).
+      OCR_VISION_MODEL: ${OCR_VISION_MODEL:-qwen2.5vl}
+      OCR_VISION_ENABLED: ${OCR_VISION_ENABLED:-false}
       MAPPING_LLM_SCOPE: ${MAPPING_LLM_SCOPE:-unresolved}
       MAPPING_LLM_SAMPLE_SIZE: ${MAPPING_LLM_SAMPLE_SIZE:-5}
       PARSING_LLM_SINGLE_PASS_MAX_ROWS: ${PARSING_LLM_SINGLE_PASS_MAX_ROWS:-150}
@@ -110,6 +121,25 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Local LLM runtime (gate C8): the app's AI defaults point here, so prompts
+  # never leave the compose network. Opt in with
+  # `docker compose --profile ai-local up`, then pull the default models once:
+  #   docker compose exec ollama ollama pull qwen2.5     # chat/extraction default
+  #   docker compose exec ollama ollama pull mistral     # extraction agents
+  #   docker compose exec ollama ollama pull deepseek-r1:8b  # chat table edits
+  # Without this profile (and without an explicit external endpoint) the app
+  # still boots and works — only the LLM-dependent features degrade to their
+  # non-AI paths.
+  ollama:
+    profiles: ["ai-local"]
+    image: ollama/ollama:0.12.3
+    ports:
+      # Loopback only: lets `mvn spring-boot:run` outside Docker reach the
+      # same local models at the app's default http://localhost:11434.
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - modocument-ollama:/root/.ollama
 
   # Optional rich document conversion (pdf/doc/docx/pptx/images) with OCR.
   # Not needed for the standard flow — the app's built-in readers plus AI
@@ -183,6 +213,7 @@ services:
 
 volumes:
   modocument-files:
+  modocument-ollama:
   modocument-postgres:
   modocument-mongo:
   modocument-kafka:

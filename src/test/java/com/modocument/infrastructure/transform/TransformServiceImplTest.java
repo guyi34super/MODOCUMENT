@@ -3,6 +3,8 @@ package com.modocument.infrastructure.transform;
 import com.modocument.application.dto.TransformRequest;
 import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.DocumentParser;
+import com.modocument.application.privacy.PiiTokenizer;
+import com.modocument.application.privacy.PrivacyProperties;
 import com.modocument.infrastructure.file.StorageProperties;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.prompt.PromptFactory;
@@ -45,7 +47,8 @@ class TransformServiceImplTest {
         AiFilesService ai = mock(AiFilesService.class);
         DocumentParser parser = mock(DocumentParser.class);
         TransformServiceImpl service = new TransformServiceImpl(prompts, ai, parser,
-                new UploadStorage(new StorageProperties(tempDir.toString())));
+                new UploadStorage(new StorageProperties(tempDir.toString())),
+                new PiiTokenizer(new PrivacyProperties()));
 
         for (String name : new String[] {"../secrets.yml", "a/../../secrets.yml",
                 tempDir.resolve("secrets.yml").toAbsolutePath().toString()}) {
@@ -63,7 +66,8 @@ class TransformServiceImplTest {
     void missingUploadIsNotFoundNotAnError() {
         TransformServiceImpl service = new TransformServiceImpl(
                 mock(PromptFactory.class), mock(AiFilesService.class), mock(DocumentParser.class),
-                new UploadStorage(new StorageProperties(tempDir.toString())));
+                new UploadStorage(new StorageProperties(tempDir.toString())),
+                new PiiTokenizer(new PrivacyProperties()));
 
         assertThatThrownBy(() -> service.transform(request("nope.csv"), "[]"))
                 .isInstanceOf(NoSuchElementException.class);

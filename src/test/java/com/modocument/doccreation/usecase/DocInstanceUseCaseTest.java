@@ -92,7 +92,9 @@ class DocInstanceUseCaseTest {
         // engine; the AI path has its own suite (AiDocumentComposerTest).
         AiDocumentComposer disabledComposer = new AiDocumentComposer(
                 org.mockito.Mockito.mock(AiFilesService.class),
-                new LlmRateLimiter(1000, 3_600_000, 100), () -> USER, assembler, false, "");
+                new LlmRateLimiter(1000, 3_600_000, 100), () -> USER, assembler,
+                new com.modocument.application.privacy.PiiTokenizer(
+                        new com.modocument.application.privacy.PrivacyProperties()), false, "");
         // Real masking stack (REPORT masks PII shapes; these fixtures carry
         // none, so the assembled text is byte-identical to the user's).
         com.modocument.application.privacy.PiiMaskingService masking =

@@ -2,6 +2,10 @@ package com.modocument.infrastructure.ai;
 
 import com.modocument.application.dto.ChatEditPatchResponse;
 import com.modocument.application.dto.TableData;
+import com.modocument.application.port.AiPurpose;
+import com.modocument.application.port.AuditRecorder;
+import com.modocument.application.port.PromptEnvelope;
+import com.modocument.application.port.TenantContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -19,14 +23,23 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-class AiFilesServiceImplTest {
+/**
+ * Plumbing behavior of the AI gateway (structured output parsing, the
+ * not-configured refusal). The C8/C9/C10 security gates have their own
+ * dedicated tests: {@code AiGatewayC9Test}, {@code AiGatewayC8LoggingTest}
+ * and {@code AiOutputScannerTest}.
+ */
+class AiGatewayTest {
+
+    private static final int BANK = 1;
 
     private final ChatModel chatModel = mock(ChatModel.class);
 
-    private AiFilesServiceImpl serviceWithKey(String apiKey) {
+    private AiGateway serviceWithKey(String apiKey) {
         AiFilesProperties properties = new AiFilesProperties();
         properties.setApiKey(apiKey);
-        return new AiFilesServiceImpl(properties, ChatClient.create(chatModel));
+        return new AiGateway(properties, ChatClient.create(chatModel),
+                new AiOutputScanner(), mock(AuditRecorder.class));
     }
 
     private void modelReturns(String text) {
@@ -34,20 +47,33 @@ class AiFilesServiceImplTest {
                 new ChatResponse(List.of(new Generation(new AssistantMessage(text)))));
     }
 
+    private static <T> T inTenant(java.util.concurrent.Callable<T> action) {
+        try {
+            return TenantContext.runAs(BANK, action);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     @Test
     void sendPromptReturnsModelText() {
         modelReturns("hello");
 
-        assertThat(serviceWithKey("real-key").sendPrompt("hi")).isEqualTo("hello");
+        assertThat(inTenant(() -> serviceWithKey("real-key")
+                .sendPrompt(PromptEnvelope.of(AiPurpose.DIAGNOSTIC, "hi"))))
+                .isEqualTo("hello");
     }
 
     @Test
     void sendForObjectParsesStructuredOutput() {
         modelReturns("{\"columns\":[\"A\"],\"rows\":[{\"A\":\"1\"}]}");
 
-        TableData table = serviceWithKey("real-key").sendForObject(
-                "tabularize", new ParameterizedTypeReference<TableData>() {
-                });
+        TableData table = inTenant(() -> serviceWithKey("real-key").sendForObject(
+                PromptEnvelope.of(AiPurpose.TABLE_EXTRACTION, "tabularize"),
+                new ParameterizedTypeReference<TableData>() {
+                }));
 
         assertThat(table.getColumns()).containsExactly("A");
         assertThat(table.getRows()).hasSize(1);
@@ -59,9 +85,10 @@ class AiFilesServiceImplTest {
         // strict parsing used to 500. The lenient path coerces it to "0.5".
         modelReturns("{\"rows\":[{\"row\":7,\"values\":{\"Salary Net\":.5}}]}");
 
-        ChatEditPatchResponse patch = serviceWithKey("real-key").sendForObject(
-                "fix", new ParameterizedTypeReference<ChatEditPatchResponse>() {
-                });
+        ChatEditPatchResponse patch = inTenant(() -> serviceWithKey("real-key").sendForObject(
+                PromptEnvelope.of(AiPurpose.CHAT_EDIT, "fix"),
+                new ParameterizedTypeReference<ChatEditPatchResponse>() {
+                }));
 
         assertThat(patch.rows()).hasSize(1);
         assertThat(patch.rows().get(0).row()).isEqualTo(7);
@@ -70,7 +97,8 @@ class AiFilesServiceImplTest {
 
     @Test
     void rejectsBlankPrompt() {
-        assertThatThrownBy(() -> serviceWithKey("real-key").sendPrompt("  "))
+        assertThatThrownBy(() -> inTenant(() -> serviceWithKey("real-key")
+                .sendPrompt(PromptEnvelope.of(AiPurpose.DIAGNOSTIC, "  "))))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -78,10 +106,12 @@ class AiFilesServiceImplTest {
     void rejectsMissingOrSentinelApiKey() {
         // The message is read by end users, so it names the environment
         // variable an operator sets — not the internal property key.
-        assertThatThrownBy(() -> serviceWithKey("").sendPrompt("hi"))
+        assertThatThrownBy(() -> inTenant(() -> serviceWithKey("")
+                .sendPrompt(PromptEnvelope.of(AiPurpose.DIAGNOSTIC, "hi"))))
                 .isInstanceOf(AiNotConfiguredException.class)
                 .hasMessageContaining("AIFILES_OPENAI_APIKEY");
-        assertThatThrownBy(() -> serviceWithKey(AiFilesServiceImpl.UNSET_API_KEY).sendPrompt("hi"))
+        assertThatThrownBy(() -> inTenant(() -> serviceWithKey(AiGateway.UNSET_API_KEY)
+                .sendPrompt(PromptEnvelope.of(AiPurpose.DIAGNOSTIC, "hi"))))
                 .isInstanceOf(AiNotConfiguredException.class);
     }
 }

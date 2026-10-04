@@ -2,6 +2,7 @@ package com.modocument.application.usecase;
 
 import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.application.privacy.PrivacyProperties;
 import com.modocument.infrastructure.prompt.DataCleaningPrompt;
@@ -34,19 +35,18 @@ class CleanRecordsUseCaseTest {
     @Test
     void masksSensitiveCellsInPromptAndDetokenizesResponse() {
         extractionLlm.setModelId("mistral:latest");
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
+        when(ai.sendForObject(any(PromptEnvelope.class), any(ParameterizedTypeReference.class)))
                 .thenReturn(new TableData(COLUMNS,
                         List.of(Map.of("Email", "[EMAIL_1]", "Amount", "1250.00"))));
 
         List<Map<String, String>> cleaned = useCase.clean(COLUMNS, ROWS, null);
 
-        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class),
-                org.mockito.ArgumentMatchers.eq("mistral:latest"));
-        assertThat(prompt.getValue()).contains("[EMAIL_1]");
-        assertThat(prompt.getValue()).doesNotContain("ada@acme.com");
+        ArgumentCaptor<PromptEnvelope> prompt = ArgumentCaptor.forClass(PromptEnvelope.class);
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        assertThat(prompt.getValue().text()).contains("[EMAIL_1]");
+        assertThat(prompt.getValue().text()).doesNotContain("ada@acme.com");
         // Non-sensitive cells travel raw so the model can actually clean them.
-        assertThat(prompt.getValue()).contains("1,250.00");
+        assertThat(prompt.getValue().text()).contains("1,250.00");
 
         assertThat(cleaned).containsExactly(Map.of("Email", "ada@acme.com", "Amount", "1250.00"));
     }
@@ -54,11 +54,11 @@ class CleanRecordsUseCaseTest {
     @Test
     void keepsOriginalRowsOnMismatchedBatchOrFailure() {
         extractionLlm.setModelId("mistral:latest");
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
+        when(ai.sendForObject(any(PromptEnvelope.class), any(ParameterizedTypeReference.class)))
                 .thenReturn(new TableData(COLUMNS, List.of()));
         assertThat(useCase.clean(COLUMNS, ROWS, null)).isEqualTo(ROWS);
 
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
+        when(ai.sendForObject(any(PromptEnvelope.class), any(ParameterizedTypeReference.class)))
                 .thenThrow(new IllegalStateException("no key"));
         assertThat(useCase.clean(COLUMNS, ROWS, null)).isEqualTo(ROWS);
     }

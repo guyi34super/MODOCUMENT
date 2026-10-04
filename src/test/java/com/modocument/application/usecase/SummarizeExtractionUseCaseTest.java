@@ -1,6 +1,7 @@
 package com.modocument.application.usecase;
 
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.ExtractionAuditLog;
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ExtractionTaskQueue;
@@ -45,15 +46,15 @@ class SummarizeExtractionUseCaseTest {
         ProcessedRecord record = mock(ProcessedRecord.class);
         when(record.getFields()).thenReturn(Map.of("Email", "ada@acme.com"));
         when(records.findBatch(anyString(), any(), anyInt())).thenReturn(List.of(record));
-        when(ai.sendPrompt(anyString(), anyString()))
+        when(ai.sendPrompt(any(PromptEnvelope.class)))
                 .thenReturn("Most records look like [EMAIL_1] with clean data.");
 
         String summary = useCase.summarize("j1");
 
-        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendPrompt(prompt.capture(), org.mockito.ArgumentMatchers.eq("mistral:latest"));
-        assertThat(prompt.getValue()).contains("[EMAIL_1]");
-        assertThat(prompt.getValue()).doesNotContain("ada@acme.com");
+        ArgumentCaptor<PromptEnvelope> prompt = ArgumentCaptor.forClass(PromptEnvelope.class);
+        verify(ai).sendPrompt(prompt.capture());
+        assertThat(prompt.getValue().text()).contains("[EMAIL_1]");
+        assertThat(prompt.getValue().text()).doesNotContain("ada@acme.com");
 
         assertThat(summary).isEqualTo("Most records look like ada@acme.com with clean data.");
     }

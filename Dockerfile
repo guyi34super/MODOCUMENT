@@ -39,7 +39,8 @@ RUN chmod +x /docker-entrypoint.sh
 #   SPRING_DATASOURCE_USERNAME=... / SPRING_DATASOURCE_PASSWORD=...
 #   MODOCUMENT_CORS_ALLOWED_ORIGINS=https://your-frontend.example
 #   SPRING_PROFILES_ACTIVE=local        (dev conveniences; still needs PostgreSQL)
-#   AIFILES_OPENAI_APIKEY=...           (enables the LLM endpoints)
+#   MODOCUMENT_AI_BASE_URL=... / _API_KEY / _MODEL  (EXTERNAL AI endpoint opt-in;
+#                                       the default is a local Ollama at localhost:11434)
 #   DOCLING_BASEURL=http://docling:5001 (rich pdf/doc/image OCR conversion)
 EXPOSE 8080
 

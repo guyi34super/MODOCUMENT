@@ -62,15 +62,18 @@ spring:
       max-request-size: 200MB
   ai:
     openai:
-      # Bridged from the legacy aifiles.openai.* keys so AIFILES_OPENAI_* env
-      # vars keep working. The "unset" sentinel lets the auto-configuration
-      # boot without a key; AiFilesServiceImpl rejects LLM calls until a real
-      # key is provided.
+      # Bridged from the aifiles.openai.* keys below so the AIFILES_OPENAI_*
+      # and MODOCUMENT_AI_* env vars keep working. LOCAL-FIRST (gate C8): the
+      # defaults point at a local Ollama endpoint — no document content leaves
+      # the machine unless an operator explicitly opts into an external
+      # endpoint via MODOCUMENT_AI_BASE_URL/_API_KEY/_MODEL. The "unset"
+      # sentinel lets the auto-configuration boot keyless; the AI gateway
+      # rejects LLM calls while it is in place.
       api-key: ${aifiles.openai.api-key:unset}
-      base-url: ${aifiles.openai.base-url:https://api.openai.com}
+      base-url: ${aifiles.openai.base-url:http://localhost:11434}
       chat:
         options:
-          model: ${aifiles.openai.model-id:moonshotai/kimi-k3}
+          model: ${aifiles.openai.model-id:qwen2.5}
           max-tokens: ${aifiles.openai.max-tokens:8192}
 
 modocument:
@@ -249,10 +252,19 @@ management:
 
 aifiles:
   openai:
-    # Set via AIFILES_OPENAI_APIKEY env var or an application-local.yml
-    # (gitignored). Intentionally not defaulted here so the spring.ai bridge
-    # above falls back to its "unset" sentinel when no key is configured.
-    model-id: moonshotai/kimi-k3
+    # LOCAL AI BY DEFAULT (gate C8): a local Ollama endpoint needs no real
+    # key, so 'ollama' here means "the local default is usable as-is". An
+    # EXTERNAL endpoint is an explicit opt-in: set MODOCUMENT_AI_BASE_URL +
+    # MODOCUMENT_AI_API_KEY + MODOCUMENT_AI_MODEL (the legacy AIFILES_OPENAI_*
+    # names keep working), or put the values in an application-local.yml
+    # (gitignored). Setting the key to an empty string disables the LLM
+    # endpoints entirely (the spring.ai bridge falls back to its "unset"
+    # sentinel and the AI gateway refuses calls).
+    api-key: ${MODOCUMENT_AI_API_KEY:${AIFILES_OPENAI_APIKEY:ollama}}
+    base-url: ${MODOCUMENT_AI_BASE_URL:${AIFILES_OPENAI_BASEURL:http://localhost:11434}}
+    # Default chat model (qwen2.5 on Ollama); extraction agents default to
+    # mistral and chat edits to deepseek-r1:8b (modocument.* keys below).
+    model-id: ${MODOCUMENT_AI_MODEL:${AIFILES_OPENAI_MODELID:qwen2.5}}
   privacy:
     # PII tokenization for the LLM chat/analysis features (chat table edits,
     # schema inference, extraction summaries, LLM record cleaning, template
@@ -295,11 +307,13 @@ docling:
 
 ocr:
   vision:
-    # LLM vision OCR for standalone images and scanned PDF pages, tried before
-    # the Tesseract fallback. Active only when an OpenAI key is configured
-    # (see aifiles.openai above); without one it disables itself silently.
-    enabled: ${OCR_VISION_ENABLED:true}
-    model: ${OCR_VISION_MODEL:moonshotai/kimi-k3}
+    # LLM vision OCR for standalone images and scanned PDF pages. OFF BY
+    # DEFAULT (gate C8): page images cannot be pseudonymised the way text
+    # prompts are, so sending them to a vision model is an explicit opt-in
+    # (OCR_VISION_ENABLED=true plus a vision-capable model/endpoint). The
+    # local Tesseract OCR tier remains the default for scanned content.
+    enabled: ${OCR_VISION_ENABLED:false}
+    model: ${OCR_VISION_MODEL:qwen2.5vl}
     # Vision-OCR page budget per PDF; pages beyond it fall back to Tesseract.
     max-pages: ${OCR_VISION_MAXPAGES:20}
     # Rasterization DPI for scanned pages and the longest image edge uploaded;
