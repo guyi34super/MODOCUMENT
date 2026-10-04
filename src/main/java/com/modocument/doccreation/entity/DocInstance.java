@@ -17,6 +17,10 @@ public class DocInstance {
 
     public static final String STATUS_DRAFT = "DRAFT";
     public static final String STATUS_GENERATED = "GENERATED";
+    /** ws11: the owner sent the generated document for release review. */
+    public static final String STATUS_SUBMITTED = "SUBMITTED";
+    /** ws11: a different user holding doc:release approved it (B8). */
+    public static final String STATUS_RELEASED = "RELEASED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,9 +41,44 @@ public class DocInstance {
     @Column(name = "Title")
     private String title;
 
-    /** DRAFT | GENERATED. */
+    /**
+     * DRAFT | GENERATED | SUBMITTED | RELEASED (V90, ws11). A rejection is
+     * not a status: it transitions SUBMITTED back to GENERATED; the decision
+     * is recorded in {@link #reviewComment} and the audit trail.
+     */
     @Column(name = "Status")
     private String status = STATUS_DRAFT;
+
+    /** Who submitted for release (ws11); null until first submitted. */
+    @Column(name = "SubmittedByUserId")
+    private Integer submittedByUserId;
+
+    @Column(name = "SubmittedAt")
+    private LocalDateTime submittedAt;
+
+    /**
+     * The human who released it (ws11, B8) — enforced different from both
+     * {@link #ownerUserId} and {@link #submittedByUserId}; the nightly
+     * SodScanJob re-verifies that invariant over the data.
+     */
+    @Column(name = "ReleasedByUserId")
+    private Integer releasedByUserId;
+
+    @Column(name = "ReleasedAt")
+    private LocalDateTime releasedAt;
+
+    /** The approver's release/reject note (C10: the recorded human review). */
+    @Column(name = "ReviewComment", length = 500)
+    private String reviewComment;
+
+    /**
+     * True when the last generation's content was composed by the AI path
+     * (AiDocumentComposer), false when the deterministic engine carried it.
+     * Shown to the approver (C10): releasing an AI-composed document is the
+     * human check of the model's text and figures.
+     */
+    @Column(name = "AiComposed", nullable = false)
+    private boolean aiComposed;
 
     /** Stored export file names of the last generation, if any. */
     @Column(name = "LastGeneratedDocx")
@@ -165,5 +204,55 @@ public class DocInstance {
 
     public void setContentPurgedAt(LocalDateTime contentPurgedAt) {
         this.contentPurgedAt = contentPurgedAt;
+    }
+
+    @JsonIgnore
+    public Integer getSubmittedByUserId() {
+        return submittedByUserId;
+    }
+
+    public void setSubmittedByUserId(Integer submittedByUserId) {
+        this.submittedByUserId = submittedByUserId;
+    }
+
+    public LocalDateTime getSubmittedAt() {
+        return submittedAt;
+    }
+
+    public void setSubmittedAt(LocalDateTime submittedAt) {
+        this.submittedAt = submittedAt;
+    }
+
+    @JsonIgnore
+    public Integer getReleasedByUserId() {
+        return releasedByUserId;
+    }
+
+    public void setReleasedByUserId(Integer releasedByUserId) {
+        this.releasedByUserId = releasedByUserId;
+    }
+
+    public LocalDateTime getReleasedAt() {
+        return releasedAt;
+    }
+
+    public void setReleasedAt(LocalDateTime releasedAt) {
+        this.releasedAt = releasedAt;
+    }
+
+    public String getReviewComment() {
+        return reviewComment;
+    }
+
+    public void setReviewComment(String reviewComment) {
+        this.reviewComment = reviewComment;
+    }
+
+    public boolean isAiComposed() {
+        return aiComposed;
+    }
+
+    public void setAiComposed(boolean aiComposed) {
+        this.aiComposed = aiComposed;
     }
 }

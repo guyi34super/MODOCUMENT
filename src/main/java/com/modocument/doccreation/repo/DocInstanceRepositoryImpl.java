@@ -21,6 +21,21 @@ public class DocInstanceRepositoryImpl implements DocInstanceRepository {
     }
 
     @Override
+    public Optional<DocInstance> getByIdAndBank(int id, int bankId) {
+        return jpa.findByDocInstanceIdAndBankId(id, bankId);
+    }
+
+    @Override
+    public List<DocInstance> listByBankAndStatus(int bankId, String status) {
+        return jpa.findByBankIdAndStatusOrderByDocInstanceIdDesc(bankId, status);
+    }
+
+    @Override
+    public List<DocInstance> listReleasedSodViolations(int bankId) {
+        return jpa.findReleasedSodViolations(bankId);
+    }
+
+    @Override
     public List<DocInstance> listByOwner(int ownerUserId) {
         return jpa.findByOwnerUserIdOrderByDocInstanceIdDesc(ownerUserId);
     }

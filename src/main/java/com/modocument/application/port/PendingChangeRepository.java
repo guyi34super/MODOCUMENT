@@ -22,4 +22,12 @@ public interface PendingChangeRepository {
 
     /** One bank's changes in one status, newest first. */
     List<PendingChange> listByBankAndStatus(int bankId, PendingChangeStatus status);
+
+    /**
+     * APPLIED rows violating the B7/SoD invariant — approved by their own
+     * maker. The nightly SodScanJob (ws11, SEC-024 layer 3) expects this to
+     * be empty for every bank; the runtime gate in PendingChangeUseCase
+     * makes it so.
+     */
+    List<PendingChange> listAppliedSodViolations(int bankId);
 }

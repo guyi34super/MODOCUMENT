@@ -19,6 +19,7 @@ import ExtractionJobDetailPage from './pages/ExtractionJobDetailPage';
 import ProfilePage from './pages/ProfilePage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import PendingChangesPage from './pages/PendingChangesPage';
+import PendingReleasesPage from './pages/PendingReleasesPage';
 import AdminRetentionPage from './pages/AdminRetentionPage';
 import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
 
@@ -64,6 +65,8 @@ export default function App() {
         <Route path="/admin/users" element={<AdminUsersPage />} />
         {/* ws10 approval queue for ADMIN + APPROVER (server: change:approve). */}
         <Route path="/admin/changes" element={<PendingChangesPage />} />
+        {/* ws11 release queue for ADMIN + APPROVER (server: doc:release). */}
+        <Route path="/approvals/releases" element={<PendingReleasesPage />} />
         <Route path="/admin/retention" element={<AdminRetentionPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

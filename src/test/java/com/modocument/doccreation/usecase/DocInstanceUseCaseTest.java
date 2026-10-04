@@ -80,7 +80,11 @@ class DocInstanceUseCaseTest {
     void setUp() throws IOException {
         storage = new StorageProperties(tempDir.toString());
         UploadStorage uploadStorage = new UploadStorage(storage);
-        DocCreationOwnership ownership = new DocCreationOwnership(blueprints, instances, FixedUser.provider(USER));
+        // No doc:release in these tests — they cover the owner paths; the
+        // ws11 review extension is exercised in DocReleaseSodIntegrationTest.
+        DocCreationOwnership ownership = new DocCreationOwnership(blueprints, instances,
+                FixedUser.provider(USER),
+                org.mockito.Mockito.mock(com.modocument.api.security.PermissionChecker.class));
         DocumentCreationFlowRegistry flows = new DocumentCreationFlowRegistry(
                 List.of(new DefaultDocumentCreationFlow(new KeywordSectionMatcher())));
         DocumentAssembler assembler = new DocumentAssembler();
@@ -305,6 +309,11 @@ class DocInstanceUseCaseTest {
         }
 
         @Override
+        public Optional<DocBlueprint> getById(int id) {
+            return Optional.ofNullable(rows.get(id));
+        }
+
+        @Override
         public List<DocBlueprint> listByOwner(int ownerUserId) {
             return rows.values().stream().filter(b -> b.getOwnerUserId() == ownerUserId).toList();
         }
@@ -363,6 +372,29 @@ class DocInstanceUseCaseTest {
         @Override
         public Optional<DocInstance> getByIdAndOwner(int id, int ownerUserId) {
             return Optional.ofNullable(rows.get(id)).filter(i -> i.getOwnerUserId() == ownerUserId);
+        }
+
+        @Override
+        public Optional<DocInstance> getByIdAndBank(int id, int bankId) {
+            return Optional.ofNullable(rows.get(id)).filter(i -> i.getBankId() == bankId);
+        }
+
+        @Override
+        public List<DocInstance> listByBankAndStatus(int bankId, String status) {
+            return rows.values().stream()
+                    .filter(i -> i.getBankId() == bankId && status.equals(i.getStatus()))
+                    .toList();
+        }
+
+        @Override
+        public List<DocInstance> listReleasedSodViolations(int bankId) {
+            return rows.values().stream()
+                    .filter(i -> i.getBankId() == bankId
+                            && DocInstance.STATUS_RELEASED.equals(i.getStatus())
+                            && i.getReleasedByUserId() != null
+                            && (i.getReleasedByUserId() == i.getOwnerUserId()
+                                    || i.getReleasedByUserId().equals(i.getSubmittedByUserId())))
+                    .toList();
         }
 
         @Override

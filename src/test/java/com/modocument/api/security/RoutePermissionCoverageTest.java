@@ -60,11 +60,13 @@ class RoutePermissionCoverageTest {
 
     /**
      * Permissions reserved for later workstreams — in the matrix, no routes
-     * yet. USER_ADMIN left this list with ws09 (it now guards the
-     * /api/admin/users routes), CHANGE_APPROVE with ws10 (it guards the
-     * approve/reject decisions on /api/admin/changes).
+     * yet. Empty since ws11: USER_ADMIN left this list with ws09 (it now
+     * guards the /api/admin/users routes), CHANGE_APPROVE with ws10 (the
+     * approve/reject decisions on /api/admin/changes) and DOC_RELEASE with
+     * ws11 (the release/reject/queue/review routes on
+     * /api/doccreation/instances).
      */
-    private static final Set<Permission> RESERVED = EnumSet.of(Permission.DOC_RELEASE);
+    private static final Set<Permission> RESERVED = EnumSet.noneOf(Permission.class);
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")
@@ -127,10 +129,12 @@ class RoutePermissionCoverageTest {
                         + "an unused permission is dead vocabulary", RESERVED)
                 .containsExactlyInAnyOrderElementsOf(expected);
 
-        assertThat(used)
-                .as("Reserved permissions (%s) must not guard routes yet — their workstreams "
-                        + "have not landed", RESERVED)
-                .doesNotContainAnyElementsOf(RESERVED);
+        if (!RESERVED.isEmpty()) { // AssertJ refuses an empty iterable here
+            assertThat(used)
+                    .as("Reserved permissions (%s) must not guard routes yet — their "
+                            + "workstreams have not landed", RESERVED)
+                    .doesNotContainAnyElementsOf(RESERVED);
+        }
     }
 
     private static boolean isPublic(RequestMappingInfo info) {

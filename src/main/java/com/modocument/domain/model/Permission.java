@@ -5,11 +5,11 @@ package com.modocument.domain.model;
  * mapped onto via {@code @RequiresPermission}. Roles grant sets of these (see
  * {@code RolePermissions}); the enum is only the vocabulary.
  *
- * <p>One constant is reserved for a workstream that has no routes yet:
- * {@link #DOC_RELEASE} (ws11 document release). It is in the role matrix
- * now so the role semantics are fixed before the routes exist.
- * {@link #USER_ADMIN} left the reserved list with ws09 (user management),
- * {@link #CHANGE_APPROVE} with ws10 (maker/checker approval workflow).
+ * <p>No constant is reserved any more: {@link #USER_ADMIN} left the
+ * reserved list with ws09 (user management), {@link #CHANGE_APPROVE} with
+ * ws10 (maker/checker approval workflow) and {@link #DOC_RELEASE} with
+ * ws11 (document release — it now guards the release/reject/queue/review
+ * routes on /api/doccreation/instances).
  */
 public enum Permission {
 
@@ -71,7 +71,7 @@ public enum Permission {
     USER_ADMIN("user:admin"),
     /** Approve/reject pending maker/checker changes (ws10: /api/admin/changes decisions). */
     CHANGE_APPROVE("change:approve"),
-    /** Reserved for ws11 document release. */
+    /** Release/reject submitted documents and review the queue (ws11, gate B8). */
     DOC_RELEASE("doc:release");
 
     private final String code;

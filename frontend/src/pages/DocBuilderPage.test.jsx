@@ -10,6 +10,7 @@ import {
   assignAsset,
   generateInstance,
   getInstance,
+  submitInstance,
   uploadAssets,
 } from '../api/doccreation';
 
@@ -23,6 +24,7 @@ vi.mock('../api/doccreation', () => ({
   generateInstance: vi.fn(),
   getInstance: vi.fn(),
   reorderBlocks: vi.fn(),
+  submitInstance: vi.fn(),
   updateBlock: vi.fn(),
   uploadAssets: vi.fn(),
 }));
@@ -150,5 +152,59 @@ describe('DocBuilderPage', () => {
 
     expect(generateInstance).toHaveBeenCalledWith('5');
     expect(await screen.findByText('Document generated (.docx only)')).toBeInTheDocument();
+  });
+
+  // ------------------------------------------------- ws11 release workflow
+
+  it('submits a GENERATED document for release', async () => {
+    getInstance.mockResolvedValue({ ...baseDoc, status: 'GENERATED' });
+    submitInstance.mockResolvedValue({ instanceId: 5, status: 'SUBMITTED' });
+    renderPage();
+    await screen.findByRole('heading', { name: 'Roof' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Submit for release' }));
+
+    expect(submitInstance).toHaveBeenCalledWith('5');
+    expect(
+      await screen.findByText('Submitted — an approver (not you) can now release it')
+    ).toBeInTheDocument();
+  });
+
+  it('offers no submit button while the document is a DRAFT', async () => {
+    renderPage(); // baseDoc is DRAFT
+    await screen.findByRole('heading', { name: 'Roof' });
+
+    expect(screen.queryByRole('button', { name: 'Submit for release' })).not.toBeInTheDocument();
+    expect(screen.getByText('DRAFT')).toBeInTheDocument();
+  });
+
+  it('shows the status chip and the AI-composed badge while awaiting release', async () => {
+    getInstance.mockResolvedValue({
+      ...baseDoc,
+      status: 'SUBMITTED',
+      aiComposed: true,
+      submittedAt: '2026-10-01T09:00:00',
+    });
+    renderPage();
+    await screen.findByRole('heading', { name: 'Roof' });
+
+    expect(screen.getByText('SUBMITTED')).toBeInTheDocument();
+    expect(screen.getByText('AI-composed')).toBeInTheDocument();
+    expect(screen.getByText(/awaiting release by an approver/)).toBeInTheDocument();
+    // Submitted documents are in the approver's hands — no resubmit button.
+    expect(screen.queryByRole('button', { name: 'Submit for release' })).not.toBeInTheDocument();
+  });
+
+  it('shows the reviewer comment when a submission came back for rework', async () => {
+    getInstance.mockResolvedValue({
+      ...baseDoc,
+      status: 'GENERATED',
+      reviewComment: 'section 2 needs the Q3 figures',
+    });
+    renderPage();
+    await screen.findByRole('heading', { name: 'Roof' });
+
+    expect(screen.getByText('Returned for rework')).toBeInTheDocument();
+    expect(screen.getByText('section 2 needs the Q3 figures')).toBeInTheDocument();
   });
 });

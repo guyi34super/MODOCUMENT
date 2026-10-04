@@ -60,6 +60,12 @@ import java.util.concurrent.Callable;
  *       {@code runAs(bank)} per bank so each bank's purge and its
  *       RETENTION_PURGE_COMPLETED audit event run strictly inside that
  *       tenant.</li>
+ *   <li>{@code SodScanJob#runOnce} — the ws11 nightly separation-of-duties
+ *       scan (and its manual admin trigger): the same shape as the
+ *       retention sweep — {@code runAsSystem} for the cross-tenant bank
+ *       listing, then {@code runAs(bank)} per bank so each bank's
+ *       invariant checks and SOD_SCAN_COMPLETED / SOD_VIOLATION_FOUND
+ *       audit events run strictly inside that tenant.</li>
  * </ul>
  */
 public final class TenantContext {

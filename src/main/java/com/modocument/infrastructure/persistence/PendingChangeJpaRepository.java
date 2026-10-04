@@ -12,4 +12,16 @@ public interface PendingChangeJpaRepository extends JpaRepository<PendingChange,
 
     List<PendingChange> findByBankIdAndStatusOrderByRequestedAtDescPendingChangeIdDesc(
             int bankId, PendingChangeStatus status);
+
+    /**
+     * ws11 nightly SoD scan: APPLIED changes approved by their own maker —
+     * the B7 invariant says there are none.
+     */
+    @org.springframework.data.jpa.repository.Query("""
+            SELECT c FROM PendingChange c
+            WHERE c.bankId = :bankId AND c.status = com.modocument.domain.model.PendingChangeStatus.APPLIED
+              AND c.checkerUserId = c.makerUserId
+            ORDER BY c.pendingChangeId""")
+    List<PendingChange> findAppliedSodViolations(
+            @org.springframework.data.repository.query.Param("bankId") int bankId);
 }

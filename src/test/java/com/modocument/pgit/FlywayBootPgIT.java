@@ -62,7 +62,7 @@ class FlywayBootPgIT extends PgSpringItSupport {
         }
         assertThat(versions)
                 .as("baseline, role grants (V12), RLS (V13) and the workstream table "
-                        + "migrations (V20, V70, V80) must all have applied")
-                .contains("1", "10", "11", "12", "13", "15", "20", "70", "80");
+                        + "migrations (V20, V70, V80, V90, V120) must all have applied")
+                .contains("1", "10", "11", "12", "13", "15", "20", "70", "80", "90", "120");
     }
 }

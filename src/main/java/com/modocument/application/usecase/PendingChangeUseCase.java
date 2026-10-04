@@ -10,6 +10,7 @@ import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.PendingChangeRepository;
+import com.modocument.application.security.SodPolicy;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.PendingChange;
 import com.modocument.domain.model.AuditOutcome;
@@ -59,6 +60,7 @@ public class PendingChangeUseCase {
     private final PendingChangeRepository changes;
     private final AuditRecorder audit;
     private final PermissionChecker perm;
+    private final SodPolicy sodPolicy;
     private final ObjectMapper objectMapper;
     private final Map<ChangeType, PendingChangeApplier> appliers;
 
@@ -71,7 +73,8 @@ public class PendingChangeUseCase {
 
     public PendingChangeUseCase(CurrentUserProvider currentUser, AppUserRepository users,
                                 PendingChangeRepository changes, AuditRecorder audit,
-                                PermissionChecker perm, ObjectMapper objectMapper,
+                                PermissionChecker perm, SodPolicy sodPolicy,
+                                ObjectMapper objectMapper,
                                 List<PendingChangeApplier> applierBeans,
                                 PlatformTransactionManager transactionManager) {
         this.currentUser = currentUser;
@@ -79,6 +82,7 @@ public class PendingChangeUseCase {
         this.changes = changes;
         this.audit = audit;
         this.perm = perm;
+        this.sodPolicy = sodPolicy;
         this.objectMapper = objectMapper;
         EnumMap<ChangeType, PendingChangeApplier> byType = new EnumMap<>(ChangeType.class);
         for (PendingChangeApplier applier : applierBeans) {
@@ -138,15 +142,20 @@ public class PendingChangeUseCase {
         PendingChange change = requireOwnBankChange(pendingChangeId);
         requireRequested(change);
         int checkerId = currentUser.requireUserId();
-        if (checkerId == change.getMakerUserId()) {
+        try {
+            // The shared SoD mechanism (SEC-024 runtime layer): the same
+            // policy the ws11 document release calls.
+            sodPolicy.verifyDistinct(checkerId, change.getMakerUserId(),
+                    SodPolicy.Operation.CHANGE_APPROVAL);
+        } catch (SodPolicy.SodViolationException blocked) {
             // DENIED writes in its own transaction (JpaAuditRecorder), so
             // this evidence row survives the 409 below.
-            audit.record(AuditEventSpec.builder("SELF_APPROVAL_BLOCKED", AuditOutcome.DENIED)
+            audit.record(AuditEventSpec.builder(blocked.operation().auditAction(),
+                            AuditOutcome.DENIED)
                     .entity("PendingChange", String.valueOf(change.getPendingChangeId()))
                     .newValues(summary(change))
                     .build());
-            throw new IllegalStateException("Self-approval is blocked: the user who requested "
-                    + "a change cannot approve it — a different user must.");
+            throw blocked;
         }
         // Defense in depth: PendingChange rows are bank-filtered (and
         // RLS-covered on PostgreSQL), but AppUsers is not under RLS — assert

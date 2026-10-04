@@ -171,6 +171,15 @@ modocument:
     customer-data-days: ${MODOCUMENT_RETENTION_DAYS:30}
     # Daily, off-peak; six-field Spring cron (seconds first).
     cron: ${MODOCUMENT_RETENTION_CRON:0 41 2 * * *}
+  sod:
+    # Nightly separation-of-duties scan (ws11, SEC-024 layer 3): re-verifies
+    # per bank that no APPLIED change was approved by its own maker and no
+    # RELEASED document was released by its author or submitter, writing
+    # SOD_SCAN_COMPLETED / SOD_VIOLATION_FOUND audit evidence. The flag
+    # gates only the schedule; POST /api/admin/sod/scan always runs.
+    enabled: ${MODOCUMENT_SOD_SCAN_ENABLED:true}
+    # Daily, off-peak, after the retention purge; six-field Spring cron.
+    cron: ${MODOCUMENT_SOD_SCAN_CRON:0 23 3 * * *}
   parsing:
     llm-batch-size: ${PARSING_LLM_BATCH_SIZE:50}
     llm-single-pass-max-rows: ${PARSING_LLM_SINGLE_PASS_MAX_ROWS:150}

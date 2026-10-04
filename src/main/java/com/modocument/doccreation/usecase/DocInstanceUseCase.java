@@ -167,7 +167,9 @@ public class DocInstanceUseCase {
                 .toList();
         return new InstanceBuilderDto(instance.getDocInstanceId(), instance.getTitle(),
                 blueprint.getDocBlueprintId(), blueprint.getName(), instance.getStatus(),
-                instance.getLastGeneratedDate(), pdfConverter.isAvailable(), sectionDtos, unsorted);
+                instance.getLastGeneratedDate(), pdfConverter.isAvailable(),
+                instance.isAiComposed(), instance.getSubmittedAt(), instance.getReleasedAt(),
+                instance.getReviewComment(), sectionDtos, unsorted);
     }
 
     @Transactional
@@ -471,7 +473,17 @@ public class DocInstanceUseCase {
             }
 
             LocalDateTime now = LocalDateTime.now();
-            instance.setStatus(DocInstance.STATUS_GENERATED);
+            // The release workflow states (ws11) survive a working-copy
+            // regeneration: only a DRAFT moves to GENERATED here. A SUBMITTED
+            // instance stays in the approver queue (the queue reads the live
+            // content anyway) and a RELEASED one keeps its release record.
+            if (DocInstance.STATUS_DRAFT.equals(instance.getStatus())) {
+                instance.setStatus(DocInstance.STATUS_GENERATED);
+            }
+            // C10: record whether the content the approver will review was
+            // written by the model — per generation, so the flag always
+            // describes the CURRENT exports.
+            instance.setAiComposed("AI".equals(composedBy));
             instance.setLastGeneratedDocx(docxName);
             instance.setLastGeneratedPdf(pdfName);
             instance.setLastGeneratedDate(now);

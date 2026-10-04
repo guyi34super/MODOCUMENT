@@ -36,4 +36,9 @@ public class PendingChangeRepositoryImpl implements PendingChangeRepository {
     public List<PendingChange> listByBankAndStatus(int bankId, PendingChangeStatus status) {
         return jpa.findByBankIdAndStatusOrderByRequestedAtDescPendingChangeIdDesc(bankId, status);
     }
+
+    @Override
+    public List<PendingChange> listAppliedSodViolations(int bankId) {
+        return jpa.findAppliedSodViolations(bankId);
+    }
 }

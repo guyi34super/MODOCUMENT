@@ -96,6 +96,42 @@ export function assetContentPath(assetId) {
   return `/api/doccreation/assets/${assetId}/content`;
 }
 
+// ------------------------------------------------------------ release (ws11)
+
+// Separation of duties (gate B8): the owner submits a GENERATED document;
+// only a DIFFERENT user holding doc:release can release or reject it — a
+// self-release is a hard 409 server-side regardless of role. Releasing an
+// AI-composed document is the recorded human review (C10), so the pending
+// list carries the content blocks and the aiComposed flag.
+
+/** Owner: sends the generated document for release review (→ SUBMITTED). */
+export function submitInstance(id) {
+  return api.post(`/api/doccreation/instances/${id}/submit`);
+}
+
+/** Approver (doc:release): the bank's queue, content blocks included. */
+export function listPendingReleases() {
+  return api.get('/api/doccreation/instances/pending-release');
+}
+
+/** Approver: releases — the backend hard-blocks the author/submitter (409). */
+export function releaseInstance(id, comment) {
+  return api.post(`/api/doccreation/instances/${id}/release`, { comment });
+}
+
+/** Approver: rejects — the document returns to GENERATED for rework. */
+export function rejectInstance(id, comment) {
+  return api.post(`/api/doccreation/instances/${id}/reject`, { comment });
+}
+
+/** Approver: the submitted document exactly as last generated. */
+export function downloadReviewFile(id, format, fallbackName) {
+  return downloadFile(
+    `/api/doccreation/instances/${id}/review-file?format=${format}`,
+    fallbackName || `document.${format}`
+  );
+}
+
 // ---------------------------------------------------------------- generation
 
 export function generateInstance(id) {

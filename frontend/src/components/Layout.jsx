@@ -37,6 +37,8 @@ const sections = [
     links: [
       { to: '/admin/users', label: 'Users', roles: ['ADMIN'] },
       { to: '/admin/changes', label: 'Approvals', roles: ['ADMIN', 'APPROVER'] },
+      // ws11: the document release queue sits beside the changes queue.
+      { to: '/approvals/releases', label: 'Releases', roles: ['ADMIN', 'APPROVER'] },
       // ws14: retention purge evidence + data-subject requests.
       { to: '/admin/retention', label: 'Privacy & retention', roles: ['ADMIN'] },
     ],
