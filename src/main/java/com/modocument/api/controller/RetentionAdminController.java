@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.api.security.RequiresPermission;
@@ -38,6 +39,7 @@ import java.util.Map;
  * </ul>
  */
 @RestController
+@Tag(name = "Retention Admin")
 @RequiresPermission(Permission.USER_ADMIN)
 public class RetentionAdminController {
 

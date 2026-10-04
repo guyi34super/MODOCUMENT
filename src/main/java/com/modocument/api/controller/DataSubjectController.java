@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.usecase.DataSubjectUseCase;
 import com.modocument.domain.model.Permission;
@@ -27,6 +28,7 @@ import java.util.Map;
  * sit in a URL (access logs, browser history).
  */
 @RestController
+@Tag(name = "Data Subject Rights", description = "GDPR search / export / erase (admin)")
 @RequiresPermission(Permission.USER_ADMIN)
 public class DataSubjectController {
 

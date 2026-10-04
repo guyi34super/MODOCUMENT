@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 @RestController
+@Tag(name = "Transform", description = "Document-to-table extraction")
 @RequiresPermission(Permission.AI_USE)
 public class TransformController {
 

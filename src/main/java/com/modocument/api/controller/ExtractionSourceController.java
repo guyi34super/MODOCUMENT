@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ExtractionSourceDto;
@@ -27,6 +28,7 @@ import java.util.NoSuchElementException;
  * must allow-list their domains; no source configuration ever stores secrets.
  */
 @RestController
+@Tag(name = "Extraction Sources")
 public class ExtractionSourceController {
 
     private final ExtractionSourceUseCase useCase;

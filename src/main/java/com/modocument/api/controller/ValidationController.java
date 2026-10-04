@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 @RestController
+@Tag(name = "Validation")
 public class ValidationController {
 
     private final ValidateRowsUseCase useCase;

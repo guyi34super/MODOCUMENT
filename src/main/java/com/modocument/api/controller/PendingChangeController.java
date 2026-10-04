@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ChangeDecisionRequest;
 import com.modocument.application.dto.SubmitChangeRequest;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
  * already-decided → 409, missing per-type permission → 403.
  */
 @RestController
+@Tag(name = "Change Approvals", description = "Maker-checker pending changes (admin)")
 public class PendingChangeController {
 
     private final PendingChangeUseCase pendingChanges;

@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
@@ -18,6 +19,7 @@ import java.util.List;
  * no OIDC is configured and the SPA shows the password form alone.
  */
 @RestController
+@Tag(name = "Authentication")
 public class AuthProvidersController {
 
     private final ObjectProvider<ClientRegistrationRepository> clientRegistrations;

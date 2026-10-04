@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.domain.model.Permission;
@@ -25,6 +26,7 @@ import java.util.Map;
  * audit trail (SOD_SCAN_COMPLETED / SOD_VIOLATION_FOUND).
  */
 @RestController
+@Tag(name = "SoD Admin", description = "Separation-of-duties scan (admin)")
 @RequiresPermission(Permission.USER_ADMIN)
 public class SodAdminController {
 

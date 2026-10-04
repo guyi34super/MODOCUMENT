@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
@@ -24,6 +25,7 @@ import java.util.Map;
  * swapped back in the reply.
  */
 @RestController
+@Tag(name = "AI Files", description = "Raw LLM passthrough for document analysis")
 @RequiresPermission(Permission.AI_USE)
 public class AiFilesController {
 

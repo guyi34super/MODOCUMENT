@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.validation.Valid;
@@ -37,6 +38,7 @@ import java.util.Optional;
  * switch — only template changes are configurable.
  */
 @RestController
+@Tag(name = "Templates", description = "Template CRUD (maker-checker gated)")
 public class TemplateController {
 
     private final TemplateRepository repo;

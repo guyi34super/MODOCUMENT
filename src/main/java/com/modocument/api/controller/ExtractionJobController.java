@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.BridgeRequest;
@@ -40,6 +41,7 @@ import java.util.NoSuchElementException;
  * validation, chat editing, export).
  */
 @RestController
+@Tag(name = "Extraction Jobs", description = "Web/document extraction job lifecycle")
 public class ExtractionJobController {
 
     private static final int MAX_PAGE_SIZE = 500;

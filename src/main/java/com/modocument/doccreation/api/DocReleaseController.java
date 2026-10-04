@@ -1,5 +1,6 @@
 package com.modocument.doccreation.api;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.doccreation.dto.ReleaseDecisionRequest;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
@@ -40,6 +41,7 @@ import java.util.NoSuchElementException;
  * input → 400.
  */
 @RestController
+@Tag(name = "Doc Creation: Release", description = "Review / release workflow (SoD enforced)")
 public class DocReleaseController {
 
     private static final String DOCX_CONTENT_TYPE =

@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,6 +27,7 @@ import java.util.Optional;
 
 /** CRUD for per-field validation rules, so the UI can manage custom regex rules. */
 @RestController
+@Tag(name = "Validation Rules")
 public class ValidationRuleController {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

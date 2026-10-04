@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ChangePasswordRequest;
@@ -38,6 +39,7 @@ import java.util.NoSuchElementException;
  * admin-created.
  */
 @RestController
+@Tag(name = "Authentication", description = "Login, token refresh, logout, profile and password")
 public class AuthController {
 
     /** Refresh cookie: httpOnly + Secure + SameSite=Strict, path-scoped. */

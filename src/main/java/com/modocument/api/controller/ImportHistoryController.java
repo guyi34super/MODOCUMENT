@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.CurrentUserProvider;
@@ -19,6 +20,7 @@ import java.net.URI;
 import java.util.Optional;
 
 @RestController
+@Tag(name = "Import History")
 public class ImportHistoryController {
 
     private final ImportHistoryRepository repo;

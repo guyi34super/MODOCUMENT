@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.MfaCodeRequest;
 import com.modocument.application.dto.MfaVerifyRequest;
@@ -41,6 +42,7 @@ import java.util.NoSuchElementException;
  * every other route.
  */
 @RestController
+@Tag(name = "MFA", description = "TOTP enrollment and verification")
 public class MfaController {
 
     private final MfaUseCase mfa;
