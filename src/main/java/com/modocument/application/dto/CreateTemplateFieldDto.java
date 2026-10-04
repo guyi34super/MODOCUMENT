@@ -23,6 +23,14 @@ public class CreateTemplateFieldDto {
     @Valid
     private List<CreateTemplateRuleDto> rules;
 
+    /**
+     * Optional explicit PII tag (ws12, PRIV-004): a {@code PiiKind} name
+     * ("NIC"/"ACCOUNT_NUMBER"/"EMAIL"/"PHONE"/"NAME"/"NONE", case-insensitive).
+     * Null/blank means "classify automatically on first use".
+     */
+    @Size(max = 20)
+    private String piiKind;
+
     public CreateTemplateFieldDto() {
     }
 
@@ -30,6 +38,12 @@ public class CreateTemplateFieldDto {
         this.fieldName = fieldName;
         this.dataType = dataType;
         this.rules = rules;
+    }
+
+    public CreateTemplateFieldDto(String fieldName, String dataType,
+                                  List<CreateTemplateRuleDto> rules, String piiKind) {
+        this(fieldName, dataType, rules);
+        this.piiKind = piiKind;
     }
 
     public String getFieldName() {
@@ -54,5 +68,13 @@ public class CreateTemplateFieldDto {
 
     public void setRules(List<CreateTemplateRuleDto> rules) {
         this.rules = rules;
+    }
+
+    public String getPiiKind() {
+        return piiKind;
+    }
+
+    public void setPiiKind(String piiKind) {
+        this.piiKind = piiKind;
     }
 }

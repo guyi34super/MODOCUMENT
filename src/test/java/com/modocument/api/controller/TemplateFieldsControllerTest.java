@@ -82,6 +82,34 @@ class TemplateFieldsControllerTest {
         assertThat(returned.getTemplateId()).isEqualTo(1);
     }
 
+    /** ws12 (PRIV-004): the explicit PII tag round-trips through create/update/get. */
+    @Test
+    void piiKindRoundTripsThroughCreateUpdateAndGet() {
+        TemplateFields tagged = templateFields(0, 1, "CustomerNic");
+        tagged.setPiiKind(com.modocument.domain.model.PiiKind.NIC);
+
+        ResponseEntity<?> created = controller.create(tagged);
+        assertThat(((TemplateFields) created.getBody()).getPiiKind())
+                .isEqualTo(com.modocument.domain.model.PiiKind.NIC);
+
+        TemplateFields existing = templateFields(1, 1, "CustomerNic");
+        existing.setPiiKind(com.modocument.domain.model.PiiKind.NIC);
+        when(repo.getById(1)).thenReturn(Optional.of(existing));
+        when(repo.update(any(TemplateFields.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TemplateFields retag = templateFields(1, 1, "CustomerNic");
+        retag.setPiiKind(com.modocument.domain.model.PiiKind.ACCOUNT_NUMBER);
+        ResponseEntity<?> updated = controller.update(1, retag);
+        assertThat(existing.getPiiKind())
+                .isEqualTo(com.modocument.domain.model.PiiKind.ACCOUNT_NUMBER);
+        assertThat(((TemplateFields) updated.getBody()).getPiiKind())
+                .isEqualTo(com.modocument.domain.model.PiiKind.ACCOUNT_NUMBER);
+
+        ResponseEntity<?> fetched = controller.getTemplateFieldsById(1);
+        assertThat(((TemplateFields) fetched.getBody()).getPiiKind())
+                .isEqualTo(com.modocument.domain.model.PiiKind.ACCOUNT_NUMBER);
+    }
+
     @Test
     void updateReturnsNotFoundWhenTemplateFieldsDoesNotExist() {
         when(repo.getById(1)).thenReturn(Optional.empty());

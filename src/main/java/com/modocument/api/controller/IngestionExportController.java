@@ -6,6 +6,7 @@ import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.application.dto.DatabaseExportRequest;
 import com.modocument.application.dto.TableData;
+import com.modocument.application.privacy.PiiMaskingService;
 import com.modocument.application.usecase.IngestionJobUseCase;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.infrastructure.export.DatabaseExportService;
@@ -48,15 +49,18 @@ public class IngestionExportController {
     private final IngestionJobUseCase jobs;
     private final FileExportService fileExport;
     private final DatabaseExportService databaseExport;
+    private final PiiMaskingService masking;
     private final Path exportsDir;
 
     public IngestionExportController(IngestionJobUseCase jobs,
                                      FileExportService fileExport,
                                      DatabaseExportService databaseExport,
+                                     PiiMaskingService masking,
                                      StorageProperties storage) {
         this.jobs = jobs;
         this.fileExport = fileExport;
         this.databaseExport = databaseExport;
+        this.masking = masking;
         this.exportsDir = storage.exportsDir();
     }
 
@@ -112,6 +116,11 @@ public class IngestionExportController {
      * Exports operate on finished work only: an active job whose every template
      * field is mapped and whose rows all pass validation. The use case owns that
      * rule, so a caller bypassing the UI hits the same wall.
+     *
+     * <p>The table comes back EXPORT-channel masked (gate C2, PRIV-005):
+     * PII-classified columns are masked per their kind for every role, so the
+     * file download, its per-owner archive copy and the database export all
+     * carry only masked values.
      */
     private TableData exportableTable(IngestionJob job) {
         jobs.requireExportable(job);
@@ -125,7 +134,7 @@ public class IngestionExportController {
                     "Job " + job.getIngestionJobId() + " has no mapped columns to export; "
                             + "map at least one column to a template field first.");
         }
-        return table;
+        return masking.maskForExport(job.getTemplateId(), table);
     }
 
     private static TableData readTable(String json) {

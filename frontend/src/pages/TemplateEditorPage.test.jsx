@@ -61,10 +61,41 @@ describe('TemplateEditorPage (edit mode)', () => {
       templateId: 5,
       fieldName: 'Age',
       templateDataTypeId: 1,
+      piiKind: null, // "auto": the server classifies on first use
     });
     expect(await screen.findByText('Age')).toBeInTheDocument();
     expect(input).toHaveValue('');
     expect(input).toHaveFocus();
+  });
+
+  it('round-trips an explicit PII tag and renders the stored classification', async () => {
+    getAllFields
+      .mockResolvedValueOnce([
+        // Persisted by the server earlier (auto-classified EMAIL).
+        { templateFieldsId: 1, templateId: 5, fieldName: 'Contact', templateDataTypeId: 1, piiKind: 'EMAIL' },
+      ])
+      .mockResolvedValueOnce([
+        { templateFieldsId: 1, templateId: 5, fieldName: 'Contact', templateDataTypeId: 1, piiKind: 'EMAIL' },
+        { templateFieldsId: 2, templateId: 5, fieldName: 'CustomerNic', templateDataTypeId: 1, piiKind: 'NIC' },
+      ]);
+    renderEditPage();
+
+    // The stored classification renders in the fields table (the role query
+    // avoids matching the selector's own "Email" option).
+    expect(await screen.findByRole('cell', { name: 'Email' })).toBeInTheDocument();
+
+    const input = screen.getByPlaceholderText('New field name');
+    await userEvent.type(input, 'CustomerNic');
+    await userEvent.selectOptions(screen.getByLabelText('PII kind'), 'NIC');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(createField).toHaveBeenCalledWith({
+      templateId: 5,
+      fieldName: 'CustomerNic',
+      templateDataTypeId: 1,
+      piiKind: 'NIC',
+    });
+    expect(await screen.findByRole('cell', { name: 'NIC' })).toBeInTheDocument();
   });
 
   it('renders the add-field form above the fields table', async () => {

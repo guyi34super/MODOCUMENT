@@ -27,12 +27,17 @@ class IngestionExportControllerTest {
     private final IngestionJobUseCase jobs = mock(IngestionJobUseCase.class);
     private final FileExportService fileExport = new FileExportService();
     private final DatabaseExportService databaseExport = mock(DatabaseExportService.class);
+    // Pass-through masking: the matrix is covered by PiiMaskingService's own
+    // suite and the C2 gate test; this suite tests the export flow itself.
+    private final com.modocument.application.privacy.PiiMaskingService masking =
+            mock(com.modocument.application.privacy.PiiMaskingService.class,
+                    org.mockito.AdditionalAnswers.returnsSecondArg());
 
     @TempDir
     Path tempDir;
 
     private IngestionExportController controller() {
-        return new IngestionExportController(jobs, fileExport, databaseExport,
+        return new IngestionExportController(jobs, fileExport, databaseExport, masking,
                 new StorageProperties(tempDir.toString()));
     }
 

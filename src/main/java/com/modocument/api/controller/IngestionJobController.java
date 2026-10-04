@@ -7,6 +7,7 @@ import com.modocument.application.dto.CreateIngestionJobRequest;
 import com.modocument.application.dto.UpdateMappingRequest;
 import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
+import com.modocument.application.privacy.PiiMaskingService;
 import com.modocument.application.usecase.ChatEditTableUseCase;
 import com.modocument.application.usecase.IngestionJobDeletionUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
@@ -54,6 +55,7 @@ public class IngestionJobController {
     private final UploadOwnership uploadOwnership;
     private final UploadContentChecker contentChecker;
     private final IngestionJobDeletionUseCase deletion;
+    private final PiiMaskingService masking;
 
     public IngestionJobController(IngestionJobUseCase useCase,
                                   ChatEditTableUseCase chatEdit,
@@ -63,7 +65,8 @@ public class IngestionJobController {
                                   JobWaitService jobWaitService,
                                   UploadOwnership uploadOwnership,
                                   UploadContentChecker contentChecker,
-                                  IngestionJobDeletionUseCase deletion) {
+                                  IngestionJobDeletionUseCase deletion,
+                                  PiiMaskingService masking) {
         this.useCase = useCase;
         this.chatEdit = chatEdit;
         this.uploadStorage = uploadStorage;
@@ -73,6 +76,7 @@ public class IngestionJobController {
         this.uploadOwnership = uploadOwnership;
         this.contentChecker = contentChecker;
         this.deletion = deletion;
+        this.masking = masking;
     }
 
     /** Multipart creation: uploads the file and (by default) runs the pipeline. */
@@ -140,10 +144,19 @@ public class IngestionJobController {
                 "description", supportedTypes.describeSupported()));
     }
 
+    /**
+     * The two read routes are the SCREEN channels (gate C2, PRIV-005): a
+     * READ_ONLY caller (an owner whose role was downgraded — cross-user
+     * reads 404 on ownership anyway) gets SCREEN_READONLY with every
+     * PII-classified column masked; a writing role gets its SCREEN_WORKING
+     * raw view, because cell editing needs the true values. The write
+     * routes below all require {@code ingestion:write}, so a READ_ONLY
+     * caller can never reach an unmasked echo through them.
+     */
     @RequiresPermission(Permission.INGESTION_READ)
     @GetMapping("/api/ingestion/jobs")
     public ResponseEntity<?> list() {
-        return ResponseEntity.ok(useCase.views(useCase.list()));
+        return ResponseEntity.ok(masking.maskJobViews(useCase.views(useCase.list())));
     }
 
     @RequiresPermission(Permission.INGESTION_READ)
@@ -152,9 +165,10 @@ public class IngestionJobController {
                                  @RequestParam(defaultValue = "false") boolean wait,
                                  @RequestParam(defaultValue = "MAPPED") String until) {
         if (wait) {
-            return ResponseEntity.ok(jobWaitService.waitForIngestionView(id, parseUntil(until)));
+            return ResponseEntity.ok(masking.maskJobView(
+                    jobWaitService.waitForIngestionView(id, parseUntil(until))));
         }
-        return ResponseEntity.ok(useCase.view(useCase.get(id)));
+        return ResponseEntity.ok(masking.maskJobView(useCase.view(useCase.get(id))));
     }
 
     /**

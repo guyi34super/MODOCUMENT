@@ -12,6 +12,7 @@ public record CreateTemplateResponse(int templateId,
                                String fieldName,
                                int templateDataTypeId,
                                String dataType,
+                               String piiKind,
                                List<CreatedRule> rules) {
     }
 
