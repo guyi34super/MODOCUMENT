@@ -38,7 +38,8 @@ public class PiiTokenizer {
     private static final List<Map.Entry<String, List<String>>> FIELD_KEYWORDS = List.of(
             Map.entry("EMAIL", List.of("email")),
             Map.entry("PHONE", List.of("phone", "mobile", "cell", "fax")),
-            Map.entry("ID", List.of("sin", "ssn", "nino", "taxid", "employeenumber", "employeeid",
+            Map.entry("ID", List.of("nic", "nationalid", "sin", "ssn", "nino", "taxid",
+                    "employeenumber", "employeeid",
                     "account", "iban", "swift", "creditcard", "cardnumber", "passport", "driverslicen")),
             Map.entry("DATE", List.of("dob", "birth")),
             Map.entry("ADDRESS", List.of("address", "street", "city", "postal", "zip")),
@@ -46,8 +47,6 @@ public class PiiTokenizer {
             Map.entry("PAY", List.of("salary", "payrate", "wage", "compensation")),
             Map.entry("NAME", List.of("name", "initial", "surname")));
 
-    private static final Pattern EMAIL = Pattern.compile(
-            "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
     /**
      * 13 or more digits (optionally spaced/dashed): card numbers, but also the
      * long account and reference numbers that carry the same risk. Unbounded on
@@ -61,11 +60,21 @@ public class PiiTokenizer {
     private static final Pattern PHONE_LIKE = Pattern.compile(
             "(?<!\\d)(?:\\+?1[ .-]?)?(?:\\(\\d{3}\\)[ .-]?|\\d{3}[ .-]?)\\d{3}[ .-]?\\d{4}(?!\\d)");
 
-    /** Longest/most specific first so a card number is not half-eaten as a phone. */
+    /**
+     * Longest/most specific first so a card number is not half-eaten as a
+     * phone. The email, NIC and bare-account shapes are {@link PiiPatterns}'
+     * shared constants (ws13) — the tokenizer used to miss letter-prefixed
+     * NIC formats (one letter + 9-14 digits + optional check letter) and
+     * bare 9-12 digit account runs entirely; CARD / NINE_DIGIT_ID / PHONE
+     * stay local because they cover the spaced and dashed spellings the log
+     * patterns deliberately leave readable.
+     */
     private static final List<Map.Entry<String, Pattern>> VALUE_PATTERNS = List.of(
-            Map.entry("EMAIL", EMAIL),
+            Map.entry("EMAIL", PiiPatterns.EMAIL),
+            Map.entry("ID", PiiPatterns.NIC),
             Map.entry("ID", CARD),
             Map.entry("ID", NINE_DIGIT_ID),
+            Map.entry("ID", PiiPatterns.ACCOUNT),
             Map.entry("PHONE", PHONE_LIKE));
 
     private static final Pattern TOKEN = Pattern.compile("\\[([A-Z]+)_(\\d+)]");

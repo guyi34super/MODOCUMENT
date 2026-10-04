@@ -1,7 +1,10 @@
 package com.modocument.domain.entity;
 
+import com.modocument.domain.model.PiiKind;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -11,6 +14,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.Size;
+import org.hibernate.annotations.Check;
 
 @Entity
 // SCHEMA PARITY with V30 (uq_templatefields_templateid_fieldname): no two
@@ -19,6 +23,11 @@ import jakarta.validation.constraints.Size;
 @Table(name = "TemplateFields", uniqueConstraints = @UniqueConstraint(
         name = "uq_templatefields_templateid_fieldname",
         columnNames = {"TemplateId", "FieldName"}))
+// SCHEMA PARITY with V100 (ck_templatefields_piikind) on the H2 test schema:
+// the PiiKind vocabulary is closed — see com.modocument.domain.model.PiiKind.
+// NULL stays allowed as the "unclassified yet" state.
+@Check(name = "ck_templatefields_piikind",
+        constraints = "PiiKind in ('NIC', 'ACCOUNT_NUMBER', 'EMAIL', 'PHONE', 'NAME', 'NONE')")
 public class TemplateFields {
 
     @Id
@@ -40,6 +49,16 @@ public class TemplateFields {
 
     @Column(name = "TemplateDataTypeId")
     private int templateDataTypeId;
+
+    /**
+     * PII classification (V100, PRIV-004): drives the role-by-channel
+     * masking (gate C2). NULL = not classified yet — the first read that
+     * needs it persists {@code PiiClassifier}'s inference here; an explicit
+     * value (including {@link PiiKind#NONE}) is never overwritten.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "PiiKind", length = 20)
+    private PiiKind piiKind;
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "TemplateId", insertable = false, updatable = false)
@@ -82,6 +101,14 @@ public class TemplateFields {
 
     public void setFieldName(String fieldName) {
         this.fieldName = fieldName;
+    }
+
+    public PiiKind getPiiKind() {
+        return piiKind;
+    }
+
+    public void setPiiKind(PiiKind piiKind) {
+        this.piiKind = piiKind;
     }
 
     public int getTemplateDataTypeId() {

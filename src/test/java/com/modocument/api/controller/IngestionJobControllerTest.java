@@ -43,9 +43,14 @@ class IngestionJobControllerTest {
             mock(com.modocument.infrastructure.file.UploadContentChecker.class);
     private final com.modocument.application.usecase.IngestionJobDeletionUseCase deletion =
             mock(com.modocument.application.usecase.IngestionJobDeletionUseCase.class);
+    // Pass-through masking: the matrix itself is covered by PiiMaskingService's
+    // own suite and the C2 gate test; here it must not get in the way.
+    private final com.modocument.application.privacy.PiiMaskingService masking =
+            mock(com.modocument.application.privacy.PiiMaskingService.class,
+                    org.mockito.AdditionalAnswers.returnsFirstArg());
     private final IngestionJobController controller =
             new IngestionJobController(useCase, chatEdit, uploadStorage, supportedTypes, jobRunner,
-                    jobWaitService, uploadOwnership, contentChecker, deletion);
+                    jobWaitService, uploadOwnership, contentChecker, deletion, masking);
 
     private static IngestionJob validatedJob(WizardStep wizardStep) {
         IngestionJob job = new IngestionJob();

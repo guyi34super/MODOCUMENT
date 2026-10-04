@@ -64,6 +64,7 @@ public class TemplateFieldsController {
         dto.setFieldName(item.getFieldName());
         dto.setTemplate(item.getTemplate());
         dto.setTemplateDataTypeId(item.getTemplateDataTypeId());
+        dto.setPiiKind(item.getPiiKind());
         return ResponseEntity.ok(dto);
     }
 
@@ -75,6 +76,9 @@ public class TemplateFieldsController {
         entity.setTemplateId(dto.getTemplateId());
         entity.setBankId(ownership.requireBankId());
         entity.setFieldName(dto.getFieldName());
+        // Explicit PII tag (ws12, PRIV-004); left null, the classifier tags
+        // it on first use and the result shows up here for correction.
+        entity.setPiiKind(dto.getPiiKind());
         repo.add(entity);
         return ResponseEntity
                 .created(URI.create("/TemplateFields/GetById/" + entity.getTemplateFieldsId()))
@@ -94,6 +98,7 @@ public class TemplateFieldsController {
         TemplateFields existing = existingOpt.get();
         existing.setFieldName(dto.getFieldName());
         existing.setTemplateId(dto.getTemplateId());
+        existing.setPiiKind(dto.getPiiKind());
 
         TemplateFields response = repo.update(existing);
         TemplateFields updated = new TemplateFields();
@@ -102,6 +107,7 @@ public class TemplateFieldsController {
         updated.setFieldName(response.getFieldName());
         updated.setTemplate(response.getTemplate());
         updated.setTemplateDataTypeId(response.getTemplateDataTypeId());
+        updated.setPiiKind(response.getPiiKind());
 
         return ResponseEntity
                 .created(URI.create("/TemplateFields/GetById/" + updated.getTemplateFieldsId()))

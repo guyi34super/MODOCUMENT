@@ -15,6 +15,21 @@ import DataTable from '../components/DataTable';
 import { Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 
+// PII classification options (ws12): '' means "classify automatically on
+// first use" — the server then persists its inference, which shows up here.
+const PII_KINDS = [
+  { value: '', label: 'PII: auto' },
+  { value: 'NIC', label: 'NIC' },
+  { value: 'ACCOUNT_NUMBER', label: 'Account number' },
+  { value: 'EMAIL', label: 'Email' },
+  { value: 'PHONE', label: 'Phone' },
+  { value: 'NAME', label: 'Name' },
+  { value: 'NONE', label: 'Not PII' },
+];
+
+const piiKindLabel = (value) =>
+  PII_KINDS.find((k) => k.value === (value || ''))?.label ?? value;
+
 export default function TemplateEditorPage() {
   const { id } = useParams();
   const isNew = !id;
@@ -25,9 +40,9 @@ export default function TemplateEditorPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   // New-template mode keeps draft rows locally; edit mode works on saved fields.
-  const [draftFields, setDraftFields] = useState([{ fieldName: '', dataType: 'Text' }]);
+  const [draftFields, setDraftFields] = useState([{ fieldName: '', dataType: 'Text', piiKind: '' }]);
   const [savedFields, setSavedFields] = useState([]);
-  const [newField, setNewField] = useState({ fieldName: '', templateDataTypeId: 1 });
+  const [newField, setNewField] = useState({ fieldName: '', templateDataTypeId: 1, piiKind: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(!isNew);
@@ -86,7 +101,12 @@ export default function TemplateEditorPage() {
         description,
         fields: draftFields
           .filter((f) => f.fieldName.trim())
-          .map((f) => ({ fieldName: f.fieldName.trim(), dataType: f.dataType, rules: [] })),
+          .map((f) => ({
+            fieldName: f.fieldName.trim(),
+            dataType: f.dataType,
+            rules: [],
+            piiKind: f.piiKind || null,
+          })),
       };
       const created = await toast.promise(createWithFields(payload), {
         loading: 'Creating template…',
@@ -146,10 +166,11 @@ export default function TemplateEditorPage() {
           templateId: Number(id),
           fieldName: newField.fieldName.trim(),
           templateDataTypeId: Number(newField.templateDataTypeId),
+          piiKind: newField.piiKind || null,
         }),
         { loading: 'Adding field…', success: `Field "${newField.fieldName.trim()}" added` }
       );
-      setNewField({ fieldName: '', templateDataTypeId: 1 });
+      setNewField({ fieldName: '', templateDataTypeId: 1, piiKind: '' });
       await loadExisting();
       fieldNameRef.current?.focus();
     } catch {
@@ -242,6 +263,22 @@ export default function TemplateEditorPage() {
                       </option>
                     ))}
                   </select>
+                  <select
+                    aria-label="PII kind"
+                    className={`${inputClass} w-44`}
+                    value={field.piiKind || ''}
+                    onChange={(e) =>
+                      setDraftFields((fields) =>
+                        fields.map((f, j) => (j === i ? { ...f, piiKind: e.target.value } : f))
+                      )
+                    }
+                  >
+                    {PII_KINDS.map((k) => (
+                      <option key={k.value} value={k.value}>
+                        {k.label}
+                      </option>
+                    ))}
+                  </select>
                   <Button
                     type="button"
                     variant="danger"
@@ -257,7 +294,9 @@ export default function TemplateEditorPage() {
               type="button"
               variant="secondary"
               className="mt-3"
-              onClick={() => setDraftFields((fields) => [...fields, { fieldName: '', dataType: 'Text' }])}
+              onClick={() =>
+                setDraftFields((fields) => [...fields, { fieldName: '', dataType: 'Text', piiKind: '' }])
+              }
             >
               + Add field
             </Button>
@@ -312,6 +351,18 @@ export default function TemplateEditorPage() {
                   </option>
                 ))}
               </select>
+              <select
+                aria-label="PII kind"
+                className={`${inputClass} w-44`}
+                value={newField.piiKind}
+                onChange={(e) => setNewField((f) => ({ ...f, piiKind: e.target.value }))}
+              >
+                {PII_KINDS.map((k) => (
+                  <option key={k.value} value={k.value}>
+                    {k.label}
+                  </option>
+                ))}
+              </select>
               <Button type="submit" disabled={busy}>
                 Add
               </Button>
@@ -324,6 +375,13 @@ export default function TemplateEditorPage() {
                   key: 'dataType',
                   label: 'Data type',
                   render: (field) => typeName(field.templateDataTypeId),
+                },
+                {
+                  key: 'piiKind',
+                  label: 'PII',
+                  // Server-persisted classification (explicit or auto); the
+                  // masking matrix masks these kinds in exports/reports.
+                  render: (field) => piiKindLabel(field.piiKind),
                 },
                 {
                   key: 'actions',
