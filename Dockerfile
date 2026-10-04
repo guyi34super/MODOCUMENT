@@ -24,14 +24,21 @@ RUN apt-get update \
     && useradd --system --home-dir /app --shell /usr/sbin/nologin modocument
 
 # Uploads and exports land under wwwroot/ relative to the working directory
-# (override with MODOCUMENT_STORAGE_ROOT; mount a volume there).
+# (override with MODOCUMENT_STORAGE_ROOT; mount a volume there). Ownership is
+# fixed at BUILD time (SUP-S04): a fresh named volume mounted at /app/wwwroot
+# is seeded by Docker from the image's directory, modocument ownership
+# included, so the container never needs root at runtime. (Bind mounts keep
+# host ownership — chown them on the host once if you use one; see README.)
 RUN mkdir -p wwwroot/uploads wwwroot/exports && chown -R modocument:modocument /app
 
 COPY --from=build /build/target/modocument-*.jar app.jar
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-# Entrypoint runs as root to fix volume permissions, then drops to modocument.
+# Non-root from the first instruction of runtime (SUP-S04): no root window,
+# no runtime chown/privilege drop. The healthcheck curl below also runs as
+# this user.
+USER modocument
 
 # Configuration comes from the environment, e.g.:
 #   MODOCUMENT_JWT_SECRET=...           (REQUIRED in production: `openssl rand -base64 48`)
