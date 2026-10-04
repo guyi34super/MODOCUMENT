@@ -346,3 +346,10 @@ logging:
   structured:
     format:
       console: ${MODOCUMENT_LOG_FORMAT:ecs}
+    json:
+      # ws13 (PRIV-005 log part, SEC-019): the structured encoder bypasses
+      # the logback pattern converters, so PII/credential masking is applied
+      # to every string member of each JSON document (message, error.message,
+      # error.stack_trace, …) through this customizer instead. Same pattern
+      # set as the %mask/%maskEx conversion words in logback-spring.xml.
+      customizer: com.modocument.infrastructure.logging.RedactingJsonMembersCustomizer

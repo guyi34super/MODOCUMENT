@@ -10,6 +10,7 @@ import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
 import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.application.privacy.LogSafe;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.IngestionParseStep;
 import com.modocument.application.port.ImportHistoryRepository;
@@ -338,7 +339,10 @@ public class IngestionJobUseCase {
             log.warn("Ingestion job {} failed during {} stage: {}",
                     job.getIngestionJobId(), target, message);
             job.setStatus(JobStatus.FAILED);
-            job.setErrorMessage(abbreviate(message));
+            // ErrorMessage is persisted and later shown/exported, so it gets
+            // the same PII/credential scrub as a log line (PRIV-005): a
+            // parser or driver message can quote the very values that failed.
+            job.setErrorMessage(LogSafe.scrub(abbreviate(message)));
             return jobs.save(job);
         }
     }

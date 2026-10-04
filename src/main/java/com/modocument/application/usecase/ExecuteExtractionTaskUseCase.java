@@ -13,6 +13,7 @@ import com.modocument.application.port.ProcessedRecordStore;
 import com.modocument.application.port.RawRecordStore;
 import com.modocument.application.port.TaskEventBus;
 import com.modocument.application.port.TenantContext;
+import com.modocument.application.privacy.LogSafe;
 import com.modocument.domain.document.ConnectorState;
 import com.modocument.domain.document.ExtractionAuditEvent;
 import com.modocument.domain.document.ExtractionJob;
@@ -187,7 +188,11 @@ public class ExecuteExtractionTaskUseCase implements ExtractionTaskRunner {
     }
 
     private void handleFailure(ExtractionTask task, String workerId, ExtractionJob job, Exception e) {
-        String error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        // Scrubbed once, up front: this text is PERSISTED — as the task's
+        // LastError (queue.fail) and as the audit events' Detail — and a
+        // connector/driver message can quote fetched PII (PRIV-005).
+        String error = LogSafe.scrub(
+                e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
         boolean retry = queue.fail(task.getId(), workerId, abbreviate(error),
                 Duration.ofMillis(backoffMillis));
         if (retry) {

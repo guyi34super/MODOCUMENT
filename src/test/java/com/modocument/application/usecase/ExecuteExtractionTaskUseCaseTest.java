@@ -184,6 +184,38 @@ class ExecuteExtractionTaskUseCaseTest {
         assertThat(finished.getErrorSummary()).contains("1 task(s)");
     }
 
+    /**
+     * ws13 / gate C3: LastError and the audit events' Detail are persisted
+     * exception text — a connector failure can quote fetched PII, so both
+     * must be scrubbed at the write site (LogSafe in handleFailure).
+     */
+    @Test
+    void persistedFailureTextIsScrubbedOfPii() throws Exception {
+        ExtractionTask task = enqueueTask("url:a");
+        when(connector.execute(any(), any(), any(), any())).thenThrow(new IllegalStateException(
+                "row rejected: NIC A1234567890123, account 12345678901234, canary@example.test"));
+
+        useCase.run(task, "w1"); // attempt 1 of 2: retried, Detail + LastError written
+
+        ExtractionTask failed = queue.get(task.getId()).orElseThrow();
+        assertThat(failed.getLastError())
+                .contains(com.modocument.application.privacy.PiiPatterns.MASK)
+                .contains("row rejected") // still diagnosable
+                .doesNotContain("A1234567890123")
+                .doesNotContain("12345678901234")
+                .doesNotContain("canary@example.test");
+
+        List<com.modocument.domain.document.ExtractionAuditEvent> events =
+                audit.findByJob(job.getId(), null, 100);
+        assertThat(events).isNotEmpty();
+        for (com.modocument.domain.document.ExtractionAuditEvent event : events) {
+            assertThat(String.valueOf(event.getDetail()))
+                    .doesNotContain("A1234567890123")
+                    .doesNotContain("12345678901234")
+                    .doesNotContain("canary@example.test");
+        }
+    }
+
     @Test
     void cancelledJobSkipsItsTasks() throws Exception {
         ExtractionTask task = enqueueTask("url:a");
