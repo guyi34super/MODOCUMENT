@@ -1,0 +1,9 @@
+# ZAP baseline known-acceptable alerts (.github/workflows/zap-baseline.yml).
+# Format: <ruleid>\t<IGNORE|WARN|FAIL>\t<justification>.
+# Every IGNORE must carry a justification and should be re-reviewed when the
+# frontend toolchain or nginx config changes. Anything not listed keeps the
+# scan's default behavior (WARN, with fail_action failing on FAILs).
+10015	IGNORE	(Re-examine Cache-control Directives) Static assets are served by nginx with build-hashed filenames; caching them is intended. API responses set their own cache headers.
+10027	IGNORE	(Information Disclosure - Suspicious Comments) Matches bundler-generated comments in the minified Vite/React vendor bundle, not MoDocument source comments.
+10096	IGNORE	(Timestamp Disclosure - Unix) False positive on build-hashed asset names and numeric constants in the minified bundle.
+10109	IGNORE	(Modern Web Application) Informational only: flags that the SPA uses client-side routing. Not a vulnerability.

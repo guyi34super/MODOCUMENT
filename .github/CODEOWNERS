@@ -1,0 +1,12 @@
+# CODEOWNERS (gate A8: second-person review; SEC-042).
+#
+# Together with branch protection's "Require review from Code Owners" +
+# "Require 1 approval" (docs/security/branch-protection.md), this guarantees
+# every change to main is reviewed by a second person: the author cannot
+# approve their own PR, so a listed owner other than the author must approve
+# before merge. Add further owners per path as the team grows (security-
+# sensitive paths first: src/main/java/com/modocument/api/config/,
+# src/main/resources/db/, .github/).
+
+# Default owner for everything in the repository:
+* @guyi34super

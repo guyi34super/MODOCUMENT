@@ -1,0 +1,125 @@
+# MoDocument custom Semgrep rules (ws19; run by .github/workflows/security.yml
+# together with the registry packs p/java and p/owasp-top-ten).
+#
+#   semgrep scan --metrics=off --error \
+#     --config p/java --config p/owasp-top-ten --config .semgrep/modocument.yml
+
+rules:
+  # ---------------------------------------------------------------- SEC-029
+  # Weak cryptography. MoDocument's approved primitives are SHA-256+ digests,
+  # HMAC-SHA256+, AES-GCM and Argon2id (see docs/security/). MD5 and SHA-1
+  # are banned for any security purpose; DES/3DES/RC2/RC4/Blowfish and ECB
+  # mode are banned outright.
+  - id: modocument-weak-hash-messagedigest
+    languages: [java]
+    severity: ERROR
+    message: >
+      Weak digest algorithm (SEC-029): MD5 and SHA-1 are forbidden. Use
+      SHA-256 (see com.modocument.domain.model.Hashing) or an HMAC for
+      authentication purposes.
+    metadata:
+      control: SEC-029
+      references:
+        - https://csrc.nist.gov/projects/hash-functions
+    patterns:
+      - pattern: MessageDigest.getInstance($ALG, ...)
+      - metavariable-regex:
+          metavariable: $ALG
+          regex: '"(?i)(MD2|MD5|SHA-?1)"'
+
+  - id: modocument-weak-mac
+    languages: [java]
+    severity: ERROR
+    message: >
+      Weak MAC algorithm (SEC-029): HmacMD5/HmacSHA1 are forbidden for new
+      code. Use HmacSHA256 or stronger. (The single documented exception is
+      RFC 6238 TOTP, which mandates HMAC-SHA1 for Google-Authenticator
+      compatibility — that lives in infrastructure/security/totp/Totp.java
+      and is excluded below.)
+    metadata:
+      control: SEC-029
+    paths:
+      exclude:
+        # RFC 6238 TOTP interoperability requires HMAC-SHA1; reviewed and
+        # accepted (the HMAC key is per-user, high-entropy and encrypted at
+        # rest — collision resistance is not relied on).
+        - /src/main/java/com/modocument/infrastructure/security/totp/Totp.java
+    patterns:
+      - pattern: Mac.getInstance($ALG, ...)
+      - metavariable-regex:
+          metavariable: $ALG
+          regex: '"(?i)Hmac(MD5|SHA-?1)"'
+
+  - id: modocument-weak-cipher
+    languages: [java]
+    severity: ERROR
+    message: >
+      Weak cipher or mode (SEC-029): DES/3DES/RC2/RC4/Blowfish and ECB mode
+      are forbidden. Use AES/GCM/NoPadding (see
+      infrastructure/security/MfaSecretCipher for the house pattern).
+    metadata:
+      control: SEC-029
+    patterns:
+      - pattern: Cipher.getInstance($TRANSFORM, ...)
+      - metavariable-regex:
+          metavariable: $TRANSFORM
+          regex: '"(?i)((DES|DESede|RC2|RC4|ARCFOUR|Blowfish)(/.*)?|.*/ECB/.*)"'
+
+  - id: modocument-des-key-spec
+    languages: [java]
+    severity: ERROR
+    message: "DES key material (SEC-029): DES/3DES are forbidden. Use AES-GCM."
+    metadata:
+      control: SEC-029
+    pattern-either:
+      - pattern: new javax.crypto.spec.DESKeySpec(...)
+      - pattern: new javax.crypto.spec.DESedeKeySpec(...)
+
+  # ------------------------------------------------------------- AI gateway
+  # All LLM access goes through the gateway in infrastructure/ai (prompt
+  # hygiene, structured-output parsing, error mapping, AiNotConfigured
+  # degradation). Raw ChatModel injection anywhere else bypasses those
+  # controls.
+  - id: modocument-raw-chatmodel-outside-ai-gateway
+    languages: [java]
+    severity: ERROR
+    message: >
+      Raw Spring AI ChatModel usage outside infrastructure/ai: LLM calls must
+      go through the gateway (SpringAiConfig / AiFilesServiceImpl) so prompt
+      hygiene, structured-output parsing and not-configured degradation apply.
+      Inject the gateway's ChatClient/AiFilesService instead.
+    metadata:
+      control: ws19 AI-gateway boundary
+    paths:
+      exclude:
+        - /src/main/java/com/modocument/infrastructure/ai/
+    pattern-either:
+      - pattern: import org.springframework.ai.chat.model.ChatModel
+      - pattern: import org.springframework.ai.openai.OpenAiChatModel
+      - pattern: (org.springframework.ai.chat.model.ChatModel $M).call(...)
+
+  # ------------------------------------------------------- env-var hygiene
+  # Connector authentication secrets are the only values production code may
+  # read from the process environment at runtime, and only through
+  # RestApiConnector, which enforces the MODOCUMENT_CONNECTOR_ prefix
+  # allowlist (isAllowedAuthEnvVar). Everything else must arrive via Spring
+  # configuration (@Value / @ConfigurationProperties), which keeps secrets
+  # bindable, testable and auditable.
+  - id: modocument-getenv-outside-allowlisted-connector
+    languages: [java]
+    severity: ERROR
+    message: >
+      System.getenv outside the allowlisted connector-secret path: runtime
+      environment reads are only permitted in
+      infrastructure/extraction/connector/RestApiConnector.java, behind the
+      MODOCUMENT_CONNECTOR_ prefix allowlist. Use Spring configuration
+      properties instead.
+    metadata:
+      control: ws19 env-var hygiene
+    paths:
+      include:
+        - /src/main/java
+      exclude:
+        # Enforces the MODOCUMENT_CONNECTOR_ prefix allowlist itself.
+        - /src/main/java/com/modocument/infrastructure/extraction/connector/RestApiConnector.java
+    pattern: System.getenv(...)

@@ -1,0 +1,13 @@
+# Fingerprint allowlist for gitleaks (gate A7). Each line pins ONE historical
+# finding (commit:file:rule:line) that is deliberate test material, documented
+# in .gitleaks.toml. History is immutable, so these fingerprints never drift;
+# the same string re-added in a new commit produces a NEW fingerprint and
+# still fails the scan.
+#
+# Canary JWT used by the ws13 log-redaction tests (fake token, payload
+# {"sub":"canary"}, signature is the literal word "signature"):
+e59f71461c3de62a8e8e289f0bf7a9d82563beb9:src/test/java/com/modocument/infrastructure/logging/StructuredLogRedactionTest.java:jwt:46
+e59f71461c3de62a8e8e289f0bf7a9d82563beb9:src/test/java/com/modocument/infrastructure/logging/RedactingConverterTest.java:jwt:70
+e59f71461c3de62a8e8e289f0bf7a9d82563beb9:src/test/java/com/modocument/infrastructure/logging/LogRedactionCanaryTest.java:jwt:70
+# Fixed 32-byte dummy AES test vector in MfaSecretCipherTest:
+b427e6ef797867e9e388f99247fb65c8199ec2c0:src/test/java/com/modocument/infrastructure/security/MfaSecretCipherTest.java:generic-api-key:10
