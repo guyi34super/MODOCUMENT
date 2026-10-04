@@ -1114,6 +1114,94 @@ paths:
       summary: Change password
       tags:
       - Auth
+  /api/admin/users:
+    get:
+      description: Users of the calling admin's own bank (ADMIN only)
+      operationId: listBankUsers
+      responses:
+        "200":
+          description: Users with role, state, last login and MFA state
+      summary: List users
+      tags:
+      - UserAdmin
+    post:
+      description: Create a user in the calling admin's bank with a temporary
+        password that must be changed on first login
+      operationId: createBankUser
+      responses:
+        "201":
+          description: Created user
+        "400":
+          description: Invalid role, or temporary password rejected by the policy
+        "409":
+          description: Email already in use
+      summary: Create user
+      tags:
+      - UserAdmin
+  /api/admin/users/{id}/role:
+    put:
+      description: Change a user's role; every outstanding session of the user
+        ends immediately
+      operationId: changeUserRole
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          description: Updated user
+        "404":
+          description: Unknown id, or a user of another bank
+        "409":
+          description: Own role, or the bank's last active administrator
+      summary: Change role
+      tags:
+      - UserAdmin
+  /api/admin/users/{id}/disabled:
+    put:
+      description: Enable or disable a user (the leaver switch); disabling makes
+        the account inert immediately
+      operationId: setUserDisabled
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          description: Updated user
+        "404":
+          description: Unknown id, or a user of another bank
+        "409":
+          description: Own account, or the bank's last active administrator
+      summary: Enable or disable user
+      tags:
+      - UserAdmin
+  /api/admin/users/export:
+    get:
+      description: CSV of the bank's users with last-login dates
+        (users-{bankCode}-{date}.csv)
+      operationId: exportBankUsers
+      responses:
+        "200":
+          description: text/csv download
+      summary: Export user list
+      tags:
+      - UserAdmin
+  /api/admin/users/access-review:
+    get:
+      description: Quarterly recertification worksheet (role, last login,
+        90-day inactivity flags)
+      operationId: accessReviewWorksheet
+      responses:
+        "200":
+          description: Per-user review rows
+      summary: Access review
+      tags:
+      - UserAdmin
   /api/ingestion/supported-types:
     get:
       description: Extensions this build can parse, plus a ready-made accept list

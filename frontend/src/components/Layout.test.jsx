@@ -76,6 +76,25 @@ describe('Layout sidebar', () => {
     expect(screen.getByLabelText('Main navigation')).toHaveAttribute('inert');
   });
 
+  /** ws09: the Users admin link renders for ADMINs only (UX, not security). */
+  it('shows the Users admin link to ADMINs only', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 1, role: 'ADMIN' }));
+    renderLayout();
+
+    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/admin/users');
+    expect(screen.getByText('Administration')).toBeInTheDocument();
+  });
+
+  it('hides the Users admin link from non-admins', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 2, role: 'READ_WRITE' }));
+    renderLayout();
+
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Administration')).not.toBeInTheDocument();
+  });
+
   it('closes the drawer on Escape and on a backdrop click', async () => {
     stubViewport(false);
     renderLayout();

@@ -17,6 +17,8 @@ import ExtractionSourcesPage from './pages/ExtractionSourcesPage';
 import ExtractionJobsPage from './pages/ExtractionJobsPage';
 import ExtractionJobDetailPage from './pages/ExtractionJobDetailPage';
 import ProfilePage from './pages/ProfilePage';
+import AdminUsersPage from './pages/AdminUsersPage';
+import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
 
 export default function App() {
   return (
@@ -24,6 +26,16 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       {/* OIDC landing: exchanges the refresh cookie for the access token. */}
       <Route path="/login/complete" element={<LoginCompletePage />} />
+      {/* ws09: standalone (no app chrome) — the only page a temporary
+          password can use; ProtectedRoute routes flagged users here. */}
+      <Route
+        path="/force-password-change"
+        element={
+          <ProtectedRoute>
+            <ForceChangePasswordPage />
+          </ProtectedRoute>
+        }
+      />
       <Route
         element={
           <ProtectedRoute>
@@ -46,6 +58,8 @@ export default function App() {
         <Route path="/extraction/jobs" element={<ExtractionJobsPage />} />
         <Route path="/extraction/jobs/:id" element={<ExtractionJobDetailPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        {/* Rendered for ADMINs; the server enforces user:admin regardless. */}
+        <Route path="/admin/users" element={<AdminUsersPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

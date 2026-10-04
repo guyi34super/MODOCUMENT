@@ -58,9 +58,13 @@ class RoutePermissionCoverageTest {
             "/oauth2/",
             "/login/oauth2/");
 
-    /** Permissions reserved for later workstreams — in the matrix, no routes yet. */
+    /**
+     * Permissions reserved for later workstreams — in the matrix, no routes
+     * yet. USER_ADMIN left this list with ws09 (it now guards the
+     * /api/admin/users routes).
+     */
     private static final Set<Permission> RESERVED = EnumSet.of(
-            Permission.USER_ADMIN, Permission.CHANGE_APPROVE, Permission.DOC_RELEASE);
+            Permission.CHANGE_APPROVE, Permission.DOC_RELEASE);
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

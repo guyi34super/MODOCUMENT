@@ -19,6 +19,9 @@ import java.util.UUID;
  *   <li>its jti is on the RevokedToken denylist (logout), or</li>
  *   <li>its token_ver claim is older than AppUsers.TokenVersion (password
  *       change bumps the version, killing every outstanding token), or</li>
+ *   <li>its user is disabled (ws09 leaver switch — the flag alone makes the
+ *       account inert on the very next request, independent of the version
+ *       bump the disable also performs), or</li>
  *   <li>its user no longer exists.</li>
  * </ul>
  *
@@ -33,7 +36,7 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
     private static final UUID NIL_JTI = new UUID(0L, 0L);
 
     private static final String QUERY =
-            "SELECT u.TokenVersion AS currentVersion, "
+            "SELECT u.TokenVersion AS currentVersion, u.Disabled AS disabled, "
                     + "EXISTS (SELECT 1 FROM RevokedToken r WHERE r.Jti = ?) AS revoked "
                     + "FROM AppUsers u WHERE u.AppUserId = ?";
 
@@ -56,7 +59,8 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
         Status status;
         try {
             status = jdbc.queryForObject(QUERY, (rs, rowNum) ->
-                    new Status(rs.getInt("currentVersion"), rs.getBoolean("revoked")), jti, userId);
+                    new Status(rs.getInt("currentVersion"), rs.getBoolean("disabled"),
+                            rs.getBoolean("revoked")), jti, userId);
         } catch (EmptyResultDataAccessException userGone) {
             return failure("Token user no longer exists.");
         }
@@ -65,6 +69,9 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
         }
         if (status.revoked()) {
             return failure("Token has been revoked.");
+        }
+        if (status.disabled()) {
+            return failure("Token user is disabled.");
         }
         // Tokens from before the claim existed count as version 0.
         Object claim = token.getClaims().get(JwtService.CLAIM_TOKEN_VERSION);
@@ -91,6 +98,6 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
                 new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, reason, null));
     }
 
-    private record Status(int currentVersion, boolean revoked) {
+    private record Status(int currentVersion, boolean disabled, boolean revoked) {
     }
 }

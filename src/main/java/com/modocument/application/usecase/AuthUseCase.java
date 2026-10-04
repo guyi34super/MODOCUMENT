@@ -112,14 +112,16 @@ public class AuthUseCase {
     }
 
     /**
-     * Creates a user inside a bank. Package-visible on purpose: no public
-     * endpoint reaches it anymore — the bootstrap admin runner seeds the first
-     * ADMIN, and the admin user-management endpoint will call it.
-     *
-     * <p>TODO ws09: expose through the admin user-management endpoint
-     * (ADMIN-only), with the caller's bank enforced.
+     * Creates a user inside a bank (ws09: called by UserAdminUseCase with
+     * the calling Admin's own bank — there is no public registration; the
+     * bootstrap admin runner seeds the very first ADMIN separately). The
+     * password policy applies to the (temporary) password like to any other;
+     * {@code mustChangePassword} is set for admin-issued temporary passwords
+     * so the account is forced through a password change on first login,
+     * and stays false for accounts whose credential an IdP owns.
      */
-    UserDto createUser(String email, String password, String displayName, int bankId, Role role) {
+    public UserDto createUser(String email, String password, String displayName, int bankId,
+                              Role role, boolean mustChangePassword) {
         if (email == null || email.isBlank() || !email.contains("@")) {
             throw new IllegalArgumentException("A valid email is required.");
         }
@@ -134,6 +136,7 @@ public class AuthUseCase {
         user.setDisplayName(displayName == null || displayName.isBlank() ? normalized : displayName.trim());
         user.setBankId(bankId);
         user.setRole(role == null ? Role.READ_ONLY : role);
+        user.setMustChangePassword(mustChangePassword);
         user.setSettingsJson("{}");
         user.setCreatedDate(LocalDateTime.now());
         user.setUpdatedDate(LocalDateTime.now());
@@ -159,6 +162,21 @@ public class AuthUseCase {
             passwordEncoder.matches(password == null ? "" : password, dummyHash);
             audit.record(AuditEventSpec.builder("LOGIN_FAILED", AuditOutcome.FAILED)
                     .actorEmail(attempted)
+                    .build());
+            throw new BadCredentialsException("Invalid email or password.");
+        }
+        if (user.isDisabled()) {
+            // Leaver (PRIV-017): the answer is indistinguishable from a wrong
+            // password — same dummy-hash timing, same generic message — and
+            // runs BEFORE the password check so a disabled account offers no
+            // oracle. Only the audit row says what actually happened.
+            passwordEncoder.matches(password == null ? "" : password, dummyHash);
+            audit.record(AuditEventSpec.builder("LOGIN_FAILED", AuditOutcome.FAILED)
+                    .actorUserId(user.getAppUserId())
+                    .actorEmail(user.getEmail())
+                    .actorRole(user.getRole() == null ? null : user.getRole().name())
+                    .bankId(user.getBankId())
+                    .newValues(Map.of("reason", "account_disabled"))
                     .build());
             throw new BadCredentialsException("Invalid email or password.");
         }
@@ -222,6 +240,11 @@ public class AuthUseCase {
      * {@link MfaUseCase} only — the TOTP/recovery check has already passed).
      */
     AuthSession completeMfaLogin(AppUser user, String ip, String userAgent) {
+        if (user.isDisabled()) {
+            // Disabled between the password phase and the second factor —
+            // the short challenge window must not outlive the leaver switch.
+            throw new BadCredentialsException("Invalid email or password.");
+        }
         return openSession(user, ip, userAgent);
     }
 
@@ -346,6 +369,11 @@ public class AuthUseCase {
         }
         AppUser user = users.getById(current.getUserId())
                 .orElseThrow(() -> new BadCredentialsException("Refresh token has been revoked."));
+        if (user.isDisabled()) {
+            // Disabling revokes every refresh token already; this covers a
+            // flag set out-of-band and keeps the answer the generic 401.
+            throw new BadCredentialsException("Refresh token has been revoked.");
+        }
         // Rotate within the family: the expiry is inherited, so a family never
         // lives longer than REFRESH_FAMILY_DAYS from the original login.
         IssuedRefreshToken next = issueRefreshToken(
@@ -427,6 +455,10 @@ public class AuthUseCase {
         }
         passwordPolicy.validate(newPassword, user.getEmail());
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        // A changed password discharges the forced-change requirement set
+        // when an admin issued the temporary password (ws09). The token
+        // version bump itself goes through userSecurity below (ws08).
+        user.setMustChangePassword(false);
         user.setUpdatedDate(LocalDateTime.now());
         users.save(user);
         // B5 seam: the shared bump (audited TOKEN_VERSION_BUMPED) makes the
