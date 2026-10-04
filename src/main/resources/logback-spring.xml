@@ -23,13 +23,21 @@
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
     <!-- ===================================================================
-         ws13 REDACTION INSERTION POINT: declare the sensitive-data masking
-         converter here, e.g.
-           <conversionRule conversionWord="mask"
-                           class="com.modocument.infrastructure.logging.RedactingConverter"/>
-         and replace "%m" with "%mask" in the pattern below (and the
-         structured encoder once it supports it).
+         ws13 REDACTION (PRIV-005 log part, SEC-019): every path a message
+         can take to the console is masked with the same pattern set
+         (com.modocument.application.privacy.PiiPatterns):
+           * %mask replaces %m — the formatted message;
+           * %maskEx replaces Boot's %wEx — exception MESSAGES travel inside
+             the rendered stack trace, so masking %m alone still leaks;
+           * the structured-logs profile's StructuredLogEncoder builds its
+             JSON itself and never runs these converters — it is covered by
+             RedactingJsonMembersCustomizer, registered via
+             logging.structured.json.customizer in application.yml.
          =================================================================== -->
+    <conversionRule conversionWord="mask"
+                    class="com.modocument.infrastructure.logging.RedactingConverter"/>
+    <conversionRule conversionWord="maskEx"
+                    class="com.modocument.infrastructure.logging.RedactingThrowableConverter"/>
 
     <springProfile name="!structured-logs">
         <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -39,7 +47,7 @@
             <encoder>
                 <!-- Boot 3.5's default console pattern (defaults.xml) with the
                      identity segment inserted after the thread name. -->
-                <pattern>%clr(%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd'T'HH:mm:ss.SSSXXX}}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}){} %clr(${PID:-}){magenta} %clr(--- %esb(){APPLICATION_NAME}%esb{APPLICATION_GROUP}[%15.15t] ${LOG_CORRELATION_PATTERN:-}){faint}%clr([%X{requestId}] [u:%X{userId} b:%X{bankId}] ){faint}%clr(%-40.40logger{39}){cyan} %clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}</pattern>
+                <pattern>%clr(%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd'T'HH:mm:ss.SSSXXX}}){faint} %clr(${LOG_LEVEL_PATTERN:-%5p}){} %clr(${PID:-}){magenta} %clr(--- %esb(){APPLICATION_NAME}%esb{APPLICATION_GROUP}[%15.15t] ${LOG_CORRELATION_PATTERN:-}){faint}%clr([%X{requestId}] [u:%X{userId} b:%X{bankId}] ){faint}%clr(%-40.40logger{39}){cyan} %clr(:){faint} %mask%n%maskEx</pattern>
                 <charset>${CONSOLE_LOG_CHARSET:-UTF-8}</charset>
             </encoder>
         </appender>
