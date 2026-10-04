@@ -8,6 +8,7 @@ import com.modocument.application.dto.UpdateMappingRequest;
 import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
 import com.modocument.application.usecase.ChatEditTableUseCase;
+import com.modocument.application.usecase.IngestionJobDeletionUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
 import com.modocument.application.usecase.UploadOwnership;
 import com.modocument.domain.entity.IngestionJob;
@@ -52,6 +53,7 @@ public class IngestionJobController {
     private final JobWaitService jobWaitService;
     private final UploadOwnership uploadOwnership;
     private final UploadContentChecker contentChecker;
+    private final IngestionJobDeletionUseCase deletion;
 
     public IngestionJobController(IngestionJobUseCase useCase,
                                   ChatEditTableUseCase chatEdit,
@@ -60,7 +62,8 @@ public class IngestionJobController {
                                   IngestionJobRunner jobRunner,
                                   JobWaitService jobWaitService,
                                   UploadOwnership uploadOwnership,
-                                  UploadContentChecker contentChecker) {
+                                  UploadContentChecker contentChecker,
+                                  IngestionJobDeletionUseCase deletion) {
         this.useCase = useCase;
         this.chatEdit = chatEdit;
         this.uploadStorage = uploadStorage;
@@ -69,6 +72,7 @@ public class IngestionJobController {
         this.jobWaitService = jobWaitService;
         this.uploadOwnership = uploadOwnership;
         this.contentChecker = contentChecker;
+        this.deletion = deletion;
     }
 
     /** Multipart creation: uploads the file and (by default) runs the pipeline. */
@@ -151,6 +155,19 @@ public class IngestionJobController {
             return ResponseEntity.ok(jobWaitService.waitForIngestionView(id, parseUntil(until)));
         }
         return ResponseEntity.ok(useCase.view(useCase.get(id)));
+    }
+
+    /**
+     * Deletes the job, its export archive copies and (when no other job of
+     * the owner references it) its uploaded file — the user's own early
+     * exercise of the ws14 retention policy. Owner-scoped: someone else's
+     * job 404s like a non-existent id.
+     */
+    @RequiresPermission(Permission.INGESTION_WRITE)
+    @org.springframework.web.bind.annotation.DeleteMapping("/api/ingestion/jobs/{id}")
+    public ResponseEntity<?> delete(@PathVariable int id) {
+        deletion.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     @RequiresPermission(Permission.INGESTION_WRITE)

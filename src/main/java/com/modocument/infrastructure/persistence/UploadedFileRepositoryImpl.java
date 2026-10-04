@@ -31,4 +31,9 @@ public class UploadedFileRepositoryImpl implements UploadedFileRepository {
         return jpa.findFirstByOwnerUserIdAndSha256HexAndOriginalName(
                 ownerUserId, sha256Hex, originalName);
     }
+
+    @Override
+    public void delete(UploadedFile entity) {
+        jpa.delete(entity);
+    }
 }

@@ -161,6 +161,16 @@ modocument:
     # Root directory for uploaded files (<root>/uploads) and export copies
     # (<root>/exports). Mount a volume here in containers.
     root: ${MODOCUMENT_STORAGE_ROOT:wwwroot}
+  retention:
+    # 30-day automatic deletion of uploaded customer data (ws14, gate C5,
+    # PRIV-013). The daily RetentionPurgeJob deletes/anonymizes per bank:
+    # uploaded files + rows, ingestion-job row data (job skeleton stays),
+    # export archive copies, import raw payloads, extraction bodies and
+    # doc-creation content. Full schedule: docs/security/retention-and-dsr.md.
+    enabled: ${MODOCUMENT_RETENTION_ENABLED:true}
+    customer-data-days: ${MODOCUMENT_RETENTION_DAYS:30}
+    # Daily, off-peak; six-field Spring cron (seconds first).
+    cron: ${MODOCUMENT_RETENTION_CRON:0 41 2 * * *}
   parsing:
     llm-batch-size: ${PARSING_LLM_BATCH_SIZE:50}
     llm-single-pass-max-rows: ${PARSING_LLM_SINGLE_PASS_MAX_ROWS:150}

@@ -30,4 +30,14 @@ public interface IngestionJobJpaRepository extends JpaRepository<IngestionJob, I
     List<IngestionJob> findByOwnerUserId(int ownerUserId);
 
     long countByTemplateId(int templateId);
+
+    /** DSR scan (ws14): every job of one bank. RLS backs this on PostgreSQL. */
+    List<IngestionJob> findByBankId(int bankId);
+
+    /** Retention sweep (ws14): jobs past the cutoff not yet purged. */
+    List<IngestionJob> findByBankIdAndUpdatedDateBeforeAndPurgedAtIsNull(
+            int bankId, java.time.LocalDateTime cutoff);
+
+    /** Shared-upload guard for job deletion: other jobs on the same stored file. */
+    long countByFileNameAndOwnerUserId(String fileName, int ownerUserId);
 }

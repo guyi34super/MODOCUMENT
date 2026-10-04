@@ -17,4 +17,7 @@ public interface UploadedFileRepository {
      * content hash under the same original name, if any.
      */
     Optional<UploadedFile> getDuplicate(int ownerUserId, String sha256Hex, String originalName);
+
+    /** Removes the ownership row (ws14 job deletion / DSR erase / retention). */
+    void delete(UploadedFile entity);
 }

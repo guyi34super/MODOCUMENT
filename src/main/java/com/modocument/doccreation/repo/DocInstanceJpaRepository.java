@@ -15,4 +15,8 @@ public interface DocInstanceJpaRepository extends JpaRepository<DocInstance, Int
     List<DocInstance> findByOwnerUserIdAndBlueprintIdOrderByDocInstanceIdDesc(int ownerUserId, int blueprintId);
 
     int countByBlueprintId(int blueprintId);
+
+    /** Retention sweep (ws14): instances idle past the cutoff, content not yet purged. */
+    List<DocInstance> findByBankIdAndUpdatedDateBeforeAndContentPurgedAtIsNull(
+            int bankId, java.time.LocalDateTime cutoff);
 }
