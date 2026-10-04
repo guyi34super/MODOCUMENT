@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getTemplates, invalidateTemplates } from '../api/cache';
 import { deleteTemplate } from '../api/templates';
+import { isPendingChange } from '../api/changes';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Button, ErrorBanner, Spinner } from '../components/ui';
@@ -32,7 +33,11 @@ export default function TemplatesPage() {
     try {
       await toast.promise(deleteTemplate(template.templateId), {
         loading: 'Deleting template…',
-        success: `Template "${template.name}" deleted`,
+        // ws10: in production the delete waits for a second user's approval.
+        success: (result) =>
+          isPendingChange(result)
+            ? `Deleting "${template.name}" was submitted for approval (change #${result.pendingChangeId})`
+            : `Template "${template.name}" deleted`,
       });
       setTemplates(await getTemplates());
     } catch {

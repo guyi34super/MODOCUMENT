@@ -155,7 +155,11 @@ paths:
       - Templates
   /Templates/Update:
     put:
-      description: Update a Template
+      description: Update a Template. With maker/checker gating on templates
+        (modocument.security.maker-checker.template-changes, the production
+        default) this SUBMITS a pending change (202) that a different user
+        must approve via /api/admin/changes/{id}/approve; with the gate off
+        it applies directly.
       operationId: putTemplate
       requestBody:
         content:
@@ -169,6 +173,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/TemplateUpdate'
           description: success
+        "202":
+          description: Submitted for approval (pending change)
       summary: Update a Template
       tags:
       - Templates
@@ -200,6 +206,9 @@ paths:
                 format: int32
                 type: integer
           description: success
+        "202":
+          description: Submitted for approval (maker/checker gate on, the
+            production default)
       summary: Delete a Template by Id
       tags:
       - Templates
@@ -1125,23 +1134,26 @@ paths:
       tags:
       - UserAdmin
     post:
-      description: Create a user in the calling admin's bank with a temporary
-        password that must be changed on first login
+      description: Request creating a user in the calling admin's bank with a
+        temporary password that must be changed on first login. Maker/checker
+        (ws10) — a DIFFERENT admin must approve the pending change before the
+        account exists; the payload stores only the password's hash.
       operationId: createBankUser
       responses:
-        "201":
-          description: Created user
+        "202":
+          description: Pending change submitted for approval
         "400":
           description: Invalid role, or temporary password rejected by the policy
         "409":
           description: Email already in use
-      summary: Create user
+      summary: Request user creation
       tags:
       - UserAdmin
   /api/admin/users/{id}/role:
     put:
-      description: Change a user's role; every outstanding session of the user
-        ends immediately
+      description: Request changing a user's role (maker/checker, ws10). On a
+        different admin's approval the change applies and every outstanding
+        session of the user ends immediately.
       operationId: changeUserRole
       parameters:
       - name: id
@@ -1150,19 +1162,21 @@ paths:
         schema:
           type: integer
       responses:
-        "200":
-          description: Updated user
+        "202":
+          description: Pending change submitted for approval
         "404":
           description: Unknown id, or a user of another bank
         "409":
-          description: Own role, or the bank's last active administrator
-      summary: Change role
+          description: Own role (self-targeting refused at submit)
+      summary: Request role change
       tags:
       - UserAdmin
   /api/admin/users/{id}/disabled:
     put:
-      description: Enable or disable a user (the leaver switch); disabling makes
-        the account inert immediately
+      description: Enable or disable a user (the leaver switch). Disabling is
+        maker/checker-gated (202) and makes the account inert the moment a
+        DIFFERENT admin approves; re-enabling applies directly (200) — the
+        lower-risk direction.
       operationId: setUserDisabled
       parameters:
       - name: id
@@ -1172,12 +1186,14 @@ paths:
           type: integer
       responses:
         "200":
-          description: Updated user
+          description: Updated user (enable only)
+        "202":
+          description: Pending disable submitted for approval
         "404":
           description: Unknown id, or a user of another bank
         "409":
-          description: Own account, or the bank's last active administrator
-      summary: Enable or disable user
+          description: Own account (self-targeting refused at submit)
+      summary: Enable user, or request disable
       tags:
       - UserAdmin
   /api/admin/users/export:
@@ -1202,6 +1218,105 @@ paths:
       summary: Access review
       tags:
       - UserAdmin
+  /api/admin/changes:
+    get:
+      description: The caller's bank's maker/checker queue (ws10). Holders of
+        change:approve (ADMIN, APPROVER) see everything; a maker without it
+        sees only their own submissions. Payloads are sanitized — credential
+        material never leaves the backend.
+      operationId: listPendingChanges
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [REQUESTED, APPROVED, REJECTED, CANCELLED, APPLIED, FAILED]
+      responses:
+        "200":
+          description: Pending changes, newest first
+      summary: List pending changes
+      tags:
+      - Changes
+    post:
+      description: Submit a change for approval ({changeType, payload,
+        comment}). The maker needs the SAME permission the direct operation
+        required (user ops user:admin, template ops template:write).
+      operationId: submitPendingChange
+      responses:
+        "202":
+          description: Pending change submitted
+        "400":
+          description: Unknown change type or invalid payload
+        "403":
+          description: Missing the change type's maker permission
+      summary: Submit change
+      tags:
+      - Changes
+  /api/admin/changes/{id}/approve:
+    post:
+      description: Approve AND apply a pending change (gate B7). The maker
+        approving their own change is a hard 409, audited
+        SELF_APPROVAL_BLOCKED; the appliers re-run every invariant at apply
+        time.
+      operationId: approvePendingChange
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          description: Applied change
+        "404":
+          description: Unknown id, or a change of another bank
+        "409":
+          description: Self-approval, already decided, or an apply-time
+            invariant refused (the change is then FAILED)
+      summary: Approve change
+      tags:
+      - Changes
+  /api/admin/changes/{id}/reject:
+    post:
+      description: Refuse a pending change; nothing is applied
+      operationId: rejectPendingChange
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          description: Rejected change
+        "404":
+          description: Unknown id, or a change of another bank
+        "409":
+          description: Already decided
+      summary: Reject change
+      tags:
+      - Changes
+  /api/admin/changes/{id}/cancel:
+    post:
+      description: Withdraw an undecided request — only its maker can
+      operationId: cancelPendingChange
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          description: Cancelled change
+        "404":
+          description: Unknown id, or a change of another bank
+        "409":
+          description: Not the maker, or already decided
+      summary: Cancel change
+      tags:
+      - Changes
   /api/ingestion/supported-types:
     get:
       description: Extensions this build can parse, plus a ready-made accept list

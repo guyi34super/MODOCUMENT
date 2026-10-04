@@ -52,7 +52,9 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     "extractionauditevent", "extractionconnectorstate",
                     "docblueprint", "docblueprintsection",
                     "docinstance", "docimageasset", "doccontentblock",
-                    "uploadedfile");
+                    "uploadedfile",
+                    // V80 (ws10): the maker/checker queue is bank-scoped.
+                    "pendingchange");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

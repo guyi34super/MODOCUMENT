@@ -31,11 +31,13 @@ const sections = [
     ],
   },
   {
-    // ws09: rendered for ADMINs only (the server enforces user:admin
-    // regardless — hiding the link is UX, not security).
+    // ws09/ws10: links rendered per role (the server enforces user:admin /
+    // change:approve regardless — hiding links is UX, not security).
     label: 'Administration',
-    adminOnly: true,
-    links: [{ to: '/admin/users', label: 'Users' }],
+    links: [
+      { to: '/admin/users', label: 'Users', roles: ['ADMIN'] },
+      { to: '/admin/changes', label: 'Approvals', roles: ['ADMIN', 'APPROVER'] },
+    ],
   },
   {
     label: 'Account',
@@ -151,7 +153,15 @@ export default function Layout() {
           drawer ? 'z-[45] shadow-xl' : 'z-10'
         } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        {sections.filter((section) => !section.adminOnly || user?.role === 'ADMIN').map((section, i) => (
+        {sections
+          .map((section) => ({
+            ...section,
+            links: section.links.filter(
+              (link) => !link.roles || link.roles.includes(user?.role)
+            ),
+          }))
+          .filter((section) => section.links.length > 0)
+          .map((section, i) => (
           <div key={section.label || i} className="mb-5">
             {section.label && (
               <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">

@@ -126,13 +126,32 @@ public class AuthUseCase {
             throw new IllegalArgumentException("A valid email is required.");
         }
         passwordPolicy.validate(password, email);
+        return createUserWithHash(email, passwordEncoder.encode(password), displayName, bankId,
+                role, mustChangePassword);
+    }
+
+    /**
+     * Creates a user from an ALREADY-ENCODED password hash (ws10
+     * maker/checker: the USER_CREATE applier). The policy ran and the hash
+     * was computed when the maker SUBMITTED the pending change, so no
+     * password material ever rides the PendingChange row or this call —
+     * only the hash, exactly what AppUsers stores anyway.
+     */
+    public UserDto createUserWithHash(String email, String passwordHash, String displayName,
+                                      int bankId, Role role, boolean mustChangePassword) {
+        if (email == null || email.isBlank() || !email.contains("@")) {
+            throw new IllegalArgumentException("A valid email is required.");
+        }
+        if (passwordHash == null || passwordHash.isBlank()) {
+            throw new IllegalArgumentException("A password hash is required.");
+        }
         String normalized = email.trim().toLowerCase();
         if (users.existsByEmail(normalized)) {
             throw new IllegalStateException("An account with this email already exists.");
         }
         AppUser user = new AppUser();
         user.setEmail(normalized);
-        user.setPasswordHash(passwordEncoder.encode(password));
+        user.setPasswordHash(passwordHash);
         user.setDisplayName(displayName == null || displayName.isBlank() ? normalized : displayName.trim());
         user.setBankId(bankId);
         user.setRole(role == null ? Role.READ_ONLY : role);

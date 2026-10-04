@@ -1,13 +1,18 @@
 package com.modocument.api.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.ChangeType;
 import com.modocument.domain.model.Permission;
-import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.usecase.DeleteTemplateUseCase;
+import com.modocument.application.usecase.PendingChangeUseCase;
+import com.modocument.application.usecase.UpdateTemplateUseCase;
 import com.modocument.domain.entity.Template;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -19,25 +24,42 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
+/**
+ * Template CRUD. Update and delete are maker/checker-gated (ws10, SEC-023):
+ * with {@code modocument.security.maker-checker.template-changes} on (the
+ * production default) they SUBMIT a PendingChange (202) for a different
+ * user's approval; a single-user dev setup can turn the gate off, and the
+ * same use cases then apply directly. User-security changes have no such
+ * switch — only template changes are configurable.
+ */
 @RestController
 public class TemplateController {
 
     private final TemplateRepository repo;
+    private final UpdateTemplateUseCase updateTemplate;
     private final DeleteTemplateUseCase deleteTemplate;
+    private final PendingChangeUseCase pendingChanges;
     private final CurrentUserProvider currentUser;
-    private final AuditRecorder audit;
+    private final ObjectMapper objectMapper;
+    private final boolean makerCheckerForTemplates;
 
-    public TemplateController(TemplateRepository repo, DeleteTemplateUseCase deleteTemplate,
-                              CurrentUserProvider currentUser, AuditRecorder audit) {
+    public TemplateController(TemplateRepository repo, UpdateTemplateUseCase updateTemplate,
+                              DeleteTemplateUseCase deleteTemplate,
+                              PendingChangeUseCase pendingChanges,
+                              CurrentUserProvider currentUser, ObjectMapper objectMapper,
+                              @Value("${modocument.security.maker-checker.template-changes:true}")
+                              boolean makerCheckerForTemplates) {
         this.repo = repo;
+        this.updateTemplate = updateTemplate;
         this.deleteTemplate = deleteTemplate;
+        this.pendingChanges = pendingChanges;
         this.currentUser = currentUser;
-        this.audit = audit;
+        this.objectMapper = objectMapper;
+        this.makerCheckerForTemplates = makerCheckerForTemplates;
     }
 
     @RequiresPermission(Permission.TEMPLATE_READ)
@@ -70,26 +92,30 @@ public class TemplateController {
                 .body(entity);
     }
 
+    /** Gated: 202 + the pending change; config-off: applies and answers like before. */
     @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PutMapping("/Templates/Update")
     public ResponseEntity<?> update(@Valid @RequestBody Template dto) {
-        // Owner-scoped: updating another user's template is a 404, not an edit.
-        Optional<Template> existingOpt =
-                repo.getByIdAndOwner(dto.getTemplateId(), currentUser.requireUserId());
-        if (existingOpt.isEmpty()) {
+        if (makerCheckerForTemplates) {
+            ObjectNode payload = objectMapper.createObjectNode();
+            payload.put("templateId", dto.getTemplateId());
+            payload.put("name", dto.getName());
+            if (dto.getDescription() != null) {
+                payload.put("description", dto.getDescription());
+            }
+            // Ownership is checked at submit: a foreign template 404s here,
+            // exactly like the direct path — no probing via the queue.
+            return ResponseEntity.accepted()
+                    .body(pendingChanges.submit(ChangeType.TEMPLATE_UPDATE, payload, null));
+        }
+        Template response;
+        try {
+            // Owner-scoped: updating another user's template is a 404, not an edit.
+            response = updateTemplate.handle(dto.getTemplateId(), dto.getName(),
+                    dto.getDescription(), currentUser.requireUserId());
+        } catch (NoSuchElementException e) {
             return notFound(dto.getTemplateId());
         }
-        Template existing = existingOpt.get();
-        // Exemplar of the C7 old/new pattern other domains should copy: a
-        // small field-level snapshot before and after, via AuditRecorder's
-        // one-liner (actor/bank/request enrichment happens in the recorder).
-        Map<String, Object> before = snapshot(existing);
-        existing.setName(dto.getName());
-        existing.setDescription(dto.getDescription());
-
-        Template response = repo.update(existing);
-        audit.success("TEMPLATE_UPDATED", "Template", String.valueOf(response.getTemplateId()),
-                before, snapshot(response));
         Template updated = new Template(response.getTemplateId(), response.getName(),
                 response.getDescription());
 
@@ -99,9 +125,16 @@ public class TemplateController {
                 .body(updated);
     }
 
+    /** Gated: 202 + the pending change; config-off: deletes and answers 204 like before. */
     @RequiresPermission(Permission.TEMPLATE_WRITE)
     @DeleteMapping("/Templates/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
+        if (makerCheckerForTemplates) {
+            ObjectNode payload = objectMapper.createObjectNode();
+            payload.put("templateId", id);
+            return ResponseEntity.accepted()
+                    .body(pendingChanges.submit(ChangeType.TEMPLATE_DELETE, payload, null));
+        }
         try {
             deleteTemplate.handle(id, currentUser.requireUserId());
         } catch (NoSuchElementException e) {
@@ -114,14 +147,6 @@ public class TemplateController {
                     .body(Map.of("error", e.getMessage()));
         }
         return ResponseEntity.noContent().build();
-    }
-
-    /** The audited field-level view of a template (C7 old/new values). */
-    private static Map<String, Object> snapshot(Template template) {
-        Map<String, Object> values = new LinkedHashMap<>();
-        values.put("name", template.getName());
-        values.put("description", template.getDescription());
-        return values;
     }
 
     /** A body the frontend can render; an empty 404 degrades to "Request failed (404)". */

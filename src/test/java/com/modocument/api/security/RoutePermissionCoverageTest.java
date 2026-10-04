@@ -61,10 +61,10 @@ class RoutePermissionCoverageTest {
     /**
      * Permissions reserved for later workstreams — in the matrix, no routes
      * yet. USER_ADMIN left this list with ws09 (it now guards the
-     * /api/admin/users routes).
+     * /api/admin/users routes), CHANGE_APPROVE with ws10 (it guards the
+     * approve/reject decisions on /api/admin/changes).
      */
-    private static final Set<Permission> RESERVED = EnumSet.of(
-            Permission.CHANGE_APPROVE, Permission.DOC_RELEASE);
+    private static final Set<Permission> RESERVED = EnumSet.of(Permission.DOC_RELEASE);
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

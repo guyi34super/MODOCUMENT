@@ -1,17 +1,19 @@
 package com.modocument.api.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.CreateUserRequest;
 import com.modocument.application.dto.UpdateUserDisabledRequest;
 import com.modocument.application.dto.UpdateUserRoleRequest;
 import com.modocument.application.usecase.AccessReviewUseCase;
+import com.modocument.application.usecase.PendingChangeUseCase;
 import com.modocument.application.usecase.UserAdminUseCase;
+import com.modocument.domain.model.ChangeType;
 import com.modocument.domain.model.Permission;
-import com.modocument.domain.model.Role;
 import jakarta.validation.Valid;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,8 +23,6 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Locale;
-
 /**
  * Bank-scoped user administration (ws09, gates B1/B10, PRIV-017). Every
  * route requires USER_ADMIN (ADMIN only — class-level annotation), and every
@@ -30,6 +30,12 @@ import java.util.Locale;
  * another bank 404s like a non-existent id. Error mapping rides the global
  * ApiExceptionHandler: unknown/foreign user → 404, bad role or weak
  * temporary password → 400, self-targeting and the last-admin guard → 409.
+ *
+ * <p>Dual control (ws10, gate B7/SEC-023): user creation, role changes and
+ * the DISABLE switch no longer apply here — they SUBMIT a PendingChange
+ * (202 Accepted + the pending row) that a DIFFERENT user must approve via
+ * POST /api/admin/changes/{id}/approve. Only re-enabling an account stays
+ * direct: it restores access that was already dual-approved.
  */
 @RestController
 @RequiresPermission(Permission.USER_ADMIN)
@@ -37,10 +43,15 @@ public class UserAdminController {
 
     private final UserAdminUseCase userAdmin;
     private final AccessReviewUseCase accessReview;
+    private final PendingChangeUseCase pendingChanges;
+    private final ObjectMapper objectMapper;
 
-    public UserAdminController(UserAdminUseCase userAdmin, AccessReviewUseCase accessReview) {
+    public UserAdminController(UserAdminUseCase userAdmin, AccessReviewUseCase accessReview,
+                               PendingChangeUseCase pendingChanges, ObjectMapper objectMapper) {
         this.userAdmin = userAdmin;
         this.accessReview = accessReview;
+        this.pendingChanges = pendingChanges;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping("/api/admin/users")
@@ -48,23 +59,48 @@ public class UserAdminController {
         return ResponseEntity.ok(userAdmin.listUsers());
     }
 
+    /** Maker side of USER_CREATE: 202 + the pending change awaiting a second admin. */
     @PostMapping("/api/admin/users")
     public ResponseEntity<?> create(@Valid @RequestBody CreateUserRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(userAdmin.createUser(
-                request.getEmail(), request.getDisplayName(), parseRole(request.getRole()),
-                request.getTemporaryPassword()));
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("email", request.getEmail());
+        if (request.getDisplayName() != null) {
+            payload.put("displayName", request.getDisplayName());
+        }
+        payload.put("role", request.getRole());
+        // Plaintext travels no further than submit(): the applier validates
+        // it against the password policy and persists only its hash.
+        payload.put("temporaryPassword", request.getTemporaryPassword());
+        return ResponseEntity.accepted()
+                .body(pendingChanges.submit(ChangeType.USER_CREATE, payload, null));
     }
 
+    /** Maker side of USER_ROLE_CHANGE: 202 + the pending change. */
     @PutMapping("/api/admin/users/{id}/role")
     public ResponseEntity<?> changeRole(@PathVariable int id,
                                         @Valid @RequestBody UpdateUserRoleRequest request) {
-        return ResponseEntity.ok(userAdmin.changeRole(id, parseRole(request.getRole())));
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("targetUserId", id);
+        payload.put("role", request.getRole());
+        return ResponseEntity.accepted()
+                .body(pendingChanges.submit(ChangeType.USER_ROLE_CHANGE, payload, null));
     }
 
+    /**
+     * Disabling (the leaver switch) is maker/checker-gated: 202 + the
+     * pending change. Re-enabling applies directly (200) — the lower-risk
+     * direction, see the class comment.
+     */
     @PutMapping("/api/admin/users/{id}/disabled")
     public ResponseEntity<?> setDisabled(@PathVariable int id,
                                          @Valid @RequestBody UpdateUserDisabledRequest request) {
-        return ResponseEntity.ok(userAdmin.setDisabled(id, request.getDisabled()));
+        if (!request.getDisabled()) {
+            return ResponseEntity.ok(userAdmin.setDisabled(id, false));
+        }
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("targetUserId", id);
+        return ResponseEntity.accepted()
+                .body(pendingChanges.submit(ChangeType.USER_DISABLE, payload, null));
     }
 
     /** Gate B10: the caller's bank's users with last-login dates, as CSV. */
@@ -84,14 +120,5 @@ public class UserAdminController {
     @GetMapping("/api/admin/users/access-review")
     public ResponseEntity<?> accessReviewWorksheet() {
         return ResponseEntity.ok(accessReview.generate());
-    }
-
-    private static Role parseRole(String value) {
-        try {
-            return Role.valueOf(value.trim().toUpperCase(Locale.ROOT));
-        } catch (RuntimeException invalid) {
-            throw new IllegalArgumentException(
-                    "Unknown role '" + value + "'; use ADMIN, APPROVER, READ_WRITE or READ_ONLY.");
-        }
     }
 }

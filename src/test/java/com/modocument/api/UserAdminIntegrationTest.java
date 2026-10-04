@@ -36,21 +36,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * ws09 gates over real HTTP semantics (MockMvc + the real security chain):
+ * ws09 gates over real HTTP semantics (MockMvc + the real security chain),
+ * now with the ws10 dual-control flow in front of every critical mutation:
  *
  * <ul>
  *   <li>B1 — users are admin-managed and individually identified: the
  *       listing carries every account of the Admin's bank with role, state
  *       and last login; creation issues a temporary password that must be
  *       changed before anything else works.</li>
+ *   <li>B7/SEC-023 — creation, role changes and the disable switch answer
+ *       202 with a PENDING change; nothing happens to the target until a
+ *       SECOND admin approves (MakerCheckerIntegrationTest proves the
+ *       self-approval block itself).</li>
  *   <li>B10 — the CSV export contains the caller's own bank only, with
  *       last-login dates, and neutralizes spreadsheet formulas.</li>
- *   <li>PRIV-017 — the leaver test: after the disable switch the existing
- *       access token, the refresh cookie and a fresh login all fail on the
- *       very next request, the login with the same generic 401 as any bad
- *       credential; the USER_DISABLED audit row is the evidence.</li>
- *   <li>Mover (B5 mechanism) — a role change kills every outstanding token
- *       of the target immediately.</li>
+ *   <li>PRIV-017 — the leaver test: submit → approve by a second admin →
+ *       the existing access token, the refresh cookie and a fresh login all
+ *       fail on the very next request, the login with the same generic 401
+ *       as any bad credential; the USER_DISABLED audit row is the
+ *       evidence.</li>
+ *   <li>Mover (B5 mechanism) — an APPROVED role change kills every
+ *       outstanding token of the target immediately.</li>
  * </ul>
  */
 @SpringBootTest
@@ -79,6 +85,7 @@ class UserAdminIntegrationTest {
     private Bank bankA;
     private Bank bankB;
     private AppUser admin;
+    private AppUser secondAdmin;
     private AppUser member;
     private AppUser outsider;
     private String clientIp;
@@ -90,6 +97,8 @@ class UserAdminIntegrationTest {
         bankA = banks.save(new Bank("WSA" + tag.substring(0, 4).toUpperCase(), "Bank A"));
         bankB = banks.save(new Bank("WSB" + tag.substring(4).toUpperCase(), "Bank B"));
         admin = storeUser("admin-" + tag, bankA.getBankId(), Role.ADMIN);
+        // ws10: the checker — a maker's change needs a DIFFERENT admin.
+        secondAdmin = storeUser("admin2-" + tag, bankA.getBankId(), Role.ADMIN);
         member = storeUser("member-" + tag, bankA.getBankId(), Role.READ_WRITE);
         outsider = storeUser("outsider-" + tag, bankB.getBankId(), Role.READ_WRITE);
         // Distinct per run, so the shared per-IP login throttle never trips.
@@ -98,6 +107,9 @@ class UserAdminIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        // Pending changes reference users and banks by FK — scrub them first.
+        jdbc.update("DELETE FROM PendingChange WHERE BankId = ? OR BankId = ?",
+                bankA.getBankId(), bankB.getBankId());
         for (Integer id : createdUserIds) {
             refreshTokens.findByUserId(id).forEach(refreshTokens::delete);
             users.deleteById(id);
@@ -145,8 +157,25 @@ class UserAdminIntegrationTest {
         return jwtService.issueToken(admin);
     }
 
+    /** The ws10 checker: a different admin of the same bank. */
+    private String secondAdminToken() {
+        return jwtService.issueToken(secondAdmin);
+    }
+
     private static String bearer(String token) {
         return "Bearer " + token;
+    }
+
+    /** Approves a pending change as the second admin and returns the decided row. */
+    private JsonNode approveAsSecondAdmin(int pendingChangeId) throws Exception {
+        MvcResult decided = mvc.perform(post("/api/admin/changes/" + pendingChangeId + "/approve")
+                        .header("Authorization", bearer(secondAdminToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"comment\":\"reviewed\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPLIED"))
+                .andReturn();
+        return MAPPER.readTree(decided.getResponse().getContentAsString());
     }
 
     // ------------------------------------------------------------- B1: list
@@ -165,7 +194,7 @@ class UserAdminIntegrationTest {
         JsonNode rows = MAPPER.readTree(result.getResponse().getContentAsString());
         List<String> emails = new ArrayList<>();
         rows.forEach(row -> emails.add(row.get("email").asText()));
-        assertThat(emails).contains(admin.getEmail(), member.getEmail())
+        assertThat(emails).contains(admin.getEmail(), secondAdmin.getEmail(), member.getEmail())
                 .doesNotContain(outsider.getEmail());
 
         JsonNode memberRow = null;
@@ -204,11 +233,13 @@ class UserAdminIntegrationTest {
     // -------------------------------------------- joiner + forced password change
 
     @Test
-    void joinerIsCreatedInTheAdminsBankAndMustChangeThePasswordFirst() throws Exception {
+    void joinerIsCreatedInTheAdminsBankAfterApprovalAndMustChangeThePasswordFirst()
+            throws Exception {
         String adminToken = adminToken();
         String joinerEmail = "joiner-" + UUID.randomUUID() + "@example.com";
 
-        // The temporary password rides the full password policy.
+        // The temporary password rides the full password policy — refused at
+        // SUBMIT time, so the maker learns immediately, not the checker.
         mvc.perform(post("/api/admin/users")
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -216,17 +247,27 @@ class UserAdminIntegrationTest {
                                 + "\"role\":\"READ_WRITE\",\"temporaryPassword\":\"weak\"}"))
                 .andExpect(status().isBadRequest());
 
-        MvcResult created = mvc.perform(post("/api/admin/users")
+        // ws10: creation is maker/checker-gated — 202, nothing created yet,
+        // and the pending payload carries NO password material (only a hash
+        // is stored, and even that never leaves the backend).
+        MvcResult submitted = mvc.perform(post("/api/admin/users")
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"" + joinerEmail + "\",\"displayName\":\"Joiner\","
                                 + "\"role\":\"READ_WRITE\",\"temporaryPassword\":\""
                                 + PASSWORD + "\"}"))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.mustChangePassword").value(true))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("REQUESTED"))
+                .andExpect(jsonPath("$.changeType").value("USER_CREATE"))
                 .andReturn();
-        int joinerId = MAPPER.readTree(created.getResponse().getContentAsString())
-                .get("userId").asInt();
+        String submittedBody = submitted.getResponse().getContentAsString();
+        assertThat(submittedBody).doesNotContain(PASSWORD).doesNotContain("passwordHash");
+        int pendingId = MAPPER.readTree(submittedBody).get("pendingChangeId").asInt();
+        assertThat(users.findAll()).noneMatch(u -> u.getEmail().equals(joinerEmail));
+
+        // The second admin approves; only now does the account exist.
+        JsonNode applied = approveAsSecondAdmin(pendingId);
+        int joinerId = Integer.parseInt(applied.get("targetEntityId").asText());
         createdUserIds.add(joinerId);
 
         AppUser stored = users.findById(joinerId).orElseThrow();
@@ -267,18 +308,31 @@ class UserAdminIntegrationTest {
     // ------------------------------------------------------------- mover (B5)
 
     @Test
-    void roleChangeKillsTheTargetsOutstandingTokensImmediately() throws Exception {
+    void approvedRoleChangeKillsTheTargetsOutstandingTokensImmediately() throws Exception {
         String memberToken = token(member.getEmail());
         mvc.perform(get("/api/auth/me").header("Authorization", bearer(memberToken)))
                 .andExpect(status().isOk());
 
+        // Submit: 202, pending — the target's role and sessions are untouched.
         String adminToken = adminToken();
-        mvc.perform(put("/api/admin/users/" + member.getAppUserId() + "/role")
+        MvcResult submitted = mvc.perform(put("/api/admin/users/" + member.getAppUserId() + "/role")
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"READ_ONLY\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.role").value("READ_ONLY"));
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("REQUESTED"))
+                .andReturn();
+        int pendingId = MAPPER.readTree(submitted.getResponse().getContentAsString())
+                .get("pendingChangeId").asInt();
+        assertThat(users.findById(member.getAppUserId()).orElseThrow().getRole())
+                .isEqualTo(Role.READ_WRITE);
+        mvc.perform(get("/api/auth/me").header("Authorization", bearer(memberToken)))
+                .andExpect(status().isOk());
+
+        // Approval by the SECOND admin applies the change.
+        approveAsSecondAdmin(pendingId);
+        assertThat(users.findById(member.getAppUserId()).orElseThrow().getRole())
+                .isEqualTo(Role.READ_ONLY);
 
         // The token minted before the change is dead on its next request.
         mvc.perform(get("/api/auth/me").header("Authorization", bearer(memberToken)))
@@ -293,6 +347,7 @@ class UserAdminIntegrationTest {
     void roleAndDisableRefuseCrossBankTargetsLikeMissingIds() throws Exception {
         String adminToken = adminToken();
 
+        // Refused at SUBMIT time: no pending row for a foreign-bank target.
         mvc.perform(put("/api/admin/users/" + outsider.getAppUserId() + "/role")
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -304,6 +359,10 @@ class UserAdminIntegrationTest {
                         .content("{\"disabled\":true}"))
                 .andExpect(status().isNotFound());
         assertThat(users.findById(outsider.getAppUserId()).orElseThrow().isDisabled()).isFalse();
+        Integer pendingRows = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM PendingChange WHERE BankId = ?", Integer.class,
+                bankA.getBankId());
+        assertThat(pendingRows).isZero();
     }
 
     @Test
@@ -325,7 +384,8 @@ class UserAdminIntegrationTest {
     // ---------------------------------------------------- leaver (PRIV-017)
 
     @Test
-    void disabledLeaverIsInertImmediatelyAndTheEvidenceIsAudited() throws Exception {
+    void disabledLeaverIsInertImmediatelyAfterApprovalAndTheEvidenceIsAudited()
+            throws Exception {
         // The leaver has a live session: access token + refresh cookie.
         MvcResult session = login(member.getEmail(), PASSWORD, 200);
         String leaverToken = MAPPER.readTree(session.getResponse().getContentAsString())
@@ -335,14 +395,24 @@ class UserAdminIntegrationTest {
         mvc.perform(get("/api/auth/me").header("Authorization", bearer(leaverToken)))
                 .andExpect(status().isOk());
 
-        // The leaver switch.
+        // The leaver switch is maker/checker-gated: 202, still fully active.
         String adminToken = adminToken();
-        mvc.perform(put("/api/admin/users/" + member.getAppUserId() + "/disabled")
-                        .header("Authorization", bearer(adminToken))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"disabled\":true}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.disabled").value(true));
+        MvcResult submitted = mvc.perform(
+                        put("/api/admin/users/" + member.getAppUserId() + "/disabled")
+                                .header("Authorization", bearer(adminToken))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"disabled\":true}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("REQUESTED"))
+                .andReturn();
+        int pendingId = MAPPER.readTree(submitted.getResponse().getContentAsString())
+                .get("pendingChangeId").asInt();
+        assertThat(users.findById(member.getAppUserId()).orElseThrow().isDisabled()).isFalse();
+        mvc.perform(get("/api/auth/me").header("Authorization", bearer(leaverToken)))
+                .andExpect(status().isOk());
+
+        // A SECOND admin approves — the account is inert the same moment.
+        approveAsSecondAdmin(pendingId);
 
         // 1. The existing access token fails on its very next request.
         mvc.perform(get("/api/auth/me").header("Authorization", bearer(leaverToken)))
@@ -362,12 +432,14 @@ class UserAdminIntegrationTest {
                 String.valueOf(member.getAppUserId()));
         assertThat(audited).isNotNull().isPositive();
 
-        // Re-enabling lets the person sign in afresh (no stale sessions exist).
+        // Re-enabling stays DIRECT (ws10: restoring access is the lower-risk
+        // direction) and lets the person sign in afresh.
         mvc.perform(put("/api/admin/users/" + member.getAppUserId() + "/disabled")
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"disabled\":false}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disabled").value(false));
         login(member.getEmail(), PASSWORD, 200);
     }
 

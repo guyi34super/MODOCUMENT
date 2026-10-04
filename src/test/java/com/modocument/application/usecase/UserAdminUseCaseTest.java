@@ -87,21 +87,23 @@ class UserAdminUseCaseTest {
     // ------------------------------------------------------------- joiners
 
     @Test
-    void createUserLandsInTheCallersBankWithMustChangePassword() {
+    void createApprovedUserLandsInTheChangesBankWithMustChangePassword() {
+        // ws10: the applier hands over the HASH computed at submit time —
+        // the plaintext temporary password never reaches this layer.
         UserDto created = new UserDto(9, "new@example.com", "New", "{}", "READ_ONLY",
                 Bank.DEFAULT_BANK_ID, true);
-        when(auth.createUser("new@example.com", "Temp-Rotor-91x!", "New",
+        when(auth.createUserWithHash("new@example.com", "{argon2}$fake-hash", "New",
                 Bank.DEFAULT_BANK_ID, Role.READ_ONLY, true)).thenReturn(created);
 
-        UserDto result = useCase.createUser("new@example.com", "New", Role.READ_ONLY,
-                "Temp-Rotor-91x!");
+        UserDto result = useCase.createApprovedUser("new@example.com", "New", Role.READ_ONLY,
+                "{argon2}$fake-hash", Bank.DEFAULT_BANK_ID);
 
         assertThat(result).isSameAs(created);
         AuditEventSpec recorded = recordedAudit();
         assertThat(recorded.action()).isEqualTo("USER_CREATED");
         assertThat(recorded.entityId()).isEqualTo("9");
         // No password material in the audit trail, ever.
-        assertThat(String.valueOf(recorded.newValues())).doesNotContain("Temp-Rotor-91x!");
+        assertThat(String.valueOf(recorded.newValues())).doesNotContain("fake-hash");
     }
 
     // -------------------------------------------------------------- movers

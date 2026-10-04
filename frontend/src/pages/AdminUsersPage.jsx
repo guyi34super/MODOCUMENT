@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as adminApi from '../api/admin';
+import { isPendingChange } from '../api/changes';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import PageHeader from '../components/PageHeader';
@@ -18,8 +20,10 @@ function formatDate(value) {
 /**
  * Bank-scoped user administration (ws09): the server enforces everything —
  * this page only exists for ADMINs of the bank and renders their own bank's
- * users. Role changes and the enable/disable (leaver) switch always confirm,
- * because both end the target's sessions immediately.
+ * users. Creation, role changes and the DISABLE switch are maker/checker
+ * gated (ws10): the server answers 202 with a pending change that a second
+ * administrator must approve, and this page says so instead of pretending
+ * the change happened. Only re-enabling applies immediately.
  */
 export default function AdminUsersPage() {
   const toast = useToast();
@@ -59,8 +63,11 @@ export default function AdminUsersPage() {
     setBusy(true);
     try {
       await toast.promise(adminApi.createUser(form), {
-        loading: 'Creating user…',
-        success: `User ${form.email} created — they must change the temporary password on first login`,
+        loading: 'Submitting user creation…',
+        success: (result) =>
+          isPendingChange(result)
+            ? `Creating ${form.email} was submitted for approval — a second administrator must approve it (change #${result.pendingChangeId})`
+            : `User ${form.email} created — they must change the temporary password on first login`,
       });
       setForm(emptyForm);
       setShowCreate(false);
@@ -76,16 +83,20 @@ export default function AdminUsersPage() {
     if (role === target.role) return;
     if (
       !window.confirm(
-        `Change ${target.email} from ${target.role} to ${role}? ` +
-          'Their active sessions will be signed out immediately.'
+        `Request changing ${target.email} from ${target.role} to ${role}? ` +
+          'A second administrator must approve it; on approval the target is ' +
+          'signed out immediately.'
       )
     ) {
       return;
     }
     try {
       await toast.promise(adminApi.setUserRole(target.id, role), {
-        loading: 'Changing role…',
-        success: `${target.email} is now ${role}`,
+        loading: 'Submitting role change…',
+        success: (result) =>
+          isPendingChange(result)
+            ? `Role change for ${target.email} submitted for approval (change #${result.pendingChangeId})`
+            : `${target.email} is now ${role}`,
       });
       load();
     } catch {
@@ -96,14 +107,17 @@ export default function AdminUsersPage() {
   const toggleDisabled = async (target) => {
     const disabling = !target.disabled;
     const question = disabling
-      ? `Disable ${target.email}? The account becomes unusable immediately: ` +
-        'their sessions end and they can no longer sign in.'
+      ? `Request disabling ${target.email}? A second administrator must approve ` +
+        'it; on approval the account becomes unusable immediately.'
       : `Enable ${target.email}? They will be able to sign in again.`;
     if (!window.confirm(question)) return;
     try {
       await toast.promise(adminApi.setUserDisabled(target.id, disabling), {
-        loading: disabling ? 'Disabling…' : 'Enabling…',
-        success: `${target.email} ${disabling ? 'disabled' : 'enabled'}`,
+        loading: disabling ? 'Submitting disable request…' : 'Enabling…',
+        success: (result) =>
+          isPendingChange(result)
+            ? `Disabling ${target.email} submitted for approval (change #${result.pendingChangeId})`
+            : `${target.email} ${disabling ? 'disabled' : 'enabled'}`,
       });
       load();
     } catch {
@@ -149,6 +163,14 @@ export default function AdminUsersPage() {
         }
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
+      <p className="mb-4 text-sm text-muted">
+        Creating, re-roling or disabling a user needs a second administrator&apos;s approval
+        (maker/checker) — track requests under{' '}
+        <Link to="/admin/changes" className="text-accent hover:underline">
+          Approvals
+        </Link>
+        .
+      </p>
 
       {showCreate && (
         <Card className="mb-5">

@@ -63,12 +63,19 @@ function renderPage() {
   );
 }
 
+/** What the ws10 backend answers with 202: a pending change, not the result. */
+const pending = (id, changeType) => ({
+  pendingChangeId: id,
+  changeType,
+  status: 'REQUESTED',
+});
+
 describe('AdminUsersPage', () => {
   beforeEach(() => {
     listUsers.mockReset().mockResolvedValue(ROWS);
-    createUser.mockReset().mockResolvedValue({});
-    setUserRole.mockReset().mockResolvedValue({});
-    setUserDisabled.mockReset().mockResolvedValue({});
+    createUser.mockReset().mockResolvedValue(pending(11, 'USER_CREATE'));
+    setUserRole.mockReset().mockResolvedValue(pending(12, 'USER_ROLE_CHANGE'));
+    setUserDisabled.mockReset().mockResolvedValue(pending(13, 'USER_DISABLE'));
     accessReview.mockReset().mockResolvedValue([]);
     exportUsers.mockReset().mockResolvedValue(undefined);
   });
@@ -116,7 +123,12 @@ describe('AdminUsersPage', () => {
         temporaryPassword: 'Temp-Rotor-91x!',
       })
     );
-    // The list reloads after creation.
+    // ws10: the 202 answer is a PENDING change — the page says so instead of
+    // pretending the user exists.
+    expect(
+      await screen.findByText(/submitted for approval.*change #11/)
+    ).toBeInTheDocument();
+    // The list reloads after the submission.
     await waitFor(() => expect(listUsers).toHaveBeenCalledTimes(2));
   });
 
@@ -132,6 +144,10 @@ describe('AdminUsersPage', () => {
     vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
     await userEvent.click(screen.getByRole('button', { name: 'Disable' }));
     await waitFor(() => expect(setUserDisabled).toHaveBeenCalledWith(2, true));
+    // ws10: the disable is pending a second administrator's approval.
+    expect(
+      await screen.findByText(/submitted for approval \(change #13\)/)
+    ).toBeInTheDocument();
   });
 
   it('changes a role through a confirm that mentions the session revocation', async () => {
@@ -146,6 +162,9 @@ describe('AdminUsersPage', () => {
 
     expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('signed out'));
     await waitFor(() => expect(setUserRole).toHaveBeenCalledWith(2, 'APPROVER'));
+    expect(
+      await screen.findByText(/Role change for worker@bank.example submitted for approval/)
+    ).toBeInTheDocument();
   });
 
   it('exports the CSV through the download helper', async () => {

@@ -9,6 +9,7 @@ import {
   getTemplate,
   updateTemplate,
 } from '../api/templates';
+import { isPendingChange } from '../api/changes';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
@@ -119,7 +120,11 @@ export default function TemplateEditorPage() {
     try {
       await toast.promise(updateTemplate({ templateId: Number(id), name, description }), {
         loading: 'Saving template…',
-        success: 'Template details saved',
+        // ws10: in production the edit waits for a second user's approval.
+        success: (result) =>
+          isPendingChange(result)
+            ? `Template change submitted for approval (change #${result.pendingChangeId})`
+            : 'Template details saved',
       });
       savedDetails.current = { name, description };
       return true;

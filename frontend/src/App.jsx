@@ -18,6 +18,7 @@ import ExtractionJobsPage from './pages/ExtractionJobsPage';
 import ExtractionJobDetailPage from './pages/ExtractionJobDetailPage';
 import ProfilePage from './pages/ProfilePage';
 import AdminUsersPage from './pages/AdminUsersPage';
+import PendingChangesPage from './pages/PendingChangesPage';
 import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
 
 export default function App() {
@@ -60,6 +61,8 @@ export default function App() {
         <Route path="/profile" element={<ProfilePage />} />
         {/* Rendered for ADMINs; the server enforces user:admin regardless. */}
         <Route path="/admin/users" element={<AdminUsersPage />} />
+        {/* ws10 approval queue for ADMIN + APPROVER (server: change:approve). */}
+        <Route path="/admin/changes" element={<PendingChangesPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

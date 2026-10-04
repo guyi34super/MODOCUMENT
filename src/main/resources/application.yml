@@ -111,6 +111,16 @@ modocument:
       require-for-admin: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:true}
       # MFA challenge token lifetime (password-to-second-factor window).
       challenge-ttl-minutes: ${MODOCUMENT_MFA_CHALLENGE_TTL_MINUTES:5}
+    maker-checker:
+      # Dual control on template update/delete (ws10, SEC-023): when true
+      # (the default), PUT /Templates/Update and DELETE /Templates/{id}
+      # submit a pending change (202) that a DIFFERENT user holding
+      # change:approve must approve. A single-user dev setup can turn THIS
+      # gate off and apply template changes directly. User-security changes
+      # (user creation / role change / disable) are NEVER exempt — they go
+      # through maker/checker unconditionally, and self-approval is always
+      # a hard 409 (gate B7).
+      template-changes: ${MODOCUMENT_MAKER_CHECKER_TEMPLATE_CHANGES:true}
     session:
       # Refresh-session bounds (SUP-S02). Idle: a refresh token UNUSED for
       # this long is refused even when its family is younger than the

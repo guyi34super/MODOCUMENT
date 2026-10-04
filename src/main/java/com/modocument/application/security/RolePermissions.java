@@ -47,8 +47,8 @@ import static com.modocument.domain.model.Permission.VALIDATION_WRITE;
  *       uploads, LLM use, exports, extraction runs and document
  *       generation.</li>
  *   <li><b>APPROVER</b> — READ_ONLY plus the approval verbs
- *       (CHANGE_APPROVE, DOC_RELEASE; routes land in ws10/ws11). Approvers
- *       review, they do not author.</li>
+ *       (CHANGE_APPROVE — the ws10 maker/checker decisions; DOC_RELEASE —
+ *       routes land in ws11). Approvers review, they do not author.</li>
  *   <li><b>ADMIN</b> — everything, including the shared-lookup admin,
  *       metrics and the reserved USER_ADMIN.</li>
  * </ul>

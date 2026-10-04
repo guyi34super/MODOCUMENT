@@ -45,6 +45,14 @@ import java.util.Set;
  * every outstanding access token on its next request — and revokes every
  * refresh-token family, so the old privileges (or the whole session) die
  * immediately rather than at token expiry.
+ *
+ * <p>Dual control (ws10, gate B7/SEC-023): user creation, role changes and
+ * the disable switch are no longer invoked directly by the requesting
+ * admin. The endpoints SUBMIT a PendingChange; the methods here are the
+ * APPLIERS a different user's approval executes — and they re-run every
+ * invariant (bank scoping, self-targeting, last-admin guard), because the
+ * world may have changed between submit and approve. Only re-enabling an
+ * account ({@link #setDisabled} with {@code false}) stays direct.
  */
 @Service
 public class UserAdminUseCase {
@@ -77,16 +85,18 @@ public class UserAdminUseCase {
     }
 
     /**
-     * Creates a user in the CALLER'S bank with a temporary password (the
-     * password policy applies) and MustChangePassword set — the joiner signs
-     * in once and is forced through a password change before anything else.
-     * No password material reaches the audit trail.
+     * Creates a user from an APPROVED pending change (ws10 maker/checker:
+     * the USER_CREATE applier is the only caller — direct creation without
+     * a second administrator's approval no longer exists). The temporary
+     * password went through the policy and was hashed when the maker
+     * submitted; MustChangePassword is set, so the joiner signs in once and
+     * is forced through a password change before anything else. No password
+     * material reaches the audit trail.
      */
     @Transactional
-    public UserDto createUser(String email, String displayName, Role role,
-                              String temporaryPassword) {
-        int bankId = currentUser.requireBankId();
-        UserDto created = auth.createUser(email, temporaryPassword, displayName, bankId,
+    public UserDto createApprovedUser(String email, String displayName, Role role,
+                                      String passwordHash, int bankId) {
+        UserDto created = auth.createUserWithHash(email, passwordHash, displayName, bankId,
                 role, true);
         audit.record(AuditEventSpec.builder("USER_CREATED", AuditOutcome.SUCCESS)
                 .entity("AppUser", String.valueOf(created.userId()))

@@ -33,6 +33,12 @@ modocument:
       # Test-only signing key; production requires MODOCUMENT_JWT_SECRET.
       secret: modocument-local-dev-secret-change-in-production-0123456789
     permit-dev-paths: true
+    maker-checker:
+      # The broad H2 suite exercises the DIRECT template paths (the
+      # documented config-off mode); MakerCheckerIntegrationTest turns the
+      # template gate back on explicitly. User-security changes have no
+      # such switch — they stay maker/checker-gated here too.
+      template-changes: false
     ssrf:
       # The extraction end-to-end test crawls a loopback HTTP server, so the
       # SSRF egress guard (which blocks loopback) is off for the suite. The
