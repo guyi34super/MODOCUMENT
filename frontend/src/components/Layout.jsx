@@ -31,6 +31,13 @@ const sections = [
     ],
   },
   {
+    // ws09: rendered for ADMINs only (the server enforces user:admin
+    // regardless — hiding the link is UX, not security).
+    label: 'Administration',
+    adminOnly: true,
+    links: [{ to: '/admin/users', label: 'Users' }],
+  },
+  {
     label: 'Account',
     links: [{ to: '/profile', label: 'Profile' }],
   },
@@ -144,7 +151,7 @@ export default function Layout() {
           drawer ? 'z-[45] shadow-xl' : 'z-10'
         } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        {sections.map((section, i) => (
+        {sections.filter((section) => !section.adminOnly || user?.role === 'ADMIN').map((section, i) => (
           <div key={section.label || i} className="mb-5">
             {section.label && (
               <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">

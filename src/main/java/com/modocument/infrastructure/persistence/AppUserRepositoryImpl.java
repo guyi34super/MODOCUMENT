@@ -2,8 +2,10 @@ package com.modocument.infrastructure.persistence;
 
 import com.modocument.application.port.AppUserRepository;
 import com.modocument.domain.entity.AppUser;
+import com.modocument.domain.model.Role;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -33,5 +35,15 @@ public class AppUserRepositoryImpl implements AppUserRepository {
     @Override
     public AppUser save(AppUser entity) {
         return jpa.save(entity);
+    }
+
+    @Override
+    public List<AppUser> listByBank(int bankId) {
+        return jpa.findByBankIdOrderByEmailAsc(bankId);
+    }
+
+    @Override
+    public long countActiveAdmins(int bankId) {
+        return jpa.countByBankIdAndRoleAndDisabledFalse(bankId, Role.ADMIN);
     }
 }

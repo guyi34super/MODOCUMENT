@@ -30,7 +30,7 @@ class AuthControllerTest {
     private final AuthController controller = new AuthController(useCase, rateLimiter);
 
     private static final UserDto USER =
-            new UserDto(1, "demo@modocument.local", "Demo User", "{}", "READ_ONLY", 1);
+            new UserDto(1, "demo@modocument.local", "Demo User", "{}", "READ_ONLY", 1, false);
 
     private static HttpServletRequest requestFrom(String ip) {
         HttpServletRequest request = mock(HttpServletRequest.class);

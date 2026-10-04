@@ -99,14 +99,29 @@ public class OidcLoginService {
         if (user == null) {
             user = users.findByEmailIgnoreCase(email).orElse(null);
             if (user != null) {
+                // Checked BEFORE linking: a disabled account must not even
+                // acquire a fresh IdP binding.
+                refuseIfDisabled(user, registrationId);
                 linkByEmail(user, registrationId, subject);
             } else {
                 user = createUser(registrationId, provider, subject, email, oidcUser);
             }
+        } else {
+            // ws09 leaver switch: the IdP may still vouch for the identity,
+            // but a disabled MoDocument account refuses the session — same
+            // outcome as a disabled password login, detail only in the audit.
+            refuseIfDisabled(user, registrationId);
         }
         applyRoleClaim(user, registrationId, provider, oidcUser);
         updateDisplayName(user, oidcUser);
         return user;
+    }
+
+    private static void refuseIfDisabled(AppUser user, String registrationId) {
+        if (user.isDisabled()) {
+            throw new OidcLoginException("Account '" + user.getEmail()
+                    + "' is disabled; refusing OIDC login via '" + registrationId + "'.");
+        }
     }
 
     /** Email fallback: links the existing account to this IdP identity. */

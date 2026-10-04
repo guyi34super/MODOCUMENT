@@ -85,6 +85,23 @@ public class AppUser {
     @Column(name = "ProviderSubject", length = 255)
     private String providerSubject;
 
+    /**
+     * The leaver switch (V70, ws09): while set, login/refresh answer the
+     * generic 401 and the RevocationValidator rejects every outstanding
+     * access token — the account is inert on the very next request.
+     */
+    @Column(name = "Disabled", nullable = false)
+    private boolean disabled;
+
+    /**
+     * Set when an administrator creates the account with a temporary
+     * password (V70, ws09). While set, every authenticated route except
+     * self-service (PROFILE_SELF) answers 403 PASSWORD_CHANGE_REQUIRED;
+     * a successful password change clears it.
+     */
+    @Column(name = "MustChangePassword", nullable = false)
+    private boolean mustChangePassword;
+
     @Column(name = "Email", length = 256, nullable = false, unique = true)
     private String email;
 
@@ -197,6 +214,22 @@ public class AppUser {
 
     public void setProviderSubject(String providerSubject) {
         this.providerSubject = providerSubject;
+    }
+
+    public boolean isDisabled() {
+        return disabled;
+    }
+
+    public void setDisabled(boolean disabled) {
+        this.disabled = disabled;
+    }
+
+    public boolean isMustChangePassword() {
+        return mustChangePassword;
+    }
+
+    public void setMustChangePassword(boolean mustChangePassword) {
+        this.mustChangePassword = mustChangePassword;
     }
 
     public String getEmail() {

@@ -44,7 +44,7 @@ class OidcLoginSuccessHandlerTest {
 
     @Test
     void successSetsTheRefreshCookieAndRedirectsWithoutAnyTokenInTheUrl() throws Exception {
-        UserDto user = new UserDto(1, "ana@acme.example", "Ana", "{}", "READ_WRITE", 7);
+        UserDto user = new UserDto(1, "ana@acme.example", "Ana", "{}", "READ_WRITE", 7, false);
         when(loginService.login(any(), any(), any(), any())).thenReturn(
                 new AuthUseCase.AuthSession(
                         new AuthResponse("access-token-value", user), "refresh-token-value"));

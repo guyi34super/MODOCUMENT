@@ -102,6 +102,23 @@ class RevocationValidatorTest {
         assertThat(validator().validate(issuedEarlier).hasErrors()).isTrue();
     }
 
+    /**
+     * PRIV-017 leaver: the Disabled flag alone (no version bump, no
+     * denylist) must kill every outstanding token on its next request.
+     */
+    @Test
+    void aTokenOfADisabledUserIsRejected() {
+        AppUser user = storedUser();
+        Jwt issuedEarlier = token(user.getAppUserId(), UUID.randomUUID().toString(),
+                user.getTokenVersion());
+        assertThat(validator().validate(issuedEarlier).hasErrors()).isFalse();
+
+        user.setDisabled(true);
+        users.saveAndFlush(user);
+
+        assertThat(validator().validate(issuedEarlier).hasErrors()).isTrue();
+    }
+
     @Test
     void aTokenForAMissingUserIsRejected() {
         OAuth2TokenValidatorResult result =

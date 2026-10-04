@@ -212,6 +212,45 @@ class OidcLoginServiceTest {
         assertThat(foreign.getAuthProvider()).isEqualTo("entra");
     }
 
+    /**
+     * ws09 leaver switch: the IdP may still vouch for the identity, but a
+     * disabled MoDocument account never gets a session — neither via the
+     * stable subject match nor via the email fallback (which must not even
+     * link the IdP identity to the disabled account).
+     */
+    @Test
+    void disabledAccountRefusesOidcLogin() {
+        AppUser linked = localUser(42, "ana@acme.example");
+        linked.setAuthProvider("keycloak");
+        linked.setProviderSubject("sub-1");
+        linked.setDisabled(true);
+        when(users.findByAuthProviderAndProviderSubject("keycloak", "sub-1"))
+                .thenReturn(Optional.of(linked));
+
+        assertThatThrownBy(() -> service.login("keycloak", oidcUser(Map.of(
+                "sub", "sub-1", "email", "ana@acme.example")), null, null))
+                .isInstanceOf(OidcLoginService.OidcLoginException.class)
+                .hasMessageContaining("disabled");
+        verify(auth, never()).openOidcSession(any(), anyString(), any(), any());
+    }
+
+    @Test
+    void disabledAccountIsNotLinkedByTheEmailFallback() {
+        AppUser local = localUser(42, "ana@acme.example");
+        local.setDisabled(true);
+        when(users.findByAuthProviderAndProviderSubject("keycloak", "sub-1"))
+                .thenReturn(Optional.empty());
+        when(users.findByEmailIgnoreCase("ana@acme.example")).thenReturn(Optional.of(local));
+
+        assertThatThrownBy(() -> service.login("keycloak", oidcUser(Map.of(
+                "sub", "sub-1", "email", "ana@acme.example")), null, null))
+                .isInstanceOf(OidcLoginService.OidcLoginException.class)
+                .hasMessageContaining("disabled");
+        // The refusal happened BEFORE any linking side effect.
+        assertThat(local.getAuthProvider()).isNull();
+        verify(users, never()).save(any(AppUser.class));
+    }
+
     @Test
     void unknownBankCodeFailsTheStartupValidatorOutsideDevProfiles() {
         when(banks.findByCode("ACME")).thenReturn(Optional.empty());

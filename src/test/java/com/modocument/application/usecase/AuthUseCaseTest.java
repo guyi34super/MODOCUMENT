@@ -87,12 +87,15 @@ class AuthUseCaseTest {
         when(repo.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
 
         UserDto created = useCase.createUser(
-                "new@example.com", "Rotor-Kestrel-91x", "New User", 1, Role.ADMIN);
+                "new@example.com", "Rotor-Kestrel-91x", "New User", 1, Role.ADMIN, true);
 
         assertThat(created.email()).isEqualTo("new@example.com");
         assertThat(created.displayName()).isEqualTo("New User");
         assertThat(created.role()).isEqualTo("ADMIN");
         assertThat(created.bankId()).isEqualTo(1);
+        // Admin-issued temporary password: the first login must be followed
+        // by a password change before anything else (ws09).
+        assertThat(created.mustChangePassword()).isTrue();
     }
 
     @Test
@@ -100,13 +103,14 @@ class AuthUseCaseTest {
         when(repo.existsByEmail("demo@modocument.local")).thenReturn(true);
 
         assertThatThrownBy(() -> useCase.createUser(
-                "demo@modocument.local", "Rotor-Kestrel-91x", "X", 1, Role.READ_ONLY))
+                "demo@modocument.local", "Rotor-Kestrel-91x", "X", 1, Role.READ_ONLY, true))
                 .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
     void createUserRejectsShortPassword() {
-        assertThatThrownBy(() -> useCase.createUser("a@b.com", "short", "X", 1, Role.READ_ONLY))
+        assertThatThrownBy(() -> useCase.createUser(
+                "a@b.com", "short", "X", 1, Role.READ_ONLY, true))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -114,11 +118,11 @@ class AuthUseCaseTest {
     @Test
     void createUserRejectsBreachedAndEmailDerivedPasswords() {
         assertThatThrownBy(() -> useCase.createUser(
-                "a@b.com", "Password123", "X", 1, Role.READ_ONLY))
+                "a@b.com", "Password123", "X", 1, Role.READ_ONLY, true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("commonly used or breached");
         assertThatThrownBy(() -> useCase.createUser(
-                "marguerite@b.com", "xx-Marguerite-2026", "X", 1, Role.READ_ONLY))
+                "marguerite@b.com", "xx-Marguerite-2026", "X", 1, Role.READ_ONLY, true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("email");
     }
@@ -171,6 +175,41 @@ class AuthUseCaseTest {
         assertThat(recorded.outcome()).isEqualTo(AuditOutcome.FAILED);
         assertThat(recorded.actorUserId()).isEqualTo(1);
         assertThat(recorded.bankId()).isEqualTo(1);
+    }
+
+    /**
+     * PRIV-017 leaver: a disabled account gets the SAME generic 401 as a
+     * wrong password — even with the correct password — and the refusal
+     * neither issues tokens nor feeds the lockout counters; only the audit
+     * row carries the reason.
+     */
+    @Test
+    void loginRefusesADisabledAccountWithTheGenericMessage() {
+        AppUser user = demoUser();
+        user.setDisabled(true);
+        when(repo.getByEmail("demo@modocument.local")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> useCase.login("demo@modocument.local", "Demo123!", null, null))
+                .isInstanceOf(AuthUseCase.BadCredentialsException.class)
+                .hasMessage("Invalid email or password.");
+
+        verify(refreshTokens, never()).save(any(RefreshToken.class));
+        assertThat(user.getFailedLoginCount()).isZero();
+        AuditEventSpec recorded = recordedAudit();
+        assertThat(recorded.action()).isEqualTo("LOGIN_FAILED");
+        assertThat(recorded.actorUserId()).isEqualTo(1);
+        assertThat(recorded.newValues()).isEqualTo(Map.of("reason", "account_disabled"));
+    }
+
+    /** The MFA second phase must not outlive a disable issued in between. */
+    @Test
+    void completeMfaLoginRefusesADisabledUser() {
+        AppUser user = demoUser();
+        user.setDisabled(true);
+
+        assertThatThrownBy(() -> useCase.completeMfaLogin(user, null, null))
+                .isInstanceOf(AuthUseCase.BadCredentialsException.class);
+        verify(refreshTokens, never()).save(any(RefreshToken.class));
     }
 
     @Test
@@ -402,6 +441,25 @@ class AuthUseCaseTest {
                 .isInstanceOf(AuthUseCase.BadCredentialsException.class);
     }
 
+    /** Belt and braces for a Disabled flag set out-of-band (PRIV-017). */
+    @Test
+    void refreshRefusesADisabledUser() {
+        RefreshToken live = new RefreshToken();
+        live.setJti(UUID.randomUUID());
+        live.setUserId(1);
+        live.setFamilyId(UUID.randomUUID());
+        live.setTokenHash("x".repeat(64));
+        live.setExpiresAt(Instant.now().plus(1, ChronoUnit.DAYS));
+        when(refreshTokens.getByTokenHash(anyString())).thenReturn(Optional.of(live));
+        AppUser user = demoUser();
+        user.setDisabled(true);
+        when(repo.getById(1)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> useCase.refresh("still-have-the-cookie", null, null))
+                .isInstanceOf(AuthUseCase.BadCredentialsException.class);
+        verify(refreshTokens, never()).save(any(RefreshToken.class));
+    }
+
     // --------------------------------------------------------------- profile
 
     @Test
@@ -438,6 +496,22 @@ class AuthUseCaseTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("at least 12");
         verify(repo, never()).save(any(AppUser.class));
+    }
+
+    /** ws09: a successful change discharges the forced-change requirement. */
+    @Test
+    void changePasswordClearsTheMustChangeFlag() {
+        AppUser user = demoUser();
+        user.setMustChangePassword(true);
+        int versionBefore = user.getTokenVersion();
+        when(repo.getById(1)).thenReturn(Optional.of(user));
+        when(repo.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        useCase.changePassword(1, "Demo123!", "Rotor-Kestrel-91x");
+
+        assertThat(user.isMustChangePassword()).isFalse();
+        assertThat(user.getTokenVersion()).isEqualTo(versionBefore + 1);
+        verify(refreshTokens).revokeAllForUser(eq(1), any(Instant.class));
     }
 
     /** B4: long passphrases are first-class — 64+ chars sail through. */

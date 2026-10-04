@@ -11,6 +11,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import com.modocument.infrastructure.ratelimit.TooManyRequestsException;
 import com.modocument.infrastructure.job.JobWaitTimeoutException;
+import com.modocument.infrastructure.security.PasswordChangeRequiredGate;
 import com.modocument.infrastructure.security.RequestIdFilter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -42,6 +43,36 @@ import java.util.NoSuchElementException;
 public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    private final PasswordChangeRequiredGate passwordChangeGate;
+
+    public ApiExceptionHandler(PasswordChangeRequiredGate passwordChangeGate) {
+        this.passwordChangeGate = passwordChangeGate;
+    }
+
+    /**
+     * Method-security denials normally pass through to the security filter
+     * chain's plain 403 (see {@link #unexpected}). The ONE denial that gets
+     * a distinguishable body is the ws09 forced password change: the SPA
+     * needs to tell "you lack this permission" apart from "change your
+     * temporary password first", so when the denied caller carries the
+     * MustChangePassword flag the 403 says so with a stable machine code.
+     */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<?> accessDenied(
+            org.springframework.security.access.AccessDeniedException e) throws Exception {
+        if (passwordChangeGate.callerMustChange()) {
+            String requestId = MDC.get(RequestIdFilter.MDC_REQUEST_ID);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("error", "You must change your password before using the application.");
+            body.put("code", "PASSWORD_CHANGE_REQUIRED");
+            if (requestId != null) {
+                body.put("requestId", requestId);
+            }
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+        }
+        throw e;
+    }
 
     /**
      * The three exception types the use cases throw. Controllers that map them
