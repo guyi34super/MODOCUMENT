@@ -23,3 +23,6 @@ Thumbs.db
 # Logs
 *.log
 hs_err_pid*
+
+# Claude Code session worktrees (local orchestration scratch, never committed)
+.claude/worktrees/
