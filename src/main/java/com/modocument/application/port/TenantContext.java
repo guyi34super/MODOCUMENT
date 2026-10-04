@@ -54,6 +54,12 @@ import java.util.concurrent.Callable;
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker
  *       executor.</li>
+ *   <li>{@code RetentionPurgeJob#runOnce} — the ws14 daily retention sweep
+ *       (and its manual admin trigger): {@code runAsSystem} to list the
+ *       RLS-protected Bank table across tenants, then
+ *       {@code runAs(bank)} per bank so each bank's purge and its
+ *       RETENTION_PURGE_COMPLETED audit event run strictly inside that
+ *       tenant.</li>
  * </ul>
  */
 public final class TenantContext {

@@ -28,6 +28,10 @@ spring:
       api-key: test-key
 
 modocument:
+  retention:
+    # No scheduled purge racing deterministic tests; the ws14 retention gate
+    # tests re-enable it (and drive the job explicitly) via test properties.
+    enabled: false
   security:
     jwt:
       # Test-only signing key; production requires MODOCUMENT_JWT_SECRET.

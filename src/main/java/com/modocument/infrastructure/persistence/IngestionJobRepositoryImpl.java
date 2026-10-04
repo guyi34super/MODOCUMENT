@@ -54,6 +54,16 @@ public class IngestionJobRepositoryImpl implements IngestionJobRepository {
     }
 
     @Override
+    public void delete(IngestionJob job) {
+        jpa.delete(job);
+    }
+
+    @Override
+    public int countByFileNameAndOwner(String fileName, int ownerUserId) {
+        return (int) jpa.countByFileNameAndOwnerUserId(fileName, ownerUserId);
+    }
+
+    @Override
     public List<String> listRecentMappingJson(int templateId, int ownerUserId, int limit) {
         return jpa.findRecentMappingJson(templateId, ownerUserId,
                 List.of(JobStep.VALIDATED, JobStep.EXPORTED), PageRequest.of(0, limit));

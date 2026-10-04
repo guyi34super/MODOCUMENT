@@ -35,7 +35,11 @@ const sections = [
     // regardless — hiding the link is UX, not security).
     label: 'Administration',
     adminOnly: true,
-    links: [{ to: '/admin/users', label: 'Users' }],
+    links: [
+      { to: '/admin/users', label: 'Users' },
+      // ws14: retention purge evidence + data-subject requests.
+      { to: '/admin/retention', label: 'Privacy & retention' },
+    ],
   },
   {
     label: 'Account',

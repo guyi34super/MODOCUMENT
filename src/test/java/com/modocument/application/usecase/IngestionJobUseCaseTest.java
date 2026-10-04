@@ -95,6 +95,19 @@ class IngestionJobUseCaseTest {
                     .filter(j -> j.getTemplateId() == templateId)
                     .count();
         }
+
+        @Override
+        public void delete(IngestionJob job) {
+            store.remove(job.getIngestionJobId());
+        }
+
+        @Override
+        public int countByFileNameAndOwner(String fileName, int ownerUserId) {
+            return (int) store.values().stream()
+                    .filter(j -> j.getOwnerUserId() == ownerUserId)
+                    .filter(j -> fileName.equals(j.getFileName()))
+                    .count();
+        }
     }
 
     private final InMemoryJobs jobs = new InMemoryJobs();

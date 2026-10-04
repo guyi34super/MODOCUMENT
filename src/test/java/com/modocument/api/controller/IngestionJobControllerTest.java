@@ -41,9 +41,11 @@ class IngestionJobControllerTest {
     private final UploadOwnership uploadOwnership = mock(UploadOwnership.class);
     private final com.modocument.infrastructure.file.UploadContentChecker contentChecker =
             mock(com.modocument.infrastructure.file.UploadContentChecker.class);
+    private final com.modocument.application.usecase.IngestionJobDeletionUseCase deletion =
+            mock(com.modocument.application.usecase.IngestionJobDeletionUseCase.class);
     private final IngestionJobController controller =
             new IngestionJobController(useCase, chatEdit, uploadStorage, supportedTypes, jobRunner,
-                    jobWaitService, uploadOwnership, contentChecker);
+                    jobWaitService, uploadOwnership, contentChecker, deletion);
 
     private static IngestionJob validatedJob(WizardStep wizardStep) {
         IngestionJob job = new IngestionJob();

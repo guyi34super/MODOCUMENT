@@ -57,6 +57,15 @@ public class DocInstance {
     @Column(name = "UpdatedDate")
     private LocalDateTime updatedDate;
 
+    /**
+     * When the retention purge removed this instance's customer content
+     * (V120, ws14): content blocks, image assets (+ files) and generated
+     * exports are gone, the shell (title/status/dates) remains. Null while
+     * the content is still within its retention period.
+     */
+    @Column(name = "ContentPurgedAt")
+    private LocalDateTime contentPurgedAt;
+
     public DocInstance() {
     }
 
@@ -148,5 +157,13 @@ public class DocInstance {
 
     public void setUpdatedDate(LocalDateTime updatedDate) {
         this.updatedDate = updatedDate;
+    }
+
+    public LocalDateTime getContentPurgedAt() {
+        return contentPurgedAt;
+    }
+
+    public void setContentPurgedAt(LocalDateTime contentPurgedAt) {
+        this.contentPurgedAt = contentPurgedAt;
     }
 }

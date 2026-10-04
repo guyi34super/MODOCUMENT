@@ -18,6 +18,7 @@ import ExtractionJobsPage from './pages/ExtractionJobsPage';
 import ExtractionJobDetailPage from './pages/ExtractionJobDetailPage';
 import ProfilePage from './pages/ProfilePage';
 import AdminUsersPage from './pages/AdminUsersPage';
+import AdminRetentionPage from './pages/AdminRetentionPage';
 import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
 
 export default function App() {
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/profile" element={<ProfilePage />} />
         {/* Rendered for ADMINs; the server enforces user:admin regardless. */}
         <Route path="/admin/users" element={<AdminUsersPage />} />
+        <Route path="/admin/retention" element={<AdminRetentionPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

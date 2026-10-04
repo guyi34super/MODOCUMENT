@@ -104,6 +104,15 @@ public class IngestionJob {
     @Column(name = "UpdatedDate")
     private LocalDateTime updatedDate;
 
+    /**
+     * When the retention purge removed this job's customer-data checkpoints
+     * (V120, ws14): ParsedTableJson, MappedRowsJson and ValidationResultJson
+     * are nulled and this marker is set, keeping the row as an empty report
+     * skeleton. Null while the data is still within its retention period.
+     */
+    @Column(name = "PurgedAt")
+    private LocalDateTime purgedAt;
+
     public IngestionJob() {
     }
 
@@ -259,5 +268,13 @@ public class IngestionJob {
 
     public void setUpdatedDate(LocalDateTime updatedDate) {
         this.updatedDate = updatedDate;
+    }
+
+    public LocalDateTime getPurgedAt() {
+        return purgedAt;
+    }
+
+    public void setPurgedAt(LocalDateTime purgedAt) {
+        this.purgedAt = purgedAt;
     }
 }

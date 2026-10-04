@@ -174,9 +174,11 @@ export const api = {
 /**
  * Fetch a protected file (plain links can't carry the Bearer header) and
  * trigger a browser download, using the server's Content-Disposition name.
+ * `opts` may carry { method, body } for POST downloads (e.g. the ws14 DSR
+ * export, whose identifier must never sit in a URL).
  */
-export async function downloadFile(path, fallbackName = 'export') {
-  const res = await request(path, { raw: true });
+export async function downloadFile(path, fallbackName = 'export', opts = {}) {
+  const res = await request(path, { ...opts, raw: true });
   const blob = await res.blob();
   const disposition = res.headers.get('Content-Disposition') || '';
   const match = disposition.match(/filename\*?="?([^";]+)"?/);
