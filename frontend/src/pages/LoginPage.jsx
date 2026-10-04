@@ -46,6 +46,9 @@ export default function LoginPage() {
   // The backend redirects here with ?error=oidc on any SSO failure —
   // deliberately without detail (it lives in the server log + audit trail).
   const oidcError = searchParams.get('error') === 'oidc';
+  // client.js lands here with ?expired=1 when the silent refresh failed:
+  // the session hit its idle/absolute bound (or was revoked server-side).
+  const sessionExpired = searchParams.get('expired') === '1';
 
   // 'credentials' | 'code' | 'enroll' | 'enroll-code'
   const [step, setStep] = useState('credentials');
@@ -168,6 +171,11 @@ export default function LoginPage() {
             {oidcError && (
               <p className="mb-4 rounded border border-line bg-danger-bg px-3 py-2 text-sm text-danger-ink">
                 Single sign-on failed. Try again, or contact your administrator.
+              </p>
+            )}
+            {!oidcError && sessionExpired && (
+              <p className="mb-4 rounded border border-line bg-danger-bg px-3 py-2 text-sm text-danger-ink">
+                Your session expired. Please sign in again.
               </p>
             )}
             <form onSubmit={submitCredentials} className="space-y-4">

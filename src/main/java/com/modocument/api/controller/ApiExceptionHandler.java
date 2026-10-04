@@ -12,6 +12,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import com.modocument.infrastructure.ratelimit.TooManyRequestsException;
 import com.modocument.infrastructure.job.JobWaitTimeoutException;
 import com.modocument.infrastructure.security.RequestIdFilter;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -63,10 +64,17 @@ public class ApiExceptionHandler {
         return error(HttpStatus.CONFLICT, message(e, "The request conflicts with the current state."));
     }
 
+    /**
+     * Rate limits (SEC-022): 429 plus a {@code Retry-After} header. The
+     * throwing limiter knows how much of its fixed window remains, so the
+     * header tells well-behaved clients exactly how long to back off instead
+     * of leaving them to guess-and-hammer.
+     */
     @ExceptionHandler(TooManyRequestsException.class)
     public ResponseEntity<?> tooManyRequests(TooManyRequestsException e) {
-        return error(HttpStatus.TOO_MANY_REQUESTS,
-                message(e, "Too many requests. Please slow down and try again."));
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(e.retryAfterSeconds()))
+                .body(errorBody(message(e, "Too many requests. Please slow down and try again.")));
     }
 
     @ExceptionHandler(JobWaitTimeoutException.class)
@@ -195,10 +203,14 @@ public class ApiExceptionHandler {
      * for; the message itself stays free of internals.
      */
     private static ResponseEntity<?> error(HttpStatus status, String message) {
+        return ResponseEntity.status(status).body(errorBody(message));
+    }
+
+    private static Map<String, String> errorBody(String message) {
         String requestId = MDC.get(RequestIdFilter.MDC_REQUEST_ID);
-        return ResponseEntity.status(status).body(requestId == null
+        return requestId == null
                 ? Map.of("error", message)
-                : Map.of("error", message, "requestId", requestId));
+                : Map.of("error", message, "requestId", requestId);
     }
 
     /** Innermost message — the outer wrapper rarely says anything useful. */

@@ -4,6 +4,7 @@ import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.usecase.AuthUseCase;
 import com.modocument.domain.model.AuditOutcome;
+import com.modocument.infrastructure.security.ClientIps;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -110,13 +111,9 @@ public class OidcLoginSuccessHandler implements AuthenticationSuccessHandler {
         }
     }
 
-    /** Same proxy-aware client address rule as AuthController. */
+    /** Same proxy-aware client address rule as AuthController ({@link ClientIps}). */
     private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",", 2)[0].trim();
-        }
-        return request.getRemoteAddr();
+        return ClientIps.clientIp(request);
     }
 
     private static ResponseCookie refreshCookie(String value) {

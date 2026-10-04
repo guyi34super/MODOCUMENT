@@ -29,9 +29,11 @@ public class LlmRateLimiter {
      *         for the current window.
      */
     public void check(int userId) {
-        if (!perUser.tryAcquire("user:" + userId, System.currentTimeMillis())) {
+        long now = System.currentTimeMillis();
+        if (!perUser.tryAcquire("user:" + userId, now)) {
             throw new TooManyRequestsException(
-                    "You have reached the AI request limit for now. Please try again later.");
+                    "You have reached the AI request limit for now. Please try again later.",
+                    perUser.retryAfterSeconds("user:" + userId, now));
         }
     }
 }

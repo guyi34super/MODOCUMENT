@@ -265,8 +265,14 @@ APP_PROFILES=local docker compose up --build
 APP_PROFILES=scale docker compose --profile extraction up --build
 ```
 
-The API is on <http://localhost:8080> (Swagger UI: <http://localhost:8080/swagger-ui>)
-and the web frontend on <http://localhost:3000>.
+The web frontend — and the API through its nginx proxy — is on
+<http://localhost:3000>. The app's own port 8080 is intentionally NOT
+published: nginx is the single entry point and overwrites the
+`X-Forwarded-*` headers the app trusts for per-IP rate limiting, audit IPs
+and HSTS (trusted-proxy model — a directly reachable app port would make
+them spoofable). For direct-to-app tooling (raw `curl` on `:8080`, Swagger
+UI at <http://localhost:8080/swagger-ui> in dev mode), uncomment the
+loopback-only `ports` mapping on the `app` service in `docker-compose.yml`.
 
 ### Web frontend (React)
 

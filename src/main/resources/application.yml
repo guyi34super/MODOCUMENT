@@ -1,3 +1,16 @@
+server:
+  # Trusted-proxy model (SEC-022): Spring's ForwardedHeaderFilter rewrites
+  # remoteAddr/scheme/host from X-Forwarded-For/-Proto/-Host, so rate-limit
+  # keys, audit IPs and HSTS (needs a "secure" request behind TLS
+  # termination) see the real client. ONLY the fronting proxy may set these
+  # headers: frontend/nginx.conf OVERWRITES them with its own values
+  # ($remote_addr/$scheme) on every proxied request, discarding whatever the
+  # client sent. That trust holds only while the app port is NOT reachable
+  # directly — production must keep the app behind the proxy (docker-compose
+  # no longer publishes 8080; a direct caller could spoof every X-Forwarded-*
+  # header wholesale).
+  forward-headers-strategy: framework
+
 spring:
   application:
     name: MoDocument
@@ -98,6 +111,14 @@ modocument:
       require-for-admin: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:true}
       # MFA challenge token lifetime (password-to-second-factor window).
       challenge-ttl-minutes: ${MODOCUMENT_MFA_CHALLENGE_TTL_MINUTES:5}
+    session:
+      # Refresh-session bounds (SUP-S02). Idle: a refresh token UNUSED for
+      # this long is refused even when its family is younger than the
+      # absolute limit — the newest rotation's IssuedAt is the moment of last
+      # use. Absolute: the family's ExpiresAt is fixed at login (7 days) and
+      # inherited by every rotation, so refreshing can never extend a session
+      # past 7 days from the original sign-in. Duration format: 12h, 30m, 7d.
+      idle-timeout: ${MODOCUMENT_SESSION_IDLE_TIMEOUT:12h}
   # OIDC single sign-on (ws07, OPTIONAL — nothing below is active until a
   # provider is configured; the app boots unchanged without any of it).
   # External IdPs only AUTHENTICATE: Entra ID for Microsoft banks, Keycloak

@@ -33,7 +33,8 @@ public class MfaRateLimiter {
         long now = System.currentTimeMillis();
         if (ip != null && !ip.isBlank() && !perIp.tryAcquire("ip:" + ip, now)) {
             throw new TooManyRequestsException(
-                    "Too many attempts from this network. Please wait a minute and try again.");
+                    "Too many attempts from this network. Please wait a minute and try again.",
+                    perIp.retryAfterSeconds("ip:" + ip, now));
         }
     }
 
@@ -43,7 +44,8 @@ public class MfaRateLimiter {
         if (userId != null && !userId.isBlank()
                 && !perUser.tryAcquire("user:" + userId, now)) {
             throw new TooManyRequestsException(
-                    "Too many attempts for this account. Please wait a minute and try again.");
+                    "Too many attempts for this account. Please wait a minute and try again.",
+                    perUser.retryAfterSeconds("user:" + userId, now));
         }
     }
 }

@@ -8,6 +8,17 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+/** An unsigned JWT-shaped token whose exp lies the given seconds from now. */
+function fakeJwt(expiresInSeconds) {
+  const payload = btoa(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1000) + expiresInSeconds })
+  )
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  return `header.${payload}.signature`;
+}
+
 describe('session storage', () => {
   it('stores and clears token and user', () => {
     setSession('tok-123', { userId: 1, email: 'a@b.com' });
@@ -95,7 +106,7 @@ describe('api request wrapper', () => {
     await expect(api.get('/Templates/GetAll')).rejects.toThrow('Request failed (500)');
   });
 
-  it('on 401 attempts one refresh, then clears the session and redirects to /login', async () => {
+  it('on 401 attempts one refresh, then clears the session and redirects with ?expired=1', async () => {
     setSession('expired', { userId: 1 });
     const assign = vi.fn();
     const original = window.location;
@@ -109,7 +120,8 @@ describe('api request wrapper', () => {
 
     await expect(api.get('/Templates/GetAll')).rejects.toThrow('Session expired');
     expect(getToken()).toBeNull();
-    expect(assign).toHaveBeenCalledWith('/login');
+    // ?expired=1 makes LoginPage show the "session expired" banner.
+    expect(assign).toHaveBeenCalledWith('/login?expired=1');
 
     // Exactly one silent refresh attempt (credentials included), no retry loop.
     const refreshCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh');
@@ -187,6 +199,55 @@ describe('api request wrapper', () => {
     expect(getToken()).toBe('stored-token');
 
     Object.defineProperty(window, 'location', { value: original, configurable: true });
+  });
+
+  it('refreshes PROACTIVELY when the stored token expires within 60s', async () => {
+    setSession(fakeJwt(30), { userId: 1 }); // 30s left — inside the margin
+    const fetchMock = vi
+      .fn()
+      // the lazy pre-flight refresh runs BEFORE the actual request...
+      .mockResolvedValueOnce(jsonResponse({ token: 'fresh-token', user: { userId: 1 } }))
+      // ...which then carries the fresh token.
+      .mockResolvedValueOnce(jsonResponse([{ templateId: 3 }]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await api.get('/Templates/GetAll');
+
+    expect(result).toEqual([{ templateId: 3 }]);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/auth/refresh');
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST', credentials: 'include' });
+    expect(fetchMock.mock.calls[1][0]).toBe('/Templates/GetAll');
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe('Bearer fresh-token');
+    expect(getToken()).toBe('fresh-token');
+  });
+
+  it('does NOT refresh proactively while the token has more than 60s left', async () => {
+    const longLived = fakeJwt(900);
+    setSession(longLived, { userId: 1 });
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([{ templateId: 4 }]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.get('/Templates/GetAll');
+
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh')).toHaveLength(0);
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe(`Bearer ${longLived}`);
+  });
+
+  it('still sends the original request when the proactive refresh fails', async () => {
+    const dying = fakeJwt(30);
+    setSession(dying, { userId: 1 });
+    const fetchMock = vi
+      .fn()
+      // pre-flight refresh fails (e.g. offline blip)...
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      // ...the request still goes out with the old token and happens to work.
+      .mockResolvedValueOnce(jsonResponse([{ templateId: 5 }]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await api.get('/Templates/GetAll');
+
+    expect(result).toEqual([{ templateId: 5 }]);
+    expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe(`Bearer ${dying}`);
   });
 
   it('does NOT redirect on 401 from the login endpoint itself', async () => {

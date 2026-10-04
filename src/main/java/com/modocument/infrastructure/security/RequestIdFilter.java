@@ -29,16 +29,20 @@ import java.util.regex.Pattern;
  *       (JpaAuditRecorder reads the MDC key).</li>
  * </ul>
  * The best-effort client ip lands on the MDC the same way ({@code ip} —
- * first X-Forwarded-For hop, trustworthy because the app always sits behind
- * its reverse proxy, matching AuthController's reading).
+ * the forwarded-aware remote address via {@link ClientIps}, matching
+ * AuthController's reading).
  *
- * <p>Registered as a plain servlet filter at HIGHEST_PRECEDENCE — BEFORE
- * the security filter chain, so even a 401 from bearer authentication logs
- * and echoes the id. Both MDC keys are cleared in a finally block; pooled
- * request threads never leak one request's id into the next.
+ * <p>Registered as a plain servlet filter at HIGHEST_PRECEDENCE + 1: Spring
+ * Boot's ForwardedHeaderFilter (server.forward-headers-strategy: framework)
+ * sits at HIGHEST_PRECEDENCE and must rewrite remoteAddr/scheme from the
+ * trusted proxy's X-Forwarded-* BEFORE this filter reads the client ip;
+ * everything else — the security filter chain included — still runs after,
+ * so even a 401 from bearer authentication logs and echoes the id. Both MDC
+ * keys are cleared in a finally block; pooled request threads never leak one
+ * request's id into the next.
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class RequestIdFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Request-Id";
@@ -66,18 +70,11 @@ public class RequestIdFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Best-effort client address: the first X-Forwarded-For hop when the
-     * reverse proxy set one, else the socket address (same trust reasoning
-     * as AuthController#clientIp). Truncated to the audit column's width.
+     * Best-effort client address: the forwarded-aware remote address (the
+     * ForwardedHeaderFilter ran first — see the class comment), truncated to
+     * the audit column's width by {@link ClientIps}.
      */
     private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        String ip = forwarded != null && !forwarded.isBlank()
-                ? forwarded.split(",", 2)[0].trim()
-                : request.getRemoteAddr();
-        if (ip == null) {
-            return "";
-        }
-        return ip.length() <= 64 ? ip : ip.substring(0, 64);
+        return ClientIps.clientIp(request);
     }
 }

@@ -8,6 +8,7 @@ import com.modocument.application.dto.LoginRequest;
 import com.modocument.application.dto.UpdateProfileRequest;
 import com.modocument.application.usecase.AuthUseCase;
 import com.modocument.infrastructure.ratelimit.AuthRateLimiter;
+import com.modocument.infrastructure.security.ClientIps;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -98,17 +99,13 @@ public class AuthController {
     }
 
     /**
-     * Best-effort client address. Behind the app's reverse proxy the socket
-     * address is the proxy, so the first X-Forwarded-For hop is preferred; this
-     * header is only trustworthy because the app always sits behind a proxy
-     * that sets it — a direct-to-app deployment would need to stop honoring it.
+     * Client address for rate-limit keys and session rows: the forwarded-aware
+     * remote address ({@link ClientIps} — the ForwardedHeaderFilter already
+     * applied the trusted proxy's X-Forwarded-For rewrite, so no header is
+     * parsed here).
      */
     private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",", 2)[0].trim();
-        }
-        return request.getRemoteAddr();
+        return ClientIps.clientIp(request);
     }
 
     /** Package-visible: MfaController sets the same cookie after verify. */

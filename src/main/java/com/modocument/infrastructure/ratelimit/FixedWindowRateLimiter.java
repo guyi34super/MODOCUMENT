@@ -48,6 +48,20 @@ public final class FixedWindowRateLimiter {
         return window.count.incrementAndGet() <= maxPermits;
     }
 
+    /**
+     * Seconds until the window covering {@code nowMillis} rolls over for
+     * {@code key} — what a 429 should advertise as {@code Retry-After}.
+     * Rounded up and never below 1 (the header is a positive integer); a key
+     * without a live window answers the full window, the conservative bound.
+     */
+    public long retryAfterSeconds(String key, long nowMillis) {
+        Window window = windows.get(key);
+        long remainingMillis = window == null
+                ? windowMillis
+                : window.startMillis + windowMillis - nowMillis;
+        return Math.max(1, (remainingMillis + 999) / 1000);
+    }
+
     private static final class Window {
         private final long startMillis;
         private final AtomicInteger count = new AtomicInteger();

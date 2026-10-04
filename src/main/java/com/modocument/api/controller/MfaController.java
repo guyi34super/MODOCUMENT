@@ -7,6 +7,7 @@ import com.modocument.application.usecase.AuthUseCase;
 import com.modocument.application.usecase.MfaUseCase;
 import com.modocument.domain.model.Permission;
 import com.modocument.infrastructure.ratelimit.MfaRateLimiter;
+import com.modocument.infrastructure.security.ClientIps;
 import com.modocument.infrastructure.security.MfaChallengeTokens;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -108,13 +109,9 @@ public class MfaController {
         }
     }
 
-    /** Same proxy-aware client address rule as AuthController. */
+    /** Same proxy-aware client address rule as AuthController ({@link ClientIps}). */
     private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",", 2)[0].trim();
-        }
-        return request.getRemoteAddr();
+        return ClientIps.clientIp(request);
     }
 
     private static int userId(Jwt jwt) {

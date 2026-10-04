@@ -31,10 +31,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * The whole token lifecycle over real HTTP semantics (MockMvc with the real
  * security filter chain): login issues an access token plus an httpOnly
- * rotating refresh cookie; refresh rotates; reusing a rotated cookie kills
- * the family; logout denylists the access token's jti; a password change
- * invalidates every outstanding access token; and the old public /register
- * route is gone.
+ * rotating refresh cookie; refresh rotates within the family's FIXED 7-day
+ * expiry (absolute bound) and refuses a token idle past the configured
+ * timeout; reusing a rotated cookie kills the family; logout denylists the
+ * access token's jti; a password change invalidates every outstanding access
+ * token (via the shared TokenVersion-bump seam, gate B5); and the old public
+ * /register route is gone.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -54,6 +56,10 @@ class AuthFlowIntegrationTest {
     private RevokedTokenJpaRepository revokedTokens;
     @Autowired
     private PasswordEncoder passwordEncoder;
+    @Autowired
+    private com.modocument.application.usecase.UserSecurityService userSecurity;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private AppUser user;
 
@@ -73,7 +79,26 @@ class AuthFlowIntegrationTest {
     void cleanUp() {
         refreshTokens.findByUserId(user.getAppUserId()).forEach(refreshTokens::delete);
         revokedTokens.deleteAll();
+        // Audit rows this suite's assertions read (session-expiry, bump) are
+        // per-user; scrub them so no other suite sees leftovers.
+        jdbc.update("DELETE FROM AuditEvent WHERE ActorUserId = ?", user.getAppUserId());
         users.deleteById(user.getAppUserId());
+    }
+
+    /** The newest (live) token of the user's only family. */
+    private com.modocument.domain.entity.RefreshToken newestToken() {
+        return refreshTokens.findByUserId(user.getAppUserId()).stream()
+                .max(java.util.Comparator.comparing(
+                        com.modocument.domain.entity.RefreshToken::getIssuedAt))
+                .orElseThrow();
+    }
+
+    private int auditCount(String action) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM AuditEvent WHERE Action = ? AND Outcome = ? "
+                        + "AND ActorUserId = ?",
+                Integer.class, action, "FAILED", user.getAppUserId());
+        return count == null ? 0 : count;
     }
 
     private MvcResult login() throws Exception {
@@ -184,5 +209,86 @@ class AuthFlowIntegrationTest {
     void refreshWithoutACookieIsUnauthorized() throws Exception {
         mvc.perform(post("/api/auth/refresh"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ------------------------------------------- session lifetimes (SUP-S02)
+
+    /**
+     * Absolute bound: the family's ExpiresAt is fixed at login; rotation
+     * inherits it unchanged, so refreshing can never extend a session past
+     * 7 days from the original sign-in.
+     */
+    @Test
+    void rotationKeepsTheFamilyExpiryFixedAtLogin() throws Exception {
+        Cookie first = refreshCookie(login());
+        java.time.Instant familyExpiry = newestToken().getExpiresAt();
+
+        mvc.perform(post("/api/auth/refresh").cookie(first))
+                .andExpect(status().isOk());
+
+        assertThat(newestToken().getExpiresAt()).isEqualTo(familyExpiry);
+    }
+
+    /** Absolute bound enforced: a family past its ExpiresAt is refused + audited. */
+    @Test
+    void anExpiredFamilyIsRefusedAndAudited() throws Exception {
+        Cookie cookie = refreshCookie(login());
+        var newest = newestToken();
+        newest.setExpiresAt(java.time.Instant.now().minusSeconds(1)); // the 7 days are over
+        refreshTokens.saveAndFlush(newest);
+
+        mvc.perform(post("/api/auth/refresh").cookie(cookie))
+                .andExpect(status().isUnauthorized());
+
+        assertThat(auditCount("SESSION_ABSOLUTE_EXPIRED")).isEqualTo(1);
+    }
+
+    /**
+     * Idle bound: a refresh token unused past
+     * modocument.security.session.idle-timeout (12h default; last use = the
+     * newest rotation's IssuedAt) is refused even though the family is young.
+     */
+    @Test
+    void anIdleSessionIsRefusedAndAuditedEvenWhileTheFamilyIsYoung() throws Exception {
+        Cookie cookie = refreshCookie(login());
+        var newest = newestToken();
+        newest.setIssuedAt(java.time.Instant.now().minus(13, java.time.temporal.ChronoUnit.HOURS));
+        refreshTokens.saveAndFlush(newest);
+
+        mvc.perform(post("/api/auth/refresh").cookie(cookie))
+                .andExpect(status().isUnauthorized());
+
+        assertThat(auditCount("SESSION_IDLE_EXPIRED")).isEqualTo(1);
+        // Refused, not reuse-revoked: retrying is the same quiet refusal, not
+        // the family-killing theft alarm.
+        mvc.perform(post("/api/auth/refresh").cookie(cookie))
+                .andExpect(status().isUnauthorized());
+        assertThat(auditCount("SESSION_IDLE_EXPIRED")).isEqualTo(2);
+    }
+
+    // ------------------------------------------------------ B5 bump seam
+
+    /**
+     * Gate B5 through the shared seam: {@code UserSecurityService
+     * .bumpTokenVersion} — what the ws09 role-change path will call — kills
+     * every outstanding access token on its next request.
+     */
+    @Test
+    void aTokenVersionBumpThroughTheSharedSeamKillsOutstandingAccessTokens() throws Exception {
+        String accessToken = token(login());
+        mvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk());
+
+        userSecurity.bumpTokenVersion(user.getAppUserId(), "role-change");
+
+        mvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized());
+
+        // The bump audited itself with the reason it was asked for.
+        Integer bumps = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM AuditEvent WHERE Action = 'TOKEN_VERSION_BUMPED' "
+                        + "AND Outcome = 'SUCCESS' AND ActorUserId = ?",
+                Integer.class, user.getAppUserId());
+        assertThat(bumps).isEqualTo(1);
     }
 }

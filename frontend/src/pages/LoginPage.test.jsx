@@ -271,4 +271,27 @@ describe('LoginPage', () => {
       await screen.findByText(/Single sign-on failed/)
     ).toBeInTheDocument();
   });
+
+  // ------------------------------------------- session expiry (SUP-S02)
+
+  it('shows the session-expired banner when redirected with ?expired=1', async () => {
+    stubFetch({ providers: [] });
+
+    renderLogin('/login?expired=1');
+
+    expect(
+      await screen.findByText('Your session expired. Please sign in again.')
+    ).toBeInTheDocument();
+    // Still a normal login form underneath the banner.
+    expect(screen.getByLabelText('Email')).toBeInTheDocument();
+  });
+
+  it('shows no expiry banner on a plain /login visit', async () => {
+    stubFetch({ providers: [] });
+
+    renderLogin();
+
+    expect(await screen.findByLabelText('Email')).toBeInTheDocument();
+    expect(screen.queryByText(/session expired/i)).not.toBeInTheDocument();
+  });
 });

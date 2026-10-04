@@ -73,14 +73,49 @@ function refreshAccessToken() {
 }
 
 /**
+ * How soon before the access token's exp the wrapper rotates proactively:
+ * within this margin a request would likely 401 mid-flight anyway, so it
+ * refreshes first and spares the failed round trip.
+ */
+const EXPIRY_MARGIN_MS = 60_000;
+
+/**
+ * Reads the JWT's exp claim client-side (base64url payload, no library, no
+ * signature check — this is UX, not security; the server still validates).
+ * Anything malformed just reports "not expiring": the 401-retry path covers it.
+ */
+function tokenExpiresSoon(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (typeof payload?.exp !== 'number') return false;
+    return payload.exp * 1000 - Date.now() < EXPIRY_MARGIN_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * `authToken` carries an explicit bearer (the MFA challenge token during the
  * forced-enrolment flow) instead of the stored session token; those calls
  * must never trigger the silent-refresh/redirect dance — a 401 just surfaces
  * as an error on the login screen.
  */
 async function request(path, { method = 'GET', body, raw = false, retried = false, authToken } = {}) {
+  // The two-phase login endpoints answer 401 for a wrong code — that is
+  // feedback for the login form, never a reason to bounce the browser.
+  const isAuthEntryPoint =
+    path.startsWith('/api/auth/login') ||
+    path.startsWith('/api/auth/refresh') ||
+    path.startsWith('/api/auth/mfa/verify');
+
   const opts = { method, headers: {} };
-  const token = authToken || getToken();
+  let token = authToken || getToken();
+  // Proactive rotation (lazy, no timers): a stored token within a minute of
+  // expiry is swapped for a fresh one BEFORE the call. If the refresh fails
+  // here, the request still goes out — the 401 path below has the last word.
+  if (!authToken && !isAuthEntryPoint && !retried && token && tokenExpiresSoon(token)) {
+    token = (await refreshAccessToken()) || token;
+  }
   if (token) opts.headers.Authorization = `Bearer ${token}`;
   if (body !== undefined && body !== null) {
     if (body instanceof FormData) {
@@ -93,12 +128,6 @@ async function request(path, { method = 'GET', body, raw = false, retried = fals
 
   const res = await fetch(path, opts);
 
-  // The two-phase login endpoints answer 401 for a wrong code — that is
-  // feedback for the login form, never a reason to bounce the browser.
-  const isAuthEntryPoint =
-    path.startsWith('/api/auth/login') ||
-    path.startsWith('/api/auth/refresh') ||
-    path.startsWith('/api/auth/mfa/verify');
   if (res.status === 401 && !isAuthEntryPoint && !authToken) {
     // The short-lived access token probably just expired: try ONE silent
     // refresh (httpOnly cookie) and replay the request with the new token.
@@ -108,8 +137,11 @@ async function request(path, { method = 'GET', body, raw = false, retried = fals
         return request(path, { method, body, raw, retried: true });
       }
     }
+    // The refresh cookie itself is dead (idle/absolute bound, revocation):
+    // proactive logout — clear and land on the login page with a banner
+    // explaining why (?expired=1, read by LoginPage).
     clearSession();
-    window.location.assign('/login');
+    window.location.assign('/login?expired=1');
     throw new Error('Session expired. Please sign in again.');
   }
   if (!res.ok) {

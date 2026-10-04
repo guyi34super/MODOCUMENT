@@ -22,6 +22,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -60,8 +61,17 @@ public class AuthUseCase {
     private final JwtService jwtService;
     private final RefreshTokenRepository refreshTokens;
     private final RevokedTokenRepository revokedTokens;
+    private final UserSecurityService userSecurity;
     private final AuditRecorder audit;
     private final boolean requireMfaForAdmin;
+
+    /**
+     * Idle bound (SUP-S02): a refresh token unused for this long is refused
+     * even when its family is younger than the absolute 7-day limit. The
+     * newest rotation's IssuedAt is the moment of last use, so no extra
+     * column is needed.
+     */
+    private final Duration refreshIdleTimeout;
 
     /**
      * Fixed hash matched against when the email doesn't exist or the account
@@ -76,9 +86,12 @@ public class AuthUseCase {
                        PasswordPolicy passwordPolicy, LoginLockoutPolicy lockoutPolicy,
                        UserMfaRepository userMfa, MfaChallengeTokens challengeTokens,
                        JwtService jwtService, RefreshTokenRepository refreshTokens,
-                       RevokedTokenRepository revokedTokens, AuditRecorder audit,
+                       RevokedTokenRepository revokedTokens, UserSecurityService userSecurity,
+                       AuditRecorder audit,
                        @Value("${modocument.security.mfa.require-for-admin:true}")
-                       boolean requireMfaForAdmin) {
+                       boolean requireMfaForAdmin,
+                       @Value("${modocument.security.session.idle-timeout:12h}")
+                       Duration refreshIdleTimeout) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
@@ -88,11 +101,13 @@ public class AuthUseCase {
         this.jwtService = jwtService;
         this.refreshTokens = refreshTokens;
         this.revokedTokens = revokedTokens;
+        this.userSecurity = userSecurity;
         // Identity events are recorded HERE because login is a custom use
         // case, not Spring's AuthenticationManager - there is no
         // AuthenticationEventPublisher to listen to.
         this.audit = audit;
         this.requireMfaForAdmin = requireMfaForAdmin;
+        this.refreshIdleTimeout = refreshIdleTimeout;
         this.dummyHash = passwordEncoder.encode("timing-equalizer-dummy-password");
     }
 
@@ -314,6 +329,19 @@ public class AuthUseCase {
             throw new BadCredentialsException("Refresh token has been revoked.");
         }
         if (!now.isBefore(current.getExpiresAt())) {
+            // Absolute bound: ExpiresAt is fixed at login and inherited by
+            // every rotation (below), so this fires REFRESH_FAMILY_DAYS after
+            // the original sign-in however actively the session refreshed.
+            audit.record(sessionExpired("SESSION_ABSOLUTE_EXPIRED", current).build());
+            throw new BadCredentialsException("Refresh token has expired.");
+        }
+        if (Duration.between(current.getIssuedAt(), now).compareTo(refreshIdleTimeout) > 0) {
+            // Idle bound: the presented token is the family's newest, so its
+            // IssuedAt is the last rotation — the last use. A session
+            // untouched past the idle timeout is over even when young. The
+            // token is NOT revoked: re-presenting it stays this same refusal
+            // instead of tripping the reuse (theft) alarm above.
+            audit.record(sessionExpired("SESSION_IDLE_EXPIRED", current).build());
             throw new BadCredentialsException("Refresh token has expired.");
         }
         AppUser user = users.getById(current.getUserId())
@@ -327,6 +355,20 @@ public class AuthUseCase {
         refreshTokens.save(current);
         return new AuthSession(
                 new AuthResponse(jwtService.issueToken(user), UserDto.from(user)), next.value());
+    }
+
+    /**
+     * A session that merely aged out (idle/absolute bound) is FAILED, not
+     * DENIED — nothing hostile happened, unlike the reuse-detection path.
+     */
+    private AuditEventSpec.Builder sessionExpired(String action, RefreshToken current) {
+        AuditEventSpec.Builder expired = AuditEventSpec.builder(action, AuditOutcome.FAILED)
+                .actorUserId(current.getUserId())
+                .entity("RefreshTokenFamily", current.getFamilyId().toString());
+        users.getById(current.getUserId()).ifPresent(owner -> expired
+                .actorEmail(owner.getEmail())
+                .bankId(owner.getBankId()));
+        return expired;
     }
 
     /**
@@ -385,9 +427,12 @@ public class AuthUseCase {
         }
         passwordPolicy.validate(newPassword, user.getEmail());
         user.setPasswordHash(passwordEncoder.encode(newPassword));
-        user.setTokenVersion(user.getTokenVersion() + 1);
         user.setUpdatedDate(LocalDateTime.now());
         users.save(user);
+        // B5 seam: the shared bump (audited TOKEN_VERSION_BUMPED) makes the
+        // RevocationValidator reject every outstanding access token on its
+        // next request, including the one that made this call.
+        userSecurity.bumpTokenVersion(userId, "password-change");
         refreshTokens.revokeAllForUser(userId, Instant.now());
         // No old/new values on purpose: hashes never reach the audit trail.
         audit.record(AuditEventSpec.builder("PASSWORD_CHANGED", AuditOutcome.SUCCESS)

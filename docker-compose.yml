@@ -10,8 +10,15 @@ services:
 
   app:
     build: .
-    ports:
-      - "8080:8080"
+    # The app port is deliberately NOT published (trusted-proxy model): the
+    # frontend nginx is the single entry point and OVERWRITES
+    # X-Forwarded-For/-Proto on every proxied request. A directly reachable
+    # app port would let callers spoof those headers wholesale (per-IP
+    # rate-limit keys, audit IPs, HSTS). For local API tooling that must
+    # bypass nginx (curl/Swagger straight at the app), uncomment — loopback
+    # only, never in production:
+    # ports:
+    #   - "127.0.0.1:8080:8080"
     environment:
       # PostgreSQL (service below) + Flyway migrations in every mode.
       # APP_PROFILES=local layers on dev conveniences (dev JWT secret,

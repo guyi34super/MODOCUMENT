@@ -23,6 +23,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -58,9 +59,13 @@ class AuthUseCaseTest {
     private final RefreshTokenRepository refreshTokens = mock(RefreshTokenRepository.class);
     private final RevokedTokenRepository revokedTokens = mock(RevokedTokenRepository.class);
     private final AuditRecorder audit = mock(AuditRecorder.class);
+    // The real B5 seam over the same mocks: the bump and its audit are part
+    // of what these tests assert.
+    private final UserSecurityService userSecurity = new UserSecurityService(repo, audit);
+    private static final Duration IDLE_TIMEOUT = Duration.ofHours(12);
     private final AuthUseCase useCase = new AuthUseCase(repo, encoder, passwordPolicy,
             lockoutPolicy, userMfa, challengeTokens, jwtService, refreshTokens,
-            revokedTokens, audit, true);
+            revokedTokens, userSecurity, audit, true, IDLE_TIMEOUT);
 
     /** The production encoder wiring (SecurityConfig): argon2 default, bcrypt legacy. */
     private static PasswordEncoder delegatingEncoder() {
@@ -198,7 +203,8 @@ class AuthUseCaseTest {
         PasswordEncoder spyEncoder = mock(PasswordEncoder.class);
         when(spyEncoder.encode(anyString())).thenReturn("dummy-hash");
         AuthUseCase timed = new AuthUseCase(repo, spyEncoder, passwordPolicy, lockoutPolicy,
-                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens, audit, true);
+                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
+                userSecurity, audit, true, IDLE_TIMEOUT);
         when(repo.getByEmail("nobody@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> timed.login("nobody@example.com", "whatever", null, null))
@@ -280,7 +286,8 @@ class AuthUseCaseTest {
     void successfulLoginRehashesALegacyBcryptHashAndAuditsIt() {
         PasswordEncoder delegating = delegatingEncoder();
         AuthUseCase upgraded = new AuthUseCase(repo, delegating, passwordPolicy, lockoutPolicy,
-                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens, audit, true);
+                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
+                userSecurity, audit, true, IDLE_TIMEOUT);
         AppUser user = demoUser(); // raw BCrypt hash, no {id} prefix
         when(repo.getByEmail("demo@modocument.local")).thenReturn(Optional.of(user));
         when(repo.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -299,7 +306,8 @@ class AuthUseCaseTest {
     void argonHashIsNotRehashedAgain() {
         PasswordEncoder delegating = delegatingEncoder();
         AuthUseCase upgraded = new AuthUseCase(repo, delegating, passwordPolicy, lockoutPolicy,
-                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens, audit, true);
+                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
+                userSecurity, audit, true, IDLE_TIMEOUT);
         AppUser user = demoUser();
         user.setPasswordHash(delegating.encode("Demo123!"));
         String original = user.getPasswordHash();
@@ -354,7 +362,8 @@ class AuthUseCaseTest {
     @Test
     void adminWithoutMfaLogsStraightInWhenRequireForAdminIsOff() {
         AuthUseCase relaxed = new AuthUseCase(repo, encoder, passwordPolicy, lockoutPolicy,
-                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens, audit, false);
+                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
+                userSecurity, audit, false, IDLE_TIMEOUT);
         AppUser admin = demoUser();
         admin.setRole(Role.ADMIN);
         when(repo.getByEmail("demo@modocument.local")).thenReturn(Optional.of(admin));
@@ -400,6 +409,96 @@ class AuthUseCaseTest {
 
         assertThatThrownBy(() -> useCase.refresh("unknown", null, null))
                 .isInstanceOf(AuthUseCase.BadCredentialsException.class);
+    }
+
+    /** A live (not rotated, not revoked) refresh token for user 1. */
+    private static RefreshToken liveToken() {
+        RefreshToken token = new RefreshToken();
+        token.setJti(UUID.randomUUID());
+        token.setUserId(1);
+        token.setFamilyId(UUID.randomUUID());
+        token.setTokenHash("x".repeat(64));
+        token.setIssuedAt(Instant.now().minus(1, ChronoUnit.HOURS));
+        token.setExpiresAt(Instant.now().plus(5, ChronoUnit.DAYS));
+        return token;
+    }
+
+    /** SUP-S02 absolute bound: rotation inherits ExpiresAt, never extends it. */
+    @Test
+    void rotationInheritsTheFamilyExpiryAndNeverExtendsIt() {
+        RefreshToken current = liveToken();
+        Instant familyExpiry = current.getExpiresAt();
+        when(refreshTokens.getByTokenHash(anyString())).thenReturn(Optional.of(current));
+        when(repo.getById(1)).thenReturn(Optional.of(demoUser()));
+        when(jwtService.issueToken(any(AppUser.class))).thenReturn("jwt-token");
+
+        useCase.refresh("value", null, null);
+
+        ArgumentCaptor<RefreshToken> saved = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokens, times(2)).save(saved.capture()); // new token, then the rotated-away row
+        RefreshToken next = saved.getAllValues().get(0);
+        assertThat(next.getFamilyId()).isEqualTo(current.getFamilyId());
+        assertThat(next.getExpiresAt()).isEqualTo(familyExpiry);
+        assertThat(current.getReplacedByJti()).isEqualTo(next.getJti());
+    }
+
+    /** SUP-S02 absolute bound: a family past its ExpiresAt is refused and audited. */
+    @Test
+    void refreshRefusesAnExpiredFamilyAndAuditsTheAbsoluteExpiry() {
+        RefreshToken current = liveToken();
+        current.setExpiresAt(Instant.now().minusSeconds(1)); // 7 days are over
+        when(refreshTokens.getByTokenHash(anyString())).thenReturn(Optional.of(current));
+        when(repo.getById(1)).thenReturn(Optional.of(demoUser()));
+
+        assertThatThrownBy(() -> useCase.refresh("value", null, null))
+                .isInstanceOf(AuthUseCase.BadCredentialsException.class)
+                .hasMessage("Refresh token has expired.");
+
+        verify(refreshTokens, never()).save(any(RefreshToken.class));
+        AuditEventSpec recorded = recordedAudit();
+        assertThat(recorded.action()).isEqualTo("SESSION_ABSOLUTE_EXPIRED");
+        assertThat(recorded.outcome()).isEqualTo(AuditOutcome.FAILED);
+        assertThat(recorded.actorUserId()).isEqualTo(1);
+        assertThat(recorded.entityType()).isEqualTo("RefreshTokenFamily");
+        assertThat(recorded.entityId()).isEqualTo(current.getFamilyId().toString());
+    }
+
+    /** SUP-S02 idle bound: unused past the idle timeout is over, however young the family. */
+    @Test
+    void refreshRefusesAnIdleSessionAndAuditsTheIdleExpiry() {
+        RefreshToken current = liveToken();
+        current.setIssuedAt(Instant.now().minus(13, ChronoUnit.HOURS)); // idle > 12h
+        current.setExpiresAt(Instant.now().plus(5, ChronoUnit.DAYS));   // family still young
+        when(refreshTokens.getByTokenHash(anyString())).thenReturn(Optional.of(current));
+        when(repo.getById(1)).thenReturn(Optional.of(demoUser()));
+
+        assertThatThrownBy(() -> useCase.refresh("value", null, null))
+                .isInstanceOf(AuthUseCase.BadCredentialsException.class)
+                .hasMessage("Refresh token has expired.");
+
+        // Refused but NOT revoked: a retry hits the same refusal, not the
+        // reuse (theft) alarm; and no rotation happened.
+        verify(refreshTokens, never()).save(any(RefreshToken.class));
+        verify(refreshTokens, never()).revokeFamily(any(UUID.class), any(Instant.class));
+        AuditEventSpec recorded = recordedAudit();
+        assertThat(recorded.action()).isEqualTo("SESSION_IDLE_EXPIRED");
+        assertThat(recorded.outcome()).isEqualTo(AuditOutcome.FAILED);
+        assertThat(recorded.actorUserId()).isEqualTo(1);
+    }
+
+    /** A session used within the idle timeout keeps rotating normally. */
+    @Test
+    void refreshWithinTheIdleTimeoutStillRotates() {
+        RefreshToken current = liveToken();
+        current.setIssuedAt(Instant.now().minus(11, ChronoUnit.HOURS)); // under 12h
+        when(refreshTokens.getByTokenHash(anyString())).thenReturn(Optional.of(current));
+        when(repo.getById(1)).thenReturn(Optional.of(demoUser()));
+        when(jwtService.issueToken(any(AppUser.class))).thenReturn("jwt-token");
+
+        AuthUseCase.AuthSession session = useCase.refresh("value", null, null);
+
+        assertThat(session.refreshToken()).isNotBlank();
+        verify(refreshTokens, times(2)).save(any(RefreshToken.class));
     }
 
     // --------------------------------------------------------------- profile
@@ -462,17 +561,25 @@ class AuthUseCaseTest {
 
         useCase.changePassword(1, "Demo123!", "Rotor-Kestrel-91x");
 
-        verify(repo).save(user);
+        verify(repo, times(2)).save(user); // hash save + the B5 seam's bump
         assertThat(encoder.matches("Rotor-Kestrel-91x", user.getPasswordHash())).isTrue();
         // Every outstanding access token dies (token_ver < TokenVersion) ...
         assertThat(user.getTokenVersion()).isEqualTo(1);
         // ... and so does every refresh session.
         verify(refreshTokens).revokeAllForUser(eq(1), any(Instant.class));
 
-        AuditEventSpec recorded = recordedAudit();
-        assertThat(recorded.action()).isEqualTo("PASSWORD_CHANGED");
-        assertThat(recorded.outcome()).isEqualTo(AuditOutcome.SUCCESS);
-        assertThat(recorded.actorUserId()).isEqualTo(1);
+        // The bump goes through the shared UserSecurityService seam, which
+        // audits itself (with the reason) before the password-change row.
+        List<AuditEventSpec> recorded = allRecordedAudits();
+        assertThat(recorded).extracting(AuditEventSpec::action)
+                .containsExactly("TOKEN_VERSION_BUMPED", "PASSWORD_CHANGED");
+        AuditEventSpec bump = recorded.get(0);
+        assertThat(bump.outcome()).isEqualTo(AuditOutcome.SUCCESS);
+        assertThat(bump.actorUserId()).isEqualTo(1);
+        assertThat(String.valueOf(bump.newValues())).contains("password-change");
+        AuditEventSpec changed = recorded.get(1);
+        assertThat(changed.outcome()).isEqualTo(AuditOutcome.SUCCESS);
+        assertThat(changed.actorUserId()).isEqualTo(1);
     }
 
     @Test
