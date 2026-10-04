@@ -1,7 +1,10 @@
 package com.modocument.doccreation.generate;
 
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.application.port.PromptEnvelope;
+import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.doccreation.entity.DocBlueprintSection;
 import com.modocument.doccreation.entity.DocContentBlock;
 import com.modocument.doccreation.entity.DocImageAsset;
@@ -78,6 +81,7 @@ public class AiDocumentComposer {
     private final LlmRateLimiter llmQuota;
     private final CurrentUserProvider currentUser;
     private final DocumentAssembler assembler;
+    private final PiiTokenizer tokenizer;
     private final boolean enabled;
     private final String modelId;
 
@@ -85,12 +89,14 @@ public class AiDocumentComposer {
                               LlmRateLimiter llmQuota,
                               CurrentUserProvider currentUser,
                               DocumentAssembler assembler,
+                              PiiTokenizer tokenizer,
                               @Value("${modocument.doccreation.generate-ai-enabled:true}") boolean enabled,
                               @Value("${modocument.doccreation.generate-model-id:}") String modelId) {
         this.ai = ai;
         this.llmQuota = llmQuota;
         this.currentUser = currentUser;
         this.assembler = assembler;
+        this.tokenizer = tokenizer;
         this.enabled = enabled;
         this.modelId = modelId;
     }
@@ -113,12 +119,28 @@ public class AiDocumentComposer {
         if (!enabled || !ai.isConfigured()) {
             return Optional.empty();
         }
-        List<DocContentBlock> allBlocks = sectionsInOrder.stream()
-                .flatMap(s -> blocksBySectionId
-                        .getOrDefault(s.getDocBlueprintSectionId(), List.<DocContentBlock>of()).stream())
-                .toList();
-        if (allBlocks.isEmpty()) {
+        boolean nothingToMerge = sectionsInOrder.stream()
+                .allMatch(s -> blocksBySectionId
+                        .getOrDefault(s.getDocBlueprintSectionId(), List.<DocContentBlock>of()).isEmpty());
+        if (nothingToMerge) {
             return Optional.empty(); // nothing to merge — the plain engine reproduces the doc
+        }
+
+        // C9: identifier shapes in the template listing and in the user's
+        // own paragraphs/captions travel as reversible [ID_1]-style tokens;
+        // the validated plan is detokenized below, so the rendered document
+        // still carries the real values while the model never saw them.
+        PiiTokenizer.Session session = tokenizer.newSession();
+        Map<Integer, List<DocContentBlock>> tokenizedBySection = new HashMap<>();
+        List<DocContentBlock> allBlocks = new ArrayList<>();
+        for (DocBlueprintSection section : sectionsInOrder) {
+            List<DocContentBlock> tokenized = blocksBySectionId
+                    .getOrDefault(section.getDocBlueprintSectionId(), List.<DocContentBlock>of())
+                    .stream()
+                    .map(block -> tokenizedCopy(block, session))
+                    .toList();
+            tokenizedBySection.put(section.getDocBlueprintSectionId(), tokenized);
+            allBlocks.addAll(tokenized);
         }
 
         int elementCount;
@@ -134,8 +156,8 @@ public class AiDocumentComposer {
                 log.info("Blueprint too large for the AI listing; using the deterministic engine");
                 return Optional.empty();
             }
-            prompt = PROMPT + digest
-                    + userContentDigest(sectionsInOrder, blocksBySectionId, assetsById);
+            prompt = PROMPT + session.tokenizeText(digest)
+                    + userContentDigest(sectionsInOrder, tokenizedBySection, assetsById, session);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not read the blueprint document.", e);
         }
@@ -145,8 +167,14 @@ public class AiDocumentComposer {
             // Same per-user LLM quota as the other AI endpoints; exhaustion
             // degrades to the deterministic engine instead of failing generate.
             llmQuota.check(currentUser.requireUserId());
-            reply = ai.sendForObject(prompt, new ParameterizedTypeReference<List<AiOp>>() {
-            }, modelId);
+            reply = ai.sendForObject(
+                    PromptEnvelope.builder(AiPurpose.DOC_COMPOSE)
+                            .user(currentUser.requireUserId())
+                            .part(prompt)
+                            .model(modelId)
+                            .build(),
+                    new ParameterizedTypeReference<List<AiOp>>() {
+                    });
         } catch (RuntimeException e) {
             log.warn("AI document composition unavailable, using the deterministic engine: {}",
                     e.getMessage());
@@ -154,7 +182,30 @@ public class AiDocumentComposer {
         }
 
         Optional<List<PlanOp>> plan = validate(reply, elementCount, allBlocks, assetsById);
-        return plan.map(ops -> assembler.render(blueprintDocx, ops, assetsById, assetBytesLoader));
+        return plan.map(ops -> assembler.render(
+                blueprintDocx, detokenize(ops, session), assetsById, assetBytesLoader));
+    }
+
+    /** Detached copy whose text/caption carry tokens instead of identifiers. */
+    private static DocContentBlock tokenizedCopy(DocContentBlock block, PiiTokenizer.Session session) {
+        DocContentBlock copy = new DocContentBlock();
+        copy.setDocContentBlockId(block.getDocContentBlockId());
+        copy.setSectionId(block.getSectionId());
+        copy.setBlockType(block.getBlockType());
+        copy.setAssetId(block.getAssetId());
+        copy.setTextContent(session.tokenizeText(block.getTextContent()));
+        copy.setCaption(session.tokenizeText(block.getCaption()));
+        return copy;
+    }
+
+    /** Swaps the per-request tokens back into the validated plan's text ops. */
+    private static List<PlanOp> detokenize(List<PlanOp> ops, PiiTokenizer.Session session) {
+        return ops.stream().map(op -> switch (op.kind()) {
+            case KEEP -> op;
+            case PARAGRAPH -> PlanOp.paragraph(session.detokenize(op.text()));
+            case IMAGE -> PlanOp.image(op.assetId(),
+                    op.caption() == null ? null : session.detokenize(op.caption()));
+        }).toList();
     }
 
     /** Everything the user added, section by section, in their arranged order. */

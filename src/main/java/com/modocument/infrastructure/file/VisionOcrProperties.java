@@ -4,13 +4,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Settings for LLM vision OCR of standalone images and scanned PDF pages.
- * Active only when enabled AND a real OpenAI api-key is configured; the
- * Tesseract-based {@link OcrService} remains the offline fallback.
+ * OFF BY DEFAULT (gate C8 local-first posture): page images cannot be
+ * tokenized, so sending them to a vision model is an explicit opt-in
+ * ({@code MODOCUMENT_AI_VISION_OCR_ENABLED=true}) on top of a real API key.
+ * The Tesseract-based {@link OcrService} remains the offline default.
  */
 @ConfigurationProperties(prefix = "ocr.vision")
 public class VisionOcrProperties {
 
-    private boolean enabled = true;
+    private boolean enabled = false;
     private String model = "gpt-4o";
     /** Vision-OCR page budget per PDF; pages beyond it fall back to Tesseract. */
     private int maxPages = 20;

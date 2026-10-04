@@ -5,9 +5,12 @@ import com.modocument.application.dto.TemplateIdentifierPromptInput;
 import com.modocument.application.dto.TransformRequest;
 import com.modocument.application.dto.TransformResult;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
 import com.modocument.application.port.DocumentParser;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.PromptStrategy;
 import com.modocument.application.port.TransformService;
+import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.prompt.PromptFactory;
 import org.slf4j.Logger;
@@ -27,15 +30,18 @@ public class TransformServiceImpl implements TransformService {
     private final AiFilesService aiFilesService;
     private final DocumentParser documentParser;
     private final UploadStorage uploadStorage;
+    private final PiiTokenizer tokenizer;
 
     public TransformServiceImpl(PromptFactory promptFactory,
                                 AiFilesService aiFilesService,
                                 DocumentParser documentParser,
-                                UploadStorage uploadStorage) {
+                                UploadStorage uploadStorage,
+                                PiiTokenizer tokenizer) {
         this.promptFactory = promptFactory;
         this.aiFilesService = aiFilesService;
         this.documentParser = documentParser;
         this.uploadStorage = uploadStorage;
+        this.tokenizer = tokenizer;
     }
 
     @Override
@@ -46,14 +52,19 @@ public class TransformServiceImpl implements TransformService {
                     "File '" + request.getFileName() + "' not found in uploads folder.");
         }
 
-        String fileContent = documentParser.extractText(filePath);
+        // C9: the document's full text is tokenized before it enters the
+        // prompt, and the placeholders are swapped back in the extracted
+        // JSON — the model restructures tokens, never raw identifiers.
+        PiiTokenizer.Session session = tokenizer.newSession();
+        String fileContent = session.tokenizeText(documentParser.extractText(filePath));
 
         PromptStrategy strategy = promptFactory.getPrompt("Extraction");
         String prompt = strategy.buildPrompt(new ExtractionPromptInput(fileContent, model));
 
-        String llmResponse = aiFilesService.sendPrompt(prompt);
+        String llmResponse = aiFilesService.sendPrompt(
+                PromptEnvelope.of(AiPurpose.TRANSFORM_EXTRACTION, prompt));
 
-        String extractedJson = extractBetween(llmResponse, "```json", "```");
+        String extractedJson = session.detokenize(extractBetween(llmResponse, "```json", "```"));
         return new TransformResult(extractedJson);
     }
 
@@ -61,10 +72,13 @@ public class TransformServiceImpl implements TransformService {
     public int getTemplateId(TransformRequest request) {
         Path filePath = resolveUpload(request);
 
+        // The TemplateIdentifier prompt masks the snippet itself (one-way,
+        // nothing to detokenize — the answer is a template number).
         PromptStrategy strategy = promptFactory.getPrompt("TemplateIdentifier");
         String prompt = strategy.buildPrompt(new TemplateIdentifierPromptInput(filePath.toString()));
 
-        String llmResponse = aiFilesService.sendPrompt(prompt);
+        String llmResponse = aiFilesService.sendPrompt(
+                PromptEnvelope.of(AiPurpose.TEMPLATE_CLASSIFY, prompt));
 
         int classification = Integer.parseInt(llmResponse.trim());
         log.info("LLM classified as: {}", classification);
