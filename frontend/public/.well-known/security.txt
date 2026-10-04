@@ -1,0 +1,7 @@
+# MoDocument vulnerability disclosure (RFC 9116) — SUP-S12
+# Mailbox go-live is gate E5; see SECURITY.md at the repository root.
+Contact: mailto:security@modocument.example
+Expires: 2027-10-04T00:00:00.000Z
+Preferred-Languages: en, fr
+Canonical: https://app.modocument.example/.well-known/security.txt
+Policy: https://github.com/guyi34super/MODOCUMENT/blob/main/SECURITY.md

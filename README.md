@@ -672,17 +672,77 @@ service (the bundled `postgres` service is then unnecessary).
 
 ## Production deployment checklist
 
-- **`MODOCUMENT_JWT_SECRET`** — required; generate with `openssl rand -base64 48`.
-  The app refuses to start with a missing, short, or known-default secret.
+The target production topology is written as Terraform under
+[`infra/terraform/`](infra/terraform/) (AWS af-south-1: CloudFront + WAF →
+ALB TLS 1.2+ → ECS on EC2 → Multi-AZ RDS with forced TLS; locked backups,
+GuardDuty/CloudTrail, GitHub-OIDC deploys — see its README for layout and
+apply order; `terraform validate` is pending a machine with terraform
+installed). Whatever hosting you use, the application-level checklist is:
+
+- **Secrets** (`MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`) — required,
+  ≥ 32 bytes each (`openssl rand -base64 48`); the app refuses to start with
+  a missing, short, or known-default JWT secret. In the IaC they are Secrets
+  Manager values injected into the task — never in images or tfvars.
+  Inventory every key in
+  [`docs/security/key-certificate-register.md`](docs/security/key-certificate-register.md).
 - **Database** — set `MODOCUMENT_DB_URL` / `MODOCUMENT_DB_USERNAME` /
-  `MODOCUMENT_DB_PASSWORD` to a PostgreSQL instance with a strong password;
-  Flyway migrates the schema on startup.
+  `MODOCUMENT_DB_PASSWORD`; Flyway migrates on startup. Use the two-role
+  model: the app connects as `modocument_app` (NOBYPASSRLS — create it per
+  [`docker/postgres-init/01-app-role.sh`](docker/postgres-init/01-app-role.sh)),
+  Flyway as the schema owner (`MODOCUMENT_FLYWAY_USERNAME`/`_PASSWORD`).
+  On RDS, force TLS server-side (`rds.force_ssl=1` — done by
+  `infra/terraform/modules/rds`) and use `sslmode=verify-full`.
+- **Bootstrap admin** — `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL`/`_PASSWORD`
+  (self-registration is disabled); enrol MFA at first login (mandatory for
+  ADMIN).
 - **CORS** — set `MODOCUMENT_CORS_ALLOWED_ORIGINS` to your frontend origin(s).
-- **TLS** — terminate HTTPS at your reverse proxy / load balancer in front of the
-  frontend (nginx, port 80) and the API; nothing in the stack serves TLS itself.
-- **Health** — probe `GET /actuator/health` (unauthenticated); the Docker image and
-  compose file already use it.
+- **TLS + trusted proxy** — terminate HTTPS in front of the frontend nginx
+  (nothing in the stack serves TLS itself) and keep the app port
+  unpublished: nginx overwrites `X-Forwarded-*`, which the app trusts for
+  rate limiting, audit IPs and HSTS. In the IaC: ALB policy
+  `ELBSecurityPolicy-TLS13-1-2-2021-06`, origin locked to CloudFront.
+- **Health** — probe `GET /actuator/health` (unauthenticated); the Docker
+  image, compose file and ECS task definition already use it. SLA and
+  probe/status-page plan:
+  [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md).
 - **Files** — mount a volume at the storage root (`MODOCUMENT_STORAGE_ROOT`,
   default `wwwroot/`) so uploads and export copies survive restarts.
-- **API docs** — Swagger/OpenAPI endpoints are disabled outside the `local`/`test`
-  profiles; the H2 console permit is likewise dev-only.
+- **Backups** — nightly snapshots with 90-day retention and a cross-region
+  copy into a **locked** vault (`infra/terraform/modules/backups`); flip the
+  irreversible locks only after the restore drill passes (gate D6).
+- **Monitoring** — GuardDuty + CloudTrail (log-file validation) + CloudWatch
+  alarms → one SNS topic (`infra/terraform/modules/security-monitoring`);
+  logs archive to the 7-year WORM bucket (SEC-033).
+- **API docs** — Swagger/OpenAPI endpoints are disabled outside the
+  `local`/`test` profiles; the H2 console permit is likewise dev-only.
+- **Vulnerability reports** — `SECURITY.md` + `/.well-known/security.txt`
+  ship the contact; the mailbox itself is gate E5 (table below).
+
+## Implement later (cloud & organisational) — Go-Live Gate items not executable from this repository
+
+These gate items need a cloud account, a vendor, or an organisational
+decision — code cannot close them. The repo **prepares** each one (last
+column); the owner executes and files the evidence. Status detail and dates:
+[`docs/security/security-roadmap.md`](docs/security/security-roadmap.md).
+
+| Gate item | What it is | Owner | Evidence needed | Repo artifact that prepares it |
+|---|---|---|---|---|
+| A1 | AWS production account build-out (af-south-1) | Bhavish Nobeen | `terraform apply` outputs + account inventory | [`infra/terraform/envs/production`](infra/terraform/envs/production) |
+| A2 | Console/root MFA for every cloud operator | Bhavish Nobeen | IAM credential report | — (console-only; policy in [`docs/security/identity-providers.md`](docs/security/identity-providers.md) spirit) |
+| A3–A5 | VPC/network/edge build-out, WAF in blocking mode | Bhavish Nobeen | applied plan + WAF metrics | [`modules/network`](infra/terraform/modules/network), [`modules/edge`](infra/terraform/modules/edge) |
+| A6 | CloudTrail into a **separate lock account** | Bhavish Nobeen | trail ARN + lock-account bucket policy | [`modules/security-monitoring`](infra/terraform/modules/security-monitoring) + two-account model in [`infra/terraform/README.md`](infra/terraform/README.md) |
+| A1/SUP-S07 | Separate **staging account** | Bhavish Nobeen | staging apply in its own account | [`infra/terraform/envs/staging`](infra/terraform/envs/staging) |
+| A8/SUP-S05 | CI deploys with **no static cloud keys** | Bhavish Nobeen | GitHub Actions run assuming the OIDC role | [`modules/ci-oidc`](infra/terraform/modules/ci-oidc) |
+| SEC-018 | Secrets in a managed secret store | Bhavish Nobeen | Secrets Manager entries (values set out-of-band) | secret shells in `envs/*/main.tf`; [`docs/security/key-certificate-register.md`](docs/security/key-certificate-register.md) |
+| D3 | Egress allow-list **enforced** | Bhavish Nobeen (define), Reezvi Pydiah (sign off) | signed list + applied SG/NACL | `app_egress_https_cidrs` + `enforce_egress_nacl` seams in [`modules/network`](infra/terraform/modules/network)/[`edge`](infra/terraform/modules/edge) |
+| D4–D5 | Real backups: 90d, cross-region, **locked vault** | Rushal Seeruthun | vault lock config + recovery-point listing | [`modules/backups`](infra/terraform/modules/backups) |
+| D6 | **Restore drill** (timed, documented) | Rushal Seeruthun | drill log with RTO/RPO achieved | staging env + [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md) targets |
+| D7 | DR/BCDR sign-off | Reezvi Pydiah | signed BCDR statement | drill evidence + [`docs/security/cia-controls-table.md`](docs/security/cia-controls-table.md) |
+| E4 | External **penetration test** (budget 31 Oct 2026) | Reezvi Pydiah (procure), Bhavish Nobeen (remediate) | report + retest closure | staging env (open `ingress_cidrs` for the window); scope = [`docs/security/security-feature-catalogue.md`](docs/security/security-feature-catalogue.md) |
+| E5 | **security@** mailbox live | Taj Aundoo | test mail round-trip | [`SECURITY.md`](SECURITY.md) + `frontend/public/.well-known/security.txt` |
+| E7 | **Load test executed** (k6 scripts from ws17) | Rushal Seeruthun | k6 report vs SLA targets | staging ALB output; [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md) |
+| C11 | **Written acceptance of residual AI risks** | **Reezvi Pydiah** | signed acceptance note | risk list: document-to-table extraction & vision OCR see raw content (no field-extraction tokenization), no input cleaning on raw-content paths, model-written figures in generated documents (validated structurally, not factually), no model version pinning (provider-side model drift). Context: README "Privacy: PII tokenization" boundaries + [`docs/security/threat-control-matrix.md`](docs/security/threat-control-matrix.md) AI row |
+| SUP-S10 | DMARC/SPF/DKIM on the sending domain | Taj Aundoo | DNS records + DMARC report | — (DNS-level; no repo artifact) |
+| SUP-S09 | MDM on staff devices | Taj Aundoo | MDM enrolment report | — (organisational) |
+| SEC-031 | SIEM reference test (one detection end-to-end) | Rushal Seeruthun | alert received from a staged `ACCOUNT_LOCKED` burst | metric filter + alarm in [`modules/security-monitoring`](infra/terraform/modules/security-monitoring); audit vocabulary in [`docs/security/security-feature-catalogue.md`](docs/security/security-feature-catalogue.md) |
+| SEC-038 | Certification path decision (ISO 27001 / SOC 2) | Reezvi Pydiah | decision memo | evidence pack under [`docs/security/`](docs/security/) is structured to serve either |
