@@ -120,6 +120,29 @@ services:
       start_period: 30s
       retries: 5
 
+  # Open-source OIDC identity provider for non-Microsoft banks (ws07, gate
+  # B2/B3). Opt in with `docker compose --profile keycloak up`; the
+  # 'modocument' realm (password policy, enforced TOTP enrollment, the
+  # modocument-app client) is imported from docker/keycloak/ on first start.
+  # Point the app at it with modocument.oidc.providers.keycloak.issuer-uri:
+  # http://localhost:8081/realms/modocument (see application-oidc.yml.example
+  # and docs/security/identity-providers.md).
+  keycloak:
+    profiles: ["keycloak"]
+    image: quay.io/keycloak/keycloak:26.3
+    command: ["start-dev", "--import-realm"]
+    environment:
+      # Bootstrap admin for the Keycloak console (http://localhost:8081).
+      # The defaults are for LOCAL DEVELOPMENT ONLY — set both variables for
+      # any deployment reachable from outside your machine.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./docker/keycloak/modocument-realm.json:/opt/keycloak/data/import/modocument-realm.json:ro
+      - modocument-keycloak:/opt/keycloak/data/h2
+
   # Extraction at scale: docker compose --profile extraction up with
   # APP_PROFILES=scale. MongoDB stores raw/processed records, job state,
   # and the task queue; Kafka distributes work across app instances.
@@ -156,3 +179,4 @@ volumes:
   modocument-postgres:
   modocument-mongo:
   modocument-kafka:
+  modocument-keycloak:

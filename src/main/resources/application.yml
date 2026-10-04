@@ -98,6 +98,30 @@ modocument:
       require-for-admin: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:true}
       # MFA challenge token lifetime (password-to-second-factor window).
       challenge-ttl-minutes: ${MODOCUMENT_MFA_CHALLENGE_TTL_MINUTES:5}
+  # OIDC single sign-on (ws07, OPTIONAL — nothing below is active until a
+  # provider is configured; the app boots unchanged without any of it).
+  # External IdPs only AUTHENTICATE: Entra ID for Microsoft banks, Keycloak
+  # for everyone else. MoDocument then issues its own access token + refresh
+  # cookie (bridge pattern), so API authentication is unchanged. MFA is
+  # enforced AT THE PROVIDER (Entra Conditional Access / the Keycloak realm's
+  # TOTP required action). Full shape + setup guide:
+  # application-oidc.yml.example and docs/security/identity-providers.md.
+  # oidc:
+  #   post-login-redirect: /login/complete
+  #   providers:
+  #     entra:
+  #       issuer-uri: https://login.microsoftonline.com/<tenant-id>/v2.0
+  #       client-id: ${MODOCUMENT_OIDC_ENTRA_CLIENT_ID}
+  #       client-secret: ${MODOCUMENT_OIDC_ENTRA_CLIENT_SECRET}
+  #       bank-code: CONTOSO          # Bank.Code users are provisioned into
+  #       default-role: READ_ONLY
+  #     keycloak:
+  #       issuer-uri: http://localhost:8081/realms/modocument
+  #       client-id: modocument-app
+  #       client-secret: ${MODOCUMENT_OIDC_KEYCLOAK_CLIENT_SECRET}
+  #       bank-code: DEFAULT
+  #       default-role: READ_ONLY
+  #       role-claim: modocument_roles
   cors:
     # Comma-separated list of origins allowed to call the API with credentials.
     # Set to the deployed frontend origin(s) in production.

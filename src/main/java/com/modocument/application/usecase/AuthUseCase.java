@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
@@ -250,6 +251,35 @@ public class AuthUseCase {
                 .entity("AppUser", String.valueOf(saved.getAppUserId()))
                 .build());
         return saved;
+    }
+
+    /**
+     * Opens a session for a user an external OIDC provider has ALREADY
+     * authenticated (ws07 bridge pattern — the IdP is only the front door;
+     * MoDocument issues its own access token + refresh family, identical to
+     * {@link #login}'s issuance path). No credential check happens here on
+     * purpose: the only caller is the OIDC login success handler, which runs
+     * strictly after Spring Security validated the provider's ID token.
+     */
+    public AuthSession openOidcSession(AppUser user, String provider, String ip, String userAgent) {
+        user.setLastLoginAt(LocalDateTime.now());
+        user = users.save(user);
+        Instant familyExpiry = Instant.now().plus(REFRESH_FAMILY_DAYS, ChronoUnit.DAYS);
+        IssuedRefreshToken refresh =
+                issueRefreshToken(user, UUID.randomUUID(), familyExpiry, ip, userAgent);
+        AuthSession session = new AuthSession(
+                new AuthResponse(jwtService.issueToken(user), UserDto.from(user)), refresh.value());
+        audit.record(AuditEventSpec.builder("LOGIN_SUCCESS", AuditOutcome.SUCCESS)
+                .actorUserId(user.getAppUserId())
+                .actorEmail(user.getEmail())
+                .actorRole(user.getRole() == null ? null : user.getRole().name())
+                .bankId(user.getBankId())
+                .sessionJti(refresh.jti())
+                .entity("AppUser", String.valueOf(user.getAppUserId()))
+                // The oidc marker distinguishes these rows from password logins.
+                .newValues(Map.of("method", "oidc", "provider", provider))
+                .build());
+        return session;
     }
 
     /**

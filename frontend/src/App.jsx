@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
+import LoginCompletePage from './pages/LoginCompletePage';
 import DashboardPage from './pages/DashboardPage';
 import TemplatesPage from './pages/TemplatesPage';
 import TemplateEditorPage from './pages/TemplateEditorPage';
@@ -21,6 +22,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* OIDC landing: exchanges the refresh cookie for the access token. */}
+      <Route path="/login/complete" element={<LoginCompletePage />} />
       <Route
         element={
           <ProtectedRoute>

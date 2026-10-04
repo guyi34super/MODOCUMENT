@@ -37,6 +37,14 @@ export function AuthProvider({ children }) {
     setUser(verified);
   }, []);
 
+  // OIDC landing (/login/complete): the session was opened by the backend's
+  // redirect (refresh cookie); the page hands the exchanged token + profile
+  // here so the SPA state matches a password login's.
+  const completeLogin = useCallback((token, loggedIn) => {
+    setSession(token, loggedIn);
+    setUser(loggedIn);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       // Best-effort server-side revocation (access-token jti + refresh
@@ -56,8 +64,16 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: Boolean(getToken()), login, completeMfaLogin, logout, updateUser }),
-    [user, login, completeMfaLogin, logout, updateUser]
+    () => ({
+      user,
+      isAuthenticated: Boolean(getToken()),
+      login,
+      completeMfaLogin,
+      completeLogin,
+      logout,
+      updateUser,
+    }),
+    [user, login, completeMfaLogin, completeLogin, logout, updateUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
