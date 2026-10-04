@@ -72,9 +72,15 @@ function refreshAccessToken() {
   return refreshPromise;
 }
 
-async function request(path, { method = 'GET', body, raw = false, retried = false } = {}) {
+/**
+ * `authToken` carries an explicit bearer (the MFA challenge token during the
+ * forced-enrolment flow) instead of the stored session token; those calls
+ * must never trigger the silent-refresh/redirect dance — a 401 just surfaces
+ * as an error on the login screen.
+ */
+async function request(path, { method = 'GET', body, raw = false, retried = false, authToken } = {}) {
   const opts = { method, headers: {} };
-  const token = getToken();
+  const token = authToken || getToken();
   if (token) opts.headers.Authorization = `Bearer ${token}`;
   if (body !== undefined && body !== null) {
     if (body instanceof FormData) {
@@ -87,7 +93,13 @@ async function request(path, { method = 'GET', body, raw = false, retried = fals
 
   const res = await fetch(path, opts);
 
-  if (res.status === 401 && !path.startsWith('/api/auth/login') && !path.startsWith('/api/auth/refresh')) {
+  // The two-phase login endpoints answer 401 for a wrong code — that is
+  // feedback for the login form, never a reason to bounce the browser.
+  const isAuthEntryPoint =
+    path.startsWith('/api/auth/login') ||
+    path.startsWith('/api/auth/refresh') ||
+    path.startsWith('/api/auth/mfa/verify');
+  if (res.status === 401 && !isAuthEntryPoint && !authToken) {
     // The short-lived access token probably just expired: try ONE silent
     // refresh (httpOnly cookie) and replay the request with the new token.
     if (!retried) {
@@ -121,10 +133,10 @@ async function request(path, { method = 'GET', body, raw = false, retried = fals
 }
 
 export const api = {
-  get: (path) => request(path),
-  post: (path, body) => request(path, { method: 'POST', body }),
-  put: (path, body) => request(path, { method: 'PUT', body }),
-  del: (path) => request(path, { method: 'DELETE' }),
+  get: (path, opts = {}) => request(path, { ...opts }),
+  post: (path, body, opts = {}) => request(path, { ...opts, method: 'POST', body }),
+  put: (path, body, opts = {}) => request(path, { ...opts, method: 'PUT', body }),
+  del: (path, body, opts = {}) => request(path, { ...opts, method: 'DELETE', body }),
 };
 
 /**

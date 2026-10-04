@@ -32,6 +32,61 @@ describe('AuthContext', () => {
     expect(getStoredUser()).toEqual(user);
   });
 
+  it('login with MFA required returns the challenge and stores NO session', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ mfaRequired: true, enrollmentRequired: true, challenge: 'challenge-jwt' })
+      )
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.login('admin@modocument.local', 'Demo123!');
+    });
+
+    expect(outcome).toEqual({
+      mfaRequired: true,
+      enrollmentRequired: true,
+      challenge: 'challenge-jwt',
+    });
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(getToken()).toBeNull();
+    expect(getStoredUser()).toBeNull();
+  });
+
+  it('completeMfaLogin verifies the code and stores the session', async () => {
+    const user = { userId: 1, email: 'demo@modocument.local' };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ token: 'jwt-mfa', user }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await act(() => result.current.completeMfaLogin('challenge-jwt', '123456'));
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.user).toEqual(user);
+    expect(getToken()).toBe('jwt-mfa');
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/auth/mfa/verify');
+    expect(JSON.parse(opts.body)).toEqual({ challenge: 'challenge-jwt', code: '123456' });
+  });
+
+  it('a wrong MFA code leaves the session empty', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ error: 'Invalid verification code.' }, 401))
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await expect(
+      act(() => result.current.completeMfaLogin('challenge-jwt', '000000'))
+    ).rejects.toThrow('Invalid verification code.');
+
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(getToken()).toBeNull();
+  });
+
   it('login failure leaves the session empty', async () => {
     vi.stubGlobal(
       'fetch',

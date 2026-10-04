@@ -57,8 +57,19 @@ public class AuthController {
                                    HttpServletRequest httpRequest) {
         // Throttled per IP and per email to blunt password guessing (F-004).
         rateLimiter.check(clientIp(httpRequest), request.getEmail());
-        AuthUseCase.AuthSession session = auth.login(request.getEmail(), request.getPassword(),
+        AuthUseCase.LoginResult result = auth.login(request.getEmail(), request.getPassword(),
                 clientIp(httpRequest), httpRequest.getHeader(HttpHeaders.USER_AGENT));
+        if (result instanceof AuthUseCase.MfaChallenge challenge) {
+            // Password OK but a second factor is owed (B3): no tokens, no
+            // refresh cookie — only the short-lived challenge, which solely
+            // POST /api/auth/mfa/verify (plus the enrolment endpoints when
+            // enrollmentRequired) accepts.
+            return ResponseEntity.ok(Map.of(
+                    "mfaRequired", true,
+                    "enrollmentRequired", challenge.enrollmentRequired(),
+                    "challenge", challenge.challenge()));
+        }
+        AuthUseCase.AuthSession session = (AuthUseCase.AuthSession) result;
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, refreshCookie(session.refreshToken()).toString())
                 .body(session.response());
@@ -100,7 +111,8 @@ public class AuthController {
         return request.getRemoteAddr();
     }
 
-    private static ResponseCookie refreshCookie(String value) {
+    /** Package-visible: MfaController sets the same cookie after verify. */
+    static ResponseCookie refreshCookie(String value) {
         return ResponseCookie.from(REFRESH_COOKIE, value)
                 .httpOnly(true)
                 .secure(true)

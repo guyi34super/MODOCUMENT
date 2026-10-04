@@ -3,6 +3,7 @@ package com.modocument.infrastructure.bootstrap;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.TenantContext;
+import com.modocument.application.security.PasswordPolicy;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.entity.Bank;
@@ -40,25 +41,31 @@ public class BootstrapAdminRunner implements ApplicationRunner {
     private final AppUserJpaRepository users;
     private final BankJpaRepository banks;
     private final PasswordEncoder passwordEncoder;
+    private final PasswordPolicy passwordPolicy;
     private final AuditRecorder audit;
     private final String adminEmail;
     private final String adminPassword;
     private final boolean permitDevPaths;
+    private final boolean allowWeakPassword;
 
     public BootstrapAdminRunner(AppUserJpaRepository users,
                                 BankJpaRepository banks,
                                 PasswordEncoder passwordEncoder,
+                                PasswordPolicy passwordPolicy,
                                 AuditRecorder audit,
                                 @Value("${MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL:}") String adminEmail,
                                 @Value("${MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD:}") String adminPassword,
-                                @Value("${modocument.security.permit-dev-paths:false}") boolean permitDevPaths) {
+                                @Value("${modocument.security.permit-dev-paths:false}") boolean permitDevPaths,
+                                @Value("${MODOCUMENT_BOOTSTRAP_ADMIN_ALLOW_WEAK:false}") boolean allowWeakPassword) {
         this.users = users;
         this.banks = banks;
         this.passwordEncoder = passwordEncoder;
+        this.passwordPolicy = passwordPolicy;
         this.audit = audit;
         this.adminEmail = adminEmail;
         this.adminPassword = adminPassword;
         this.permitDevPaths = permitDevPaths;
+        this.allowWeakPassword = allowWeakPassword;
     }
 
     @Override
@@ -86,6 +93,24 @@ public class BootstrapAdminRunner implements ApplicationRunner {
                             + "MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL and "
                             + "MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD so the first administrator "
                             + "can be created (registration is admin-only).");
+        }
+        // The first ADMIN is the most valuable account there is — the
+        // password policy (SEC-021) applies to it like to everyone, unless a
+        // dev deployment explicitly opts out.
+        try {
+            passwordPolicy.validate(adminPassword, adminEmail);
+        } catch (IllegalArgumentException weak) {
+            if (!allowWeakPassword) {
+                throw new IllegalStateException(
+                        "MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD violates the password policy ("
+                                + weak.getMessage() + ") Choose a stronger password, or set "
+                                + "MODOCUMENT_BOOTSTRAP_ADMIN_ALLOW_WEAK=true for a throwaway "
+                                + "dev environment.", weak);
+            }
+            log.warn("SECURITY WARNING: bootstrap admin password violates the password "
+                    + "policy ({}) but MODOCUMENT_BOOTSTRAP_ADMIN_ALLOW_WEAK=true overrides "
+                    + "it. NEVER use this override outside a throwaway dev environment.",
+                    weak.getMessage());
         }
         Bank defaultBank = banks.findByCode(Bank.DEFAULT_BANK_CODE)
                 // Present in PostgreSQL via V10; the H2 dev/test schema starts

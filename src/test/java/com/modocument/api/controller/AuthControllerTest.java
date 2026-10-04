@@ -82,6 +82,24 @@ class AuthControllerTest {
                 .isInstanceOf(TooManyRequestsException.class);
     }
 
+    /** B3: a challenge answer carries NO tokens and NO refresh cookie. */
+    @Test
+    void mfaChallengeAnswersWithoutTokensOrCookie() {
+        when(useCase.login(eq("admin@modocument.local"), eq("Demo123!"), any(), any()))
+                .thenReturn(new AuthUseCase.MfaChallenge("challenge-jwt", true));
+
+        ResponseEntity<?> result = controller.login(
+                new LoginRequest("admin@modocument.local", "Demo123!"), requestFrom("10.0.0.9"));
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> body = (Map<String, Object>) result.getBody();
+        assertThat(body).containsEntry("mfaRequired", true)
+                .containsEntry("enrollmentRequired", true)
+                .containsEntry("challenge", "challenge-jwt");
+        assertThat(result.getHeaders().getFirst(HttpHeaders.SET_COOKIE)).isNull();
+    }
+
     @Test
     void refreshRotatesTheCookie() {
         when(useCase.refresh(eq("old-value"), any(), any()))

@@ -1,6 +1,7 @@
 package com.modocument.infrastructure.bootstrap;
 
 import com.modocument.application.port.AuditRecorder;
+import com.modocument.application.security.PasswordPolicy;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.Role;
@@ -27,6 +28,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class BootstrapAdminRunnerTest {
 
+    /** Satisfies the policy: 19 chars, not breached, no email local-part. */
+    private static final String STRONG_PASSWORD = "Bootstrap-Falcon-7q";
+
     @Autowired
     private AppUserJpaRepository users;
     @Autowired
@@ -34,24 +38,31 @@ class BootstrapAdminRunnerTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
     @Autowired
+    private PasswordPolicy passwordPolicy;
+    @Autowired
     private AuditRecorder audit;
 
     private BootstrapAdminRunner runner(String email, String password, boolean permitDevPaths) {
-        return new BootstrapAdminRunner(users, banks, passwordEncoder, audit, email, password,
-                permitDevPaths);
+        return runner(email, password, permitDevPaths, false);
+    }
+
+    private BootstrapAdminRunner runner(String email, String password, boolean permitDevPaths,
+                                        boolean allowWeak) {
+        return new BootstrapAdminRunner(users, banks, passwordEncoder, passwordPolicy, audit,
+                email, password, permitDevPaths, allowWeak);
     }
 
     @Test
     void emptyTableAndConfiguredVarsCreateTheAdmin() {
         users.deleteAll();
 
-        runner("Root@Example.com", "Bootstrap1!", false).run(null);
+        runner("Root@Example.com", STRONG_PASSWORD, false).run(null);
 
         assertThat(users.count()).isEqualTo(1);
         AppUser admin = users.findAll().get(0);
         assertThat(admin.getEmail()).isEqualTo("root@example.com");
         assertThat(admin.getRole()).isEqualTo(Role.ADMIN);
-        assertThat(passwordEncoder.matches("Bootstrap1!", admin.getPasswordHash())).isTrue();
+        assertThat(passwordEncoder.matches(STRONG_PASSWORD, admin.getPasswordHash())).isTrue();
         Bank defaultBank = banks.findByCode(Bank.DEFAULT_BANK_CODE).orElseThrow();
         assertThat(admin.getBankId()).isEqualTo(defaultBank.getBankId());
     }
@@ -64,10 +75,33 @@ class BootstrapAdminRunnerTest {
         existing.setPasswordHash("hash");
         users.save(existing);
 
-        runner("root@example.com", "Bootstrap1!", false).run(null);
+        runner("root@example.com", STRONG_PASSWORD, false).run(null);
 
         assertThat(users.count()).isEqualTo(1);
         assertThat(users.findByEmailIgnoreCase("root@example.com")).isEmpty();
+    }
+
+    /** SEC-021 covers the most valuable account of all. */
+    @Test
+    void weakBootstrapPasswordFailsFast() {
+        users.deleteAll();
+
+        assertThatThrownBy(() -> runner("root@example.com", "Password123", false).run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MODOCUMENT_BOOTSTRAP_ADMIN_ALLOW_WEAK");
+        assertThat(users.count()).isZero();
+    }
+
+    /** The documented dev escape hatch: explicit override, loud warning. */
+    @Test
+    void weakBootstrapPasswordIsAllowedWithTheExplicitOverride() {
+        users.deleteAll();
+
+        runner("root@example.com", "Password123", false, true).run(null);
+
+        assertThat(users.count()).isEqualTo(1);
+        assertThat(passwordEncoder.matches("Password123",
+                users.findAll().get(0).getPasswordHash())).isTrue();
     }
 
     @Test

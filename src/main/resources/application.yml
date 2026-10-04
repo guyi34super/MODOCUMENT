@@ -74,6 +74,30 @@ modocument:
     # Permits /swagger/**, /v3/api-docs/** and /h2-console/** without auth.
     # Off in production; the local/test profiles turn it on.
     permit-dev-paths: false
+    password:
+      # Minimum password length (SEC-021). Length over composition rules; no
+      # upper cap beyond the request DTOs' 200-char schema bound, so long
+      # passphrases are first-class. The breached-list and email-local-part
+      # checks in PasswordPolicy are always on.
+      min-length: ${MODOCUMENT_PASSWORD_MIN_LENGTH:12}
+    lockout:
+      # Wrong-password attempts allowed before the NEXT one locks the account
+      # (default 5 → the 6th consecutive failure locks). Lock duration starts
+      # at base-minutes and doubles per additional lockout, capped.
+      allowed-attempts: ${MODOCUMENT_LOCKOUT_ALLOWED_ATTEMPTS:5}
+      base-minutes: ${MODOCUMENT_LOCKOUT_BASE_MINUTES:1}
+      cap-minutes: ${MODOCUMENT_LOCKOUT_CAP_MINUTES:30}
+    mfa:
+      # Encrypts TOTP secrets at rest (AES-256-GCM, key derived via SHA-256).
+      # REQUIRED in production (>= 32 bytes, e.g. `openssl rand -base64 48`);
+      # the dev/test profiles fall back to a JWT-secret derivation with a
+      # logged warning.
+      key: ${MODOCUMENT_MFA_KEY:}
+      # An ADMIN without activated MFA gets enrollmentRequired at login and
+      # cannot obtain an access token until a second factor verifies (B3).
+      require-for-admin: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:true}
+      # MFA challenge token lifetime (password-to-second-factor window).
+      challenge-ttl-minutes: ${MODOCUMENT_MFA_CHALLENGE_TTL_MINUTES:5}
   cors:
     # Comma-separated list of origins allowed to call the API with credentials.
     # Set to the deployed frontend origin(s) in production.

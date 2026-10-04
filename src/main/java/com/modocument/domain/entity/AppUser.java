@@ -47,10 +47,34 @@ public class AppUser {
     @Column(name = "LastLoginAt")
     private LocalDateTime lastLoginAt;
 
+    /**
+     * Consecutive wrong-password attempts since the last successful login or
+     * lock (V40); the attempt after the configured allowance locks the
+     * account.
+     */
+    @Column(name = "FailedLoginCount", nullable = false)
+    private int failedLoginCount;
+
+    /** While set and in the future every login attempt gets the generic 401. */
+    @Column(name = "LockedUntil")
+    private LocalDateTime lockedUntil;
+
+    /**
+     * Lockouts since the last successful login; each one doubles the next
+     * lock duration (capped — see LoginLockoutPolicy).
+     */
+    @Column(name = "LockoutCount", nullable = false)
+    private int lockoutCount;
+
     @Column(name = "Email", length = 256, nullable = false, unique = true)
     private String email;
 
-    @Column(name = "PasswordHash", length = 100, nullable = false)
+    /**
+     * DelegatingPasswordEncoder output: "{argon2}..." (~105 chars) for new
+     * hashes, legacy raw BCrypt (60 chars) until the next successful login
+     * re-hashes it (SEC-018). Width matches V40.
+     */
+    @Column(name = "PasswordHash", length = 255, nullable = false)
     private String passwordHash;
 
     @Column(name = "DisplayName", length = 200)
@@ -114,6 +138,30 @@ public class AppUser {
 
     public void setLastLoginAt(LocalDateTime lastLoginAt) {
         this.lastLoginAt = lastLoginAt;
+    }
+
+    public int getFailedLoginCount() {
+        return failedLoginCount;
+    }
+
+    public void setFailedLoginCount(int failedLoginCount) {
+        this.failedLoginCount = failedLoginCount;
+    }
+
+    public LocalDateTime getLockedUntil() {
+        return lockedUntil;
+    }
+
+    public void setLockedUntil(LocalDateTime lockedUntil) {
+        this.lockedUntil = lockedUntil;
+    }
+
+    public int getLockoutCount() {
+        return lockoutCount;
+    }
+
+    public void setLockoutCount(int lockoutCount) {
+        this.lockoutCount = lockoutCount;
     }
 
     public String getEmail() {

@@ -39,6 +39,9 @@ class RoutePermissionCoverageTest {
     private static final Set<String> PUBLIC_ROUTES = Set.of(
             "/api/auth/login",
             "/api/auth/refresh",
+            // Second phase of login (ws06): its credential is the MFA
+            // challenge token in the body, rate-limited like login itself.
+            "/api/auth/mfa/verify",
             "/error");
 
     private static final List<String> PUBLIC_PREFIXES = List.of(

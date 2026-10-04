@@ -54,6 +54,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
+        <!-- Argon2id password hashing (SEC-018): spring-security-crypto's
+             Argon2PasswordEncoder delegates to BouncyCastle's Argon2 impl -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.78.1</version>
+        </dependency>
 
         <!-- Database drivers: PostgreSQL for production, H2 for local/test profiles -->
         <dependency>

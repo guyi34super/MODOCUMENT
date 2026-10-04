@@ -1,6 +1,7 @@
 package com.modocument.api.config;
 
 import com.modocument.infrastructure.security.IdentityContextFilter;
+import com.modocument.infrastructure.security.MfaChallengeScopeValidator;
 import com.modocument.infrastructure.security.RevocationValidator;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -10,7 +11,9 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
@@ -92,7 +95,11 @@ public class SecurityConfig {
                                 .maxAgeInSeconds(31_536_000)))
                 .authorizeHttpRequests(a -> {
                     a.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                            .requestMatchers("/api/auth/login", "/api/auth/refresh").permitAll()
+                            // mfa/verify is the second phase of login: its
+                            // credential is the challenge token in the body
+                            // (rate-limited per IP/user like login itself).
+                            .requestMatchers("/api/auth/login", "/api/auth/refresh",
+                                    "/api/auth/mfa/verify").permitAll()
                             .requestMatchers("/actuator/health", "/error").permitAll();
                     if (permitDevPaths) {
                         a.requestMatchers("/swagger/**", "/swagger-ui/**", "/swagger-ui.html",
@@ -110,9 +117,24 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * Argon2id (SEC-018) for every NEW hash, with BCrypt kept only for
+     * matching legacy hashes: historical rows carry raw (un-prefixed) BCrypt,
+     * which the defaultPasswordEncoderForMatches covers, and they are
+     * re-hashed to "{argon2}..." on the next successful login
+     * (upgradeEncoding — see AuthUseCase). Parameters are
+     * spring-security 5.8+ defaults: salt 16 / hash 32 bytes, parallelism 1,
+     * 16 MiB memory, 2 iterations.
+     */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+        java.util.Map<String, PasswordEncoder> encoders = java.util.Map.of(
+                "argon2", Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8(),
+                "bcrypt", new BCryptPasswordEncoder());
+        DelegatingPasswordEncoder delegating =
+                new DelegatingPasswordEncoder("argon2", encoders);
+        delegating.setDefaultPasswordEncoderForMatches(new BCryptPasswordEncoder());
+        return delegating;
     }
 
     @Bean
@@ -121,13 +143,16 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder(RevocationValidator revocationValidator) {
+    public JwtDecoder jwtDecoder(RevocationValidator revocationValidator,
+                                 MfaChallengeScopeValidator mfaChallengeScopeValidator) {
         NimbusJwtDecoder decoder =
                 NimbusJwtDecoder.withSecretKey(secretKey).macAlgorithm(MacAlgorithm.HS256).build();
         // Signature/exp checks first (createDefault), then the server-side
-        // revocation checks (jti denylist, TokenVersion, user existence).
+        // revocation checks (jti denylist, TokenVersion, user existence),
+        // then the MFA-challenge scope check (a challenge token is not an
+        // access token — B3).
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefault(), revocationValidator));
+                JwtValidators.createDefault(), revocationValidator, mfaChallengeScopeValidator));
         return decoder;
     }
 }

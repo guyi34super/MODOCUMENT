@@ -7,13 +7,17 @@ import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.RefreshTokenRepository;
 import com.modocument.application.port.RevokedTokenRepository;
+import com.modocument.application.port.UserMfaRepository;
+import com.modocument.application.security.LoginLockoutPolicy;
+import com.modocument.application.security.PasswordPolicy;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.RefreshToken;
 import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.model.Hashing;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.security.JwtService;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import com.modocument.infrastructure.security.MfaChallengeTokens;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -30,37 +34,56 @@ import java.util.UUID;
  * application users. Public self-registration is gone — users are created by
  * an administrator (see {@link #createUser}; the bootstrap admin comes from
  * BootstrapAdminRunner).
+ *
+ * <p>Login is two-phase when MFA is in play (gate B3): a correct password
+ * yields a short-lived challenge token instead of a session, and
+ * {@link MfaUseCase#verify} converts it into tokens once the TOTP (or
+ * recovery) code checks out. Wrong passwords feed the lockout counters
+ * (gate B4, {@link LoginLockoutPolicy}); the lock check runs BEFORE the
+ * password is verified and still burns a dummy hash so timing stays uniform.
  */
 @Service
 public class AuthUseCase {
 
-    private static final int MIN_PASSWORD_LENGTH = 8;
-
     /** Refresh-token family lifetime; rotation never extends past it. */
     private static final long REFRESH_FAMILY_DAYS = 7;
-
-    /**
-     * Fixed hash matched against when the email doesn't exist, so an unknown
-     * email costs the same BCrypt work as a wrong password and the response
-     * time can't be used to enumerate accounts.
-     */
-    private static final String DUMMY_HASH =
-            new BCryptPasswordEncoder().encode("timing-equalizer-dummy-password");
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final AppUserRepository users;
     private final PasswordEncoder passwordEncoder;
+    private final PasswordPolicy passwordPolicy;
+    private final LoginLockoutPolicy lockoutPolicy;
+    private final UserMfaRepository userMfa;
+    private final MfaChallengeTokens challengeTokens;
     private final JwtService jwtService;
     private final RefreshTokenRepository refreshTokens;
     private final RevokedTokenRepository revokedTokens;
     private final AuditRecorder audit;
+    private final boolean requireMfaForAdmin;
+
+    /**
+     * Fixed hash matched against when the email doesn't exist or the account
+     * is locked, so those paths cost the same Argon2id work as a wrong
+     * password and the response time can't be used to enumerate accounts.
+     * Encoded through the SAME delegating encoder as real passwords, so the
+     * dummy match always burns the current default (Argon2id) cost.
+     */
+    private final String dummyHash;
 
     public AuthUseCase(AppUserRepository users, PasswordEncoder passwordEncoder,
+                       PasswordPolicy passwordPolicy, LoginLockoutPolicy lockoutPolicy,
+                       UserMfaRepository userMfa, MfaChallengeTokens challengeTokens,
                        JwtService jwtService, RefreshTokenRepository refreshTokens,
-                       RevokedTokenRepository revokedTokens, AuditRecorder audit) {
+                       RevokedTokenRepository revokedTokens, AuditRecorder audit,
+                       @Value("${modocument.security.mfa.require-for-admin:true}")
+                       boolean requireMfaForAdmin) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
+        this.passwordPolicy = passwordPolicy;
+        this.lockoutPolicy = lockoutPolicy;
+        this.userMfa = userMfa;
+        this.challengeTokens = challengeTokens;
         this.jwtService = jwtService;
         this.refreshTokens = refreshTokens;
         this.revokedTokens = revokedTokens;
@@ -68,6 +91,8 @@ public class AuthUseCase {
         // case, not Spring's AuthenticationManager - there is no
         // AuthenticationEventPublisher to listen to.
         this.audit = audit;
+        this.requireMfaForAdmin = requireMfaForAdmin;
+        this.dummyHash = passwordEncoder.encode("timing-equalizer-dummy-password");
     }
 
     /**
@@ -82,10 +107,7 @@ public class AuthUseCase {
         if (email == null || email.isBlank() || !email.contains("@")) {
             throw new IllegalArgumentException("A valid email is required.");
         }
-        if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
-            throw new IllegalArgumentException(
-                    "Password must be at least " + MIN_PASSWORD_LENGTH + " characters.");
-        }
+        passwordPolicy.validate(password, email);
         String normalized = email.trim().toLowerCase();
         if (users.existsByEmail(normalized)) {
             throw new IllegalStateException("An account with this email already exists.");
@@ -103,26 +125,34 @@ public class AuthUseCase {
     }
 
     /**
-     * Verifies credentials, stamps LastLoginAt and opens a session: a short
-     * access token (response body) plus a new refresh-token family (cookie).
+     * Verifies credentials. With no second factor owed this stamps
+     * LastLoginAt and opens a session: a short access token (response body)
+     * plus a new refresh-token family (cookie). When MFA is enabled — or the
+     * user is an ADMIN who still has to enrol (require-for-admin) — the
+     * password alone buys only an {@link MfaChallenge}; no tokens are issued
+     * and LOGIN_SUCCESS is not recorded until {@link MfaUseCase#verify}.
      */
-    public AuthSession login(String email, String password, String ip, String userAgent) {
+    public LoginResult login(String email, String password, String ip, String userAgent) {
         String attempted = email == null ? "" : email.trim();
         AppUser user = users.getByEmail(attempted).orElse(null);
         if (user == null) {
-            // Same BCrypt cost and same message as a wrong password, so the
+            // Same Argon2id cost and same message as a wrong password, so the
             // timing/response reveals nothing about which emails exist. The
             // audit row records what actually happened (C7): the attempted
             // email with no user id - an unknown account.
-            passwordEncoder.matches(password == null ? "" : password, DUMMY_HASH);
+            passwordEncoder.matches(password == null ? "" : password, dummyHash);
             audit.record(AuditEventSpec.builder("LOGIN_FAILED", AuditOutcome.FAILED)
                     .actorEmail(attempted)
                     .build());
             throw new BadCredentialsException("Invalid email or password.");
         }
-        if (!passwordEncoder.matches(password == null ? "" : password, user.getPasswordHash())) {
-            // Known account, wrong password - distinguishable from the
-            // unknown-email row by the present ActorUserId.
+        LocalDateTime now = LocalDateTime.now();
+        if (lockoutPolicy.isLocked(user, now)) {
+            // Locked accounts answer BEFORE the password is verified — a
+            // guesser gets no oracle while the lock stands — but the dummy
+            // hash still burns so the timing matches the other 401s and the
+            // response never says "locked" (no enumeration either way).
+            passwordEncoder.matches(password == null ? "" : password, dummyHash);
             audit.record(AuditEventSpec.builder("LOGIN_FAILED", AuditOutcome.FAILED)
                     .actorUserId(user.getAppUserId())
                     .actorEmail(user.getEmail())
@@ -131,6 +161,56 @@ public class AuthUseCase {
                     .build());
             throw new BadCredentialsException("Invalid email or password.");
         }
+        if (!passwordEncoder.matches(password == null ? "" : password, user.getPasswordHash())) {
+            // Known account, wrong password - distinguishable from the
+            // unknown-email row by the present ActorUserId. Feeds the lockout
+            // counters (B4): the attempt after the allowance locks.
+            boolean lockedNow = lockoutPolicy.registerFailure(user, now);
+            users.save(user);
+            audit.record(AuditEventSpec.builder("LOGIN_FAILED", AuditOutcome.FAILED)
+                    .actorUserId(user.getAppUserId())
+                    .actorEmail(user.getEmail())
+                    .actorRole(user.getRole() == null ? null : user.getRole().name())
+                    .bankId(user.getBankId())
+                    .build());
+            if (lockedNow) {
+                // The first lock moment (and each escalation) is its own
+                // security signal; no values beyond the lock horizon.
+                audit.record(AuditEventSpec.builder("ACCOUNT_LOCKED", AuditOutcome.DENIED)
+                        .actorUserId(user.getAppUserId())
+                        .actorEmail(user.getEmail())
+                        .bankId(user.getBankId())
+                        .entity("AppUser", String.valueOf(user.getAppUserId()))
+                        .build());
+            }
+            throw new BadCredentialsException("Invalid email or password.");
+        }
+        lockoutPolicy.registerSuccess(user);
+        user = upgradeHashIfNeeded(user, password);
+
+        boolean mfaEnabled = userMfa.isEnabled(user.getAppUserId());
+        boolean enrollmentRequired = !mfaEnabled && requireMfaForAdmin
+                && user.getRole() == Role.ADMIN;
+        if (mfaEnabled || enrollmentRequired) {
+            // Password OK but a second factor is owed: persist the counter
+            // reset, hand out ONLY the challenge. LastLoginAt/LOGIN_SUCCESS
+            // wait for the verified second factor.
+            users.save(user);
+            return new MfaChallenge(challengeTokens.issue(user), enrollmentRequired);
+        }
+        return openSession(user, ip, userAgent);
+    }
+
+    /**
+     * Completes a login after the second factor verified (called by
+     * {@link MfaUseCase} only — the TOTP/recovery check has already passed).
+     */
+    AuthSession completeMfaLogin(AppUser user, String ip, String userAgent) {
+        return openSession(user, ip, userAgent);
+    }
+
+    /** Stamps LastLoginAt, issues the token pair and records LOGIN_SUCCESS. */
+    private AuthSession openSession(AppUser user, String ip, String userAgent) {
         user.setLastLoginAt(LocalDateTime.now());
         user = users.save(user);
         Instant familyExpiry = Instant.now().plus(REFRESH_FAMILY_DAYS, ChronoUnit.DAYS);
@@ -147,6 +227,29 @@ public class AuthUseCase {
                 .entity("AppUser", String.valueOf(user.getAppUserId()))
                 .build());
         return session;
+    }
+
+    /**
+     * Upgrade-on-login (SEC-018): a password that just verified against a
+     * legacy BCrypt hash is re-hashed with the current default (Argon2id).
+     * The only moment the plaintext is available, so the only moment the
+     * upgrade can happen. Audited without values — hashes never reach the
+     * audit trail.
+     */
+    private AppUser upgradeHashIfNeeded(AppUser user, String password) {
+        if (!passwordEncoder.upgradeEncoding(user.getPasswordHash())) {
+            return user;
+        }
+        user.setPasswordHash(passwordEncoder.encode(password));
+        user.setUpdatedDate(LocalDateTime.now());
+        AppUser saved = users.save(user);
+        audit.record(AuditEventSpec.builder("PASSWORD_REHASHED", AuditOutcome.SUCCESS)
+                .actorUserId(saved.getAppUserId())
+                .actorEmail(saved.getEmail())
+                .bankId(saved.getBankId())
+                .entity("AppUser", String.valueOf(saved.getAppUserId()))
+                .build());
+        return saved;
     }
 
     /**
@@ -250,10 +353,7 @@ public class AuthUseCase {
         if (!passwordEncoder.matches(currentPassword == null ? "" : currentPassword, user.getPasswordHash())) {
             throw new IllegalArgumentException("Current password is incorrect.");
         }
-        if (newPassword == null || newPassword.length() < MIN_PASSWORD_LENGTH) {
-            throw new IllegalArgumentException(
-                    "New password must be at least " + MIN_PASSWORD_LENGTH + " characters.");
-        }
+        passwordPolicy.validate(newPassword, user.getEmail());
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setTokenVersion(user.getTokenVersion() + 1);
         user.setUpdatedDate(LocalDateTime.now());
@@ -298,8 +398,21 @@ public class AuthUseCase {
                 .orElseThrow(() -> new NoSuchElementException("User " + userId + " not found."));
     }
 
+    /** What a login attempt produced: a full session, or an MFA challenge. */
+    public sealed interface LoginResult permits AuthSession, MfaChallenge {
+    }
+
     /** A login/refresh outcome: the JSON body plus the raw cookie value. */
-    public record AuthSession(AuthResponse response, String refreshToken) {
+    public record AuthSession(AuthResponse response, String refreshToken) implements LoginResult {
+    }
+
+    /**
+     * Password accepted but a second factor is owed. {@code challenge} is
+     * accepted only by POST /api/auth/mfa/verify (and, when
+     * {@code enrollmentRequired}, by the enroll/activate endpoints).
+     */
+    public record MfaChallenge(String challenge, boolean enrollmentRequired)
+            implements LoginResult {
     }
 
     private record IssuedRefreshToken(UUID jti, String value) {

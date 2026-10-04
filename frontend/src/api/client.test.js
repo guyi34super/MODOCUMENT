@@ -140,6 +140,55 @@ describe('api request wrapper', () => {
     expect(retryOpts.headers.Authorization).toBe('Bearer fresh-token');
   });
 
+  it('does NOT redirect on 401 from the MFA verify endpoint (wrong code is form feedback)', async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { ...original, assign },
+      writable: true,
+      configurable: true,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ error: 'Invalid verification code.' }, 401))
+    );
+
+    await expect(
+      api.post('/api/auth/mfa/verify', { challenge: 'c', code: '000000' })
+    ).rejects.toThrow('Invalid verification code.');
+    expect(assign).not.toHaveBeenCalled();
+
+    Object.defineProperty(window, 'location', { value: original, configurable: true });
+  });
+
+  it('an explicit authToken overrides the stored one and never triggers refresh/redirect', async () => {
+    setSession('stored-token', { userId: 1 });
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { ...original, assign },
+      writable: true,
+      configurable: true,
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: 'MFA is already enabled.' }, 401));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      api.post('/api/auth/mfa/enroll', undefined, { authToken: 'challenge-jwt' })
+    ).rejects.toThrow('MFA is already enabled.');
+
+    // The challenge token rode the Authorization header...
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer challenge-jwt');
+    // ...no silent refresh ran, no redirect happened, the session survives.
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh')).toHaveLength(0);
+    expect(assign).not.toHaveBeenCalled();
+    expect(getToken()).toBe('stored-token');
+
+    Object.defineProperty(window, 'location', { value: original, configurable: true });
+  });
+
   it('does NOT redirect on 401 from the login endpoint itself', async () => {
     const assign = vi.fn();
     const original = window.location;
