@@ -5,6 +5,8 @@ import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import com.modocument.infrastructure.export.DatabaseExportService;
+import com.modocument.infrastructure.export.ExportCapExceededException;
+import com.modocument.infrastructure.export.ExportGuard;
 import com.modocument.infrastructure.export.FileExportService;
 import com.modocument.infrastructure.file.StorageProperties;
 import org.junit.jupiter.api.Test;
@@ -33,12 +35,18 @@ class IngestionExportControllerTest {
             mock(com.modocument.application.privacy.PiiMaskingService.class,
                     org.mockito.AdditionalAnswers.returnsSecondArg());
 
+    // ws18 export caps: allowed by default here; the cap matrix itself is
+    // ExportCapGateD2Test's subject.
+    private final ExportGuard exportGuard = mock(ExportGuard.class);
+
     @TempDir
     Path tempDir;
 
     private IngestionExportController controller() {
+        when(exportGuard.authorize(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ExportGuard.Decision(5000, false, null));
         return new IngestionExportController(jobs, fileExport, databaseExport, masking,
-                new StorageProperties(tempDir.toString()));
+                exportGuard, new StorageProperties(tempDir.toString()));
     }
 
     private static IngestionJob job(JobStep step, JobStatus status, String mappedRowsJson) {
@@ -57,7 +65,7 @@ class IngestionExportControllerTest {
         when(jobs.recordExport(org.mockito.ArgumentMatchers.eq(validated),
                 org.mockito.ArgumentMatchers.anyMap())).thenReturn(validated);
 
-        ResponseEntity<?> result = controller().exportFile(7, "csv");
+        ResponseEntity<?> result = controller().exportFile(7, "csv", null);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(new String((byte[]) result.getBody())).contains("FirstName").contains("Ada");
@@ -76,7 +84,7 @@ class IngestionExportControllerTest {
                         "Job 7 cannot be exported yet: 2 rows still fail validation."))
                 .when(jobs).requireExportable(unfinished);
 
-        assertThatThrownBy(() -> controller().exportFile(7, "csv"))
+        assertThatThrownBy(() -> controller().exportFile(7, "csv", null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("still fail validation");
         org.mockito.Mockito.verify(jobs, org.mockito.Mockito.never())
@@ -104,9 +112,31 @@ class IngestionExportControllerTest {
         when(jobs.get(7)).thenReturn(job(JobStep.VALIDATED, JobStatus.COMPLETED,
                 "{\"columns\":[],\"rows\":[]}"));
 
-        assertThatThrownBy(() -> controller().exportFile(7, "csv"))
+        assertThatThrownBy(() -> controller().exportFile(7, "csv", null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("no mapped columns");
+    }
+
+    /** ws18 (gate D2): the cap is decided after counting and BEFORE anything is exported. */
+    @Test
+    void aCapRefusalStopsTheExportBeforeAnyByteIsProduced() {
+        IngestionJob validated = job(JobStep.VALIDATED, JobStatus.COMPLETED, TABLE_JSON);
+        when(jobs.get(7)).thenReturn(validated);
+        IngestionExportController controller = controller();
+        when(exportGuard.authorize(org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new ExportCapExceededException(0, 1, 500));
+
+        assertThatThrownBy(() -> controller.exportFile(7, "csv", null))
+                .isInstanceOf(ExportCapExceededException.class);
+        org.mockito.Mockito.verify(jobs, org.mockito.Mockito.never())
+                .recordExport(org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.anyMap());
+        org.mockito.Mockito.verifyNoInteractions(masking);
+
+        ResponseEntity<?> answer = controller.capExceeded(new ExportCapExceededException(5000, 10000, 500));
+        assertThat(answer.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(answer.getBody().toString()).contains("EXPORT_CAP_EXCEEDED")
+                .contains("cap=5000").contains("rows=10000");
     }
 
     @Test

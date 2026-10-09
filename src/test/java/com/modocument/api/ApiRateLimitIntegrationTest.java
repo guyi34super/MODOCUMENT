@@ -176,6 +176,15 @@ class ApiRateLimitIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).content("{}"), user)).isNotEqualTo(429);
         assertThat(statusOf(delete("/api/auth/mfa")
                 .contentType(MediaType.APPLICATION_JSON).content("{}"), user)).isEqualTo(429);
+
+        // The ws18 POST export twin (over-cap reason in the body) draws on
+        // the GET download's exports bucket — not a second, unmetered path.
+        assertThat(statusOf(get("/api/ingestion/jobs/{id}/export/file", MISSING_ID), user))
+                .isNotEqualTo(429);
+        assertThat(statusOf(post("/api/ingestion/jobs/{id}/export/file", MISSING_ID)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"format\":\"csv\",\"reason\":\"rate-limit test\"}"), user))
+                .isEqualTo(429);
     }
 
     @Test

@@ -69,7 +69,10 @@ public class SecretFileEnvironmentPostProcessor implements EnvironmentPostProces
             "MODOCUMENT_OIDC_ENTRA_CLIENT_SECRET",
             "MODOCUMENT_OIDC_KEYCLOAK_CLIENT_SECRET",
             // Carries the Mongo credentials on the scale profile.
-            "EXTRACTION_MONGO_URI");
+            "EXTRACTION_MONGO_URI",
+            // ws18 HMAC signing keys of the alert and SIEM webhooks.
+            "MODOCUMENT_ALERTS_WEBHOOK_SECRET",
+            "MODOCUMENT_SIEM_WEBHOOK_SECRET");
 
     static final String FILE_SUFFIX = "_FILE";
 

@@ -39,7 +39,8 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Stateless JWT security: /api/auth/login, /api/auth/refresh (cookie-driven
- * rotation) and the health probe are open, the dev tooling paths (Swagger, H2
+ * rotation), the health probe and the ws18 synthetic probe (GET
+ * /api/probe/synthetic, rate-limited) are open, the dev tooling paths (Swagger, H2
  * console) only when modocument.security.permit-dev-paths is on (local/test
  * profiles), and everything else requires a Bearer token — including the
  * generated OpenAPI spec at /v3/api-docs, which exists in every profile but is
@@ -130,7 +131,11 @@ public class SecurityConfig {
                             // 404s when no OIDC provider is configured).
                             .requestMatchers("/api/auth/providers").permitAll()
                             .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
-                            .requestMatchers("/actuator/health", "/error").permitAll();
+                            .requestMatchers("/actuator/health", "/error").permitAll()
+                            // ws18 (SUP-S11): the synthetic probe for external
+                            // uptime monitors — GET only, rate-limited per ip,
+                            // answers a version + one db boolean, nothing else.
+                            .requestMatchers(HttpMethod.GET, "/api/probe/synthetic").permitAll();
                     if (permitDevPaths) {
                         // Outside dev these fall through to authenticated():
                         // the generated spec is served to any valid token

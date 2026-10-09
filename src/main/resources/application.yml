@@ -236,6 +236,193 @@ modocument:
     enabled: ${MODOCUMENT_SOD_SCAN_ENABLED:true}
     # Daily, off-peak, after the retention purge; six-field Spring cron.
     cron: ${MODOCUMENT_SOD_SCAN_CRON:0 23 3 * * *}
+  export:
+    # ws18 (gate D2, PRIV-002): per-role export row caps. Above the cap a
+    # file/database export is REFUSED (403 EXPORT_CAP_EXCEEDED, audited
+    # EXPORT_BLOCKED, alerted immediately) unless the user states a reason
+    # (<= 500 chars) - then it proceeds, audited EXPORT_OVER_CAP_WITH_REASON
+    # (reason verbatim) and alerted as informational. A role without an
+    # entry has cap 0 (fail closed). Details:
+    # docs/security/alerting-and-export-caps.md.
+    caps:
+      READ_WRITE: ${MODOCUMENT_EXPORT_CAP_READ_WRITE:5000}
+      ADMIN: ${MODOCUMENT_EXPORT_CAP_ADMIN:50000}
+    reason-max-length: 500
+  alerts:
+    # ws18 alert framework (gate D1, SEC-032). The audit trail is the single
+    # event source: IMMEDIATE rules fire post-commit on one audit row,
+    # WINDOWED rules are aggregates evaluated by a sweep every minute. A
+    # burst raises ONE alert per rule window (dedupe per rule/bank/group).
+    # Every alert is recorded in AlertLog (admin panel: Administration >
+    # Security alerts) and delivered to: the log (always - WARN on logger
+    # modocument.security.alert, tag SECURITY_ALERT, visible to a SIEM via
+    # structured logs), the webhook (the phone path: Slack/Teams/WhatsApp
+    # bridge/PagerDuty) and e-mail, when configured. Catalogue rationale:
+    # docs/security/alerting-and-export-caps.md.
+    enabled: ${MODOCUMENT_ALERTS_ENABLED:true}
+    sweep:
+      # Gates the SCHEDULE only (the sweep can always be run directly).
+      enabled: ${MODOCUMENT_ALERTS_SWEEP_ENABLED:true}
+      interval-ms: ${MODOCUMENT_ALERTS_SWEEP_INTERVAL_MS:60000}
+    delivery:
+      attempts: 2
+      # The sweep retries a failing channel this long, then marks FAILED.
+      retry-window: ${MODOCUMENT_ALERTS_RETRY_WINDOW:30m}
+    webhook:
+      # Operator configuration (never user input), so it deliberately
+      # bypasses the user-URL SSRF policy - see WebhookAlertChannel.
+      url: ${MODOCUMENT_ALERTS_WEBHOOK_URL:}
+      # Optional: signs each body (X-MoDocument-Signature: sha256=<hmac>).
+      secret: ${MODOCUMENT_ALERTS_WEBHOOK_SECRET:}
+      min-severity: ${MODOCUMENT_ALERTS_WEBHOOK_MIN_SEVERITY:INFO}
+    email:
+      # Comma-separated recipients; needs spring.mail.host as well
+      # (SPRING_MAIL_HOST/PORT/USERNAME/PASSWORD). Off when either is unset.
+      to: ${MODOCUMENT_ALERTS_EMAIL_TO:}
+      from: ${MODOCUMENT_ALERTS_EMAIL_FROM:modocument-alerts@localhost}
+      min-severity: ${MODOCUMENT_ALERTS_EMAIL_MIN_SEVERITY:INFO}
+    # THE RULE CATALOGUE (SEC-032 configurable thresholds). Replacing this
+    # list replaces the catalogue; to tune a default, use its env variable.
+    # trigger: IMMEDIATE | WINDOWED; group-by: ACTOR | IP | ENTITY | BANK;
+    # window: aggregation window (WINDOWED) and dedupe window (both), 1m-24h;
+    # actions: audit actions ("*" = any); outcomes / actor-roles: optional.
+    rules:
+      - name: account-locked
+        description: Account locked after repeated wrong passwords
+        trigger: IMMEDIATE
+        actions: [ACCOUNT_LOCKED]
+        group-by: ACTOR
+        window: 5m
+        severity: HIGH
+      - name: refresh-token-reuse
+        description: Rotated refresh token replayed - session family revoked (possible token theft)
+        trigger: IMMEDIATE
+        actions: [TOKEN_REFRESH_REUSE_DETECTED]
+        group-by: ACTOR
+        window: 5m
+        severity: CRITICAL
+      - name: export-blocked
+        description: Export above the role row cap refused (no reason stated)
+        trigger: IMMEDIATE
+        actions: [EXPORT_BLOCKED]
+        group-by: ACTOR
+        window: 5m
+        severity: HIGH
+      - name: export-over-cap
+        description: Large export above the role row cap, allowed with a stated reason
+        trigger: IMMEDIATE
+        actions: [EXPORT_OVER_CAP_WITH_REASON]
+        group-by: ENTITY
+        window: 5m
+        severity: INFO
+      - name: sod-violation
+        description: Segregation-of-duties violation found by the nightly scan
+        trigger: IMMEDIATE
+        actions: [SOD_VIOLATION_FOUND]
+        group-by: ENTITY
+        window: 5m
+        severity: CRITICAL
+      - name: sod-attempt-blocked
+        description: Self-approval / self-release attempt blocked
+        trigger: IMMEDIATE
+        actions: [SELF_APPROVAL_BLOCKED, DOC_SELF_RELEASE_BLOCKED]
+        group-by: ACTOR
+        window: 15m
+        severity: MEDIUM
+      - name: ai-prompt-refused
+        description: AI gateway refused a cross-bank prompt (one-bank rule)
+        trigger: IMMEDIATE
+        actions: [AI_PROMPT_REFUSED]
+        group-by: ACTOR
+        window: 5m
+        severity: HIGH
+      - name: ai-output-blocked
+        description: AI reply withheld by the output policy
+        trigger: IMMEDIATE
+        actions: [AI_OUTPUT_BLOCKED]
+        group-by: ACTOR
+        window: 15m
+        severity: MEDIUM
+      - name: privileged-change
+        description: Privileged (admin/root) action
+        trigger: IMMEDIATE
+        actions: [BOOTSTRAP_ADMIN_CREATED, USER_ROLE_CHANGED, MFA_DISABLED, USER_LIST_EXPORTED, DSR_EXPORTED, DSR_ERASED]
+        group-by: ACTOR
+        window: 5m
+        severity: MEDIUM
+      - name: admin-login
+        description: Administrator signed in (privileged account in use)
+        trigger: IMMEDIATE
+        actions: [LOGIN_SUCCESS]
+        actor-roles: [ADMIN]
+        group-by: ACTOR
+        window: ${MODOCUMENT_ALERT_ADMIN_LOGIN_WINDOW:60m}
+        severity: LOW
+      - name: login-failures-per-user
+        description: Repeated failed logins against one account
+        trigger: WINDOWED
+        actions: [LOGIN_FAILED]
+        group-by: ACTOR
+        threshold: ${MODOCUMENT_ALERT_LOGIN_FAILURES_PER_USER:5}
+        window: ${MODOCUMENT_ALERT_LOGIN_FAILURES_WINDOW:5m}
+        severity: HIGH
+      - name: login-failures-per-ip
+        description: Repeated failed logins from one network address
+        trigger: WINDOWED
+        actions: [LOGIN_FAILED]
+        group-by: IP
+        threshold: ${MODOCUMENT_ALERT_LOGIN_FAILURES_PER_IP:5}
+        window: ${MODOCUMENT_ALERT_LOGIN_FAILURES_WINDOW:5m}
+        severity: HIGH
+      - name: authorization-denied-burst
+        description: Repeated access-denied responses for one user
+        trigger: WINDOWED
+        actions: [AUTHORIZATION_DENIED]
+        group-by: ACTOR
+        threshold: ${MODOCUMENT_ALERT_AUTHZ_DENIED_THRESHOLD:10}
+        window: 5m
+        severity: MEDIUM
+      - name: admin-action-burst
+        description: Burst of administrator actions
+        trigger: WINDOWED
+        actions: ["*"]
+        actor-roles: [ADMIN]
+        outcomes: [SUCCESS]
+        group-by: ACTOR
+        threshold: ${MODOCUMENT_ALERT_ADMIN_BURST_THRESHOLD:30}
+        window: 10m
+        severity: MEDIUM
+      - name: export-burst
+        description: Many exports by one user (cap evasion by splitting)
+        trigger: WINDOWED
+        actions: [EXPORT_RUN]
+        group-by: ACTOR
+        threshold: ${MODOCUMENT_ALERT_EXPORT_BURST_THRESHOLD:5}
+        window: 10m
+        severity: MEDIUM
+  siem:
+    # ws18 SIEM export (SEC-031, gate E6). Schema + transports:
+    # docs/security/siem-event-schema.md.
+    feed:
+      # GET /api/siem/events (siem:read, ADMIN): the caller's bank only.
+      # Events younger than `settle` wait one poll (in-flight transactions).
+      settle: ${MODOCUMENT_SIEM_FEED_SETTLE:5s}
+      default-limit: 500
+      max-limit: 1000
+    webhook:
+      # Optional push (NDJSON batches). SINGLE-BANK deployments only: set
+      # bank-code to the one bank whose events are pushed; multi-bank
+      # deployments use the pull feed per bank.
+      url: ${MODOCUMENT_SIEM_WEBHOOK_URL:}
+      bank-code: ${MODOCUMENT_SIEM_WEBHOOK_BANK_CODE:}
+      secret: ${MODOCUMENT_SIEM_WEBHOOK_SECRET:}
+      batch-size: 100
+      queue-capacity: 10000
+  probe:
+    # ws18 (SUP-S11): public synthetic probe GET /api/probe/synthetic.
+    rate-limit:
+      per-ip-max: ${MODOCUMENT_PROBE_RATE_LIMIT:60}
+      window-millis: 60000
   parsing:
     llm-batch-size: ${PARSING_LLM_BATCH_SIZE:50}
     llm-single-pass-max-rows: ${PARSING_LLM_SINGLE_PASS_MAX_ROWS:150}
@@ -292,6 +479,10 @@ management:
     mongo:
       # The default extraction store is SQL, so an absent Mongo must not
       # drag /actuator/health DOWN. The scale profile re-enables this check.
+      enabled: false
+    mail:
+      # ws18: the SMTP server only carries alert e-mails; its outage must
+      # not mark the application DOWN (the alert log + retries cover it).
       enabled: false
 
 aifiles:

@@ -48,8 +48,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Fetches the springdoc-GENERATED spec from {@code /v3/api-docs} and asserts:
  * it is a well-formed OpenAPI 3.1 document titled/versioned from the build;
  * every handler route of the application is in it (and nothing else);
- * bearerAuth is the global scheme with only the login entry points
- * anonymous — and every operation the spec marks secured really answers an
+ * bearerAuth is the global scheme with only the login entry points (and
+ * the public synthetic probe) anonymous — and every operation the spec marks secured really answers an
  * anonymous call with 401; every rate-limited route documents its 429 +
  * Retry-After; every
  * controller carries an explicit {@code @Tag}; operationIds are stable.
@@ -73,12 +73,17 @@ class OpenApiContractTest {
 
     static final Path ROUTES_FILE = Path.of("docs", "api", "openapi-routes.txt");
 
-    /** Anonymous by design — must match SecurityConfig's permitAll list. */
+    /**
+     * Anonymous by design — must match SecurityConfig's permitAll list: the
+     * login entry points plus the ws18 synthetic uptime probe (deliberately
+     * public, per-IP rate-limited, version + one db boolean only).
+     */
     private static final Set<String> ANONYMOUS_PATHS = Set.of(
             "/api/auth/login",
             "/api/auth/refresh",
             "/api/auth/mfa/verify",
-            "/api/auth/providers");
+            "/api/auth/providers",
+            "/api/probe/synthetic");
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -220,8 +225,10 @@ class OpenApiContractTest {
                 documented.add(method + " " + path);
             }
         });
+        // Anonymous routes with their own per-IP/account throttles.
         expected.addAll(Set.of(
-                "POST /api/auth/login", "POST /api/auth/refresh", "POST /api/auth/mfa/verify"));
+                "POST /api/auth/login", "POST /api/auth/refresh", "POST /api/auth/mfa/verify",
+                "GET /api/probe/synthetic"));
         assertThat(documented).containsExactlyElementsOf(expected);
     }
 

@@ -35,7 +35,7 @@ body.
 | `uploads` | 20 | `MODOCUMENT_RATELIMIT_UPLOADS` | `POST /api/fileupload/upload`, `POST /api/doccreation/instances/{id}/assets`, `POST /api/doccreation/blueprints` |
 | `ingestion` | 60 | `MODOCUMENT_RATELIMIT_INGESTION` | `POST /api/ingestion/jobs` (multipart and JSON), `POST .../jobs/{id}/resume`, `.../remap`, `.../revalidate` |
 | `transform` | 30 | `MODOCUMENT_RATELIMIT_TRANSFORM` | `POST /api/transform/transform` |
-| `exports` | 60 | `MODOCUMENT_RATELIMIT_EXPORTS` | `GET /api/ingestion/jobs/{id}/export/file`, `POST .../export/database` |
+| `exports` | 60 | `MODOCUMENT_RATELIMIT_EXPORTS` | `GET /api/ingestion/jobs/{id}/export/file`, `POST .../export/file` (ws18: same export with `{format, reason}` in the body), `POST .../export/database` |
 | `doc-generate` | 30 | `MODOCUMENT_RATELIMIT_DOC_GENERATE` | `POST /api/doccreation/instances/{id}/generate` |
 | `extraction` | 30 | `MODOCUMENT_RATELIMIT_EXTRACTION` | `POST /api/extraction/jobs` (starts by default), `POST .../jobs/{id}/start`, `POST .../jobs/{id}/bridge` |
 | `dsr` | 10 | `MODOCUMENT_RATELIMIT_DSR` | `POST /api/admin/dsr/search`, `.../export`, `.../erase` |
@@ -54,6 +54,7 @@ the same resource:**
 | `LlmQuotaInterceptor` → `LlmRateLimiter` | per user, 60/h (`modocument.security.rate-limit.llm.*`) | `/api/aifiles/send`, `/api/automapper/generate`, `/api/ingestion/jobs/*/chat-edit`, **+ `/api/extraction/jobs/*/infer-schema`, `/api/extraction/jobs/*/summary` (ws17)** | Not in the bucket table. `transform` also calls the LLM but is counted **only** by its own 30/h bucket, which is tighter. Document generation is counted in `doc-generate` for its rendering cost; when AI composition is on it also draws on the LLM quota inside `AiDocumentComposer`, where running out falls back to the deterministic engine instead of failing. These are two different resources, and counting both is intended. Blueprint upload counts in `uploads`, and its AI section split also draws on the LLM quota inside `AiSectionSplitter`, the same reasoning. |
 | `AuthRateLimiter` | per IP 30 and per email 10 per 15 min | `POST /api/auth/login`, `POST /api/auth/refresh` | Anonymous-phase throttle. Not in the bucket table. |
 | `MfaRateLimiter` | per IP and per user, 5/min | `POST /api/auth/mfa/verify` | Anonymous-phase throttle. The authenticated TOTP checks (activate and disable) are in the `mfa-code` bucket instead. |
+| `SyntheticProbeController` (ws18) | per IP, 60/min (`MODOCUMENT_PROBE_RATE_LIMIT`) | `GET /api/probe/synthetic` (public) | Anonymous by design (an uptime monitor holds no credentials), so it cannot be in the per-user bucket table; its own per-IP limiter is the only one that counts it. |
 | — | — | multipart `POST /api/ingestion/jobs` | This is an upload, but it counts only in `ingestion`, never in `uploads` as well. |
 
 **Why ADMIN has the same limits.** These limits contain abuse and resource exhaustion; they do

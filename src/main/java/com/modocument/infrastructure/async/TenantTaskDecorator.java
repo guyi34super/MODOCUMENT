@@ -13,8 +13,10 @@ import java.util.Map;
  * into the next. Without this, work handed to an executor would run with NO
  * tenant and — under the V13 row-level-security policies — read zero rows.
  *
- * <p>Applied to the ingestion background runner and the extraction worker
- * executor; apply it to any future {@code @Async}/executor bean that touches
+ * <p>Applied to the ingestion background runner, the extraction worker
+ * executor and the ws18 alert / SIEM-push executors (which copy the request
+ * MDC this way, so an alert's audit rows carry the triggering request id);
+ * apply it to any future {@code @Async}/executor bean that touches
  * the database (see the call-site registry in {@link TenantContext}).
  */
 public class TenantTaskDecorator implements TaskDecorator {

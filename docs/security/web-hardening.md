@@ -209,8 +209,9 @@ tooling; services talk over the compose network.
   `MODOCUMENT_MFA_KEY`, `MODOCUMENT_DB_PASSWORD`,
   `MODOCUMENT_FLYWAY_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`,
   `SPRING_FLYWAY_PASSWORD`, `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD`,
-  `MODOCUMENT_AI_API_KEY`, the two OIDC client secrets and
-  `EXTRACTION_MONGO_URI`:
+  `MODOCUMENT_AI_API_KEY`, the two OIDC client secrets,
+  `EXTRACTION_MONGO_URI` and the ws18 webhook signing keys
+  `MODOCUMENT_ALERTS_WEBHOOK_SECRET` / `MODOCUMENT_SIEM_WEBHOOK_SECRET`:
   * only `NAME_FILE` set (or `NAME` blank — compose passes `${NAME:-}`
     through as `""`) → the file's content, whitespace-trimmed, becomes
     `NAME` at environment-variable precedence (so `${NAME:}` placeholders

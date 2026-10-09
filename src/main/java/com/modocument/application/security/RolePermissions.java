@@ -50,7 +50,9 @@ import static com.modocument.domain.model.Permission.VALIDATION_WRITE;
  *       (CHANGE_APPROVE — the ws10 maker/checker decisions; DOC_RELEASE —
  *       routes land in ws11). Approvers review, they do not author.</li>
  *   <li><b>ADMIN</b> — everything, including the shared-lookup admin,
- *       metrics and the reserved USER_ADMIN.</li>
+ *       metrics, user administration and SIEM_READ (ws18: the bank-scoped
+ *       audit feed for the bank's SIEM — admin-only, like every other
+ *       read of the security trail).</li>
  * </ul>
  */
 public final class RolePermissions {

@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -127,6 +128,24 @@ class ProductionBootPgIT extends PgItSupport {
                 .containsExactly("default-src 'none'; frame-ancestors 'none'");
         assertThat(health.headers().allValues("X-Frame-Options")).containsExactly("DENY");
         assertThat(health.headers().allValues("X-Content-Type-Options")).containsExactly("nosniff");
+
+        // ws18 on the production path: V160 (AlertLog) and V161 (audit-feed
+        // indexes) applied through Spring's Flyway as the schema owner, and
+        // the public synthetic probe answers WITHOUT a token, its database
+        // round trip running through the app-role pool.
+        assertThat(Arrays.stream(context.getBean(Flyway.class).info().applied())
+                .filter(migration -> migration.getVersion() != null)
+                .map(migration -> migration.getVersion().getVersion()))
+                .contains("160", "161");
+        HttpResponse<String> probe = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create(
+                                "http://localhost:" + port + "/api/probe/synthetic"))
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(probe.statusCode()).isEqualTo(200);
+        assertThat(probe.body()).contains("\"status\":\"UP\"", "\"db\":true");
+        assertThat(String.join(",", probe.headers().allValues("Cache-Control")))
+                .contains("no-store");
     }
 
     private static String withDatabaseAndTls(String url, String database) {

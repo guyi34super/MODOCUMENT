@@ -68,22 +68,30 @@ public class OpenApiConfig {
 
     /**
      * Routes callable without a bearer token (the anonymous login entry
-     * points). Everything else inherits the global bearerAuth requirement.
-     * Mirrors {@code SecurityConfig}'s permitAll list; the
-     * PUBLIC_ROUTES allowlist in {@code RoutePermissionCoverageTest} and
-     * {@code OpenApiContractTest} hold both to it.
+     * points, plus the ws18 synthetic uptime probe — an external monitor
+     * must not hold credentials). Everything else inherits the global
+     * bearerAuth requirement. Mirrors {@code SecurityConfig}'s permitAll
+     * list; the PUBLIC_ROUTES allowlist in {@code RoutePermissionCoverageTest}
+     * and {@code OpenApiContractTest} hold both to it.
      */
     static final Set<String> PUBLIC_PATHS = Set.of(
             "/api/auth/login",
             "/api/auth/refresh",
             "/api/auth/mfa/verify",
-            "/api/auth/providers");
+            "/api/auth/providers",
+            "/api/probe/synthetic");
 
-    /** Anonymous routes with their own throttle (AuthRateLimiter, MfaRateLimiter). */
+    /**
+     * Anonymous routes with their own per-IP/account throttle
+     * (AuthRateLimiter, MfaRateLimiter, the probe's own per-IP limiter in
+     * SyntheticProbeController — none of them in ApiRateLimitInterceptor's
+     * per-user table, so nothing is counted twice).
+     */
     static final Set<String> THROTTLED_PUBLIC_PATHS = Set.of(
             "/api/auth/login",
             "/api/auth/refresh",
-            "/api/auth/mfa/verify");
+            "/api/auth/mfa/verify",
+            "/api/probe/synthetic");
 
     private static final String UNAUTHORIZED = "Unauthorized";
     private static final String FORBIDDEN = "Forbidden";
@@ -98,7 +106,9 @@ public class OpenApiConfig {
 
             Authentication: every endpoint except the login entry points \
             (/api/auth/login, /api/auth/refresh, /api/auth/mfa/verify, \
-            /api/auth/providers) requires an HTTP Bearer JWT (401 without). \
+            /api/auth/providers) and the public synthetic uptime probe \
+            (/api/probe/synthetic, rate-limited per IP) requires an HTTP \
+            Bearer JWT (401 without). \
             Authorization is permission-checked per route (403) and \
             tenant-scoped per bank: another bank's resources answer 404, \
             never data. Expensive endpoints are rate-limited per user and \
@@ -152,8 +162,9 @@ public class OpenApiConfig {
                                         + "route's permission (or a password change is pending).")
                                 .content(errorJson))
                         .addResponses(TOO_MANY_REQUESTS, new ApiResponse()
-                                .description("Per-user (or, on the login routes, per-IP/account) "
-                                        + "rate limit reached for the current window.")
+                                .description("Per-user (or, on the login routes and the "
+                                        + "public probe, per-IP/account) rate limit reached "
+                                        + "for the current window.")
                                 .addHeaderObject("Retry-After", new Header()
                                         .description("Seconds until the window resets.")
                                         .schema(new IntegerSchema().minimum(

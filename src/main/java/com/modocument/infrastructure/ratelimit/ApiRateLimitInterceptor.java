@@ -104,7 +104,11 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
 
         route("POST", "/api/transform/transform", transform);
 
+        // Every export path shares one bucket: the GET download, its ws18
+        // POST twin (same export, over-cap reason in the body — otherwise an
+        // unmetered export path) and the database push.
         route("GET", "/api/ingestion/jobs/{id}/export/file", exports);
+        route("POST", "/api/ingestion/jobs/{id}/export/file", exports);
         route("POST", "/api/ingestion/jobs/{id}/export/database", exports);
 
         route("POST", "/api/doccreation/instances/{id}/generate", docGenerate);

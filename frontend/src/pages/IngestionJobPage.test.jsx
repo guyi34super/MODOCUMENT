@@ -6,8 +6,10 @@ import { ToastProvider } from '../context/ToastContext';
 import IngestionJobPage, { canVisitStep, stepBlockReason } from './IngestionJobPage';
 
 import { getAllFields } from '../api/templates';
+import { downloadFile } from '../api/client';
 import {
   chatEdit,
+  exportToDatabase,
   getJob,
   remapJob,
   resumeJob,
@@ -38,8 +40,13 @@ vi.mock('../api/ingestion', () => ({
   updateMapping: vi.fn().mockResolvedValue({}),
   updateRows: vi.fn().mockResolvedValue({}),
   setWizardStep: vi.fn().mockResolvedValue({}),
-  exportFilePath: vi.fn(),
+  exportFilePath: vi.fn((id, format) => `/api/ingestion/jobs/${id}/export/file?format=${format}`),
   exportToDatabase: vi.fn(),
+  EXPORT_CAP_EXCEEDED: 'EXPORT_CAP_EXCEEDED',
+  exportFileWithReason: vi.fn((id, format, reason) => ({
+    path: `/api/ingestion/jobs/${id}/export/file`,
+    options: { method: 'POST', body: { format, reason } },
+  })),
 }));
 
 vi.mock('../api/client', () => ({
@@ -976,5 +983,100 @@ describe('IngestionJobPage without an explicit ?step', () => {
     renderPage('/ingestion/7');
     await screen.findByRole('heading', { name: 'Validation' });
     expect(setWizardStep).not.toHaveBeenCalled();
+  });
+});
+
+/** ws18 (gate D2): a 403 EXPORT_CAP_EXCEEDED as the API client throws it. */
+function capExceeded() {
+  const error = new Error('This export has 10000 rows, above your role\'s limit of 5000.');
+  error.status = 403;
+  error.code = 'EXPORT_CAP_EXCEEDED';
+  error.body = { code: 'EXPORT_CAP_EXCEEDED', cap: 5000, rows: 10000, reasonMaxLength: 500 };
+  return error;
+}
+
+describe('export row caps (ws18, gate D2)', () => {
+  beforeEach(() => {
+    getAllFields.mockResolvedValue([
+      { templateFieldsId: 1, templateId: 1, fieldName: 'FirstName' },
+    ]);
+    waitForJob.mockImplementation((id) => getJob(id));
+    getJob.mockResolvedValue(validatedJob);
+    setWizardStep.mockReset();
+    setWizardStep.mockResolvedValue({});
+    downloadFile.mockReset();
+    exportToDatabase.mockReset();
+  });
+
+  it('prompts for a reason after a refused download and retries with it in a POST body', async () => {
+    downloadFile.mockRejectedValueOnce(capExceeded()).mockResolvedValueOnce(undefined);
+    renderPage('/ingestion/7?step=export');
+    await screen.findByRole('heading', { name: 'Export' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Download file' }));
+
+    expect(await screen.findByText('This export needs a reason')).toBeInTheDocument();
+    expect(screen.getByText(/above your role.s limit of 5,?000 rows/)).toBeInTheDocument();
+    expect(downloadFile).toHaveBeenCalledWith(
+      '/api/ingestion/jobs/7/export/file?format=csv',
+      'job-7.csv'
+    );
+    const submit = screen.getByRole('button', { name: 'Export with reason' });
+    expect(submit).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText(/Reason for this export/), 'Regulator return Q3');
+    await userEvent.click(submit);
+
+    await vi.waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(2));
+    expect(downloadFile).toHaveBeenLastCalledWith(
+      '/api/ingestion/jobs/7/export/file',
+      'job-7.csv',
+      { method: 'POST', body: { format: 'csv', reason: 'Regulator return Q3' } }
+    );
+    await vi.waitFor(() =>
+      expect(screen.queryByText('This export needs a reason')).not.toBeInTheDocument()
+    );
+  });
+
+  it('caps the database export the same way and resends the form with the reason', async () => {
+    exportToDatabase
+      .mockRejectedValueOnce(capExceeded())
+      .mockResolvedValueOnce({ ...validatedJob, currentStep: 'EXPORTED' });
+    renderPage('/ingestion/7?step=export');
+    await screen.findByRole('heading', { name: 'Export' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Export to database…' }));
+    await userEvent.type(screen.getByLabelText('JDBC URL'), 'jdbc:postgresql://db/x');
+    await userEvent.type(screen.getByLabelText('Table name'), 'Rows');
+    await userEvent.click(screen.getByRole('button', { name: 'Run database export' }));
+
+    expect(await screen.findByText('This export needs a reason')).toBeInTheDocument();
+    expect(screen.getByText(/This database export has/)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/Reason for this export/), 'Migration to core');
+    await userEvent.click(screen.getByRole('button', { name: 'Export with reason' }));
+
+    await vi.waitFor(() => expect(exportToDatabase).toHaveBeenCalledTimes(2));
+    expect(exportToDatabase).toHaveBeenLastCalledWith(
+      '7',
+      expect.objectContaining({
+        jdbcUrl: 'jdbc:postgresql://db/x',
+        tableName: 'Rows',
+        reason: 'Migration to core',
+      })
+    );
+  });
+
+  it('cancel closes the prompt without exporting again', async () => {
+    downloadFile.mockRejectedValueOnce(capExceeded());
+    renderPage('/ingestion/7?step=export');
+    await screen.findByRole('heading', { name: 'Export' });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Download file' }));
+    await screen.findByText('This export needs a reason');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByText('This export needs a reason')).not.toBeInTheDocument();
+    expect(downloadFile).toHaveBeenCalledTimes(1);
   });
 });

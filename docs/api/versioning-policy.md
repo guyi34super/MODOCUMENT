@@ -23,7 +23,8 @@ the following on every build:
   removed or given a different method fails CI until the file is regenerated and the diff reviewed;
 - `bearerAuth` (HTTP bearer, JWT) is the global security scheme. The only anonymous operations are
   the login entry points (`/api/auth/login`, `/api/auth/refresh`, `/api/auth/mfa/verify`,
-  `/api/auth/providers`). Every other operation answers an anonymous call with **401**;
+  `/api/auth/providers`) and the public synthetic uptime probe (`GET /api/probe/synthetic`,
+  rate-limited per IP, ws18). Every other operation answers an anonymous call with **401**;
 - every rate-limited operation documents **429** with a `Retry-After` header;
 - every operation has an explicit controller `@Tag` and a stable `operationId`
   (`<controller><Method>`, for example `ingestionJobResume`).

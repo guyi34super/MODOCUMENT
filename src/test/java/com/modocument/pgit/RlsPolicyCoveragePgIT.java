@@ -54,7 +54,9 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     "docinstance", "docimageasset", "doccontentblock",
                     "uploadedfile",
                     // V80 (ws10): the maker/checker queue is bank-scoped.
-                    "pendingchange");
+                    "pendingchange",
+                    // V160 (ws18): a bank's security alerts are its own.
+                    "alertlog");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

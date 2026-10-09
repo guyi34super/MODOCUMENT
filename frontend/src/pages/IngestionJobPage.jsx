@@ -4,9 +4,11 @@ import { downloadFile } from '../api/client';
 import { getAllFields } from '../api/templates';
 import { validationErrorRuleLabel } from '../api/validationRules';
 import {
+  EXPORT_CAP_EXCEEDED,
   cancelJob,
   chatEdit,
   exportFilePath,
+  exportFileWithReason,
   exportToDatabase,
   getJob,
   remapJob,
@@ -1119,6 +1121,52 @@ function ValidationStep({
   );
 }
 
+/**
+ * ws18 (gate D2): an export above the role's row cap was refused (403
+ * EXPORT_CAP_EXCEEDED). The user may state a reason and retry; the reason is
+ * recorded verbatim in the audit trail and the security team is alerted.
+ */
+function ExportReasonPrompt({ prompt, reason, busy, onChange, onSubmit, onCancel }) {
+  const what = prompt.kind === 'database' ? 'database export' : 'download';
+  return (
+    <div className="mt-4">
+      <Callout variant="info" title="This export needs a reason">
+        <p className="mb-2">
+          This {what} has {Number(prompt.rows).toLocaleString()} rows, above your role&apos;s
+          limit of {Number(prompt.cap).toLocaleString()} rows. State why you need it to
+          continue: the reason is recorded in the audit trail and the security team is
+          notified. Do not include personal data.
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSubmit();
+          }}
+          className="space-y-2"
+        >
+          <Field label="Reason for this export" hint={`${reason.length}/${prompt.maxLength}`}>
+            <textarea
+              className={inputClass}
+              rows={3}
+              maxLength={prompt.maxLength}
+              value={reason}
+              onChange={(e) => onChange(e.target.value)}
+            />
+          </Field>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={!reason.trim() || busy}>
+              Export with reason
+            </Button>
+            <Button type="button" variant="secondary" onClick={onCancel}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Callout>
+    </div>
+  );
+}
+
 function ExportStep({
   canExport,
   blockedReason,
@@ -1134,6 +1182,11 @@ function ExportStep({
   onDbExport,
   onGoToBlockingStep,
   blockingStepLabel,
+  capPrompt,
+  exportReason,
+  onExportReasonChange,
+  onSubmitExportReason,
+  onCancelExportReason,
 }) {
   return (
     <Card>
@@ -1228,6 +1281,17 @@ function ExportStep({
         </Button>
       </div>
 
+      {capPrompt && (
+        <ExportReasonPrompt
+          prompt={capPrompt}
+          reason={exportReason}
+          busy={Boolean(busyAction)}
+          onChange={onExportReasonChange}
+          onSubmit={onSubmitExportReason}
+          onCancel={onCancelExportReason}
+        />
+      )}
+
       {showDbExport && (
         <form onSubmit={onDbExport} className="mt-4 space-y-3 border-t border-line pt-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1301,6 +1365,10 @@ export default function IngestionJobPage() {
   const [chatOpen, setChatOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState('csv');
   const [showDbExport, setShowDbExport] = useState(false);
+  // ws18: { kind: 'file'|'database', format, cap, rows, maxLength } after a
+  // 403 EXPORT_CAP_EXCEEDED; the reason form retries the same export.
+  const [capPrompt, setCapPrompt] = useState(null);
+  const [exportReason, setExportReason] = useState('');
   const [dbForm, setDbForm] = useState({
     jdbcUrl: '',
     username: '',
@@ -1422,6 +1490,76 @@ export default function IngestionJobPage() {
     } finally {
       setBusyAction('');
     }
+  };
+
+  // ---- exports (ws18: row caps with a stated reason) -----------------------
+
+  const capAwareError = (err) =>
+    err?.code === EXPORT_CAP_EXCEEDED
+      ? 'This export is above your row limit — state a reason below to continue.'
+      : err?.message;
+
+  const openCapPrompt = (kind, err, format) => {
+    setCapPrompt({
+      kind,
+      format,
+      cap: err.body?.cap ?? 0,
+      rows: err.body?.rows ?? 0,
+      maxLength: err.body?.reasonMaxLength ?? 500,
+    });
+  };
+
+  const closeCapPrompt = () => {
+    setCapPrompt(null);
+    setExportReason('');
+  };
+
+  const downloadExport = async (reason) => {
+    const format = reason && capPrompt?.format ? capPrompt.format : exportFormat;
+    const fileName = `job-${id}.${format}`;
+    setBusyAction('download');
+    try {
+      await toast.promise(
+        () => {
+          if (!reason) return downloadFile(exportFilePath(id, format), fileName);
+          const { path, options } = exportFileWithReason(id, format, reason);
+          return downloadFile(path, fileName, options);
+        },
+        { loading: 'Preparing download…', success: 'File downloaded', error: capAwareError }
+      );
+      closeCapPrompt();
+      // The server records the export; refresh so the summary shows.
+      // setJob (not applyJob) so local drafts can never be clobbered.
+      getJob(id).then(setJob).catch(() => {});
+    } catch (err) {
+      if (err?.code === EXPORT_CAP_EXCEEDED) openCapPrompt('file', err, format);
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const runDbExport = async (reason) => {
+    setBusyAction('db-export');
+    try {
+      const payload = reason ? { ...dbForm, reason } : dbForm;
+      const result = await toast.promise(() => exportToDatabase(id, payload), {
+        ...ACTION_MESSAGES['db-export'],
+        error: capAwareError,
+      });
+      closeCapPrompt();
+      applyJob(result);
+    } catch (err) {
+      if (err?.code === EXPORT_CAP_EXCEEDED) openCapPrompt('database', err);
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const submitExportReason = () => {
+    const reason = exportReason.trim();
+    if (!reason || !capPrompt) return;
+    if (capPrompt.kind === 'database') runDbExport(reason);
+    else downloadExport(reason);
   };
 
   const rowsDirty = Boolean(rowEdits && Object.keys(rowEdits).length > 0);
@@ -1683,28 +1821,18 @@ export default function IngestionJobPage() {
           busyAction={busyAction}
           exportInfo={job.exportInfo}
           onFormatChange={setExportFormat}
-          onDownload={async () => {
-            setBusyAction('download');
-            try {
-              await toast.promise(
-                downloadFile(exportFilePath(id, exportFormat), `job-${id}.${exportFormat}`),
-                { loading: 'Preparing download…', success: 'File downloaded' }
-              );
-              // The server records the export; refresh so the summary shows.
-              // setJob (not applyJob) so local drafts can never be clobbered.
-              getJob(id).then(setJob).catch(() => {});
-            } catch {
-              // The error toast is already shown.
-            } finally {
-              setBusyAction('');
-            }
-          }}
+          onDownload={() => downloadExport()}
           onToggleDbExport={() => setShowDbExport((v) => !v)}
           onDbFormChange={(patch) => setDbForm((f) => ({ ...f, ...patch }))}
           onDbExport={(e) => {
             e.preventDefault();
-            runAction('db-export', () => exportToDatabase(id, dbForm));
+            runDbExport();
           }}
+          capPrompt={capPrompt}
+          exportReason={exportReason}
+          onExportReasonChange={setExportReason}
+          onSubmitExportReason={submitExportReason}
+          onCancelExportReason={closeCapPrompt}
         />
       )}
     </div>

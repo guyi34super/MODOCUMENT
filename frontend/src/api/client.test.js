@@ -97,6 +97,24 @@ describe('api request wrapper', () => {
     );
   });
 
+  it('exposes status, machine code and body on the thrown error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          { error: 'Too many rows.', code: 'EXPORT_CAP_EXCEEDED', cap: 5000, rows: 10000 },
+          403
+        )
+      )
+    );
+
+    const error = await api.get('/api/ingestion/jobs/7/export/file').catch((e) => e);
+    expect(error.message).toBe('Too many rows.');
+    expect(error.status).toBe(403);
+    expect(error.code).toBe('EXPORT_CAP_EXCEEDED');
+    expect(error.body).toMatchObject({ cap: 5000, rows: 10000 });
+  });
+
   it('falls back to a status message for non-JSON error bodies', async () => {
     vi.stubGlobal(
       'fetch',

@@ -21,6 +21,7 @@ import AdminUsersPage from './pages/AdminUsersPage';
 import PendingChangesPage from './pages/PendingChangesPage';
 import PendingReleasesPage from './pages/PendingReleasesPage';
 import AdminRetentionPage from './pages/AdminRetentionPage';
+import AdminAlertsPage from './pages/AdminAlertsPage';
 import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
 
 export default function App() {
@@ -68,6 +69,8 @@ export default function App() {
         {/* ws11 release queue for ADMIN + APPROVER (server: doc:release). */}
         <Route path="/approvals/releases" element={<PendingReleasesPage />} />
         <Route path="/admin/retention" element={<AdminRetentionPage />} />
+        {/* ws18 security alerts for ADMINs (server: user:admin, bank-scoped). */}
+        <Route path="/admin/alerts" element={<AdminAlertsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -32,6 +32,12 @@ modocument:
     # No scheduled purge racing deterministic tests; the ws14 retention gate
     # tests re-enable it (and drive the job explicitly) via test properties.
     enabled: false
+  alerts:
+    sweep:
+      # No scheduled windowed sweep racing deterministic tests; the ws18
+      # gate tests drive AlertSweepJob.runOnce() explicitly. Immediate
+      # (post-commit) alerting stays on everywhere.
+      enabled: false
   security:
     jwt:
       # Test-only signing key; production requires MODOCUMENT_JWT_SECRET.

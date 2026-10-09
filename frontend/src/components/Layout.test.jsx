@@ -87,6 +87,11 @@ describe('Layout sidebar', () => {
       'href',
       '/admin/changes'
     );
+    // ws18: the bank's security alerts.
+    expect(screen.getByRole('link', { name: 'Security alerts' })).toHaveAttribute(
+      'href',
+      '/admin/alerts'
+    );
     expect(screen.getByText('Administration')).toBeInTheDocument();
   });
 
@@ -97,6 +102,7 @@ describe('Layout sidebar', () => {
 
     expect(screen.getByRole('link', { name: 'Approvals' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Security alerts' })).not.toBeInTheDocument();
     expect(screen.getByText('Administration')).toBeInTheDocument();
   });
 
