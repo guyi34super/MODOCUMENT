@@ -1,4 +1,4 @@
-# Dependabot (SEC-010 / SUP-S05 / gate E3): weekly update PRs across all four
+# Dependabot (SEC-010 / SUP-S05 / gate E3): weekly update PRs across all five
 # ecosystems, with minor+patch bumps grouped into one PR per ecosystem to keep
 # review load sane. Security updates always arrive individually and
 # immediately regardless of the weekly schedule. Majors stay ungrouped so
@@ -49,6 +49,25 @@ updates:
       day: monday
     groups:
       docker-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # ws20 Terraform (infra/terraform): AWS/random provider constraints in the
+  # env root modules and the modules that pin providers themselves. Provider
+  # bumps change the plan — every PR still needs a reviewed `terraform plan`
+  # before apply.
+  - package-ecosystem: terraform
+    directories:
+      - /infra/terraform/envs/production
+      - /infra/terraform/envs/staging
+      - /infra/terraform/modules/backups
+      - /infra/terraform/modules/edge
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      terraform-minor-patch:
         update-types:
           - minor
           - patch

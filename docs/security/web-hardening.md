@@ -164,10 +164,12 @@ No other cookie is issued (stateless API; nginx sets none).
 | Image | Runs as | Listens | Notes |
 |---|---|---|---|
 | app (`Dockerfile`) | uid/gid **10001** (`modocument`), numeric `USER 10001:10001` | 8080 (not published) | `/app` and `app.jar` root-owned (the app cannot replace its own code); writable: `/app/wwwroot` (storage), `/home/modocument`, `/tmp` (soffice gets a per-conversion profile there). Entrypoint no longer starts as root / chowns / `runuser`s. |
-| frontend (`frontend/Dockerfile`) | uid **101** (`nginxinc/nginx-unprivileged`) | 8080 (compose `3000:8080`) | pid and temp paths under `/tmp`. |
+| frontend (`frontend/Dockerfile`) | uid **101** (`nginxinc/nginx-unprivileged`) | 8080 (compose `3000:8080`) | pid and temp paths under `/tmp`. `nginx.conf` ships as a template rendered by the image's own entrypoint at start; the only substituted variable is `MODOCUMENT_API_UPSTREAM` (`NGINX_ENVSUBST_FILTER=^MODOCUMENT_`; default `app:8080`, the ECS task sets `127.0.0.1:8081` because awsvpc containers share one namespace — `infra/terraform/modules/ecs-app`). |
 
 Compose additionally runs both with `cap_drop: [ALL]` and
-`no-new-privileges:true`. A numeric uid matters for orchestrators: a
+`no-new-privileges:true`; the ECS task definition pins the same users
+(`101`, `10001:10001`), drops all capabilities and sets
+`no-new-privileges` (IaC, not yet applied). A numeric uid matters for orchestrators: a
 Kubernetes `runAsNonRoot` policy refuses a named `USER` it cannot resolve.
 
 **Volume ownership.** The storage directories are created and chowned to
@@ -263,8 +265,11 @@ docker-compose does (empty database, Spring's Flyway as owner, runtime as
   its own `?sslmode=require` (the README's hosted-PostgreSQL example does).
 * **Server side** (the "database refuses" half of C4, infrastructure-owned):
   `hostssl`-only `pg_hba.conf` entries / `ssl = on`, or the managed
-  service's force-SSL setting. Client `require` plus server enforcement means
-  neither side can be downgraded.
+  service's force-SSL setting. For the AWS target this is `rds.force_ssl = 1`
+  in the DB parameter group of
+  [`infra/terraform/modules/rds`](../../infra/terraform/modules/rds/main.tf)
+  (ws20 — written as IaC, not yet applied to an account). Client `require`
+  plus server enforcement means neither side can be downgraded.
 
 Kafka and Mongo (scale profile only) are not yet encrypted in transit — see
 the TODOs at the top of `application-scale.yml`; the default deployment
@@ -283,9 +288,10 @@ the Mongo URI is now **required** and authenticated (no auth-less default).
 | Header scan grade **A** | Run securityheaders.com and Mozilla HTTP Observatory against the deployed HTTPS URL. With the set above (all six graded headers, CSP without `unsafe-inline`/`unsafe-eval`, HSTS ≥ 1 year, secure cookie flags) the expected result is A or better on both. Archive the report with the release evidence. | on first HTTPS deployment |
 | DAST baseline | The ws19 ZAP baseline workflow (separate branch) scans the running stack. Acceptance: no Medium/High alerts. Expected informational/low noise: "Storable and Cacheable Content" on the hashed assets, Spectre-isolation hints (no `Cross-Origin-Embedder-Policy` — deliberately unset; nothing needs cross-origin isolation and COEP risks breaking image loads). | with ws19 |
 
-**CSP re-check recipe** (no Docker needed): `npm run build`; run
-`nginx -c` with `frontend/nginx.conf` (proxy target pointed at a stub or the
-real app, `root` at `frontend/dist`) and the snippet under
+**CSP re-check recipe** (no Docker needed): `npm run build`; render
+`frontend/nginx.conf` first (`MODOCUMENT_API_UPSTREAM=127.0.0.1:<port>
+envsubst '${MODOCUMENT_API_UPSTREAM}' < frontend/nginx.conf`, pointing at a
+stub or the real app), then run `nginx -c` with it (`root` at `frontend/dist`) and the snippet under
 `<conf dir>/snippets/`; drive `/login` with Playwright/Chromium, listen for
 `securitypolicyviolation` events, and walk any new screen that adds images,
 frames, fonts or third-party scripts. Any new source must be added to the

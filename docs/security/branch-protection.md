@@ -43,7 +43,7 @@ Notes:
 | `.github/workflows/sbom.yml` | main pushes + releases | CycloneDX SBOMs (backend maven plugin via `-Psbom`, frontend `npm sbom`) uploaded as artifacts — **E8** |
 | `.github/workflows/image-rebuild.yml` | weekly + manual | rebuild images from current base tags (`--pull`), Trivy fails on CRITICAL — **SEC-026 / E3** |
 | `.github/workflows/zap-baseline.yml` | weekly + manual | ZAP baseline against the compose stack, report artifact — **E3/E1** |
-| `.github/dependabot.yml` | weekly | maven, npm, github-actions, docker updates, grouped minor/patch — **SEC-010** |
+| `.github/dependabot.yml` | weekly | maven, npm, github-actions, docker and (since the ws20 integration) terraform updates, grouped minor/patch — **SEC-010** |
 
 All workflows run with `permissions: contents: read` and actions pinned by
 full commit SHA with the tag in a comment (SEC-042, SUP-S05).

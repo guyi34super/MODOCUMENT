@@ -1,28 +1,41 @@
-# Security Policy
-
-> Stub (ws19). The full vulnerability-management and disclosure policy is
-> being authored in workstream 20 and will replace the details here; this
-> file stays minimal on purpose so the two do not conflict.
+# Security policy — MoDocument (SUP-S12)
 
 ## Reporting a vulnerability
 
-Please report suspected vulnerabilities **privately** — do not open a public
-issue. Use GitHub's private vulnerability reporting on this repository
-(Security tab → "Report a vulnerability"), or contact the repository owner
-(@guyi34super) directly. You should receive an acknowledgement within 5
-business days.
+Email **security@modocument.example** (machine-readable copy:
+[`/.well-known/security.txt`](frontend/public/.well-known/security.txt),
+served by the frontend). Please include steps to reproduce and the affected
+endpoint; do not include real customer data in reports.
 
-Please do not run intrusive testing against environments you do not own.
+> Mailbox activation is go-live gate **E5** (owner: Taj Aundoo). Until it is
+> live, report privately through GitHub's private vulnerability reporting on
+> this repository (Security tab → "Report a vulnerability") or directly to the
+> repository owner (@guyi34super) — do not open a public issue for a
+> vulnerability.
+
+What to expect: acknowledgement within 2 business days, a triage decision
+within 7, and coordinated disclosure — we ask that you give us 90 days
+before publishing. Good-faith research against **your own data on the
+staging environment** is welcome; never test against production banks' data,
+never run denial-of-service, and respect the extraction compliance rules the
+product itself enforces.
+
+## Scope
+
+The application in this repository (backend API, React frontend, Docker
+images) and, once applied, the infrastructure under `infra/terraform/`.
+Out of scope: the banks' own identity providers, third-party LLM endpoints,
+and social engineering.
 
 ## Supported versions
 
-| Version | Supported |
-| ------- | --------- |
-| `main` (latest) | yes |
-| anything else   | no  |
+The `main` branch and the latest tagged release receive security fixes.
 
-## Security documentation
+## Where the security documentation lives
 
-Hardening guides, control documentation and operational runbooks live in
-[`docs/security/`](docs/security/), including branch protection and the CI
-security-scanning gauntlet ([`docs/security/branch-protection.md`](docs/security/branch-protection.md)).
+* Control inventory: [`docs/security/security-feature-catalogue.md`](docs/security/security-feature-catalogue.md)
+* Threats × controls: [`docs/security/threat-control-matrix.md`](docs/security/threat-control-matrix.md)
+* Crypto standard: [`docs/security/crypto-standard.md`](docs/security/crypto-standard.md)
+* Branch protection and CI security scans: [`docs/security/branch-protection.md`](docs/security/branch-protection.md)
+* Incident response: [`docs/security/incident-response-stub.md`](docs/security/incident-response-stub.md)
+* Open items & owners: [`docs/security/security-roadmap.md`](docs/security/security-roadmap.md) and the README section *"Implement later (cloud & organisational)"*

@@ -197,15 +197,21 @@ the test suite.
 - `local` profile: same PostgreSQL + Flyway as production, plus dev conveniences
   (Swagger, in-memory extraction). The JWT signing key is **not** committed —
   supply `MODOCUMENT_JWT_SECRET` or a gitignored `application-local-secrets.yml`.
-- **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + PostgreSQL +
-  docling-serve), non-root runtime image with a healthcheck.
+- **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (nginx frontend +
+  app + PostgreSQL, optional Ollama/docling/Keycloak/Mongo+Kafka profiles); every
+  image runs non-root (app uid 10001, nginx-unprivileged uid 101) with all
+  capabilities dropped, required secrets have no defaults, and the SPA/API carry a
+  full security-header set ([docs/security/web-hardening.md](docs/security/web-hardening.md)).
+- **Infrastructure as code**: the AWS af-south-1 go-live topology as Terraform under
+  [`infra/terraform/`](infra/terraform/README.md) — written, not yet applied (see the
+  deployment checklist and "Implement later" below).
 - **CI/CD supply chain** (ws19, gates A7/A8/E3/E8): `ci.yml` runs `mvn -B verify`
   (with a JaCoCo coverage summary), the real-PostgreSQL suite, the frontend tests/build
   and the nginx security-header check on every push/PR to `main`; `security.yml` adds
   gitleaks (full history), Semgrep (registry packs + [`.semgrep/modocument.yml`](.semgrep/modocument.yml)),
   dependency review and `npm audit --audit-level=high`; `sbom.yml` publishes CycloneDX
   SBOMs (`mvn -Psbom`, `npm sbom`); weekly Trivy-scanned image rebuilds and a ZAP
-  baseline against the compose stack; Dependabot for Maven, npm, Actions and Docker.
+  baseline against the compose stack; Dependabot for Maven, npm, Actions, Docker and Terraform.
   Every action is pinned by commit SHA with least-privilege `permissions`. Required
   checks and the seeded-PR drill: [docs/security/branch-protection.md](docs/security/branch-protection.md).
 - **Security alerting** (ws18, gate D1): data-driven rules over the audit trail
@@ -375,8 +381,10 @@ npm test             # unit tests (Vitest + React Testing Library)
 
 ### Authentication
 
-All API endpoints (except `/api/auth/login`, `/api/auth/refresh`, and
-`/actuator/health`) require a JWT Bearer token. Public self-registration is
+All API endpoints (except the login entry points `/api/auth/login`,
+`/api/auth/refresh`, `/api/auth/mfa/verify`, `/api/auth/providers`, the
+health check `/actuator/health` and the public synthetic probe
+`/api/probe/synthetic`) require a JWT Bearer token. Public self-registration is
 disabled: the first administrator is created at startup from
 `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD`
 (required when the user table is empty), and further accounts are
@@ -734,11 +742,17 @@ service (the bundled `postgres` service is then unnecessary).
 - `Dockerfile` — multi-stage: Maven + Temurin 21 build, slim JRE 21 runtime image
   that runs as a non-root user and healthchecks `/actuator/health`.
 - `docker-compose.yml` —
-  - `app`: this API on port 8080, wired to the `postgres` service by default.
-    Requires `MODOCUMENT_JWT_SECRET` in your environment; pass
-    `AIFILES_OPENAI_APIKEY` through for the LLM features. Uploads/exports are kept
-    in a named volume. `APP_PROFILES=local` runs the dev profile against the
-    same database.
+  - `frontend`: the React build served by unprivileged nginx (uid 101, container
+    port 8080, published as host **3000**) — the single entry point, proxying the
+    API to the app and setting the security headers (`frontend/nginx.conf`,
+    `frontend/security-headers.conf`).
+  - `app`: this API on container port 8080 (not published — trusted-proxy model),
+    running as uid 10001 with all capabilities dropped, wired to the `postgres`
+    service by default. Requires `MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`,
+    `POSTGRES_PASSWORD` and `MODOCUMENT_APP_DB_PASSWORD` (see "Run with Docker");
+    the external-AI and ws18 alert/SIEM variables pass through when set.
+    Uploads/exports are kept in a named volume. `APP_PROFILES=local` runs the dev
+    profile against the same database.
   - `postgres`: PostgreSQL 17 with a named volume and a `pg_isready` healthcheck;
     the app waits for it to be healthy and Flyway migrates the schema on boot.
     `POSTGRES_PASSWORD` and `MODOCUMENT_APP_DB_PASSWORD` are required (no
@@ -760,26 +774,100 @@ service (the bundled `postgres` service is then unnecessary).
 
 ## Production deployment checklist
 
-- **`MODOCUMENT_JWT_SECRET`** and **`MODOCUMENT_MFA_KEY`** — required; generate each with
-  `openssl rand -base64 48`. The app refuses to start with a missing, short, or
-  known-default secret.
+The target production topology is written as Terraform under
+[`infra/terraform/`](infra/terraform/) (AWS af-south-1: CloudFront + WAF →
+ALB TLS 1.2+ → ECS on EC2 → Multi-AZ RDS with forced TLS; locked backups,
+GuardDuty/CloudTrail, GitHub-OIDC deploys — see its README for layout and
+apply order; `terraform validate` is pending a machine with terraform
+installed). Whatever hosting you use, the application-level checklist is:
+
+- **Secrets** (`MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`) — required,
+  ≥ 32 bytes each (`openssl rand -base64 48`); the app refuses to start with
+  a missing, short, or known-default secret. Prefer files over environment
+  values: every sensitive variable accepts `<NAME>_FILE` (Docker/Kubernetes
+  secrets, SEC-018 — [details](docs/security/web-hardening.md)). In the IaC
+  they are Secrets Manager values injected into the task — never in images
+  or tfvars. Inventory every key in
+  [`docs/security/key-certificate-register.md`](docs/security/key-certificate-register.md).
 - **Database** — set `MODOCUMENT_DB_URL` / `MODOCUMENT_DB_USERNAME` /
-  `MODOCUMENT_DB_PASSWORD` to a PostgreSQL instance with a strong password;
-  Flyway migrates the schema on startup.
-- **CORS** — set `MODOCUMENT_CORS_ALLOWED_ORIGINS` to your frontend origin(s).
-- **TLS** — terminate HTTPS at your reverse proxy / load balancer in front of the
-  frontend (nginx, container port 8080) and the API; nothing in the stack serves TLS itself.
-- **Database TLS** — `MODOCUMENT_DB_SSLMODE=require` (or `verify-full` with the server CA;
-  in your own `MODOCUMENT_DB_URL`: `?sslmode=require`) and a server that refuses plaintext;
-  the default `prefer` only exists for TLS-less local PostgreSQL
+  `MODOCUMENT_DB_PASSWORD`; Flyway migrates on startup. Use the two-role
+  model: the app connects as `modocument_app` (NOBYPASSRLS — create it per
+  [`docker/postgres-init/01-app-role.sh`](docker/postgres-init/01-app-role.sh)),
+  Flyway as the schema owner (`MODOCUMENT_FLYWAY_USERNAME`/`_PASSWORD`).
+- **Database TLS** — `MODOCUMENT_DB_SSLMODE=require` (or `verify-full` with the
+  server CA; in your own `MODOCUMENT_DB_URL`: `?sslmode=verify-full`) and a
+  server that refuses plaintext — on RDS `rds.force_ssl=1`, set by
+  [`infra/terraform/modules/rds`](infra/terraform/modules/rds). The default
+  `prefer` only exists for TLS-less local PostgreSQL
   ([details](docs/security/web-hardening.md#5d-database-tls-c4--sec-028-application-side)).
-- **Health** — probe `GET /actuator/health` (unauthenticated); the Docker image and
-  compose file already use it.
+- **Bootstrap admin** — `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL`/`_PASSWORD`
+  (self-registration is disabled); enrol MFA at first login (mandatory for
+  ADMIN).
+- **CORS** — set `MODOCUMENT_CORS_ALLOWED_ORIGINS` to your frontend origin(s).
+- **TLS + trusted proxy** — terminate HTTPS in front of the frontend nginx
+  (non-root, container port 8080; nothing in the stack serves TLS itself) and
+  keep the app port unpublished: nginx overwrites `X-Forwarded-*`, which the
+  app trusts for rate limiting, audit IPs and HSTS. In the IaC: ALB policy
+  `ELBSecurityPolicy-TLS13-1-2-2021-06`, origin locked to CloudFront.
+- **Health** — probe `GET /actuator/health` (unauthenticated); the Docker
+  image, compose file and ECS task definition already use it. External uptime
+  monitors use the public, per-IP rate-limited synthetic probe
+  `GET /api/probe/synthetic` (build version + one database round trip through
+  the whole proxy → app → DB path). SLA and probe/status-page plan:
+  [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md).
 - **Files** — mount a volume at the storage root (`MODOCUMENT_STORAGE_ROOT`,
   default `wwwroot/`) so uploads and export copies survive restarts.
+- **Backups** — nightly snapshots with 90-day retention and a cross-region
+  copy into a **locked** vault (`infra/terraform/modules/backups`); flip the
+  irreversible locks only after the restore drill passes (gate D6).
+- **Monitoring** — GuardDuty + CloudTrail (log-file validation) + CloudWatch
+  alarms → one SNS topic (`infra/terraform/modules/security-monitoring`);
+  logs archive to the 7-year WORM bucket (SEC-033).
+- **Security alerts & SIEM** — wire the application alert channels:
+  `MODOCUMENT_ALERTS_WEBHOOK_URL` (+ `_SECRET`; the phone path) and/or
+  `MODOCUMENT_ALERTS_EMAIL_TO` with `SPRING_MAIL_HOST`; give each bank's SIEM
+  a dedicated ADMIN account for `GET /api/siem/events`, or push one bank via
+  `MODOCUMENT_SIEM_WEBHOOK_URL` / `_BANK_CODE`
+  ([alerting-and-export-caps.md](docs/security/alerting-and-export-caps.md),
+  [siem-event-schema.md](docs/security/siem-event-schema.md)).
+- **Export caps** — review the per-role row caps (`MODOCUMENT_EXPORT_CAP_READ_WRITE`,
+  default 5,000; `MODOCUMENT_EXPORT_CAP_ADMIN`, default 50,000); above them an
+  export needs a stated reason and is audited and alerted.
 - **API docs** — the generated spec (`/v3/api-docs`) is served in every profile but needs a
   bearer token outside `local`/`test` (`MODOCUMENT_API_DOCS_ENABLED=false` removes it); the
   Swagger UI and the H2 console permit are dev-only.
 - **Rate limits** — per-user hourly buckets on the expensive endpoints (`MODOCUMENT_RATELIMIT_*`;
   table in [docs/security/owasp-api-top10.md](docs/security/owasp-api-top10.md)); counters are
-  in-memory per instance.
+  in-memory per instance, so N replicas allow up to N × the configured numbers.
+- **Vulnerability reports** — `SECURITY.md` + `/.well-known/security.txt`
+  ship the contact; the mailbox itself is gate E5 (table below).
+
+## Implement later (cloud & organisational) — Go-Live Gate items not executable from this repository
+
+These gate items need a cloud account, a vendor, or an organisational
+decision — code cannot close them. The repo **prepares** each one (last
+column); the owner executes and files the evidence. Status detail and dates:
+[`docs/security/security-roadmap.md`](docs/security/security-roadmap.md).
+
+| Gate item | What it is | Owner | Evidence needed | Repo artifact that prepares it |
+|---|---|---|---|---|
+| A1 | AWS production account build-out (af-south-1) | Bhavish Nobeen | `terraform apply` outputs + account inventory | [`infra/terraform/envs/production`](infra/terraform/envs/production) |
+| A2 | Console/root MFA for every cloud operator | Bhavish Nobeen | IAM credential report | — (console-only; policy in [`docs/security/identity-providers.md`](docs/security/identity-providers.md) spirit) |
+| A3–A5 | VPC/network/edge build-out, WAF in blocking mode | Bhavish Nobeen | applied plan + WAF metrics | [`modules/network`](infra/terraform/modules/network), [`modules/edge`](infra/terraform/modules/edge) |
+| A6 | CloudTrail into a **separate lock account** | Bhavish Nobeen | trail ARN + lock-account bucket policy | [`modules/security-monitoring`](infra/terraform/modules/security-monitoring) + two-account model in [`infra/terraform/README.md`](infra/terraform/README.md) |
+| A1/SUP-S07 | Separate **staging account** | Bhavish Nobeen | staging apply in its own account | [`infra/terraform/envs/staging`](infra/terraform/envs/staging) |
+| A8/SUP-S05 | CI deploys with **no static cloud keys** | Bhavish Nobeen | GitHub Actions run assuming the OIDC role | [`modules/ci-oidc`](infra/terraform/modules/ci-oidc) |
+| SEC-018 | Secrets in a managed secret store | Bhavish Nobeen | Secrets Manager entries (values set out-of-band) | secret shells in `envs/*/main.tf`; [`docs/security/key-certificate-register.md`](docs/security/key-certificate-register.md) |
+| D3 | Egress allow-list **enforced** | Bhavish Nobeen (define), Reezvi Pydiah (sign off) | signed list + applied SG/NACL | `app_egress_https_cidrs` + `enforce_egress_nacl` seams in [`modules/network`](infra/terraform/modules/network)/[`edge`](infra/terraform/modules/edge) |
+| D4–D5 | Real backups: 90d, cross-region, **locked vault** | Rushal Seeruthun | vault lock config + recovery-point listing | [`modules/backups`](infra/terraform/modules/backups) |
+| D6 | **Restore drill** (timed, documented) | Rushal Seeruthun | drill log with RTO/RPO achieved | staging env + [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md) targets |
+| D7 | DR/BCDR sign-off | Reezvi Pydiah | signed BCDR statement | drill evidence + [`docs/security/cia-controls-table.md`](docs/security/cia-controls-table.md) |
+| E4 | External **penetration test** (budget 31 Oct 2026) | Reezvi Pydiah (procure), Bhavish Nobeen (remediate) | report + retest closure | staging env (open `ingress_cidrs` for the window); scope = [`docs/security/security-feature-catalogue.md`](docs/security/security-feature-catalogue.md) |
+| E5 | **security@** mailbox live | Taj Aundoo | test mail round-trip | [`SECURITY.md`](SECURITY.md) + `frontend/public/.well-known/security.txt` |
+| E7 | **Load test executed** (k6 scenarios written in ws17, not yet run) | Rushal Seeruthun | k6 report vs SLA targets | [`loadtest/`](loadtest/README.md) scenarios + staging ALB output; [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md) |
+| C11 | **Written acceptance of residual AI risks** | **Reezvi Pydiah** | signed acceptance note | risk list in [`docs/security/ai-controls.md`](docs/security/ai-controls.md) "Residual risks" (ws15 AI gateway): shape-driven pseudonymisation with no NER-grade field extraction, no input cleaning against prompt injection, model-written figures (validated structurally, not factually), no model version pinning. Context: README "Privacy: PII tokenization" + [`docs/security/threat-control-matrix.md`](docs/security/threat-control-matrix.md) AI row |
+| SUP-S10 | DMARC/SPF/DKIM on the sending domain | Taj Aundoo | DNS records + DMARC report | — (DNS-level; no repo artifact) |
+| SUP-S09 | MDM on staff devices | Taj Aundoo | MDM enrolment report | — (organisational) |
+| SEC-031 | SIEM reference test (one detection end-to-end with a bank's real SIEM) | Rushal Seeruthun | alert received from a staged `ACCOUNT_LOCKED` burst | **App side done (ws18):** bank-scoped feed `GET /api/siem/events` + signed single-bank push ([`docs/security/siem-event-schema.md`](docs/security/siem-event-schema.md), `SiemFeedE6Test`) and the alert channels (`AlertingGateD1Test`); infra side: metric filter + alarm in [`modules/security-monitoring`](infra/terraform/modules/security-monitoring) |
+| A8 | **Branch protection switched on** + seeded-vulnerable-PR drill | Bhavish Nobeen | ruleset screenshot/export + the blocked drill PR | settings and drill runbook in [`docs/security/branch-protection.md`](docs/security/branch-protection.md); the CI gauntlet and CODEOWNERS already exist (ws19) |
+| SEC-038 | Certification path decision (ISO 27001 / SOC 2) | Reezvi Pydiah | decision memo | evidence pack under [`docs/security/`](docs/security/) is structured to serve either |
