@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
@@ -22,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
+@Tag(name = "Template Fields")
 public class TemplateFieldsController {
 
     private final TemplateFieldsRepository repo;

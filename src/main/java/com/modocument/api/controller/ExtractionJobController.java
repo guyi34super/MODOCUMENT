@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.BridgeRequest;
@@ -40,6 +42,7 @@ import java.util.NoSuchElementException;
  * validation, chat editing, export).
  */
 @RestController
+@Tag(name = "Extraction Jobs", description = "Web/document extraction job lifecycle")
 public class ExtractionJobController {
 
     private static final int MAX_PAGE_SIZE = 500;
@@ -141,6 +144,7 @@ public class ExtractionJobController {
 
     /** Cursor-paged peek at the job's records (kind=raw|processed). */
     @RequiresPermission(Permission.EXTRACTION_READ)
+    @Operation(summary = "Cursor-paged peek at raw or processed records")
     @GetMapping("/api/extraction/jobs/{id}/records")
     public ResponseEntity<?> records(@PathVariable String id,
                                      @RequestParam(defaultValue = "processed") String kind,
@@ -179,6 +183,7 @@ public class ExtractionJobController {
 
     /** Hands the extracted records to the document pipeline. */
     @RequiresPermission(Permission.EXTRACTION_RUN)
+    @Operation(summary = "Hand extracted records to the ingestion pipeline (auto-map + validate)")
     @PostMapping("/api/extraction/jobs/{id}/bridge")
     public ResponseEntity<?> bridge(@PathVariable String id, @Valid @RequestBody BridgeRequest request) {
         jobs.get(id); // owner gate: 404 before the pipeline reads another user's job

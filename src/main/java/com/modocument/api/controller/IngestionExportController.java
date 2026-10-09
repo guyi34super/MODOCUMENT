@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.api.security.RequiresPermission;
@@ -40,6 +41,7 @@ import java.util.NoSuchElementException;
  * user-supplied database.
  */
 @RestController
+@Tag(name = "Ingestion Export", description = "Validated-data export to file or database")
 @RequiresPermission(Permission.EXPORT_RUN)
 public class IngestionExportController {
 

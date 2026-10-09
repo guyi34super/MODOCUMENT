@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.usecase.DataSubjectUseCase;
 import com.modocument.domain.model.Permission;
@@ -27,6 +29,7 @@ import java.util.Map;
  * sit in a URL (access logs, browser history).
  */
 @RestController
+@Tag(name = "Data Subject Rights", description = "GDPR search / export / erase (admin)")
 @RequiresPermission(Permission.USER_ADMIN)
 public class DataSubjectController {
 
@@ -41,11 +44,13 @@ public class DataSubjectController {
             Boolean confirm) {
     }
 
+    @Operation(summary = "DSR: find where a data subject appears in the caller's bank")
     @PostMapping("/api/admin/dsr/search")
     public ResponseEntity<?> search(@Valid @RequestBody DsrRequest request) {
         return ResponseEntity.ok(dsr.search(request.identifier()));
     }
 
+    @Operation(summary = "DSR: export a data subject's records as a zip")
     @PostMapping("/api/admin/dsr/export")
     public ResponseEntity<?> export(@Valid @RequestBody DsrRequest request) {
         DataSubjectUseCase.ExportBundle bundle = dsr.export(request.identifier());
@@ -57,6 +62,7 @@ public class DataSubjectController {
     }
 
     /** Destructive: refuses without the explicit {@code confirm: true}. */
+    @Operation(summary = "DSR: erase a data subject (irreversible; requires confirm: true)")
     @PostMapping("/api/admin/dsr/erase")
     public ResponseEntity<?> erase(@Valid @RequestBody DsrRequest request) {
         if (!Boolean.TRUE.equals(request.confirm())) {

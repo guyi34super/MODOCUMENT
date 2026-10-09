@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ChatEditRequest;
@@ -44,6 +45,7 @@ import java.util.NoSuchElementException;
  * the mapping, and resume after failures.
  */
 @RestController
+@Tag(name = "Ingestion Jobs", description = "Parse / map / validate pipeline")
 public class IngestionJobController {
 
     private final IngestionJobUseCase useCase;

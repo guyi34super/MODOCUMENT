@@ -41,7 +41,9 @@ import java.nio.charset.StandardCharsets;
  * Stateless JWT security: /api/auth/login, /api/auth/refresh (cookie-driven
  * rotation) and the health probe are open, the dev tooling paths (Swagger, H2
  * console) only when modocument.security.permit-dev-paths is on (local/test
- * profiles), and everything else requires a Bearer token. Registration is no
+ * profiles), and everything else requires a Bearer token — including the
+ * generated OpenAPI spec at /v3/api-docs, which exists in every profile but is
+ * anonymous only in dev (ws17 decision, see OpenApiConfig). Registration is no
  * longer public — users are admin-created (bootstrap admin + future admin
  * endpoint). Every accepted token additionally passes the
  * {@link RevocationValidator} (jti denylist + TokenVersion check).
@@ -130,6 +132,9 @@ public class SecurityConfig {
                             .requestMatchers("/oauth2/**", "/login/oauth2/**").permitAll()
                             .requestMatchers("/actuator/health", "/error").permitAll();
                     if (permitDevPaths) {
+                        // Outside dev these fall through to authenticated():
+                        // the generated spec is served to any valid token
+                        // (ApiDocsExposureTest), never anonymously.
                         a.requestMatchers("/swagger/**", "/swagger-ui/**", "/swagger-ui.html",
                                 "/v3/api-docs/**", "/h2-console/**").permitAll();
                     }

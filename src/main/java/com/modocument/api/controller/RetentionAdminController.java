@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.api.security.RequiresPermission;
@@ -38,6 +40,7 @@ import java.util.Map;
  * </ul>
  */
 @RestController
+@Tag(name = "Retention Admin")
 @RequiresPermission(Permission.USER_ADMIN)
 public class RetentionAdminController {
 
@@ -57,6 +60,7 @@ public class RetentionAdminController {
         this.objectMapper = objectMapper;
     }
 
+    @Operation(summary = "Run the retention purge now (all banks; reports the caller's)")
     @PostMapping("/api/admin/retention/run")
     public ResponseEntity<?> run() {
         int bankId = currentUser.requireBankId();
@@ -71,6 +75,7 @@ public class RetentionAdminController {
         return ResponseEntity.ok(body);
     }
 
+    @Operation(summary = "Retention policy settings and the last purge run")
     @GetMapping("/api/admin/retention/status")
     public ResponseEntity<?> status() {
         int bankId = currentUser.requireBankId();

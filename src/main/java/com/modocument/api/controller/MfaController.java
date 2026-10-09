@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.MfaCodeRequest;
 import com.modocument.application.dto.MfaVerifyRequest;
@@ -41,6 +43,7 @@ import java.util.NoSuchElementException;
  * every other route.
  */
 @RestController
+@Tag(name = "MFA", description = "TOTP enrollment and verification")
 public class MfaController {
 
     private final MfaUseCase mfa;
@@ -52,6 +55,7 @@ public class MfaController {
     }
 
     @RequiresPermission(Permission.PROFILE_SELF)
+    @Operation(summary = "The caller's MFA enrolment status")
     @GetMapping("/api/auth/mfa")
     public ResponseEntity<?> status(@AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok(mfa.status(userId(jwt)));
@@ -82,6 +86,7 @@ public class MfaController {
     }
 
     /** PUBLIC (challenge-token-driven); throttled per IP here, per user inside. */
+    @Operation(summary = "Second login phase: MFA challenge + code for the token pair")
     @PostMapping("/api/auth/mfa/verify")
     public ResponseEntity<?> verify(@Valid @RequestBody MfaVerifyRequest request,
                                     HttpServletRequest httpRequest) {

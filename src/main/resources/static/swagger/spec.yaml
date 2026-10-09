@@ -1,4 +1,10 @@
-﻿openapi: 3.0.1
+﻿# DEPRECATED (ws17, SEC-006): this hand-written spec is NOT maintained and has
+# drifted from the code. The authoritative, machine-readable contract is
+# generated from the code at GET /v3/api-docs (springdoc; bearer token
+# required outside dev) and its route inventory is pinned in CI by
+# OpenApiContractTest against docs/api/openapi-routes.txt. Do not edit or
+# rely on this file; it will be removed per docs/api/versioning-policy.md.
+openapi: 3.0.1
 info:
   title: MoDocument Service
   version: "1.0"

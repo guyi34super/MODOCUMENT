@@ -33,8 +33,14 @@ class RoutePermissionCoverageTest {
 
     /**
      * The only routes that may exist without a permission: anonymous auth
-     * entry points, the framework error page, health probes, and the dev-only
-     * API docs (test profile sets permit-dev-paths, which registers springdoc).
+     * entry points, the framework error page, health probes, and the
+     * springdoc endpoints. Since ws17 the generated spec (/v3/api-docs,
+     * /v3/api-docs.yaml) is registered in EVERY profile: it is anonymous only
+     * under permit-dev-paths and otherwise needs a valid bearer token
+     * (SecurityConfig's authenticated() wall, proven by ApiDocsExposureTest)
+     * — authenticated but permission-free by design, since it is
+     * framework-served and describes routes, not data. The Swagger UI pages
+     * (/swagger-ui*) exist only in the local profile.
      */
     private static final Set<String> PUBLIC_ROUTES = Set.of(
             "/api/auth/login",

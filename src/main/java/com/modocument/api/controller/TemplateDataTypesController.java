@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
@@ -18,6 +19,7 @@ import java.net.URI;
 import java.util.Optional;
 
 @RestController
+@Tag(name = "Template Data Types")
 public class TemplateDataTypesController {
 
     private final TemplateDataTypeRepository repo;

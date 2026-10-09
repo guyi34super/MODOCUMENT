@@ -1,5 +1,6 @@
 package com.modocument.doccreation.api;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
@@ -34,6 +35,7 @@ import java.util.NoSuchElementException;
  * keywords, download the original, and delete when nothing builds on it.
  */
 @RestController
+@Tag(name = "Doc Creation: Blueprints")
 public class DocBlueprintController {
 
     private static final String DOCX_CONTENT_TYPE =
