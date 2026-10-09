@@ -10,7 +10,7 @@
 #     here against unlocked vaults;
 #   * CI OIDC trust is repo-wide (any branch may deploy to staging).
 #
-# terraform validate PENDING a machine with terraform; nothing applied.
+# terraform validate passes; plan/apply pending — nothing applied.
 # ===========================================================================
 
 data "aws_caller_identity" "current" {}
@@ -44,6 +44,22 @@ resource "aws_secretsmanager_secret" "mfa_key" {
 resource "aws_secretsmanager_secret" "db_app" {
   name = "${local.name}/db-app-credentials"
   tags = local.tags
+}
+
+# First-boot administrator: same lifecycle as production (see there) — set
+# the values before the first task starts, flip bootstrap_admin_enabled to
+# false once the first admin has enrolled MFA. Recreated with the flag when a
+# staging database is rebuilt from empty.
+resource "aws_secretsmanager_secret" "bootstrap_admin_email" {
+  count = var.bootstrap_admin_enabled ? 1 : 0
+  name  = "${local.name}/MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL"
+  tags  = local.tags
+}
+
+resource "aws_secretsmanager_secret" "bootstrap_admin_password" {
+  count = var.bootstrap_admin_enabled ? 1 : 0
+  name  = "${local.name}/MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD"
+  tags  = local.tags
 }
 
 module "network" {
@@ -110,13 +126,24 @@ module "ecs_app" {
 
   certificate_arn = var.alb_certificate_arn
 
-  db_jdbc_url                   = "jdbc:postgresql://${module.rds.db_endpoint}/modocument?sslmode=verify-full"
+  # verify-full: TLS + server certificate chain + host name, against the AWS
+  # RDS CA bundle the app image carries (repo Dockerfile, rds-ca stage).
+  db_jdbc_url                   = "jdbc:postgresql://${module.rds.db_endpoint}/modocument?sslmode=verify-full&sslrootcert=/app/certs/rds-global-bundle.pem"
   jwt_secret_arn                = aws_secretsmanager_secret.jwt.arn
   mfa_key_secret_arn            = aws_secretsmanager_secret.mfa_key.arn
   db_app_credentials_secret_arn = aws_secretsmanager_secret.db_app.arn
   db_master_secret_arn          = module.rds.master_user_secret_arn
+  bootstrap_admin_secret_arns = var.bootstrap_admin_enabled ? {
+    email    = one(aws_secretsmanager_secret.bootstrap_admin_email[*].arn)
+    password = one(aws_secretsmanager_secret.bootstrap_admin_password[*].arn)
+  } : null
 
   cors_allowed_origins = "https://${var.app_domain}"
+
+  # client -> ALB -> nginx (no CloudFront here): the ALB is the first hop and
+  # appends the client to X-Forwarded-For, so the rightmost untrusted hop IS
+  # the client (client_ip_header keeps its X-Forwarded-For default).
+  trusted_proxy_cidrs = [var.vpc_cidr]
 
   instance_type = var.instance_type
   min_instances = 1

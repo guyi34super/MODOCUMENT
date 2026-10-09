@@ -1,0 +1,241 @@
+#!/bin/sh
+# vim:sw=4:ts=4:et
+#
+# MoDocument trusted-proxy mode for the frontend nginx.
+#
+# Installed as /docker-entrypoint.d/19-modocument-trusted-proxy.envsh
+# (frontend/Dockerfile). The nginx image's /docker-entrypoint.sh SOURCES
+# *.envsh files in version order, so this runs after 15-local-resolvers and
+# BEFORE 20-envsubst-on-templates.sh renders frontend/nginx.conf: what it
+# exports is visible to envsubst. POSIX sh (busybox ash in the image).
+#
+# Inputs (frontend container environment):
+#   MODOCUMENT_TRUSTED_PROXY_CIDRS  unset/empty = EDGE mode (docker-compose):
+#       nginx is the first proxy and overwrites X-Forwarded-For/-Proto with
+#       its own view of the connection — the template renders exactly as it
+#       always did. Set (comma/space-separated CIDRs; on ECS the VPC CIDR,
+#       i.e. the ALB nodes) = TRUSTED-PROXY mode, see below.
+#   MODOCUMENT_CLIENT_IP_HEADER     trusted-proxy mode only; where the
+#       client address comes from:
+#       X-Forwarded-For (default)   rightmost untrusted X-Forwarded-For hop
+#                                   (ngx_http_realip_module, recursive) —
+#                                   right when the trusted proxy is the
+#                                   first hop (staging: client -> ALB).
+#       CloudFront-Viewer-Address   the viewer address CloudFront stamps on
+#                                   the origin request (edge module origin
+#                                   request policy) — production, where the
+#                                   chain is client -> CloudFront -> ALB and
+#                                   the rightmost untrusted XFF hop is a
+#                                   CloudFront edge node, not the user.
+#
+# Outputs:
+#   MODOCUMENT_NGX_FORWARDED_FOR / MODOCUMENT_NGX_FORWARDED_PROTO (exported):
+#       the nginx variable each forwarding header of frontend/nginx.conf is
+#       set from. DERIVED here on every start — a value set from outside is
+#       overwritten, never trusted.
+#   $NGINX_ENVSUBST_OUTPUT_DIR/modocument-trusted-proxy.conf (trusted mode
+#       only; default dir /etc/nginx/conf.d, included at http level by the
+#       image's nginx.conf): set_real_ip_from per CIDR + the maps below.
+#
+# Any invalid input stops the container: a sourced `exit` ends the
+# entrypoint's configuration loop with a failure, so nginx never starts with
+# a half-applied proxy model.
+
+# The exported values are nginx variable NAMES ('$remote_addr'), substituted
+# literally by envsubst — single quotes are intended throughout.
+# shellcheck disable=SC2016
+
+modoc_tp_me=19-modocument-trusted-proxy.envsh
+modoc_tp_conf="${NGINX_ENVSUBST_OUTPUT_DIR:-/etc/nginx/conf.d}/modocument-trusted-proxy.conf"
+
+modoc_tp_log() {
+    if [ -z "${NGINX_ENTRYPOINT_QUIET_LOGS:-}" ]; then
+        echo "$modoc_tp_me: $*"
+    fi
+}
+
+modoc_tp_die() {
+    echo "$modoc_tp_me: ERROR: $*" >&2
+    echo "$modoc_tp_me: refusing to start nginx (see frontend/docker-entrypoint.d/$modoc_tp_me)" >&2
+    exit 1
+}
+
+# Dotted quad, four decimal octets 0-255, no leading zeros.
+modoc_tp_is_ipv4() {
+    case $1 in
+        '' | *[!0-9.]* | .* | *. | *..*) return 1 ;;
+    esac
+    modoc_tp_ifs=$IFS
+    IFS=.
+    # shellcheck disable=SC2086 # deliberate split on '.'; only [0-9.] here
+    set -- $1
+    IFS=$modoc_tp_ifs
+    [ $# -eq 4 ] || return 1
+    for modoc_tp_octet in "$@"; do
+        case $modoc_tp_octet in
+            ????* | 0?*) return 1 ;;
+        esac
+        [ "$modoc_tp_octet" -le 255 ] || return 1
+    done
+    return 0
+}
+
+# Hex groups separated by ':', at most one '::' (no embedded IPv4 form).
+modoc_tp_is_ipv6() {
+    case $1 in
+        '' | *[!0-9A-Fa-f:]* | *:::* | :[!:]* | *[!:]:) return 1 ;;
+    esac
+    modoc_tp_compressed=0
+    case $1 in
+        *::*::*) return 1 ;;
+        *::*) modoc_tp_compressed=1 ;;
+    esac
+    modoc_tp_ifs=$IFS
+    IFS=:
+    # shellcheck disable=SC2086 # deliberate split on ':'; only hex and ':' here
+    set -- $1
+    IFS=$modoc_tp_ifs
+    modoc_tp_groups=0
+    for modoc_tp_group in "$@"; do
+        [ -n "$modoc_tp_group" ] || continue
+        case $modoc_tp_group in
+            ?????*) return 1 ;;
+        esac
+        modoc_tp_groups=$((modoc_tp_groups + 1))
+    done
+    if [ "$modoc_tp_compressed" -eq 1 ]; then
+        [ "$modoc_tp_groups" -le 7 ]
+    else
+        [ "$modoc_tp_groups" -eq 8 ]
+    fi
+}
+
+# <IPv4>/<1-32> or <IPv6>/<1-128>. /0 is refused: trusting every address
+# would let any client choose its own IP again.
+modoc_tp_is_cidr() {
+    case $1 in
+        */*/* | /* | */) return 1 ;;
+        */*) ;;
+        *) return 1 ;;
+    esac
+    modoc_tp_addr=${1%/*}
+    modoc_tp_len=${1#*/}
+    case $modoc_tp_len in
+        '' | *[!0-9]* | 0* | ????*) return 1 ;;
+    esac
+    if modoc_tp_is_ipv4 "$modoc_tp_addr"; then
+        [ "$modoc_tp_len" -le 32 ]
+    elif modoc_tp_is_ipv6 "$modoc_tp_addr"; then
+        [ "$modoc_tp_len" -le 128 ]
+    else
+        return 1
+    fi
+}
+
+# Separators: commas and/or whitespace. Split with an explicit IFS and
+# globbing off, so a stray '*' can never expand to file names.
+modoc_tp_cidrs=$(printf '%s' "${MODOCUMENT_TRUSTED_PROXY_CIDRS:-}" | tr ',\t\r\n' '    ')
+modoc_tp_ifs=$IFS
+IFS=' '
+set -f
+modoc_tp_enabled=0
+for modoc_tp_cidr in $modoc_tp_cidrs; do
+    modoc_tp_enabled=1 # whitespace/commas only counts as unset
+    break
+done
+set +f
+IFS=$modoc_tp_ifs
+
+if [ "$modoc_tp_enabled" -eq 0 ]; then
+    if [ -n "${MODOCUMENT_CLIENT_IP_HEADER:-}" ]; then
+        modoc_tp_die "MODOCUMENT_CLIENT_IP_HEADER is set but MODOCUMENT_TRUSTED_PROXY_CIDRS is empty; a client-address header is only honoured from trusted proxies — set both, or neither."
+    fi
+    # EDGE mode: the exact pre-existing contract (frontend/nginx.conf).
+    rm -f "$modoc_tp_conf" 2>/dev/null || true
+    MODOCUMENT_NGX_FORWARDED_FOR='$remote_addr'
+    MODOCUMENT_NGX_FORWARDED_PROTO='$scheme'
+    export MODOCUMENT_NGX_FORWARDED_FOR MODOCUMENT_NGX_FORWARDED_PROTO
+    modoc_tp_log "edge mode (MODOCUMENT_TRUSTED_PROXY_CIDRS unset): X-Forwarded-For/-Proto from this connection"
+else
+    modoc_tp_header=$(printf '%s' "${MODOCUMENT_CLIENT_IP_HEADER:-X-Forwarded-For}" | tr '[:upper:]' '[:lower:]')
+    case $modoc_tp_header in
+        x-forwarded-for) modoc_tp_header=X-Forwarded-For ;;
+        cloudfront-viewer-address) modoc_tp_header=CloudFront-Viewer-Address ;;
+        *) modoc_tp_die "MODOCUMENT_CLIENT_IP_HEADER must be X-Forwarded-For or CloudFront-Viewer-Address." ;;
+    esac
+
+    # Validate EVERY entry before writing anything: each one is pasted into
+    # nginx config, so nothing but a well-formed CIDR may get through.
+    modoc_tp_valid=
+    modoc_tp_ifs=$IFS
+    IFS=' '
+    set -f
+    for modoc_tp_cidr in $modoc_tp_cidrs; do
+        if ! modoc_tp_is_cidr "$modoc_tp_cidr"; then
+            modoc_tp_die "MODOCUMENT_TRUSTED_PROXY_CIDRS entry '$modoc_tp_cidr' is not an IPv4/IPv6 CIDR with a prefix length of 1-32 / 1-128 (e.g. 10.40.0.0/16)."
+        fi
+        modoc_tp_valid="$modoc_tp_valid $modoc_tp_cidr"
+    done
+    set +f
+    IFS=$modoc_tp_ifs
+
+    {
+        echo "# GENERATED at container start by /docker-entrypoint.d/$modoc_tp_me"
+        echo "# (trusted-proxy mode) — do not edit; source: frontend/docker-entrypoint.d/."
+        echo "# Trusted proxies (MODOCUMENT_TRUSTED_PROXY_CIDRS):$modoc_tp_valid"
+        echo "# Client address source (MODOCUMENT_CLIENT_IP_HEADER): $modoc_tp_header"
+        echo
+        echo "# \$remote_addr := rightmost X-Forwarded-For hop that is NOT a trusted"
+        echo "# proxy; anything a client prepends further left is never consulted."
+        for modoc_tp_cidr in $modoc_tp_valid; do
+            echo "set_real_ip_from $modoc_tp_cidr;"
+        done
+        echo "real_ip_header X-Forwarded-For;"
+        echo "real_ip_recursive on;"
+        echo
+        echo "# 1 only when the TCP peer itself (before realip) is a trusted proxy."
+        echo "geo \$realip_remote_addr \$modocument_from_trusted_proxy {"
+        echo "    default 0;"
+        for modoc_tp_cidr in $modoc_tp_valid; do
+            echo "    $modoc_tp_cidr 1;"
+        done
+        echo "}"
+        echo
+        echo "# The trusted proxy's X-Forwarded-Proto (ALB: the listener protocol);"
+        echo "# from anyone else, or any other value, this hop's own \$scheme."
+        echo "map \"\$modocument_from_trusted_proxy \$http_x_forwarded_proto\" \$modocument_forwarded_proto {"
+        echo "    default   \$scheme;"
+        echo "    \"1 https\" https;"
+        echo "    \"1 http\"  http;"
+        echo "}"
+        if [ "$modoc_tp_header" = CloudFront-Viewer-Address ]; then
+            echo
+            echo "# CloudFront-Viewer-Address = <viewer ip>:<port> (IPv6 unbracketed,"
+            echo "# which realip cannot parse — hence a map). Honoured only from a trusted"
+            echo "# peer and only when the whole value is one well-formed address:port"
+            echo "# (a duplicated header arrives comma-joined and falls through)."
+            echo "# Otherwise: the realip result above."
+            echo "map \"\$modocument_from_trusted_proxy \$http_cloudfront_viewer_address\" \$modocument_client_addr {"
+            echo "    default \$remote_addr;"
+            echo "    \"~^1 ((?:[0-9]{1,3}[.]){3}[0-9]{1,3}):[0-9]{1,5}\$\" \$1;"
+            echo "    \"~^1 [[]([0-9A-Fa-f:]+)[]]:[0-9]{1,5}\$\" \$1;"
+            echo "    \"~^1 ([0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}):[0-9]{1,5}\$\" \$1;"
+            echo "}"
+        fi
+    } > "$modoc_tp_conf" || modoc_tp_die "cannot write $modoc_tp_conf"
+
+    if [ "$modoc_tp_header" = CloudFront-Viewer-Address ]; then
+        MODOCUMENT_NGX_FORWARDED_FOR='$modocument_client_addr'
+    else
+        # realip already rewrote $remote_addr to the client address.
+        MODOCUMENT_NGX_FORWARDED_FOR='$remote_addr'
+    fi
+    MODOCUMENT_NGX_FORWARDED_PROTO='$modocument_forwarded_proto'
+    export MODOCUMENT_NGX_FORWARDED_FOR MODOCUMENT_NGX_FORWARDED_PROTO
+    modoc_tp_log "trusted-proxy mode: proxies$modoc_tp_valid, client address from $modoc_tp_header -> $modoc_tp_conf"
+fi
+
+unset modoc_tp_me modoc_tp_conf modoc_tp_cidrs modoc_tp_enabled modoc_tp_header \
+    modoc_tp_valid modoc_tp_cidr modoc_tp_ifs modoc_tp_octet modoc_tp_compressed \
+    modoc_tp_groups modoc_tp_group modoc_tp_addr modoc_tp_len
+unset -f modoc_tp_log modoc_tp_die modoc_tp_is_ipv4 modoc_tp_is_ipv6 modoc_tp_is_cidr

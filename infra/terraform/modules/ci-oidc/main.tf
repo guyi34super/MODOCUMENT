@@ -14,7 +14,7 @@
 # Terraform run (until a dedicated plan/apply pipeline with its own reviewed
 # role exists).
 #
-# NOT APPLIED — `terraform validate` pending a machine with terraform.
+# NOT APPLIED — `terraform validate` passes (see the README status); plan/apply pending.
 # ---------------------------------------------------------------------------
 
 # One provider per account. If the account already has it (it is a singleton

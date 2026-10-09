@@ -15,6 +15,10 @@ browser ──HTTPS──▶ TLS terminator ──▶ frontend nginx :8080 (non-
                                                                           └──▶ PostgreSQL (sslmode=require)
 ```
 
+On AWS (`infra/terraform`) the TLS terminator is CloudFront (WAF) → ALB, so
+nginx runs in **trusted-proxy mode** (§5e) and the database is RDS reached
+with `sslmode=verify-full` against the RDS CA bundle in the image (§5d).
+
 ## 1. Security-header inventory
 
 Two layers emit headers, and each response gets exactly **one** copy of
@@ -263,6 +267,27 @@ docker-compose does (empty database, Spring's Flyway as owner, runtime as
   or the default `~/.postgresql/root.crt`). An operator-supplied
   `MODOCUMENT_DB_URL` replaces the default URL entirely and must carry
   its own `?sslmode=require` (the README's hosted-PostgreSQL example does).
+* **AWS / ECS: `verify-full` against the RDS CA, baked into the image.**
+  Both Terraform envs build `MODOCUMENT_DB_URL` as
+  `jdbc:postgresql://<rds endpoint>/modocument?sslmode=verify-full&sslrootcert=/app/certs/rds-global-bundle.pem`.
+  The repo `Dockerfile`'s `rds-ca` stage downloads AWS's global bundle
+  (`https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`, every
+  region's `rds-ca-rsa2048-g1`/`rsa4096-g1`/`ecc384-g1` roots — 111
+  certificates on 2026-10-09) at **build** time and fails the build unless
+  the download is nothing but parseable PEM certificates, at least one of
+  them an Amazon RDS CA; the runtime image holds it root-owned and `0444`
+  (the app user cannot swap in its own CA). Checked with pgjdbc 42.7.7
+  against a local TLS PostgreSQL: with the bundle alone a non-RDS server is
+  refused ("unable to find valid certification path" — the bundle, not the
+  JVM trust store, is what is used); the bundle plus that server's CA (112
+  certificates) connects over TLS 1.3, so every certificate in the file is
+  read; a host-name mismatch and a missing file are refused. The same probe
+  from inside the built app image, as uid 10001 with all capabilities
+  dropped, against `/app/certs/rds-global-bundle.pem`: refused for the
+  non-RDS server, connected with the control CA. Refresh when
+  AWS adds or rotates CAs: rebuild (`--no-cache --pull`) and redeploy
+  BEFORE changing the instance's CA — key register K14. Compose ignores the
+  file (its PostgreSQL has no TLS; `prefer` stays the local default).
 * **Server side** (the "database refuses" half of C4, infrastructure-owned):
   `hostssl`-only `pg_hba.conf` entries / `ssl = on`, or the managed
   service's force-SSL setting. For the AWS target this is `rds.force_ssl = 1`
@@ -276,6 +301,69 @@ the TODOs at the top of `application-scale.yml`; the default deployment
 never uses them (extraction data lives in PostgreSQL). On the scale profile
 the Mongo URI is now **required** and authenticated (no auth-less default).
 
+### 5e. Proxy chain behind ALB / CloudFront (trusted-proxy mode)
+
+Locally nginx is the edge: it overwrites `X-Forwarded-For`/`-Proto` with its
+own `$remote_addr`/`$scheme` and the app trusts exactly that one hop
+(`server.forward-headers-strategy: framework`, `ClientIps`). Behind the ALB
+the same overwrite would record the ALB node as every client (per-IP login,
+MFA and probe throttles, audit IPs), send `http` (no HSTS) and make the app
+build `http://` OIDC redirect URIs. The frontend image therefore has two
+modes, chosen at container start by
+`frontend/docker-entrypoint.d/19-modocument-trusted-proxy.envsh` (sourced by
+the nginx image's entrypoint just before its envsubst step):
+
+| | Edge mode (default; docker-compose) | Trusted-proxy mode (ECS) |
+|---|---|---|
+| Switch | `MODOCUMENT_TRUSTED_PROXY_CIDRS` unset | set (Terraform: the VPC CIDR = the ALB) |
+| `X-Forwarded-For` to the app | `$remote_addr` (the TCP peer) | the client: realip `set_real_ip_from <cidr>` + `real_ip_header X-Forwarded-For` + `real_ip_recursive on` (rightmost hop that is not a trusted proxy); with `MODOCUMENT_CLIENT_IP_HEADER=CloudFront-Viewer-Address` the viewer address CloudFront stamps (production) |
+| `X-Forwarded-Proto` to the app | `$scheme` | the ALB's value (`http`/`https` only) when the TCP peer is trusted, else `$scheme` |
+| `X-Forwarded-Host` | `$host` | `$host` (production: the viewer's Host, forwarded by the edge origin request policy) |
+
+Both modes still OVERWRITE the headers towards the app. Untrusted peers
+cannot spoof these: a client-prepended `X-Forwarded-For` entry is never reached
+(recursion stops at the first untrusted address), and `X-Forwarded-Proto` /
+`CloudFront-Viewer-Address` are only read when the TCP peer
+(`$realip_remote_addr`) is inside the trusted CIDRs. Why the CloudFront
+header and not CloudFront's IP ranges: [`infra/terraform/README.md`](../../infra/terraform/README.md)
+"Proxy chain, bootstrap admin, DB CA". The header is parsed with a strict
+`map` (IPv4 `a.b.c.d:port`, IPv6 unbracketed or bracketed `…:port` — realip
+cannot parse CloudFront's unbracketed IPv6 form); anything else, including a
+duplicated header (nginx joins duplicates with `, `), falls back to the
+realip result. Every CIDR is validated in POSIX sh before it is written into
+nginx config (IPv4/IPv6 with a 1–32/1–128 prefix, no `/0`, no leading-zero
+octets) and any bad value — or `MODOCUMENT_CLIENT_IP_HEADER` without CIDRs —
+stops the container.
+
+**Still open (found 9 Oct 2026; pre-existing, both modes, compose
+included):** nginx passes through request headers it does not set itself,
+and Spring's `ForwardedHeaderFilter` PREFERS the RFC 7239 `Forwarded`
+header over `X-Forwarded-For` (checked with spring-web 6.2.8:
+`Forwarded: for=6.6.6.6` beats the overwritten `X-Forwarded-For`), so a
+client can still choose its own IP/proto/host that way, and steer
+`X-Forwarded-Port` / `X-Forwarded-Prefix`. Fix — not part of the go-live
+blocker change because it alters the default render: in the API location of
+`frontend/nginx.conf` add `proxy_set_header Forwarded "";` and the same for
+`X-Forwarded-Port`, `X-Forwarded-Prefix` and `X-Forwarded-Ssl` (an empty
+value drops the header), plus a `TrustedProxyIntegrationTest` case.
+Tracked in [`infra/terraform/README.md`](../../infra/terraform/README.md)
+"Still open".
+
+Verified (9 Oct 2026) twice: nginx 1.24 with the image's own entrypoint,
+`15-local-resolvers` and `20-envsubst-on-templates` scripts under busybox
+ash and dash, and the built frontend image itself (`nginx-unprivileged:alpine`,
+nginx 1.31.6 — `--with-http_realip_module` — uid 101, capabilities
+dropped): edge mode renders the template **directive-for-directive identical**
+to the previous config and writes no extra file; `nginx -t` passes in all
+three modes; through a stub upstream — an untrusted client's
+`X-Forwarded-For: 6.6.6.6` / `X-Forwarded-Proto: https` /
+`CloudFront-Viewer-Address` are ignored (`127.0.0.1`, `http`); from a
+trusted address `X-Forwarded-For: 6.6.6.6, 203.0.113.7` (+ an extra trusted
+VPC hop) → `203.0.113.7`, `https`, junk proto → `http`; CloudFront mode →
+`198.51.100.10` and `2001:db8::1` from the header, the edge address when the
+header is missing or duplicated; `scripts/check-nginx-headers.sh` green on
+the template and on the rendered config of each mode.
+
 ## 6. E1 evidence plan
 
 | Evidence | How | Status |
@@ -284,13 +372,18 @@ the Mongo URI is now **required** and authenticated (no auth-less default).
 | SPA header coverage per nginx location | `scripts/check-nginx-headers.sh` (CI frontend job) | automated |
 | `<NAME>_FILE` behaviour, no value in logs | `SecretFileEnvironmentPostProcessorTest` | automated |
 | DB URL / sslmode shared by app and Flyway | `DatabaseTlsConfigTest`; production-style first boot on real PostgreSQL: `ProductionBootPgIT` (`-Ppostgres-it`) | automated |
+| RDS CA bundle in the image (`verify-full`) | build-time check in the `rds-ca` stage (fails on anything but PEM Amazon RDS CA certificates); pgjdbc probe against a local TLS server (§5d) | build gate; probe manual, done 9 Oct 2026 |
+| Proxy chain behind ALB/CloudFront | rendered-config diff + `nginx -t` + live spoofing matrix in all three modes (§5e) | manual, done 9 Oct 2026; live AWS confirmation pending |
 | CSP does not break the SPA | nginx + headless Chromium against the built `dist/` (recipe below) | manual, done for ws16 |
 | Header scan grade **A** | Run securityheaders.com and Mozilla HTTP Observatory against the deployed HTTPS URL. With the set above (all six graded headers, CSP without `unsafe-inline`/`unsafe-eval`, HSTS ≥ 1 year, secure cookie flags) the expected result is A or better on both. Archive the report with the release evidence. | on first HTTPS deployment |
 | DAST baseline | The ws19 ZAP baseline workflow (separate branch) scans the running stack. Acceptance: no Medium/High alerts. Expected informational/low noise: "Storable and Cacheable Content" on the hashed assets, Spectre-isolation hints (no `Cross-Origin-Embedder-Policy` — deliberately unset; nothing needs cross-origin isolation and COEP risks breaking image loads). | with ws19 |
 
 **CSP re-check recipe** (no Docker needed): `npm run build`; render
-`frontend/nginx.conf` first (`MODOCUMENT_API_UPSTREAM=127.0.0.1:<port>
-envsubst '${MODOCUMENT_API_UPSTREAM}' < frontend/nginx.conf`, pointing at a
+`frontend/nginx.conf` first, as the image does in edge mode
+(`MODOCUMENT_API_UPSTREAM=127.0.0.1:<port> MODOCUMENT_NGX_FORWARDED_FOR='$remote_addr'
+MODOCUMENT_NGX_FORWARDED_PROTO='$scheme' envsubst '${MODOCUMENT_API_UPSTREAM}
+${MODOCUMENT_NGX_FORWARDED_FOR} ${MODOCUMENT_NGX_FORWARDED_PROTO}' < frontend/nginx.conf`,
+pointing at a
 stub or the real app), then run `nginx -c` with it (`root` at `frontend/dist`) and the snippet under
 `<conf dir>/snippets/`; drive `/login` with Playwright/Chromium, listen for
 `securitypolicyviolation` events, and walk any new screen that adds images,
@@ -302,7 +395,16 @@ snippet explicitly — never widen `default-src`.
 The image builds, container start-up as uid 10001 / 101, named-volume
 seeding with 10001 ownership, `cap_drop`/`no-new-privileges` at runtime and
 the compose healthchecks under the new users were not exercised in the ws16
-sandbox (no Docker daemon). The compose file was validated with
+sandbox (no Docker daemon). The go-live blocker fixes (9 Oct 2026) WERE
+checked in real images, built with a local daemon: the frontend image
+(final stage unchanged; only the `npm ci` stage swapped for the locally
+built `dist/`, as npm cannot trust the sandbox's TLS interception) ran as
+uid 101 with all capabilities dropped and `no-new-privileges` in edge,
+X-Forwarded-For and CloudFront modes (§5e); the app image (runtime stage
+unchanged; test-only: the sandbox CA for the `rds-ca` curl and the jar
+from the local `mvn verify`) carries the bundle root-owned `0444`, and a
+pgjdbc probe run inside it as uid 10001 enforces it (§5d). Still not run:
+a full `docker compose up --build` with the real build stages. The compose file was validated with
 `docker compose config` (schema + interpolation) and the nginx config with
 `nginx -t` plus live requests against nginx 1.24. First `docker compose up
 --build` on a Docker host should confirm: `docker compose exec app id`

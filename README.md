@@ -795,20 +795,29 @@ installed). Whatever hosting you use, the application-level checklist is:
   [`docker/postgres-init/01-app-role.sh`](docker/postgres-init/01-app-role.sh)),
   Flyway as the schema owner (`MODOCUMENT_FLYWAY_USERNAME`/`_PASSWORD`).
 - **Database TLS** — `MODOCUMENT_DB_SSLMODE=require` (or `verify-full` with the
-  server CA; in your own `MODOCUMENT_DB_URL`: `?sslmode=verify-full`) and a
+  server CA; in your own `MODOCUMENT_DB_URL`: `?sslmode=verify-full&sslrootcert=…`
+  — the app image ships the AWS RDS CA bundle at
+  `/app/certs/rds-global-bundle.pem`, which the Terraform envs use) and a
   server that refuses plaintext — on RDS `rds.force_ssl=1`, set by
   [`infra/terraform/modules/rds`](infra/terraform/modules/rds). The default
   `prefer` only exists for TLS-less local PostgreSQL
   ([details](docs/security/web-hardening.md#5d-database-tls-c4--sec-028-application-side)).
 - **Bootstrap admin** — `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL`/`_PASSWORD`
   (self-registration is disabled); enrol MFA at first login (mandatory for
-  ADMIN).
+  ADMIN). On AWS they are Secrets Manager secrets injected into the task
+  until the first admin exists, then removed with `bootstrap_admin_enabled =
+  false` ([infra/terraform/README.md](infra/terraform/README.md) "Apply
+  order").
 - **CORS** — set `MODOCUMENT_CORS_ALLOWED_ORIGINS` to your frontend origin(s).
 - **TLS + trusted proxy** — terminate HTTPS in front of the frontend nginx
   (non-root, container port 8080; nothing in the stack serves TLS itself) and
   keep the app port unpublished: nginx overwrites `X-Forwarded-*`, which the
-  app trusts for rate limiting, audit IPs and HSTS. In the IaC: ALB policy
-  `ELBSecurityPolicy-TLS13-1-2-2021-06`, origin locked to CloudFront.
+  app trusts for rate limiting, audit IPs and HSTS. Behind your own load
+  balancer set `MODOCUMENT_TRUSTED_PROXY_CIDRS` on the frontend so nginx
+  takes the client address and scheme from that balancer only
+  ([web-hardening.md §5e](docs/security/web-hardening.md#5e-proxy-chain-behind-alb--cloudfront-trusted-proxy-mode)).
+  In the IaC: ALB policy `ELBSecurityPolicy-TLS13-1-2-2021-06`, origin
+  locked to CloudFront, trusted-proxy mode with `CloudFront-Viewer-Address`.
 - **Health** — probe `GET /actuator/health` (unauthenticated); the Docker
   image, compose file and ECS task definition already use it. External uptime
   monitors use the public, per-IP rate-limited synthetic probe

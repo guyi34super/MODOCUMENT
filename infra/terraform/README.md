@@ -5,12 +5,13 @@ AWS **af-south-1** primary, ECS on EC2 (SUP-S04), Multi-AZ RDS PostgreSQL,
 CloudFront + WAF edge, immutable backups with an ap-southeast-2 copy, and
 GitHub-OIDC deploys with no static cloud keys.
 
-> **Status: written, reviewed, NOT applied.** This container has no
-> `terraform` binary, so `terraform init/validate/plan` are **pending a
-> machine with terraform installed** — run them (per env) before any apply.
-> Structural discipline was checked mechanically (balanced HCL blocks,
-> module/variable reference consistency); see workstream 20's verification
-> notes. Nothing here has touched any cloud account.
+> **Status: written, reviewed, validated, NOT applied.** `terraform fmt
+> -check` and `terraform init -backend=false && terraform validate` pass for
+> both envs (Terraform 1.9.8, hashicorp/aws 5.100.0, hashicorp/random 3.9.1,
+> from a checksum-verified local provider mirror — 9 Oct 2026, go-live
+> blocker fixes). `terraform plan/apply` still need AWS credentials and are
+> **pending** — run them per env before anything goes live. Nothing here has
+> touched any cloud account.
 
 ## Layout
 
@@ -77,24 +78,45 @@ one run. Operationally, the sequence that avoids dead ends:
 1. **Prereqs (console, once per account):** state bucket + lock table; ACM
    certificates (af-south-1 for the ALB, us-east-1 for CloudFront — register
    both in [`docs/security/key-certificate-register.md`](../../docs/security/key-certificate-register.md));
-   root/console MFA (gate A2 — organisational, see the README "Implement
-   later" table).
+   the production **ALB certificate must cover `app_domain`** — CloudFront
+   forwards the viewer's `Host` and verifies the origin certificate against
+   it (edge module origin request policy); root/console MFA (gate A2 —
+   organisational, see the README "Implement later" table).
 2. **Staging first** (SUP-S07): `cd envs/staging && terraform init &&
    terraform validate && terraform plan && terraform apply`.
-3. **Post-apply, per env:** set the secret VALUES
-   (`aws secretsmanager put-secret-value` for `MODOCUMENT_JWT_SECRET`,
-   `MODOCUMENT_MFA_KEY`, the `modocument_app` DB credentials); create the
-   `modocument_app` role on RDS following
+3. **Secret values, per env** — every secret the task injects must HAVE a
+   value or ECS cannot launch the task (it retries until it can):
+   `MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`, the `modocument_app` DB
+   credentials, and — first deploy only — the **bootstrap admin pair**
+   `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` (an empty database
+   refuses to boot without it; the password must pass the app's password
+   policy). Cleanest: create the shells first, set the values, then apply
+   the rest —
+   `terraform apply -target=aws_secretsmanager_secret.jwt -target=aws_secretsmanager_secret.mfa_key -target=aws_secretsmanager_secret.db_app -target='aws_secretsmanager_secret.bootstrap_admin_email[0]' -target='aws_secretsmanager_secret.bootstrap_admin_password[0]'`,
+   then `aws secretsmanager put-secret-value --secret-id <env>/MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD --secret-string file://pw.txt`
+   (a file, not the shell history; shred it after) and likewise for the
+   others, then the full `terraform apply`. Create the `modocument_app` role
+   on RDS following
    [`docker/postgres-init/01-app-role.sh`](../../docker/postgres-init/01-app-role.sh)
    (NOBYPASSRLS — the RLS-subject runtime role, see the rds module header);
    push images (ci-oidc outputs the ECR URLs); point DNS at the CloudFront
    output.
 4. **Production**, same steps, `enforce_backup_locks=false`.
-5. **After the restore drill passes (gate D6):** set
+5. **After the first admin exists, per env:** that admin signs in, changes
+   the bootstrap password and enrols MFA (mandatory for ADMIN); then set
+   `bootstrap_admin_enabled = false` and re-apply. The task definition stops
+   injecting the pair, the execution role loses read access to it and both
+   secrets are scheduled for deletion (30-day recovery window). The runner
+   is a no-op on a non-empty AppUsers table, so this changes nothing at
+   runtime — it just removes a standing admin credential. Do **not** delete
+   the secrets by hand while the flag is still true: the task definition
+   would reference a missing secret and new tasks would fail to launch.
+   Re-enable only to seed a rebuilt, empty database.
+6. **After the restore drill passes (gate D6):** set
    `enforce_backup_locks=true` in production tfvars and re-apply — vault
    lock + Object Lock COMPLIANCE are **irreversible** past their cooling-off
    windows, which is exactly the point (D5).
-6. **After the egress allow-list is signed off (gate D3):** narrow
+7. **After the egress allow-list is signed off (gate D3):** narrow
    `app_egress_https_cidrs`, set `enforce_egress_nacl=true` +
    `egress_allowlist_cidrs`, re-apply.
 
@@ -109,30 +131,73 @@ one run. Operationally, the sequence that avoids dead ends:
   this code only makes them possible.
 - **Serve TLS from the app** — termination is ALB/CloudFront
   (`ELBSecurityPolicy-TLS13-1-2-2021-06`, `TLSv1.2_2021`); the app emits
-  HSTS when the proxy in front of it forwards `X-Forwarded-Proto: https`
-  (see the first open item below).
+  HSTS because the frontend nginx forwards the ALB's
+  `X-Forwarded-Proto: https` (trusted-proxy mode, below).
 
-## Known open items before the first apply
+## Proxy chain, bootstrap admin, DB CA — resolved go-live blockers
 
-Found when this IaC was integrated with workstreams 16–18; each is a
-go-live blocker for the ECS topology, none is solved by this code yet:
+Three defects found when this IaC was integrated with workstreams 16–18
+(formerly "Known open items") are fixed in code; what still needs a real
+AWS apply or Docker host is listed under each.
 
-1. **Trusted-proxy chain behind ALB/CloudFront.** The frontend nginx
-   OVERWRITES `X-Forwarded-For` with its own peer and `X-Forwarded-Proto`
-   with its own scheme (the compose contract, `frontend/nginx.conf`). Behind
-   the ALB that peer is an ALB node and the scheme is `http`, so per-IP
-   throttles (login, MFA, the synthetic probe) and audit IPs would see ALB
-   addresses, the app would not emit HSTS, and OIDC redirect URIs would be
-   built as `http://`. Fix before go-live: nginx `real_ip` trusting the VPC
-   (ALB) and CloudFront origin-facing ranges with `real_ip_recursive on`,
-   and `X-Forwarded-Proto: https` for ALB-delivered traffic — as another
-   `MODOCUMENT_*` template variable of the frontend image.
-2. **Bootstrap admin.** On an empty database the app refuses to start
-   without `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL`/`_PASSWORD`; the task
-   definition does not pass them yet (add a secret shell + `secrets` entry,
-   then remove it after the first admin exists).
-3. **`sslmode=verify-full` needs the RDS CA.** The env stacks build
-   `MODOCUMENT_DB_URL` with `sslmode=verify-full`; pgjdbc then needs the
-   Amazon RDS CA bundle (`sslrootcert=...`) inside the app image or a
-   mounted path — not shipped yet. `require` works without it but does not
-   verify the server certificate.
+1. **Trusted-proxy chain behind ALB/CloudFront.** The frontend image has a
+   trusted-proxy mode (`frontend/docker-entrypoint.d/19-modocument-trusted-proxy.envsh`,
+   template `frontend/nginx.conf`), switched on by the ecs-app module:
+   `MODOCUMENT_TRUSTED_PROXY_CIDRS` = `trusted_proxy_cidrs` (the envs pass
+   the VPC CIDR — the ALB is the only VPC-range peer the app SG admits).
+   Only a peer in that range may report the client: nginx's realip module
+   (`set_real_ip_from` per CIDR, `real_ip_header X-Forwarded-For`,
+   `real_ip_recursive on`) takes the rightmost untrusted hop, and the ALB's
+   `X-Forwarded-Proto` (`http`/`https` only) is forwarded; from anyone else
+   nginx keeps its own `$remote_addr`/`$scheme`. Towards the app it still
+   OVERWRITES both headers — one trusted hop, as before.
+   **CloudFront decision:** in production the chain is client → CloudFront
+   → ALB, and the ALB appends the CloudFront *edge* address, so the
+   rightmost untrusted hop is an edge node, not the user. Trusting
+   CloudFront's origin-facing ranges in nginx would mean shipping an IP list
+   AWS changes at will (the managed prefix list works only in security
+   groups). Instead the edge module now uses its own origin request policy
+   (all viewer values **plus `Host`**, plus `CloudFront-Viewer-Address`), and
+   production sets `client_ip_header = "CloudFront-Viewer-Address"`: nginx
+   parses that header (IPv4 and CloudFront's unbracketed IPv6 `addr:port`,
+   which realip itself cannot parse) **only** when the peer is the trusted
+   ALB and the whole value is one well-formed `address:port` — otherwise it
+   falls back to the realip result. Forwarding `Host` also gives the app the
+   real domain in `X-Forwarded-Host` (OIDC redirect URIs) and lets CloudFront
+   verify the ALB certificate against `app_domain` (prereq above). Staging
+   (no CloudFront) uses the `X-Forwarded-For` default: there the ALB is the
+   first hop and the rightmost untrusted address is the client. Unset (docker-compose)
+   = edge mode: the rendered config is directive-for-directive identical to
+   before. Invalid CIDRs/header values stop the container.
+   *Pending a real deploy:* confirm in the ALB/app logs that audit IPs are
+   viewer addresses (IPv4 and IPv6), that API responses carry HSTS, and
+   that the OIDC redirect URI is `https://<app_domain>/…`.
+2. **Bootstrap admin.** Secret shells `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` /
+   `_PASSWORD` in both envs (behind `bootstrap_admin_enabled`, default
+   `true`), injected via the app container's `secrets`, with the execution
+   role's read access extended to exactly those two ARNs. Lifecycle: Apply
+   order steps 3 and 5. *Pending:* setting the values, the first sign-in.
+3. **`sslmode=verify-full` needs the RDS CA.** The app image now carries
+   the AWS global RDS CA bundle at `/app/certs/rds-global-bundle.pem`
+   (repo `Dockerfile`, `rds-ca` stage: downloaded at build time, the build
+   fails unless it is a PEM bundle of parseable Amazon RDS CA certificates;
+   root-owned, read-only), and both envs build `MODOCUMENT_DB_URL` with
+   `sslmode=verify-full&sslrootcert=/app/certs/rds-global-bundle.pem`.
+   Refresh on AWS CA changes: key register K14. *Pending:* the first
+   connection to the real RDS endpoint (the image itself was built and
+   probed on 9 Oct 2026 — web-hardening.md §5d).
+
+### Still open before go-live
+
+- **`Forwarded` / `X-Forwarded-Port` / `-Prefix` pass through nginx**
+  (found while verifying item 1; pre-existing in compose too). Spring's
+  `ForwardedHeaderFilter` prefers RFC 7239 `Forwarded` over
+  `X-Forwarded-For`, and nginx forwards a client's `Forwarded` header
+  untouched — CloudFront and the ALB pass it on as well — so any client can
+  still set the address the app uses for per-IP limits and audit rows.
+  One-place fix in the API location of `frontend/nginx.conf`:
+  `proxy_set_header Forwarded "";` (+ `X-Forwarded-Port`,
+  `X-Forwarded-Prefix`, `X-Forwarded-Ssl`), with a
+  `TrustedProxyIntegrationTest` case — deliberately not bundled here because
+  it changes the default (compose) render, which this change keeps
+  identical. Details: [web-hardening.md §5e](../../docs/security/web-hardening.md#5e-proxy-chain-behind-alb--cloudfront-trusted-proxy-mode).

@@ -8,8 +8,10 @@
 #                 cap, so a traffic spike (or an LLM-cost attack) scales out
 #                 bounded, never unbounded.
 #   SEC-018       Secrets ONLY from SSM Parameter Store / Secrets Manager:
-#                 MODOCUMENT_JWT_SECRET, MODOCUMENT_MFA_KEY, DB credentials.
-#                 Nothing secret in the task definition JSON, tfvars or state.
+#                 MODOCUMENT_JWT_SECRET, MODOCUMENT_MFA_KEY, DB credentials,
+#                 and — until the first admin exists — the bootstrap-admin
+#                 pair. Nothing secret in the task definition JSON, tfvars or
+#                 state.
 #   SEC-028       ALB listener pinned to a TLS 1.2+ security policy. HSTS is
 #                 emitted by the APP (SecurityConfig) when X-Forwarded-Proto
 #                 is https — the ALB must keep forwarding that header (it
@@ -28,16 +30,22 @@
 # SERVER_PORT) and nginx is pointed at 127.0.0.1:<app_port> through the
 # image's MODOCUMENT_API_UPSTREAM template variable (frontend/Dockerfile).
 #
-# KNOWN OPEN ITEM (trusted-proxy chain behind ALB/CloudFront): nginx sets
-# X-Forwarded-For to ITS peer and X-Forwarded-Proto to ITS scheme. Behind the
-# ALB that peer is an ALB node and the scheme is http, so per-IP throttles and
-# audit IPs see ALB addresses and the app does not emit HSTS / builds http
-# OIDC redirect URIs. Before go-live, nginx must take the client address from
-# the ALB-forwarded chain (real_ip from the VPC/ALB + CloudFront ranges) and
-# forward proto https — see infra/terraform/README.md and the security
-# roadmap. Not solved here.
+# PROXY CHAIN (client [-> CloudFront] -> ALB -> nginx -> app): the frontend
+# runs in TRUSTED-PROXY mode here (frontend/docker-entrypoint.d/
+# 19-modocument-trusted-proxy.envsh). MODOCUMENT_TRUSTED_PROXY_CIDRS =
+# var.trusted_proxy_cidrs (the VPC CIDR, i.e. the ALB nodes): only from those
+# peers does nginx take the client address (realip, recursive
+# X-Forwarded-For — or CloudFront-Viewer-Address when var.client_ip_header
+# says so, production) and the ALB's X-Forwarded-Proto: https; it still
+# OVERWRITES both headers towards the app, so the app keeps trusting exactly
+# one hop. Per-IP throttles and audit IPs see the real client, HSTS is
+# emitted and OIDC redirect URIs are built as https.
 #
-# NOT APPLIED — `terraform validate` pending a machine with terraform.
+# DB TLS: var.db_jdbc_url carries sslmode=verify-full&sslrootcert=
+# /app/certs/rds-global-bundle.pem — the AWS RDS CA bundle baked into the
+# app image at build time (repo Dockerfile, rds-ca stage).
+#
+# NOT APPLIED — `terraform validate` passes (see the README status); plan/apply pending.
 # ---------------------------------------------------------------------------
 
 data "aws_ssm_parameter" "ecs_ami" {
@@ -203,6 +211,19 @@ resource "aws_iam_role_policy_attachment" "execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+locals {
+  # First-boot administrator (BootstrapAdminRunner): injected only while the
+  # env still passes the secret pair; read access follows the same switch.
+  bootstrap_admin_secrets = var.bootstrap_admin_secret_arns == null ? [] : [
+    { name = "MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL", valueFrom = var.bootstrap_admin_secret_arns.email },
+    { name = "MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD", valueFrom = var.bootstrap_admin_secret_arns.password },
+  ]
+  bootstrap_admin_secret_arns = var.bootstrap_admin_secret_arns == null ? [] : [
+    var.bootstrap_admin_secret_arns.email,
+    var.bootstrap_admin_secret_arns.password,
+  ]
+}
+
 # Only the exact secrets the task injects — least privilege, no wildcard.
 resource "aws_iam_role_policy" "execution_secrets" {
   name_prefix = "${var.name}-secrets-"
@@ -212,12 +233,12 @@ resource "aws_iam_role_policy" "execution_secrets" {
     Statement = [{
       Effect = "Allow"
       Action = ["secretsmanager:GetSecretValue", "ssm:GetParameters"]
-      Resource = [
+      Resource = concat([
         var.jwt_secret_arn,
         var.mfa_key_secret_arn,
         var.db_app_credentials_secret_arn,
         var.db_master_secret_arn,
-      ]
+      ], local.bootstrap_admin_secret_arns)
     }]
   })
 }
@@ -266,7 +287,11 @@ resource "aws_ecs_task_definition" "this" {
       ]
       environment = [
         # Shared awsvpc namespace: the app is on loopback, not `app:8080`.
-        { name = "MODOCUMENT_API_UPSTREAM", value = "127.0.0.1:${var.app_port}" }
+        { name = "MODOCUMENT_API_UPSTREAM", value = "127.0.0.1:${var.app_port}" },
+        # Trusted-proxy mode (see the header): the ALB may report the client
+        # and the scheme; anyone else is this hop's own connection.
+        { name = "MODOCUMENT_TRUSTED_PROXY_CIDRS", value = join(",", var.trusted_proxy_cidrs) },
+        { name = "MODOCUMENT_CLIENT_IP_HEADER", value = var.client_ip_header }
       ]
       # Start once the app answers its health check (compose: depends_on
       # service_healthy).
@@ -286,7 +311,9 @@ resource "aws_ecs_task_definition" "this" {
       dockerSecurityOptions = ["no-new-privileges"]
       # The image overwrites X-Forwarded-* (trusted-proxy contract in
       # frontend/nginx.conf). Not read-only: the entrypoint renders the
-      # nginx config template into /etc/nginx/conf.d at start.
+      # nginx config template (and, in trusted-proxy mode, the realip
+      # include) into /etc/nginx/conf.d at start; invalid
+      # MODOCUMENT_TRUSTED_PROXY_CIDRS stops the container.
       readonlyRootFilesystem = false
       logConfiguration = {
         logDriver = "awslogs"
@@ -316,15 +343,16 @@ resource "aws_ecs_task_definition" "this" {
         { name = "MODOCUMENT_CORS_ALLOWED_ORIGINS", value = var.cors_allowed_origins },
         { name = "SPRING_PROFILES_ACTIVE", value = var.spring_profiles }
       ]
-      # SEC-018: secrets injected at start from Secrets Manager / SSM.
-      secrets = [
+      # SEC-018: secrets injected at start from Secrets Manager / SSM. Every
+      # referenced secret must HAVE a value or the task does not start.
+      secrets = concat([
         { name = "MODOCUMENT_JWT_SECRET", valueFrom = var.jwt_secret_arn },
         { name = "MODOCUMENT_MFA_KEY", valueFrom = var.mfa_key_secret_arn },
         { name = "MODOCUMENT_DB_USERNAME", valueFrom = "${var.db_app_credentials_secret_arn}:username::" },
         { name = "MODOCUMENT_DB_PASSWORD", valueFrom = "${var.db_app_credentials_secret_arn}:password::" },
         { name = "MODOCUMENT_FLYWAY_USERNAME", valueFrom = "${var.db_master_secret_arn}:username::" },
         { name = "MODOCUMENT_FLYWAY_PASSWORD", valueFrom = "${var.db_master_secret_arn}:password::" }
-      ]
+      ], local.bootstrap_admin_secrets)
       healthCheck = {
         command     = ["CMD-SHELL", "curl -fsS http://localhost:${var.app_port}/actuator/health || exit 1"]
         interval    = 30

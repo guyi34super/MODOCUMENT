@@ -10,8 +10,8 @@
 #            edge module for the deny-by-default posture.
 #
 # Topology: 2 AZs x { public (edge/ALB), private-app (ECS), private-db (RDS) }.
-# NOT APPLIED anywhere yet — `terraform validate` pending a machine with
-# terraform installed (none in the dev container).
+# NOT APPLIED anywhere yet — `terraform validate` passes (see the README
+# status); plan/apply pending.
 # ---------------------------------------------------------------------------
 
 locals {

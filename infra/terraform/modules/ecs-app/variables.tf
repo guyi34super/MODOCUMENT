@@ -50,7 +50,7 @@ variable "certificate_arn" {
 }
 
 variable "db_jdbc_url" {
-  description = "jdbc:postgresql URL to the RDS endpoint."
+  description = "jdbc:postgresql URL to the RDS endpoint. Production form: ?sslmode=verify-full&sslrootcert=/app/certs/rds-global-bundle.pem (the AWS RDS CA bundle baked into the app image — repo Dockerfile, rds-ca stage)."
   type        = string
 }
 
@@ -72,6 +72,38 @@ variable "db_app_credentials_secret_arn" {
 variable "db_master_secret_arn" {
   description = "Secrets Manager ARN of the Flyway/schema-owner credentials (the RDS-managed master secret)."
   type        = string
+}
+
+variable "bootstrap_admin_secret_arns" {
+  description = "Secrets Manager ARNs of MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL / _PASSWORD ({email, password}). The app refuses its first boot on an empty AppUsers table without them; once the first admin exists the runner is a no-op. null = not injected (after the first admin has enrolled MFA — infra/terraform/README.md)."
+  type = object({
+    email    = string
+    password = string
+  })
+  default = null
+}
+
+variable "trusted_proxy_cidrs" {
+  description = "Peers the frontend nginx trusts to report the client (MODOCUMENT_TRUSTED_PROXY_CIDRS): the ALB, i.e. the VPC CIDR the envs pass. Only these may set X-Forwarded-For / X-Forwarded-Proto (and CloudFront-Viewer-Address); the app SG admits nothing but the ALB SG on the frontend port anyway."
+  type        = list(string)
+
+  validation {
+    condition = length(var.trusted_proxy_cidrs) > 0 && alltrue([
+      for c in var.trusted_proxy_cidrs : can(cidrhost(c, 0)) && try(tonumber(split("/", c)[1]) > 0, false)
+    ])
+    error_message = "trusted_proxy_cidrs needs at least one IPv4/IPv6 CIDR (e.g. the VPC CIDR) and no /0: trusting every address would let any client choose its own IP."
+  }
+}
+
+variable "client_ip_header" {
+  description = "Where the frontend nginx takes the client address from when the peer is a trusted proxy (MODOCUMENT_CLIENT_IP_HEADER): X-Forwarded-For (ALB is the first hop — staging) or CloudFront-Viewer-Address (client -> CloudFront -> ALB — production; needs the edge module's origin request policy)."
+  type        = string
+  default     = "X-Forwarded-For"
+
+  validation {
+    condition     = contains(["X-Forwarded-For", "CloudFront-Viewer-Address"], var.client_ip_header)
+    error_message = "client_ip_header must be X-Forwarded-For or CloudFront-Viewer-Address."
+  }
 }
 
 variable "cors_allowed_origins" {

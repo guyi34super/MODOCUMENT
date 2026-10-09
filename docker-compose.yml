@@ -4,7 +4,10 @@ services:
     build: ./frontend
     # Unprivileged nginx (SUP-S04): non-root (uid 101), listening on 8080 —
     # hence 3000:8080. SPA security headers: frontend/security-headers.conf
-    # (E1, docs/security/web-hardening.md).
+    # (E1, docs/security/web-hardening.md). Here nginx IS the edge, so
+    # MODOCUMENT_TRUSTED_PROXY_CIDRS stays unset (edge mode: it overwrites
+    # X-Forwarded-For/-Proto with its own peer and scheme); only set it when
+    # a load balancer you control sits in front (web-hardening.md §5e).
     ports:
       - "3000:8080"
     # Defence in depth for a non-root process that binds no privileged port:

@@ -23,7 +23,7 @@
 # this application can contain customer PII; revisit only with an explicit
 # DPIA entry (docs/security/dpia-template.md).
 #
-# NOT APPLIED — `terraform validate` pending a machine with terraform.
+# NOT APPLIED — `terraform validate` passes (see the README status); plan/apply pending.
 # ---------------------------------------------------------------------------
 
 resource "aws_db_subnet_group" "this" {

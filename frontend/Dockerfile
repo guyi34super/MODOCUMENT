@@ -23,6 +23,17 @@ FROM nginxinc/nginx-unprivileged:alpine
 ENV NGINX_ENVSUBST_FILTER=^MODOCUMENT_ \
     MODOCUMENT_API_UPSTREAM=app:8080
 COPY nginx.conf /etc/nginx/templates/default.conf.template
+# Proxy mode (sourced by the image entrypoint just before the template step):
+# unset MODOCUMENT_TRUSTED_PROXY_CIDRS = edge mode, the template renders
+# exactly the compose contract; set (ECS: the VPC CIDR, i.e. the ALB) =
+# realip from the trusted ALB + its X-Forwarded-Proto, optionally the
+# CloudFront-Viewer-Address (MODOCUMENT_CLIENT_IP_HEADER). Invalid input stops
+# the container. Root-owned 0755: the nginx user can run it, never edit it
+# (chmod needs root; the base image's USER 101 is restored below).
+COPY docker-entrypoint.d/19-modocument-trusted-proxy.envsh /docker-entrypoint.d/
+USER root
+RUN chmod 0755 /docker-entrypoint.d/19-modocument-trusted-proxy.envsh
+USER 101
 # No stock server block to fall back on: if the template step ever does not
 # run, nginx serves nothing rather than the SPA without its API proxy and
 # security headers. (/etc/nginx is owned by the unprivileged user here.)

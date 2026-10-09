@@ -5,7 +5,10 @@ server:
   # termination) see the real client. ONLY the fronting proxy may set these
   # headers: frontend/nginx.conf OVERWRITES them with its own values
   # ($remote_addr/$scheme) on every proxied request, discarding whatever the
-  # client sent. That trust holds only while the app port is NOT reachable
+  # client sent — or, behind the AWS ALB (trusted-proxy mode,
+  # MODOCUMENT_TRUSTED_PROXY_CIDRS), with the client address and scheme it
+  # accepted from that ALB only (docs/security/web-hardening.md §5e). That
+  # trust holds only while the app port is NOT reachable
   # directly — production must keep the app behind the proxy (docker-compose
   # no longer publishes 8080; a direct caller could spoof every X-Forwarded-*
   # header wholesale).

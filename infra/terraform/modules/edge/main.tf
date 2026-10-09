@@ -11,11 +11,15 @@
 #                      admits the CloudFront managed prefix list plus a
 #                      custom origin header verified at the listener. NACL
 #                      stubs document the deny-by-default egress posture.
+#   SEC-022 / SEC-028  Client identity + scheme through the chain (client ->
+#                      CloudFront -> ALB -> nginx -> app): the origin request
+#                      policy adds CloudFront-Viewer-Address and forwards the
+#                      viewer's Host — see the policy resource below.
 #
 # CloudFront + its WAF (scope CLOUDFRONT) must be created in us-east-1 —
 # the env wires the aws.us_east_1 aliased provider for those resources.
 #
-# NOT APPLIED — `terraform validate` pending a machine with terraform.
+# NOT APPLIED — `terraform validate` passes (see the README status); plan/apply pending.
 # ---------------------------------------------------------------------------
 
 terraform {
@@ -190,6 +194,45 @@ resource "random_password" "origin_verify" {
   special = false
 }
 
+# Origin request policy (replaces the managed AllViewerExceptHostHeader):
+#   * CloudFront-Viewer-Address — the viewer's IP:port, set by CloudFront.
+#     The ALB appends the CloudFront EDGE address to X-Forwarded-For, so the
+#     rightmost untrusted hop nginx could resolve is an edge node, not the
+#     user; trusting CloudFront's published origin-facing ranges instead would
+#     mean shipping an IP list into nginx that AWS changes at will (the
+#     managed prefix list only works for security groups). The frontend
+#     nginx honours this header only from the trusted ALB (VPC CIDR) and only
+#     when ecs-app's client_ip_header = "CloudFront-Viewer-Address"
+#     (frontend/docker-entrypoint.d/19-modocument-trusted-proxy.envsh).
+#   * The viewer's Host header (all viewer headers, cookies, query strings —
+#     as before, now Host too): the app builds OIDC redirect URIs and other
+#     absolute URLs from X-Forwarded-Host = nginx's $host, which would
+#     otherwise be the ALB's DNS name. It also makes CloudFront verify the
+#     origin certificate against the app domain — the ALB's ACM certificate
+#     (var alb_certificate_arn in the env) must cover var.domain_aliases;
+#     with the origin's own DNS name (*.elb.amazonaws.com) as the expected
+#     name no ACM certificate could ever match (CloudFront answers 502).
+resource "aws_cloudfront_origin_request_policy" "this" {
+  name    = "${var.name}-origin"
+  comment = "All viewer values incl. Host + CloudFront-Viewer-Address (nginx trusted-proxy mode)"
+
+  cookies_config {
+    cookie_behavior = "all"
+  }
+
+  headers_config {
+    header_behavior = "allViewerAndWhitelistCloudFront"
+
+    headers {
+      items = ["CloudFront-Viewer-Address"]
+    }
+  }
+
+  query_strings_config {
+    query_string_behavior = "all"
+  }
+}
+
 resource "aws_cloudfront_distribution" "this" {
   enabled         = true
   comment         = "${var.name} edge"
@@ -222,9 +265,9 @@ resource "aws_cloudfront_distribution" "this" {
     cached_methods         = ["GET", "HEAD"]
 
     # API + authenticated SPA: pass everything through, cache nothing by
-    # default (managed CachingDisabled + AllViewerExceptHostHeader).
+    # default (managed CachingDisabled + the origin request policy above).
     cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
-    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
+    origin_request_policy_id = aws_cloudfront_origin_request_policy.this.id
   }
 
   restrictions {

@@ -71,3 +71,9 @@ variable "oidc_provider_arn" {
   type        = string
   default     = ""
 }
+
+variable "bootstrap_admin_enabled" {
+  description = "Create the bootstrap-admin secret pair and inject it into the app task. true for the first deploy (an empty database refuses to start without it); false once the first admin has signed in, changed the password and enrolled MFA (the secrets are then scheduled for deletion and no longer readable by the task)."
+  type        = bool
+  default     = true
+}

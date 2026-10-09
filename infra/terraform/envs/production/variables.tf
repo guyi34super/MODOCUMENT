@@ -16,7 +16,7 @@ variable "app_domain" {
 }
 
 variable "alb_certificate_arn" {
-  description = "ACM certificate in af-south-1 for the ALB (origin) listener."
+  description = "ACM certificate in af-south-1 for the ALB (origin) listener. Must cover app_domain: CloudFront forwards the viewer's Host and verifies the origin certificate against it (edge module origin request policy)."
   type        = string
 }
 
@@ -93,4 +93,10 @@ variable "oidc_provider_arn" {
   description = "Existing provider ARN when create_oidc_provider=false."
   type        = string
   default     = ""
+}
+
+variable "bootstrap_admin_enabled" {
+  description = "Create the bootstrap-admin secret pair and inject it into the app task. true for the first deploy (an empty database refuses to start without it); false once the first admin has signed in, changed the password and enrolled MFA (the secrets are then scheduled for deletion and no longer readable by the task)."
+  type        = bool
+  default     = true
 }

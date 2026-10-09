@@ -19,7 +19,7 @@
 #                   (email/chat webhook) subscribe to it — the topic ARN is
 #                   this module's alert_topic_arn output.
 #
-# NOT APPLIED — `terraform validate` pending a machine with terraform.
+# NOT APPLIED — `terraform validate` passes (see the README status); plan/apply pending.
 # ---------------------------------------------------------------------------
 
 data "aws_caller_identity" "current" {}

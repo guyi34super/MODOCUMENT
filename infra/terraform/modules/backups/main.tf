@@ -17,7 +17,7 @@
 # IRREVERSIBLE once the cooling-off period ends. Apply to staging first with
 # var.enforce_locks=false, flip to true only in production.
 #
-# NOT APPLIED — `terraform validate` pending a machine with terraform.
+# NOT APPLIED — `terraform validate` passes (see the README status); plan/apply pending.
 # ---------------------------------------------------------------------------
 
 terraform {

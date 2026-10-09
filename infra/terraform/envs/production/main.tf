@@ -2,8 +2,8 @@
 # MoDocument — PRODUCTION environment (af-south-1)
 #
 # Wires the seven modules into the go-live topology. See ../../README.md for
-# the apply order and the two-account model. terraform validate is PENDING a
-# machine with terraform installed; nothing here has been applied.
+# the apply order and the two-account model. terraform validate passes;
+# plan/apply are pending — nothing here has been applied.
 # ===========================================================================
 
 data "aws_caller_identity" "current" {}
@@ -46,6 +46,29 @@ resource "aws_secretsmanager_secret" "mfa_key" {
 resource "aws_secretsmanager_secret" "db_app" {
   name        = "${local.name}/db-app-credentials"
   description = "JSON {username,password} for the modocument_app (NOBYPASSRLS) runtime role."
+
+  tags = local.tags
+}
+
+# First-boot administrator (BootstrapAdminRunner): on an EMPTY AppUsers table
+# the app refuses to start without this pair; once any user exists the runner
+# is a no-op. Values must be in place BEFORE the first task starts (README
+# "Apply order"); after the first admin has signed in, changed the password
+# and enrolled MFA, set bootstrap_admin_enabled = false and re-apply — the
+# task definition stops injecting the pair, the execution role loses read
+# access and both secrets are scheduled for deletion.
+resource "aws_secretsmanager_secret" "bootstrap_admin_email" {
+  count       = var.bootstrap_admin_enabled ? 1 : 0
+  name        = "${local.name}/MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL"
+  description = "E-mail of the first ADMIN, created only when AppUsers is empty. Remove (bootstrap_admin_enabled=false) once that admin has enrolled MFA."
+
+  tags = local.tags
+}
+
+resource "aws_secretsmanager_secret" "bootstrap_admin_password" {
+  count       = var.bootstrap_admin_enabled ? 1 : 0
+  name        = "${local.name}/MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD"
+  description = "Initial password of the first ADMIN (password policy applies). Changed in-app at first login; remove (bootstrap_admin_enabled=false) once MFA is enrolled."
 
   tags = local.tags
 }
@@ -108,13 +131,26 @@ module "ecs_app" {
 
   certificate_arn = var.alb_certificate_arn
 
-  db_jdbc_url                   = "jdbc:postgresql://${module.rds.db_endpoint}/modocument?sslmode=verify-full"
+  # verify-full: TLS + server certificate chain + host name, against the AWS
+  # RDS CA bundle the app image carries (repo Dockerfile, rds-ca stage).
+  db_jdbc_url                   = "jdbc:postgresql://${module.rds.db_endpoint}/modocument?sslmode=verify-full&sslrootcert=/app/certs/rds-global-bundle.pem"
   jwt_secret_arn                = aws_secretsmanager_secret.jwt.arn
   mfa_key_secret_arn            = aws_secretsmanager_secret.mfa_key.arn
   db_app_credentials_secret_arn = aws_secretsmanager_secret.db_app.arn
   db_master_secret_arn          = module.rds.master_user_secret_arn
+  bootstrap_admin_secret_arns = var.bootstrap_admin_enabled ? {
+    email    = one(aws_secretsmanager_secret.bootstrap_admin_email[*].arn)
+    password = one(aws_secretsmanager_secret.bootstrap_admin_password[*].arn)
+  } : null
 
   cors_allowed_origins = "https://${var.app_domain}"
+
+  # client -> CloudFront -> ALB -> nginx: the ALB (inside the VPC) is the
+  # trusted proxy; the client address is the CloudFront-Viewer-Address the
+  # edge module's origin request policy adds (the rightmost untrusted
+  # X-Forwarded-For hop would be a CloudFront edge node, not the user).
+  trusted_proxy_cidrs = [var.vpc_cidr]
+  client_ip_header    = "CloudFront-Viewer-Address"
 
   min_tasks = 2
   max_tasks = var.max_tasks
