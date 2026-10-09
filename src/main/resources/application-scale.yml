@@ -2,10 +2,38 @@
 # default PostgreSQL setup) or combine with local as
 # SPRING_PROFILES_ACTIVE=local,scale. Switches the extraction store to MongoDB
 # and distributes work over Kafka.
+#
+# TRANSPORT SECURITY — SCALE MODE ONLY, NOT YET PRODUCTION-GRADE (SEC-028):
+# the default deployment keeps extraction data in PostgreSQL (TLS via
+# MODOCUMENT_DB_SSLMODE) and never touches Mongo or Kafka. This profile
+# talks to both over the compose network, where:
+#   * MongoDB requires authentication (compose sets MONGO_INITDB_ROOT_*), but
+#     the connection is NOT encrypted;
+#   * Kafka uses a PLAINTEXT listener: no TLS, no client authentication.
+# Both ports are bound to 127.0.0.1 on the host and are otherwise reachable
+# only inside the compose network. Hardening TODOs before scale mode carries
+# real customer data across hosts:
+#   TODO(SEC-028): Mongo TLS — add `tls=true` (+ a CA via tlsCAFile or the
+#        JVM truststore) to EXTRACTION_MONGO_URI and start mongod with
+#        --tlsMode requireTLS; use a least-privilege user (readWrite on the
+#        modocument database only) instead of the root user.
+#   TODO(SEC-028): Kafka SASL_SSL — spring.kafka.security.protocol: SASL_SSL,
+#        spring.kafka.properties.sasl.mechanism: SCRAM-SHA-512 with the
+#        credentials from a *_FILE secret, a truststore for the broker
+#        certificate, and broker listeners switched from PLAINTEXT.
 spring:
   autoconfigure:
     # Re-enable the Mongo/Kafka auto-configuration a base profile may exclude.
     exclude: []
+  data:
+    mongodb:
+      # REQUIRED on this profile, deliberately without a default: an
+      # authenticated URI, e.g.
+      #   mongodb://<user>:<url-encoded-password>@mongodb:27017/modocument?authSource=admin
+      # (docker-compose builds it from MONGO_ROOT_USERNAME/_PASSWORD). It
+      # carries the password, so EXTRACTION_MONGO_URI_FILE works as well
+      # (SecretFileEnvironmentPostProcessor). Missing → startup fails.
+      uri: ${EXTRACTION_MONGO_URI}
 
 extraction:
   store: mongo

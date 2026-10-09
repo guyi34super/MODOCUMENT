@@ -33,7 +33,15 @@ spring:
     # bypass the (non-FORCE) policies; modocument_app cannot. Single-user
     # setups keep working — the owner just isn't tenant-filtered, and the
     # TenantAwareJpaTransactionManager still stamps app.tenant either way.
-    url: ${MODOCUMENT_DB_URL:jdbc:postgresql://localhost:5432/modocument}
+    #
+    # DB TLS (ws16, C4/SEC-028 app side): sslmode rides on the URL, so the
+    # runtime pool and Flyway (spring.flyway.url below reuses this one)
+    # always negotiate the same way. Default `prefer` = TLS whenever the server
+    # offers it (local/compose PostgreSQL offers none, so dev keeps working).
+    # PRODUCTION: MODOCUMENT_DB_SSLMODE=require (refuse plaintext) or
+    # verify-full (+ sslrootcert); a custom MODOCUMENT_DB_URL replaces this
+    # whole default, so it must carry its own ?sslmode=… (see README).
+    url: ${MODOCUMENT_DB_URL:jdbc:postgresql://localhost:5432/modocument?sslmode=${MODOCUMENT_DB_SSLMODE:prefer}}
     username: ${MODOCUMENT_DB_USERNAME:modocument}
     password: ${MODOCUMENT_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
@@ -45,6 +53,12 @@ spring:
     # `modocument_app` role (docker-compose does); unset, Flyway falls back
     # to the datasource credentials so plain dev setups keep working.
     enabled: true
+    # Explicitly the datasource URL — sslmode included, so migrations and the
+    # runtime pool negotiate TLS identically (ws16). Explicit, not derived:
+    # Boot would otherwise read the URL back from the datasource bean, which
+    # the TenantAwareDataSource wrapper hides ("Unable to find suitable
+    # method for url" at startup whenever Flyway has its own user).
+    url: ${spring.datasource.url}
     user: ${MODOCUMENT_FLYWAY_USERNAME:${spring.datasource.username}}
     password: ${MODOCUMENT_FLYWAY_PASSWORD:${spring.datasource.password}}
   jpa:

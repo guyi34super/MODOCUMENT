@@ -1,0 +1,7 @@
+# The build stage runs `npm ci` itself; host artifacts must not overwrite it
+# (platform-specific native binaries, unreviewed local packages).
+node_modules
+dist
+# Local env files never belong in an image layer.
+.env
+.env.*

@@ -48,3 +48,5 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: nginx security headers (E1)
+        run: ../scripts/check-nginx-headers.sh

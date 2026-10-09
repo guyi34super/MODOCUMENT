@@ -5,3 +5,9 @@ target
 wwwroot
 *.md
 docker-compose.yml
+# Local secrets / env files never enter the build context (SEC-018), and the
+# frontend has its own image and build context.
+.env
+.env.*
+application-local-secrets.yml
+frontend

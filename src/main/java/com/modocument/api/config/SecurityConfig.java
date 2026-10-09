@@ -97,7 +97,17 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .headers(h -> h
-                        .frameOptions(f -> f.sameOrigin())
+                        // DENY in production, matching frame-ancestors 'none'
+                        // and the SPA's nginx set (E1); SAMEORIGIN only for
+                        // the dev tooling (the H2 console renders in frames).
+                        // Pinned by HeaderContractTest.
+                        .frameOptions(f -> {
+                            if (permitDevPaths) {
+                                f.sameOrigin();
+                            } else {
+                                f.deny();
+                            }
+                        })
                         // X-Content-Type-Options: nosniff is on by default.
                         .contentSecurityPolicy(c -> c.policyDirectives(csp))
                         .referrerPolicy(r -> r.policy(ReferrerPolicy.NO_REFERRER))

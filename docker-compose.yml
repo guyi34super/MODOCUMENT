@@ -2,14 +2,26 @@ services:
   # React frontend served by nginx, which also proxies API calls to the app.
   frontend:
     build: ./frontend
+    # Unprivileged nginx (SUP-S04): non-root (uid 101), listening on 8080 —
+    # hence 3000:8080. SPA security headers: frontend/security-headers.conf
+    # (E1, docs/security/web-hardening.md).
     ports:
-      - "3000:80"
+      - "3000:8080"
+    # Defence in depth for a non-root process that binds no privileged port:
+    # no Linux capabilities at all, and no way to regain privileges through
+    # setuid binaries.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     depends_on:
       app:
         condition: service_healthy
 
   app:
     build: .
+    # Runs as uid 10001 from the first instruction (Dockerfile USER; SUP-S04)
+    # and needs no capabilities: drop them all, forbid privilege regain.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     # The app port is deliberately NOT published (trusted-proxy model): the
     # frontend nginx is the single entry point and OVERWRITES
     # X-Forwarded-For/-Proto on every proxied request. A directly reachable
@@ -26,18 +38,47 @@ services:
       # extraction at scale, run with APP_PROFILES=scale together with
       # `--profile extraction` so Mongo + Kafka come up too.
       SPRING_PROFILES_ACTIVE: ${APP_PROFILES:-}
-      MODOCUMENT_DB_URL: jdbc:postgresql://postgres:5432/modocument
+      # DB TLS (C4/SEC-028 app side): sslmode=prefer upgrades to TLS whenever
+      # the server offers it and still works against this no-TLS compose
+      # postgres. PRODUCTION: MODOCUMENT_DB_SSLMODE=require (or verify-full
+      # with sslrootcert) so the client refuses plaintext, and make the
+      # server refuse it too (hostssl-only pg_hba / the managed service's
+      # force-SSL flag). Flyway derives its URL from this one, so both
+      # connections negotiate identically. docs/security/web-hardening.md.
+      MODOCUMENT_DB_URL: jdbc:postgresql://postgres:5432/modocument?sslmode=${MODOCUMENT_DB_SSLMODE:-prefer}
       # Two-role model: the app runs as modocument_app, which is subject to
       # the row-level-security tenant policies (V13); Flyway migrates as the
       # schema owner below, which bypasses them. The app role is created by
       # the postgres init script (first boot) and by migration V12.
       MODOCUMENT_DB_USERNAME: modocument_app
-      MODOCUMENT_DB_PASSWORD: ${MODOCUMENT_APP_DB_PASSWORD:-modocument_app}
+      # REQUIRED (no insecure default): the runtime role's password, shared
+      # with the postgres service's first-boot init script below.
+      MODOCUMENT_DB_PASSWORD: ${MODOCUMENT_APP_DB_PASSWORD:?Set MODOCUMENT_APP_DB_PASSWORD (openssl rand -hex 24)}
       MODOCUMENT_FLYWAY_USERNAME: ${POSTGRES_USER:-modocument}
-      MODOCUMENT_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-modocument}
+      # REQUIRED (no insecure default — same contract as the JWT secret):
+      # export POSTGRES_PASSWORD before `docker compose up`, e.g.
+      # `openssl rand -hex 24`. The postgres service below uses the same
+      # variable, so owner credentials always match.
+      MODOCUMENT_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD (openssl rand -hex 24)}
       # REQUIRED: JWT signing key, at least 32 bytes. Generate one with
       # `openssl rand -base64 48` and export it before `docker compose up`.
       MODOCUMENT_JWT_SECRET: ${MODOCUMENT_JWT_SECRET:?Set MODOCUMENT_JWT_SECRET (openssl rand -base64 48)}
+      # REQUIRED: encrypts TOTP secrets at rest, at least 32 bytes, distinct
+      # from the JWT key (`openssl rand -base64 48`). Production mode refuses
+      # to boot without it.
+      MODOCUMENT_MFA_KEY: ${MODOCUMENT_MFA_KEY:?Set MODOCUMENT_MFA_KEY (openssl rand -base64 48)}
+      # PRODUCTION SECRETS PATTERN (SEC-018): instead of putting secret VALUES
+      # in the environment, mount Docker secrets and point the app at the
+      # files — the app resolves <VAR>_FILE for its sensitive variables
+      # (SecretFileEnvironmentPostProcessor: JWT/MFA keys, DB/Flyway
+      # passwords, bootstrap-admin password, AI key, OIDC client secrets,
+      # Mongo URI). Plain env values stay the default path; to switch,
+      # comment out the plain variables above (setting BOTH forms with
+      # different values is refused at startup) and uncomment:
+      # MODOCUMENT_JWT_SECRET_FILE: /run/secrets/modocument_jwt_secret
+      # MODOCUMENT_MFA_KEY_FILE: /run/secrets/modocument_mfa_key
+      # MODOCUMENT_DB_PASSWORD_FILE: /run/secrets/modocument_db_password
+      # MODOCUMENT_FLYWAY_PASSWORD_FILE: /run/secrets/modocument_flyway_password
       # First-run administrator (self-registration is disabled): when the
       # AppUsers table is empty the app creates this ADMIN at startup and
       # refuses to boot if the pair is missing.
@@ -78,9 +119,20 @@ services:
       MODOCUMENT_CHAT_EDIT_MODEL: ${MODOCUMENT_CHAT_EDIT_MODEL:-deepseek-r1:8b}
       # Agentic extraction (schema inference, summaries, record cleaning).
       MODOCUMENT_EXTRACTION_MODEL: ${MODOCUMENT_EXTRACTION_MODEL:-mistral:latest}
-      # Only used when the scale profile is active.
-      EXTRACTION_MONGO_URI: mongodb://mongodb:27017/modocument
+      # Only used when the scale profile is active (which REQUIRES it — no
+      # unauthenticated default in application-scale.yml). Mongo runs with
+      # auth (MONGO_ROOT_* below; URL-encode special characters in the
+      # password); authSource=admin because the root user lives there.
+      EXTRACTION_MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-modocument}:${MONGO_ROOT_PASSWORD:-modocument}@mongodb:27017/modocument?authSource=admin
       EXTRACTION_KAFKA_SERVERS: kafka:9092
+    # Docker-secrets wiring for the _FILE variables above (mounted read-only
+    # at /run/secrets/<name>) — uncomment together with the top-level
+    # `secrets:` block at the bottom of this file:
+    # secrets:
+    #   - modocument_jwt_secret
+    #   - modocument_mfa_key
+    #   - modocument_db_password
+    #   - modocument_flyway_password
     volumes:
       - modocument-files:/app/wwwroot
       - ./.cursor:/app/.cursor
@@ -102,13 +154,29 @@ services:
     environment:
       POSTGRES_DB: modocument
       POSTGRES_USER: ${POSTGRES_USER:-modocument}
-      # Change this for any deployment reachable from outside your machine.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-modocument}
+      # REQUIRED — no insecure default (same contract as MODOCUMENT_JWT_SECRET):
+      # export POSTGRES_PASSWORD (e.g. `openssl rand -hex 24`) before
+      # `docker compose up`. The app service's Flyway credentials reference
+      # the same variable.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD (openssl rand -hex 24)}
       # Password for the RLS-subject runtime role created by the init script
       # below (and kept in sync with the app service's datasource password).
-      MODOCUMENT_APP_DB_PASSWORD: ${MODOCUMENT_APP_DB_PASSWORD:-modocument_app}
+      # REQUIRED — no insecure default.
+      MODOCUMENT_APP_DB_PASSWORD: ${MODOCUMENT_APP_DB_PASSWORD:?Set MODOCUMENT_APP_DB_PASSWORD (openssl rand -hex 24)}
+      # Docker-secrets alternative (the postgres image reads *_FILE natively;
+      # the init script below honours MODOCUMENT_APP_DB_PASSWORD_FILE):
+      # comment out the two plain passwords above and uncomment, plus the
+      # matching top-level `secrets:` entries:
+      # POSTGRES_PASSWORD_FILE: /run/secrets/modocument_flyway_password
+      # MODOCUMENT_APP_DB_PASSWORD_FILE: /run/secrets/modocument_db_password
+    # secrets:
+    #   - modocument_flyway_password
+    #   - modocument_db_password
     ports:
-      - "5432:5432"
+      # Loopback only: the app reaches postgres over the compose network; this
+      # mapping exists purely for local dev tooling (psql, IDE clients) on the
+      # same machine. Never publish the database port wide.
+      - "127.0.0.1:5432:5432"
     volumes:
       - modocument-postgres:/var/lib/postgresql/data
       # First-boot init only (fresh volume): creates the modocument_app role
@@ -149,7 +217,9 @@ services:
     profiles: ["docling"]
     image: ghcr.io/docling-project/docling-serve:latest
     ports:
-      - "5001:5001"
+      # Loopback only: docling-serve has no authentication; the app reaches
+      # it over the compose network (http://docling:5001).
+      - "127.0.0.1:5001:5001"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:5001/health"]
       interval: 15s
@@ -175,7 +245,9 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     ports:
-      - "8081:8080"
+      # Loopback only (local browser + app-on-host OIDC flows); a real
+      # deployment fronts Keycloak with its own TLS proxy.
+      - "127.0.0.1:8081:8080"
     volumes:
       - ./docker/keycloak/modocument-realm.json:/opt/keycloak/data/import/modocument-realm.json:ro
       - modocument-keycloak:/opt/keycloak/data/h2
@@ -186,8 +258,21 @@ services:
   mongodb:
     image: mongo:7
     profiles: ["extraction"]
+    environment:
+      # Authentication is on (mongod enables auth once a root user exists).
+      # The compose defaults are LOCAL DEVELOPMENT ONLY — export real values
+      # for any deployment reachable from outside your machine. (A hard
+      # `:?` requirement here would break `docker compose up` for everyone
+      # NOT using the extraction profile — compose interpolates the whole
+      # file before applying profiles — hence defaults + this warning.)
+      # The root user is created on a FRESH volume only; a volume from the
+      # old auth-less setup has none — remove it (pre-launch, no data).
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-modocument}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-modocument}
     ports:
-      - "27017:27017"
+      # Loopback only — dev tooling (mongosh) on the same machine; the app
+      # reaches Mongo over the compose network.
+      - "127.0.0.1:27017:27017"
     volumes:
       - modocument-mongo:/data/db
 
@@ -207,7 +292,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     ports:
-      - "9092:9092"
+      # Loopback only — local tooling; the app uses kafka:9092 on the compose
+      # network. The listener itself is PLAINTEXT (scale-profile-only; see
+      # application-scale.yml for the hardening TODO).
+      - "127.0.0.1:9092:9092"
     volumes:
       - modocument-kafka:/var/lib/kafka/data
 
@@ -218,3 +306,24 @@ volumes:
   modocument-mongo:
   modocument-kafka:
   modocument-keycloak:
+
+# PRODUCTION SECRETS (SEC-018) — file-based Docker secrets, mounted at
+# /run/secrets/<name> inside the services that list them. Pair with the
+# commented `secrets:` lists and *_FILE variables on the app and postgres
+# services above: the app's SecretFileEnvironmentPostProcessor (and the
+# postgres image itself) read each file, so secret VALUES never appear in
+# `docker inspect`, the process environment, or shell history. Create the
+# files outside the repo (e.g. `openssl rand -base64 48 > jwt_secret`).
+# Compose bind-mounts them with their HOST ownership and mode, and the
+# readers are non-root (app: uid 10001; the postgres init script: uid 999):
+# keep them in a directory only the deploying user can enter (chmod 0700)
+# and make the files themselves readable (chmod 0444). Then uncomment:
+# secrets:
+#   modocument_jwt_secret:
+#     file: /etc/modocument/secrets/jwt_secret
+#   modocument_mfa_key:
+#     file: /etc/modocument/secrets/mfa_key
+#   modocument_db_password:
+#     file: /etc/modocument/secrets/db_password
+#   modocument_flyway_password:
+#     file: /etc/modocument/secrets/flyway_password

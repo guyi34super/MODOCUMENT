@@ -239,13 +239,24 @@ the test suite.
 ### Run locally (no API key, no AI endpoint needed)
 
 ```bash
+# once: generate local secrets into the gitignored .env — docker compose reads
+# it automatically and refuses to start without them (no insecure defaults,
+# even for local dev). Keep the file: the DB passwords are fixed at first boot.
+cat > .env <<EOF
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+MODOCUMENT_APP_DB_PASSWORD=$(openssl rand -hex 24)
+MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
+MODOCUMENT_MFA_KEY=$(openssl rand -base64 48)
+EOF
+set -a; . ./.env; set +a          # ...and load them into this shell
+
 # start a database once (or point MODOCUMENT_DB_* at your own PostgreSQL)
 docker compose up -d postgres
 
-# provide a JWT signing key — no secret is committed, even for local dev.
-# (Alternatively, copy application-local-secrets.yml.example to
-# application-local-secrets.yml and put the key there; it is gitignored.)
-export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
+# no secret is committed, even for local dev (the JWT key can also live in a
+# gitignored application-local-secrets.yml — see the .example file). Outside
+# Docker the app connects as the schema owner:
+export MODOCUMENT_DB_PASSWORD="$POSTGRES_PASSWORD"
 
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
@@ -283,8 +294,13 @@ SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 
 ```bash
 # production-style stack: app + PostgreSQL (Flyway-managed schema).
-# The JWT signing secret is required — the app refuses to boot without one.
+# These secrets are required — compose refuses to start without them (or
+# reuse the .env from "Run locally"; in production prefer Docker secrets via
+# the *_FILE variables, see docs/security/web-hardening.md).
 export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
+export MODOCUMENT_MFA_KEY=$(openssl rand -base64 48)
+export POSTGRES_PASSWORD=$(openssl rand -hex 24)
+export MODOCUMENT_APP_DB_PASSWORD=$(openssl rand -hex 24)
 # First-run administrator (self-registration is disabled):
 export MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 export MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD=<a-strong-password>
@@ -409,7 +425,7 @@ mvn -B verify
 | Storage root | `modocument.storage.root` / `MODOCUMENT_STORAGE_ROOT` | `wwwroot` (uploads + export copies; mount a volume) |
 | Profile | `SPRING_PROFILES_ACTIVE` | default (PostgreSQL); `local` adds dev conveniences, `scale` adds Mongo+Kafka extraction |
 | Extraction store | `extraction.store` / `EXTRACTION_STORE` | `memory`; set `mongo` (or the `scale` profile) for multi-instance runs |
-| MongoDB URI | `spring.data.mongodb.uri` / `EXTRACTION_MONGO_URI` | `mongodb://localhost:27017/modocument` |
+| MongoDB URI | `spring.data.mongodb.uri` / `EXTRACTION_MONGO_URI` | `mongodb://localhost:27017/modocument`; **required** (authenticated URI) on the `scale` profile |
 | Kafka distribution | `extraction.kafka.enabled` / `EXTRACTION_KAFKA_ENABLED` | `false` (workers poll the store queue) |
 | Kafka brokers | `spring.kafka.bootstrap-servers` / `EXTRACTION_KAFKA_SERVERS` | `localhost:9092` |
 | Worker pool | `extraction.worker.threads` (+ `lease-seconds`, `max-attempts`, `backoff-millis`) | 4 threads, 60s lease, 4 attempts |
@@ -697,8 +713,8 @@ service (the bundled `postgres` service is then unnecessary).
     same database.
   - `postgres`: PostgreSQL 17 with a named volume and a `pg_isready` healthcheck;
     the app waits for it to be healthy and Flyway migrates the schema on boot.
-    Override `POSTGRES_USER`/`POSTGRES_PASSWORD` (the compose default is for local
-    use only).
+    `POSTGRES_PASSWORD` and `MODOCUMENT_APP_DB_PASSWORD` are required (no
+    defaults); the host port is bound to `127.0.0.1` only.
   - `docling` (optional, `--profile docling` + `DOCLING_BASEURL=http://docling:5001`):
     [docling-serve](https://github.com/docling-project/docling-serve) on port 5001 for
     rich layout-aware conversion — not needed for the standard flow. Note
@@ -716,14 +732,19 @@ service (the bundled `postgres` service is then unnecessary).
 
 ## Production deployment checklist
 
-- **`MODOCUMENT_JWT_SECRET`** — required; generate with `openssl rand -base64 48`.
-  The app refuses to start with a missing, short, or known-default secret.
+- **`MODOCUMENT_JWT_SECRET`** and **`MODOCUMENT_MFA_KEY`** — required; generate each with
+  `openssl rand -base64 48`. The app refuses to start with a missing, short, or
+  known-default secret.
 - **Database** — set `MODOCUMENT_DB_URL` / `MODOCUMENT_DB_USERNAME` /
   `MODOCUMENT_DB_PASSWORD` to a PostgreSQL instance with a strong password;
   Flyway migrates the schema on startup.
 - **CORS** — set `MODOCUMENT_CORS_ALLOWED_ORIGINS` to your frontend origin(s).
 - **TLS** — terminate HTTPS at your reverse proxy / load balancer in front of the
-  frontend (nginx, port 80) and the API; nothing in the stack serves TLS itself.
+  frontend (nginx, container port 8080) and the API; nothing in the stack serves TLS itself.
+- **Database TLS** — `MODOCUMENT_DB_SSLMODE=require` (or `verify-full` with the server CA;
+  in your own `MODOCUMENT_DB_URL`: `?sslmode=require`) and a server that refuses plaintext;
+  the default `prefer` only exists for TLS-less local PostgreSQL
+  ([details](docs/security/web-hardening.md#5d-database-tls-c4--sec-028-application-side)).
 - **Health** — probe `GET /actuator/health` (unauthenticated); the Docker image and
   compose file already use it.
 - **Files** — mount a volume at the storage root (`MODOCUMENT_STORAGE_ROOT`,

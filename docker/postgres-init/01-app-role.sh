@@ -10,7 +10,23 @@
 # into the SQL, so special characters are safe.
 set -euo pipefail
 
-APP_ROLE_PASSWORD="${MODOCUMENT_APP_DB_PASSWORD:-modocument_app}"
+# Docker-secrets alternative (SEC-018): MODOCUMENT_APP_DB_PASSWORD_FILE names
+# a file holding the password (surrounding whitespace trimmed, as the app's
+# SecretFileEnvironmentPostProcessor does). Exactly one form may be set.
+if [ -n "${MODOCUMENT_APP_DB_PASSWORD_FILE:-}" ]; then
+    if [ -n "${MODOCUMENT_APP_DB_PASSWORD:-}" ]; then
+        echo "01-app-role.sh: set MODOCUMENT_APP_DB_PASSWORD or" \
+             "MODOCUMENT_APP_DB_PASSWORD_FILE, not both" >&2
+        exit 1
+    fi
+    MODOCUMENT_APP_DB_PASSWORD="$(< "$MODOCUMENT_APP_DB_PASSWORD_FILE")"
+    MODOCUMENT_APP_DB_PASSWORD="${MODOCUMENT_APP_DB_PASSWORD#"${MODOCUMENT_APP_DB_PASSWORD%%[![:space:]]*}"}"
+    MODOCUMENT_APP_DB_PASSWORD="${MODOCUMENT_APP_DB_PASSWORD%"${MODOCUMENT_APP_DB_PASSWORD##*[![:space:]]}"}"
+fi
+
+# No insecure fallback: docker-compose requires the variable, and a first
+# boot without it must fail loudly rather than create a guessable role.
+APP_ROLE_PASSWORD="${MODOCUMENT_APP_DB_PASSWORD:?MODOCUMENT_APP_DB_PASSWORD (or _FILE) must be set}"
 
 psql -v ON_ERROR_STOP=1 -v app_password="$APP_ROLE_PASSWORD" \
      --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'EOSQL'
