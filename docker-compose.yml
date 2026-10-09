@@ -78,6 +78,19 @@ services:
       MODOCUMENT_CHAT_EDIT_MODEL: ${MODOCUMENT_CHAT_EDIT_MODEL:-deepseek-r1:8b}
       # Agentic extraction (schema inference, summaries, record cleaning).
       MODOCUMENT_EXTRACTION_MODEL: ${MODOCUMENT_EXTRACTION_MODEL:-mistral:latest}
+      # ws18 detection (null-valued = passed through only when set on the
+      # host): the alert webhook is the phone path (Slack/WhatsApp bridge/
+      # PagerDuty); e-mail additionally needs SPRING_MAIL_HOST; the SIEM push
+      # serves exactly one bank. docs/security/alerting-and-export-caps.md,
+      # docs/security/siem-event-schema.md.
+      MODOCUMENT_ALERTS_WEBHOOK_URL:
+      MODOCUMENT_ALERTS_WEBHOOK_SECRET:
+      MODOCUMENT_ALERTS_EMAIL_TO:
+      SPRING_MAIL_HOST:
+      MODOCUMENT_SIEM_WEBHOOK_URL:
+      MODOCUMENT_SIEM_WEBHOOK_BANK_CODE:
+      MODOCUMENT_EXPORT_CAP_READ_WRITE:
+      MODOCUMENT_EXPORT_CAP_ADMIN:
       # Only used when the scale profile is active.
       EXTRACTION_MONGO_URI: mongodb://mongodb:27017/modocument
       EXTRACTION_KAFKA_SERVERS: kafka:9092

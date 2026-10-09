@@ -26,7 +26,23 @@ public class DatabaseExportRequest {
     private String tableName;
     private Boolean createTableIfMissing;
 
+    /**
+     * ws18 (gate D2): the caller's stated reason for exporting more rows than
+     * the role cap; recorded verbatim in the audit trail
+     * (EXPORT_OVER_CAP_WITH_REASON). Optional below the cap.
+     */
+    @Size(max = 500)
+    private String reason;
+
     public DatabaseExportRequest() {
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public void setReason(String reason) {
+        this.reason = reason;
     }
 
     public String getJdbcUrl() {

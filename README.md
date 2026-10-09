@@ -100,6 +100,11 @@ the test suite.
   in batches. Table/column identifiers are strictly validated **and** quoted; row values
   only ever travel as bound parameters (no SQL injection); credentials are used for the
   one export and never persisted or logged.
+- **Per-role export row caps** (ws18, gate D2): above the cap (READ_WRITE 5,000,
+  ADMIN 50,000 rows — `MODOCUMENT_EXPORT_CAP_*`) an export is refused with
+  403 `EXPORT_CAP_EXCEEDED` unless the user states a reason; every export,
+  refusal and override is audited and alerted. Details:
+  [docs/security/alerting-and-export-caps.md](docs/security/alerting-and-export-caps.md).
 
 ### Data extraction from external sources
 - Collect structured data from **authorized external sources** — websites, REST APIs
@@ -195,6 +200,17 @@ the test suite.
 - **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + PostgreSQL +
   docling-serve), non-root runtime image with a healthcheck.
 - CI: GitHub Actions runs `mvn -B verify` on every push/PR to `main`.
+- **Security alerting** (ws18, gate D1): data-driven rules over the audit trail
+  (immediate + per-minute windowed) raise alerts to the log, a webhook (the
+  phone path: Slack/WhatsApp bridge/PagerDuty — `MODOCUMENT_ALERTS_WEBHOOK_URL`)
+  and e-mail, with delivery evidence under Administration → Security alerts.
+  [docs/security/alerting-and-export-caps.md](docs/security/alerting-and-export-caps.md).
+- **SIEM feed** (ws18, gate E6): `GET /api/siem/events` streams the caller's
+  bank's audit events as NDJSON in an ECS-mapped schema, with an optional
+  single-bank webhook push —
+  [docs/security/siem-event-schema.md](docs/security/siem-event-schema.md).
+- **Synthetic probe**: `GET /api/probe/synthetic` (public, rate-limited) for
+  uptime monitors — build version + database round trip only.
 
 ### Document creation (blueprint → sections → fill → generate)
 - **Upload your company's report (.docx) as a blueprint** — the engine breaks it
@@ -478,7 +494,8 @@ contract at `/swagger/spec.yaml`. Summary:
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/ingestion/jobs/{id}/export/file?format=csv\|json\|xlsx\|tsv\|xml` | Download validated rows (copy archived in `wwwroot/exports/`) |
-| `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied PostgreSQL/H2 database |
+| `POST /api/ingestion/jobs/{id}/export/file` | Same download with `{format, reason}` in the body (over-cap reason, ws18) |
+| `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied PostgreSQL/H2 database (`reason` above the role cap) |
 
 ### Data extraction
 

@@ -982,13 +982,63 @@ paths:
           schema:
             type: string
             enum: [csv, json, xlsx, tsv, xml]
+        - name: reason
+          in: query
+          required: false
+          description: ws18 (gate D2) — why more rows than the role's cap are
+            needed (max 500 chars; recorded in the audit trail). Prefer the
+            POST form, which keeps the text out of URLs.
+          schema:
+            type: string
+            maxLength: 500
       responses:
         "200":
           description: File download
+        "400":
+          description: Unknown format, or reason longer than 500 characters
+        "403":
+          description: EXPORT_CAP_EXCEEDED — more rows than the caller's role
+            cap and no reason given; body {code, cap, rows, reasonMaxLength,
+            error}. Audited EXPORT_BLOCKED and alerted.
         "409":
           description: Job is not finished — cancelled, a template field still
             unmapped, or rows still failing validation (the body says which)
       summary: Export to a file
+      tags:
+      - IngestionJobs
+    post:
+      description: The same file export with the over-cap reason in the body
+        (ws18, gate D2) so free text never sits in a URL
+      operationId: exportIngestionJobFileWithReason
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                format:
+                  type: string
+                  enum: [csv, json, xlsx, tsv, xml]
+                reason:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: File download
+        "400":
+          description: Unknown format, or reason longer than 500 characters
+        "403":
+          description: EXPORT_CAP_EXCEEDED (no reason given)
+        "409":
+          description: Job is not finished
+      summary: Export to a file, with a stated reason
       tags:
       - IngestionJobs
   /api/ingestion/jobs/{id}/export/database:
@@ -1020,11 +1070,18 @@ paths:
                   type: string
                 createTableIfMissing:
                   type: boolean
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: ws18 (gate D2) — required above the role's row cap
       responses:
         "200":
           description: Updated job
         "400":
           description: Rejected jdbcUrl, identifier, or target-database error
+        "403":
+          description: EXPORT_CAP_EXCEEDED — more rows than the caller's role
+            cap and no reason given (audited EXPORT_BLOCKED, alerted)
         "409":
           description: Job is not finished — cancelled, a template field still
             unmapped, or rows still failing validation (the body says which)
@@ -1218,6 +1275,76 @@ paths:
       summary: Access review
       tags:
       - UserAdmin
+  /api/admin/alerts:
+    get:
+      description: ws18 (gate D1) — the security alerts raised for the calling
+        admin's bank, newest first, with delivery evidence (channels, status,
+        created/delivered times). user:admin.
+      operationId: listSecurityAlerts
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      responses:
+        "200":
+          description: Alerts (alertId, rule, severity, summary, eventCount,
+            auditEventId, createdAt, deliveredAt, channels, status)
+      summary: List security alerts
+      tags:
+      - UserAdmin
+  /api/siem/events:
+    get:
+      description: ws18 (SEC-031, gate E6) — the caller's own bank's audit
+        events as newline-delimited JSON in the documented SIEM schema
+        (docs/security/siem-event-schema.md), oldest first, keyset-paged on
+        event.id. siem:read (ADMIN only).
+      operationId: siemEventFeed
+      parameters:
+      - name: since
+        in: query
+        required: false
+        description: The last event.id processed (exclusive)
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 500
+      responses:
+        "200":
+          description: application/x-ndjson; headers X-Next-Cursor and X-Has-More
+        "400":
+          description: Malformed cursor or limit out of range
+      summary: SIEM event feed
+      tags:
+      - Siem
+  /api/probe/synthetic:
+    get:
+      description: ws18 (SUP-S11) — public synthetic probe for uptime monitors,
+        rate-limited per client ip; version and a database round-trip boolean
+        only (503 when the database does not answer)
+      operationId: syntheticProbe
+      security: []
+      responses:
+        "200":
+          description: '{"status":"UP","version":"...","db":true,"checkedAt":"..."}'
+        "429":
+          description: Rate limit exceeded (Retry-After)
+        "503":
+          description: Database round trip failed
+      summary: Synthetic probe
+      tags:
+      - Probe
   /api/admin/changes:
     get:
       description: The caller's bank's maker/checker queue (ws10). Holders of

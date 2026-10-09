@@ -23,3 +23,4 @@ PROFILE_SELF,profile:self,x,x,x,x
 USER_ADMIN,user:admin,x,,,
 CHANGE_APPROVE,change:approve,x,x,,
 DOC_RELEASE,doc:release,x,x,,
+SIEM_READ,siem:read,x,,,

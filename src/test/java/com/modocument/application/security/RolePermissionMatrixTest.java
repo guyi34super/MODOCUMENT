@@ -56,13 +56,15 @@ class RolePermissionMatrixTest {
         }
         assertThat(RolePermissions.granted(Role.READ_ONLY)).doesNotContain(
                 Permission.EXPORT_RUN, Permission.FILE_UPLOAD, Permission.AI_USE,
-                Permission.LOOKUP_ADMIN, Permission.METRICS_READ, Permission.USER_ADMIN);
+                Permission.LOOKUP_ADMIN, Permission.METRICS_READ, Permission.USER_ADMIN,
+                Permission.SIEM_READ);
 
         // READ_WRITE is a strict superset of READ_ONLY but never an admin.
         assertThat(RolePermissions.granted(Role.READ_WRITE))
                 .containsAll(RolePermissions.granted(Role.READ_ONLY))
                 .doesNotContain(Permission.LOOKUP_ADMIN, Permission.METRICS_READ,
-                        Permission.USER_ADMIN, Permission.CHANGE_APPROVE, Permission.DOC_RELEASE);
+                        Permission.USER_ADMIN, Permission.CHANGE_APPROVE, Permission.DOC_RELEASE,
+                        Permission.SIEM_READ);
 
         // Exports: Admin + Read-write only (PRIV-005).
         for (Role role : Role.values()) {

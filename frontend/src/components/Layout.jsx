@@ -41,6 +41,8 @@ const sections = [
       { to: '/approvals/releases', label: 'Releases', roles: ['ADMIN', 'APPROVER'] },
       // ws14: retention purge evidence + data-subject requests.
       { to: '/admin/retention', label: 'Privacy & retention', roles: ['ADMIN'] },
+      // ws18: security alerts raised for the bank + their delivery evidence.
+      { to: '/admin/alerts', label: 'Security alerts', roles: ['ADMIN'] },
     ],
   },
   {

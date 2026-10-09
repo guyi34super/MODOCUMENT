@@ -26,6 +26,7 @@ permission was minted so the role→permission matrix stays unchanged.
 | Doc-creation blueprints/sections | `DocBlueprint`, `DocBlueprintSection` | n/a — **never purged** | — | Configuration (document structure), not customer data |
 | Ingestion mapping config | `IngestionJob.MappingJson / SuggestedMappingJson / ExportInfoJson` | n/a — **not purged** | — | Column-name→field mappings and export metadata (file name, format, row count): configuration/metadata, no customer values |
 | Audit trail | `AuditEvent` | **7 years** (SEC-033) | Evidence obligation | Append-only; **not** touched by this job |
+| Security alerts (ws18) | `AlertLog` | with the audit trail (**7 years**) | Detection evidence (D1/D2, SEC-032) | Not touched by this job; summaries are PII-scrubbed (`PiiPatterns`) and carry ids, never values or export reasons |
 | Backups | infrastructure snapshots | **90 days** | Infra policy | Managed by the hosting platform's backup rotation, outside the application |
 
 Configuration: `modocument.retention.customer-data-days`

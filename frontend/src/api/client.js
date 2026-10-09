@@ -146,8 +146,9 @@ async function request(path, { method = 'GET', body, raw = false, retried = fals
   }
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
+    let data = null;
     try {
-      const data = await res.json();
+      data = await res.json();
       const listed = errorList(data);
       if (listed) message = listed;
       else if (data && data.error) message = data.error;
@@ -156,7 +157,14 @@ async function request(path, { method = 'GET', body, raw = false, retried = fals
     } catch {
       /* non-JSON error body */
     }
-    throw new Error(message);
+    // The message stays the human-readable part; status/code/body let a
+    // caller react to a specific refusal (ws18: a 403 EXPORT_CAP_EXCEEDED
+    // prompts for an export reason and retries).
+    const error = new Error(message);
+    error.status = res.status;
+    error.code = data && typeof data === 'object' ? data.code : undefined;
+    error.body = data;
+    throw error;
   }
   if (raw) return res;
   if (res.status === 204) return null;

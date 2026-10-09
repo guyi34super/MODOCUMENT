@@ -66,6 +66,21 @@ import java.util.concurrent.Callable;
  *       listing, then {@code runAs(bank)} per bank so each bank's
  *       invariant checks and SOD_SCAN_COMPLETED / SOD_VIOLATION_FOUND
  *       audit events run strictly inside that tenant.</li>
+ *   <li>{@code AlertSweepJob#runOnce} — the ws18 minute sweep of the
+ *       windowed alert rules: {@code runAsSystem} for the cross-bank
+ *       aggregate READ of AuditEvent (a brute-force burst is detected
+ *       wherever it lands); every alert it raises is recorded by
+ *       {@code AlertService} under its own bank.</li>
+ *   <li>{@code AlertService} — ws18 alert recording/delivery on its
+ *       private, {@code TenantTaskDecorator}-wrapped executor:
+ *       {@code runAs(alert bank)} for every AlertLog write and every
+ *       ALERT_SENT / ALERT_DELIVERY_FAILED audit row;
+ *       {@code runAsSystem} only for the sweep's cross-bank scan of
+ *       PENDING deliveries to retry.</li>
+ *   <li>{@code SiemWebhookForwarder#resolveBank} — ws18 SIEM push:
+ *       {@code runAsSystem} to look the configured bank-code up in the
+ *       RLS-protected Bank table (startup, then each sweep until it
+ *       resolves); the forwarder touches no other table.</li>
  * </ul>
  */
 public final class TenantContext {

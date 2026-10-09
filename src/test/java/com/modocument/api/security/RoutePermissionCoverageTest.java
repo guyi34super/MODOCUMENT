@@ -45,6 +45,9 @@ class RoutePermissionCoverageTest {
             // ws07 OIDC: SSO discovery for the anonymous login page (which
             // providers exist — ids + display names, nothing secret).
             "/api/auth/providers",
+            // ws18 (SUP-S11): synthetic probe for external uptime monitors —
+            // GET only, rate-limited per ip, version + db boolean only.
+            "/api/probe/synthetic",
             "/error");
 
     private static final List<String> PUBLIC_PREFIXES = List.of(

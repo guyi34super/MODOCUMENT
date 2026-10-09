@@ -68,5 +68,19 @@ export const setWizardStep = (id, step) =>
 export const exportFilePath = (id, format) =>
   `/api/ingestion/jobs/${id}/export/file?format=${format}`;
 
+/**
+ * ws18 (gate D2): above the role's row cap the server answers 403 with
+ * `code: EXPORT_CAP_EXCEEDED` (+ `cap`, `rows`, `reasonMaxLength`); the
+ * export is retried with the user's stated reason. The file export then goes
+ * as a POST so the free-text reason never sits in a URL.
+ */
+export const EXPORT_CAP_EXCEEDED = 'EXPORT_CAP_EXCEEDED';
+
+/** Path + fetch options for a file export carrying an over-cap reason. */
+export const exportFileWithReason = (id, format, reason) => ({
+  path: `/api/ingestion/jobs/${id}/export/file`,
+  options: { method: 'POST', body: { format, reason } },
+});
+
 export const exportToDatabase = (id, payload) =>
   api.post(`/api/ingestion/jobs/${id}/export/database`, payload);

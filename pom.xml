@@ -99,6 +99,15 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- ws18 alert e-mail channel (EmailAlertChannel). Inert unless
+             spring.mail.host AND modocument.alerts.email.to are configured:
+             Boot only creates the JavaMailSender when spring.mail.host is
+             set, and the channel is a no-op without one. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- Bean Validation (C6): declarative request-schema checks (@Valid +
              constraint annotations on request DTOs) as the outer layer in
              front of the hand-written use-case validation -->
@@ -212,6 +221,15 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <!-- ws18: META-INF/build-info.properties -> BuildProperties,
+                         the version the public synthetic probe reports. -->
+                    <execution>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

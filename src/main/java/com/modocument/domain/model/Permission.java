@@ -72,7 +72,14 @@ public enum Permission {
     /** Approve/reject pending maker/checker changes (ws10: /api/admin/changes decisions). */
     CHANGE_APPROVE("change:approve"),
     /** Release/reject submitted documents and review the queue (ws11, gate B8). */
-    DOC_RELEASE("doc:release");
+    DOC_RELEASE("doc:release"),
+
+    /**
+     * Read the caller's own bank's audit events as the SIEM feed (ws18,
+     * SEC-031, gate E6: GET /api/siem/events). ADMIN only — a bank's SIEM
+     * integration authenticates as a dedicated admin account of that bank.
+     */
+    SIEM_READ("siem:read");
 
     private final String code;
 

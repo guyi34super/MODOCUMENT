@@ -39,7 +39,10 @@ import java.util.UUID;
 @Immutable
 @Table(name = "AuditEvent", indexes = {
         @Index(name = "ix_auditevent_bankid_occurredat", columnList = "BankId, OccurredAt"),
-        @Index(name = "ix_auditevent_entitytype_entityid", columnList = "EntityType, EntityId")})
+        @Index(name = "ix_auditevent_entitytype_entityid", columnList = "EntityType, EntityId"),
+        // SCHEMA PARITY with V161 (ws18): SIEM feed keyset paging + windowed alert sweep.
+        @Index(name = "ix_auditevent_bankid_auditeventid", columnList = "BankId, AuditEventId"),
+        @Index(name = "ix_auditevent_action_occurredat", columnList = "Action, OccurredAt")})
 // SCHEMA PARITY with V30 (ck_auditevent_outcome) on the H2 test schema.
 @Check(name = "ck_auditevent_outcome",
         constraints = "Outcome in ('SUCCESS', 'DENIED', 'FAILED')")
