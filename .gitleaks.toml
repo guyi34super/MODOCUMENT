@@ -1,0 +1,43 @@
+# MoDocument gitleaks configuration (gate A7: full-history secret scan clean;
+# SEC-009). Extends the gitleaks default ruleset — nothing is disabled — and
+# allowlists ONLY the deliberate, documented dev/test material below. Any new
+# finding anywhere else is a real failure: rotate the credential and rewrite
+# or accept the history consciously, never widen this allowlist casually.
+#
+# Companion file: .gitleaksignore pins six historical findings by exact
+# fingerprint (commit:file:rule:line) — four from the log-redaction and MFA
+# tests, two from the ws17 ApiDocsExposureTest fixture — so re-introducing
+# the same strings in NEW commits still fails the scan.
+
+title = "MoDocument gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented MoDocument dev/test material — NOT real credentials"
+
+# Each regex matches one exact, documented literal (regexTarget 'match' keeps
+# the scope to the finding's matched text, not whole lines of context):
+#
+# 1. The legacy dev JWT signing key. It exists in git history, in
+#    src/main/resources/application-test.yml (test-only signing key) and as
+#    the REJECTED constant LEGACY_DEV_SECRET in
+#    src/main/java/com/modocument/api/config/SecurityConfig.java, whose whole
+#    purpose is to refuse boot when this value is configured as the real
+#    secret. It was never a production credential; production requires
+#    MODOCUMENT_JWT_SECRET and refuses this value.
+#
+# 2. The canary JWT used by the log-redaction tests (header/payload decode to
+#    {"alg":"HS256"} / {"sub":"canary"}; the "signature" is the literal word
+#    'signature' base64-encoded). It exists to assert that JWTs are scrubbed
+#    from logs.
+#
+# 3. The 32-byte dummy AES key "0123456789abcdef..." in MfaSecretCipherTest —
+#    a fixed test vector, not a credential.
+regexTarget = "match"
+regexes = [
+    '''modocument-local-dev-secret-change-in-production-0123456789''',
+    '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJjYW5hcnkifQ\.c2lnbmF0dXJl''',
+    '''0123456789abcdef0123456789abcdef''',
+]

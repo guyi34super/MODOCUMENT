@@ -199,7 +199,15 @@ the test suite.
   supply `MODOCUMENT_JWT_SECRET` or a gitignored `application-local-secrets.yml`.
 - **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + PostgreSQL +
   docling-serve), non-root runtime image with a healthcheck.
-- CI: GitHub Actions runs `mvn -B verify` on every push/PR to `main`.
+- **CI/CD supply chain** (ws19, gates A7/A8/E3/E8): `ci.yml` runs `mvn -B verify`
+  (with a JaCoCo coverage summary), the real-PostgreSQL suite, the frontend tests/build
+  and the nginx security-header check on every push/PR to `main`; `security.yml` adds
+  gitleaks (full history), Semgrep (registry packs + [`.semgrep/modocument.yml`](.semgrep/modocument.yml)),
+  dependency review and `npm audit --audit-level=high`; `sbom.yml` publishes CycloneDX
+  SBOMs (`mvn -Psbom`, `npm sbom`); weekly Trivy-scanned image rebuilds and a ZAP
+  baseline against the compose stack; Dependabot for Maven, npm, Actions and Docker.
+  Every action is pinned by commit SHA with least-privilege `permissions`. Required
+  checks and the seeded-PR drill: [docs/security/branch-protection.md](docs/security/branch-protection.md).
 - **Security alerting** (ws18, gate D1): data-driven rules over the audit trail
   (immediate + per-minute windowed) raise alerts to the log, a webhook (the
   phone path: Slack/WhatsApp bridge/PagerDuty — `MODOCUMENT_ALERTS_WEBHOOK_URL`)

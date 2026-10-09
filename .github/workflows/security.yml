@@ -1,0 +1,93 @@
+name: Security
+
+# Secret, SAST and dependency scanning (gate items A7, A8, E3; controls
+# SEC-009/010/029/042, SUP-S05). Runs on every push and PR so a seeded
+# vulnerable PR is demonstrably blocked (A8 drill:
+# docs/security/branch-protection.md), plus weekly to catch newly published
+# advisories and rule updates against an unchanged main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, Monday 05:23 UTC (off the hour to dodge scheduler congestion).
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # A7: gitleaks over the FULL history (fetch-depth: 0 — a shallow clone
+  # would silently skip old commits). .gitleaks.toml + .gitleaksignore
+  # allowlist exactly the documented legacy dev/test material and nothing
+  # else; see the comments in those files.
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Free for personal accounts. If this repository moves into a
+          # GitHub organization, gitleaks-action requires GITLEAKS_LICENSE
+          # (https://gitleaks.io) — add it as a repo secret then.
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  # SAST (SEC-029 share + AI-gateway and env-var hygiene): registry packs
+  # p/java and p/owasp-top-ten plus the repo's own rules in
+  # .semgrep/modocument.yml (weak crypto MD5/SHA-1/DES/ECB, raw ChatModel
+  # outside infrastructure/ai, System.getenv outside the
+  # MODOCUMENT_CONNECTOR_ allowlist).
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Install semgrep
+        run: python3 -m pip install --user 'semgrep==1.179.0'
+      - name: Semgrep scan
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          semgrep scan --metrics=off --error \
+            --config p/java \
+            --config p/owasp-top-ten \
+            --config .semgrep/modocument.yml
+
+  # SEC-010 / SUP-S05: blocks PRs that introduce dependencies with known
+  # vulnerabilities or disallowed licenses. Only meaningful on PRs (it
+  # diffs the dependency graph between base and head).
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high
+
+  # E3: fails on High/Critical advisories in the frontend tree.
+  # continue-on-error stays false on purpose: an unfixable transitive
+  # advisory is handled by a reviewed `overrides` entry in
+  # frontend/package.json (or an upstream bump), each documented in
+  # docs/security/branch-protection.md ("npm audit overrides") — never by
+  # softening this job.
+  npm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm audit --audit-level=high

@@ -248,6 +248,32 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <!-- Code coverage (ws19): the agent instruments the unit run and
+                 `report` renders target/site/jacoco/ at verify. Deliberately
+                 NO <check> threshold gate yet — the baseline must be
+                 established and agreed first (see
+                 docs/security/branch-protection.md); CI prints the summary
+                 from jacoco.csv so the number is visible on every run. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.13</version>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
@@ -275,6 +301,36 @@
                                 <goals>
                                     <goal>integration-test</goal>
                                     <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- mvn -B -DskipTests package -Psbom — CycloneDX SBOM (gate E8,
+             SUP-S05). CI-only by design (.github/workflows/sbom.yml) so the
+             everyday local `mvn verify` pays nothing for it; the BOM lands in
+             target/bom.json / target/bom.xml. -->
+        <profile>
+            <id>sbom</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.cyclonedx</groupId>
+                        <artifactId>cyclonedx-maven-plugin</artifactId>
+                        <version>2.9.1</version>
+                        <configuration>
+                            <projectType>application</projectType>
+                            <outputFormat>all</outputFormat>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>cyclonedx-sbom</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>makeBom</goal>
                                 </goals>
                             </execution>
                         </executions>

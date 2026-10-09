@@ -1,0 +1,84 @@
+name: ZAP baseline
+
+# Gate E3/E1 evidence: a passive OWASP ZAP baseline scan against the real
+# running stack (frontend nginx -> app -> PostgreSQL, exactly the
+# trusted-proxy topology of docker-compose.yml). Known-acceptable alerts are
+# tuned in .zap/rules.tsv — every IGNORE there carries a justification.
+# Weekly plus on-demand (workflow_dispatch) for drills and release evidence.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Tuesday 05:37 UTC (off the hour to dodge scheduler congestion).
+    - cron: '37 5 * * 2'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zap-baseline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  zap-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Generate run-scoped secrets
+        run: |
+          # Ephemeral credentials for this job only (the stack lives and
+          # dies with the runner; nothing is persisted or published).
+          # docker-compose.yml REQUIRES every one of these (`${VAR:?}`, ws16 —
+          # no insecure defaults), and compose interpolates the whole file
+          # for EVERY subcommand (`up`, `ps`, `logs`), so they go into the
+          # gitignored .env that compose reads from the project directory —
+          # the same flow the README quick start uses. Values are masked in
+          # the job log.
+          umask 077
+          {
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+            echo "MODOCUMENT_APP_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "MODOCUMENT_MFA_KEY=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL=zap-scan@invalid.example"
+            echo "MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')"
+          } > .env
+          while IFS='=' read -r name value; do
+            case "$name" in
+              *EMAIL) ;;
+              *) echo "::add-mask::$value" ;;
+            esac
+          done < .env
+
+      - name: Boot compose stack (frontend + app + postgres)
+        run: |
+          docker compose config -q
+          docker compose up -d --wait --wait-timeout 420 frontend
+          docker compose ps
+
+      # The frontend is nginx-unprivileged listening on 8080 inside the
+      # container (ws16, SUP-S04); compose publishes it as host port 3000
+      # (3000:8080), which is what ZAP (host network) scans.
+      - name: Smoke-check entry point
+        run: |
+          curl -fsS -o /dev/null -w 'frontend answered %{http_code}\n' http://localhost:3000/
+          # Full path: nginx -> app -> PostgreSQL (ws18 public probe).
+          curl -fsS http://localhost:3000/api/probe/synthetic
+
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: http://localhost:3000
+          rules_file_name: .zap/rules.tsv
+          # Host port 3000 = frontend container port 8080 (see above).
+          # Reports are uploaded as a run artifact (below / by the action);
+          # issue writing would need `issues: write`, which this workflow
+          # deliberately does not hold (SEC-042 least privilege).
+          allow_issue_writing: false
+          artifact_name: zap-baseline-report
+          fail_action: true
+
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose logs --tail 200 app frontend
