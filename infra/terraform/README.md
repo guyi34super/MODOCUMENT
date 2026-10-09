@@ -136,7 +136,7 @@ one run. Operationally, the sequence that avoids dead ends:
 
 ## Proxy chain, bootstrap admin, DB CA — resolved go-live blockers
 
-Three defects found when this IaC was integrated with workstreams 16–18
+Four defects found when this IaC was integrated with workstreams 16–18
 (formerly "Known open items") are fixed in code; what still needs a real
 AWS apply or Docker host is listed under each.
 
@@ -186,18 +186,12 @@ AWS apply or Docker host is listed under each.
    Refresh on AWS CA changes: key register K14. *Pending:* the first
    connection to the real RDS endpoint (the image itself was built and
    probed on 9 Oct 2026 — web-hardening.md §5d).
-
-### Still open before go-live
-
-- **`Forwarded` / `X-Forwarded-Port` / `-Prefix` pass through nginx**
-  (found while verifying item 1; pre-existing in compose too). Spring's
-  `ForwardedHeaderFilter` prefers RFC 7239 `Forwarded` over
-  `X-Forwarded-For`, and nginx forwards a client's `Forwarded` header
-  untouched — CloudFront and the ALB pass it on as well — so any client can
-  still set the address the app uses for per-IP limits and audit rows.
-  One-place fix in the API location of `frontend/nginx.conf`:
-  `proxy_set_header Forwarded "";` (+ `X-Forwarded-Port`,
-  `X-Forwarded-Prefix`, `X-Forwarded-Ssl`), with a
-  `TrustedProxyIntegrationTest` case — deliberately not bundled here because
-  it changes the default (compose) render, which this change keeps
-  identical. Details: [web-hardening.md §5e](../../docs/security/web-hardening.md#5e-proxy-chain-behind-alb--cloudfront-trusted-proxy-mode).
+4. **Client-sent `Forwarded` / `X-Forwarded-Port` / `-Prefix` / `-Ssl`
+   are cleared in nginx** (found while verifying item 1; it affected compose
+   too). Spring's `ForwardedHeaderFilter` prefers RFC 7239 `Forwarded` over
+   `X-Forwarded-For`, and CloudFront and the ALB pass a client's `Forwarded`
+   header on. Without the fix any client could set the address the app uses
+   for per-IP limits and audit rows. The API location of
+   `frontend/nginx.conf` now sets all four to `""` (drops them), and
+   `scripts/check-nginx-headers.sh` fails CI if that ever regresses.
+   Details: [web-hardening.md §5e](../../docs/security/web-hardening.md#5e-proxy-chain-behind-alb--cloudfront-trusted-proxy-mode).

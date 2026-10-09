@@ -335,19 +335,23 @@ nginx config (IPv4/IPv6 with a 1–32/1–128 prefix, no `/0`, no leading-zero
 octets) and any bad value — or `MODOCUMENT_CLIENT_IP_HEADER` without CIDRs —
 stops the container.
 
-**Still open (found 9 Oct 2026; pre-existing, both modes, compose
-included):** nginx passes through request headers it does not set itself,
-and Spring's `ForwardedHeaderFilter` PREFERS the RFC 7239 `Forwarded`
-header over `X-Forwarded-For` (checked with spring-web 6.2.8:
-`Forwarded: for=6.6.6.6` beats the overwritten `X-Forwarded-For`), so a
-client can still choose its own IP/proto/host that way, and steer
-`X-Forwarded-Port` / `X-Forwarded-Prefix`. Fix — not part of the go-live
-blocker change because it alters the default render: in the API location of
-`frontend/nginx.conf` add `proxy_set_header Forwarded "";` and the same for
-`X-Forwarded-Port`, `X-Forwarded-Prefix` and `X-Forwarded-Ssl` (an empty
-value drops the header), plus a `TrustedProxyIntegrationTest` case.
-Tracked in [`infra/terraform/README.md`](../../infra/terraform/README.md)
-"Still open".
+**Other forwarding headers are cleared (fixed 9 Oct 2026; affected both
+modes, compose included).** nginx passes through request headers it does
+not set itself, and Spring's `ForwardedHeaderFilter` PREFERS the RFC 7239
+`Forwarded` header over `X-Forwarded-For` (checked with spring-web 6.2.8:
+`Forwarded: for=6.6.6.6` beats the overwritten `X-Forwarded-For`). Before
+the fix a client could choose its own IP, proto and host that way, and
+steer `X-Forwarded-Port` / `X-Forwarded-Prefix`. The API location of
+`frontend/nginx.conf` now sets `Forwarded`, `X-Forwarded-Port`,
+`X-Forwarded-Prefix` and `X-Forwarded-Ssl` to `""`, which drops them from
+the proxied request, so the app only ever sees the three headers nginx
+sets. `scripts/check-nginx-headers.sh` (CI frontend job) fails if a proxied
+location stops clearing any of them or uses `$proxy_add_x_forwarded_for`.
+Verified through a stub upstream (nginx 1.24): a client sending
+`Forwarded: for=6.6.6.6;proto=https`, `X-Forwarded-For: 6.6.6.6`,
+`X-Forwarded-Port: 443`, `X-Forwarded-Prefix: /evil` and
+`X-Forwarded-Ssl: on` reached the app as only `X-Forwarded-For: 127.0.0.1`,
+`X-Forwarded-Proto: http`, `X-Forwarded-Host: 127.0.0.1`.
 
 Verified (9 Oct 2026) twice: nginx 1.24 with the image's own entrypoint,
 `15-local-resolvers` and `20-envsubst-on-templates` scripts under busybox

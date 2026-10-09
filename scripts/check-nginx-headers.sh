@@ -9,6 +9,8 @@
 #   * proxied locations (proxy_pass) must carry the API fallback set
 #     (CSP, nosniff, X-Frame-Options, Referrer-Policy) for responses nginx
 #     generates itself; the backend's own set is pinned by HeaderContractTest.
+#     They must also never append to X-Forwarded-For and must clear the
+#     client-sent `Forwarded`, X-Forwarded-Port/-Prefix/-Ssl (SEC-022).
 #
 # Also requires `server_tokens off`. Exits non-zero on any gap.
 # Usage: scripts/check-nginx-headers.sh [path/to/nginx.conf]
@@ -103,6 +105,19 @@ while IFS=$'\t' read -r line args proxied body; do
       fail "line $line: $kind location '$args' lacks 'add_header $header ... always'"
     fi
   done
+  if [[ "$kind" == proxied ]]; then
+    # Forwarding headers: nginx must overwrite X-Forwarded-For (never append)
+    # and clear the ones it does not set, or a client can pick the IP the app
+    # trusts (Spring prefers RFC 7239 `Forwarded` over X-Forwarded-For).
+    if grep -q 'proxy_add_x_forwarded_for' <<<"$body"; then
+      fail "line $line: proxied location '$args' appends to X-Forwarded-For (\$proxy_add_x_forwarded_for)"
+    fi
+    for cleared in Forwarded X-Forwarded-Port X-Forwarded-Prefix X-Forwarded-Ssl; do
+      if ! grep -Eqi "proxy_set_header[[:space:]]+$cleared[[:space:]]+\"\"[[:space:]]*;" <<<"$body"; then
+        fail "line $line: proxied location '$args' does not clear client-sent '$cleared'"
+      fi
+    done
+  fi
   if [[ "$kind" == static ]]; then
     csp="$(grep -Eoi "add_header[[:space:]]+Content-Security-Policy[[:space:]]+\"[^\"]*\"" <<<"$body" || true)"
     for directive in "${csp_directives[@]}"; do
