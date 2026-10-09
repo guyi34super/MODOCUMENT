@@ -160,6 +160,36 @@ modocument:
     # Comma-separated list of origins allowed to call the API with credentials.
     # Set to the deployed frontend origin(s) in production.
     allowed-origins: ${MODOCUMENT_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8004,http://localhost:8080,https://localhost:3000,https://localhost:8004,https://localhost:8080}
+  api:
+    # The servers entry of the generated OpenAPI contract (/v3/api-docs):
+    # "/" = same origin as the spec. Set the public API base URL per
+    # deployment so generated clients point at the right host.
+    server-url: ${MODOCUMENT_API_SERVER_URL:/}
+    server-description: ${MODOCUMENT_API_SERVER_DESCRIPTION:This deployment}
+  ratelimit:
+    # Per-USER fixed-window limits on the expensive endpoints (ws17,
+    # SEC-007/gate E2) — one window (default 1h) and a permit count per
+    # bucket, enforced by ApiRateLimitInterceptor; over-limit calls answer
+    # 429 with Retry-After. ADMINs are NOT exempt: an admin token is exactly
+    # as abusable (or stealable) as any other, so abuse containment applies
+    # to everyone — ops raise a bucket via its env var instead. Bucket →
+    # routes mapping lives in ApiRateLimitInterceptor (table in
+    # docs/security/owasp-api-top10.md). Counters are in-memory per
+    # instance: N replicas allow up to N x these numbers until the counters
+    # move to a shared store.
+    enabled: ${MODOCUMENT_RATELIMIT_ENABLED:true}
+    window-millis: ${MODOCUMENT_RATELIMIT_WINDOW_MILLIS:3600000}
+    max-keys: ${MODOCUMENT_RATELIMIT_MAX_KEYS:100000}
+    uploads: ${MODOCUMENT_RATELIMIT_UPLOADS:20}
+    ingestion: ${MODOCUMENT_RATELIMIT_INGESTION:60}
+    transform: ${MODOCUMENT_RATELIMIT_TRANSFORM:30}
+    exports: ${MODOCUMENT_RATELIMIT_EXPORTS:60}
+    doc-generate: ${MODOCUMENT_RATELIMIT_DOC_GENERATE:30}
+    extraction: ${MODOCUMENT_RATELIMIT_EXTRACTION:30}
+    dsr: ${MODOCUMENT_RATELIMIT_DSR:10}
+    password-change: ${MODOCUMENT_RATELIMIT_PASSWORD_CHANGE:5}
+    mfa-code: ${MODOCUMENT_RATELIMIT_MFA_CODE:10}
+    admin-jobs: ${MODOCUMENT_RATELIMIT_ADMIN_JOBS:10}
   storage:
     # Root directory for uploaded files (<root>/uploads) and export copies
     # (<root>/exports). Mount a volume here in containers.
@@ -357,14 +387,24 @@ extraction:
     max-depth-default: 2
 
 springdoc:
-  # API docs are a development tool — disabled in production, enabled by the
-  # local profile.
+  # Spec GENERATION is on in every profile (SEC-006): /v3/api-docs is the
+  # authoritative machine-readable contract, derived from the code, and
+  # OpenApiContractTest pins its route inventory (docs/api/openapi-routes.txt)
+  # in CI. Exposure decision (docs/api/versioning-policy.md): outside dev
+  # (permit-dev-paths off) the endpoint requires a valid bearer token like
+  # every non-login route — no anonymous reconnaissance; any authenticated
+  # role may read it, because the route list is no secret from a signed-in
+  # user (the SPA bundle carries it) and every route enforces its own
+  # permission. A deployment that wants no spec endpoint at all sets
+  # MODOCUMENT_API_DOCS_ENABLED=false (CI still validates the contract).
+  # The Swagger UI stays a development tool — enabled only by the local
+  # profile.
   api-docs:
-    enabled: false
+    enabled: ${MODOCUMENT_API_DOCS_ENABLED:true}
+  # Deterministic key order, so two spec downloads diff cleanly.
+  writer-with-order-by-keys: true
   swagger-ui:
     enabled: false
-    # Render the static, hand-maintained spec instead of a generated one.
-    url: /swagger/spec.yaml
 
 logging:
   level:

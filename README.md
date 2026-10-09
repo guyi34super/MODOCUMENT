@@ -188,7 +188,7 @@ the test suite.
 - Legacy CRUD APIs: `/Templates/*`, `/TemplateFields/*`, `/TemplateDataTypes/*`,
   `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*`.
 - File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`).
-- **Swagger UI** at `/swagger-ui` (static contract at `/swagger/spec.yaml`).
+- **OpenAPI** generated from code at `/v3/api-docs` (all profiles); Swagger UI at `/swagger-ui` (`local` only).
 - `local` profile: same PostgreSQL + Flyway as production, plus dev conveniences
   (Swagger, in-memory extraction). The JWT signing key is **not** committed —
   supply `MODOCUMENT_JWT_SECRET` or a gitignored `application-local-secrets.yml`.
@@ -448,8 +448,11 @@ with no recognizable shape passes through.
 
 ## API overview
 
-Interactive documentation: **Swagger UI at `/swagger-ui`**, rendering the static
-contract at `/swagger/spec.yaml`. Summary:
+Interactive documentation: **Swagger UI at `/swagger-ui`** (`local` profile), rendering the
+contract generated from the code at `/v3/api-docs` — the authoritative spec; its route inventory is
+pinned in CI ([docs/api/openapi-routes.txt](docs/api/openapi-routes.txt)), versioning and deprecation
+follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the hand-written
+`/swagger/spec.yaml` is deprecated. Summary:
 
 ### Templates & validation rules
 
@@ -728,5 +731,9 @@ service (the bundled `postgres` service is then unnecessary).
   compose file already use it.
 - **Files** — mount a volume at the storage root (`MODOCUMENT_STORAGE_ROOT`,
   default `wwwroot/`) so uploads and export copies survive restarts.
-- **API docs** — Swagger/OpenAPI endpoints are disabled outside the `local`/`test`
-  profiles; the H2 console permit is likewise dev-only.
+- **API docs** — the generated spec (`/v3/api-docs`) is served in every profile but needs a
+  bearer token outside `local`/`test` (`MODOCUMENT_API_DOCS_ENABLED=false` removes it); the
+  Swagger UI and the H2 console permit are dev-only.
+- **Rate limits** — per-user hourly buckets on the expensive endpoints (`MODOCUMENT_RATELIMIT_*`;
+  table in [docs/security/owasp-api-top10.md](docs/security/owasp-api-top10.md)); counters are
+  in-memory per instance.

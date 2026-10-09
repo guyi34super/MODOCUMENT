@@ -1,0 +1,21 @@
+RunId,Reference,Description,Amount,ValueDate
+__RUN_ID__,LT-0001,Synthetic load-test row,125.50,2026-01-15
+__RUN_ID__,LT-0002,Synthetic load-test row,980.00,2026-01-16
+__RUN_ID__,LT-0003,Synthetic load-test row,17.25,2026-01-17
+__RUN_ID__,LT-0004,Synthetic load-test row,4410.10,2026-01-18
+__RUN_ID__,LT-0005,Synthetic load-test row,63.00,2026-01-19
+__RUN_ID__,LT-0006,Synthetic load-test row,250.75,2026-01-20
+__RUN_ID__,LT-0007,Synthetic load-test row,1200.00,2026-01-21
+__RUN_ID__,LT-0008,Synthetic load-test row,8.99,2026-01-22
+__RUN_ID__,LT-0009,Synthetic load-test row,333.33,2026-01-23
+__RUN_ID__,LT-0010,Synthetic load-test row,77.70,2026-01-24
+__RUN_ID__,LT-0011,Synthetic load-test row,5600.00,2026-01-25
+__RUN_ID__,LT-0012,Synthetic load-test row,42.00,2026-01-26
+__RUN_ID__,LT-0013,Synthetic load-test row,915.40,2026-01-27
+__RUN_ID__,LT-0014,Synthetic load-test row,150.00,2026-01-28
+__RUN_ID__,LT-0015,Synthetic load-test row,2.50,2026-01-29
+__RUN_ID__,LT-0016,Synthetic load-test row,708.08,2026-01-30
+__RUN_ID__,LT-0017,Synthetic load-test row,64.64,2026-01-31
+__RUN_ID__,LT-0018,Synthetic load-test row,1999.99,2026-02-01
+__RUN_ID__,LT-0019,Synthetic load-test row,310.00,2026-02-02
+__RUN_ID__,LT-0020,Synthetic load-test row,45.45,2026-02-03

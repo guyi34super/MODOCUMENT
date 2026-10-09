@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
@@ -21,6 +22,7 @@ import java.util.Map;
  * the legacy CRUD contract stays untouched.
  */
 @RestController
+@Tag(name = "Templates")
 @RequiresPermission(Permission.TEMPLATE_WRITE)
 public class TemplateCompositeController {
 

@@ -1,5 +1,6 @@
 package com.modocument.doccreation.api;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
@@ -40,6 +41,7 @@ import java.util.NoSuchElementException;
  * image previews, and generation/download of the reproduced document.
  */
 @RestController
+@Tag(name = "Doc Creation: Instances", description = "Document authoring, assets and generation")
 public class DocInstanceController {
 
     private static final String DOCX_CONTENT_TYPE =

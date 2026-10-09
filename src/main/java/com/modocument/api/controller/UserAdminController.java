@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.modocument.api.security.RequiresPermission;
@@ -38,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
  * direct: it restores access that was already dual-approved.
  */
 @RestController
+@Tag(name = "User Admin", description = "User lifecycle (maker-checker gated)")
 @RequiresPermission(Permission.USER_ADMIN)
 public class UserAdminController {
 
@@ -104,6 +107,7 @@ public class UserAdminController {
     }
 
     /** Gate B10: the caller's bank's users with last-login dates, as CSV. */
+    @Operation(summary = "Export the bank's users with last-login dates (CSV)")
     @GetMapping("/api/admin/users/export")
     public ResponseEntity<byte[]> export() {
         UserAdminUseCase.CsvExport export = userAdmin.exportUsers();

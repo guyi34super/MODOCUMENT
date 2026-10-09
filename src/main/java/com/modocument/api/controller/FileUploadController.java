@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.usecase.UploadOwnership;
 import com.modocument.domain.model.Hashing;
@@ -22,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
+@Tag(name = "File Upload", description = "Multipart data-file uploads")
 @RequiresPermission(Permission.FILE_UPLOAD)
 public class FileUploadController {
 

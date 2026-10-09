@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ImportDetailsRepository;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  * the parent's owner — there is no per-detail owner column.
  */
 @RestController
+@Tag(name = "Import Details")
 public class ImportDetailsController {
 
     private final ImportDetailsRepository repo;

@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.AutoMappingPromptInput;
 import com.modocument.domain.model.Permission;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
+@Tag(name = "AI Auto-Mapping", description = "LLM-assisted column mapping suggestions")
 @RequiresPermission(Permission.AI_USE)
 public class AutoMapperController {
 
