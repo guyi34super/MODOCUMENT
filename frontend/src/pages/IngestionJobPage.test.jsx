@@ -1080,3 +1080,94 @@ describe('export row caps (ws18, gate D2)', () => {
     expect(downloadFile).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('IngestionJobPage parse provenance (ws23, AC-EXT-02b/07/13/16)', () => {
+  beforeEach(() => {
+    getAllFields.mockResolvedValue([{ templateFieldsId: 1, templateId: 1, fieldName: 'FirstName' }]);
+    waitForJob.mockImplementation((id) => getJob(id));
+  });
+
+  it('shows "Extracted by code" with the AI reason, the strategy and the confidence', async () => {
+    getJob.mockResolvedValue({
+      ...mappedJob,
+      parsedBy: 'CODE',
+      parseStrategy: 'KEY_VALUE',
+      parseConfidence: 0.86,
+      parseFallbackReason: 'QUOTA',
+      parseMinConfidence: 0.75,
+      parseLowConfidence: false,
+    });
+    renderPage();
+
+    const badge = await screen.findByTestId('parse-provenance');
+    expect(badge).toHaveTextContent('Extracted by code — AI unavailable (quota)');
+    expect(screen.getByText('Read as label: value blocks')).toBeInTheDocument();
+    expect(screen.getByTestId('parse-confidence')).toHaveTextContent('Confidence 86%');
+    // The FallbackReason description, for hover and screen readers.
+    expect(screen.getByText('Code extraction stood in for the AI: AI quota reached.')).toBeInTheDocument();
+    expect(screen.queryByTestId('low-confidence')).not.toBeInTheDocument();
+  });
+
+  it('flags a code-only result below the threshold with a low-confidence callout', async () => {
+    getJob.mockResolvedValue({
+      ...mappedJob,
+      parsedBy: 'CODE',
+      parseStrategy: 'FIXED_WIDTH',
+      parseConfidence: 0.52,
+      parseFallbackReason: 'MODE_CODE_ONLY',
+      parseMinConfidence: 0.8,
+      parseLowConfidence: true,
+    });
+    renderPage();
+
+    expect(await screen.findByTestId('parse-provenance')).toHaveTextContent(
+      'Extracted by code — code-only extraction'
+    );
+    const callout = screen.getByTestId('low-confidence');
+    expect(callout).toHaveAccessibleName('Low-confidence extraction');
+    expect(callout).toHaveTextContent("Code extraction scored 52%, below this bank's 80% threshold.");
+    expect(callout).toHaveTextContent('uses code-only extraction');
+  });
+
+  it('judges older views without a verdict against the shipped 75% threshold', async () => {
+    getJob.mockResolvedValue({
+      ...mappedJob,
+      parsedBy: 'CODE',
+      parseStrategy: 'DELIMITED',
+      parseConfidence: 0.6,
+      parseFallbackReason: 'MODE_CODE_ONLY',
+    });
+    renderPage();
+
+    expect(await screen.findByTestId('low-confidence')).toHaveTextContent("below this bank's 75% threshold");
+  });
+
+  it('marks a partly-AI extraction and shows nothing extra for a plain AI one', async () => {
+    getJob.mockResolvedValue({
+      ...mappedJob,
+      parsedBy: 'AI_PARTIAL',
+      parseStrategy: 'LLM_BATCHED',
+      parseConfidence: 0.9,
+      parseFallbackReason: 'TIMEOUT',
+      parseLowConfidence: false,
+    });
+    const { unmount } = renderPage();
+    expect(await screen.findByTestId('parse-provenance')).toHaveTextContent(
+      'Extracted by AI and code — AI unavailable for part (timeout)'
+    );
+    unmount();
+
+    getJob.mockResolvedValue({ ...mappedJob, parsedBy: 'AI', parseStrategy: 'LLM_SINGLE_PASS' });
+    renderPage();
+    expect(await screen.findByTestId('parse-provenance')).toHaveTextContent('Extracted by AI');
+    expect(screen.queryByTestId('parse-confidence')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('low-confidence')).not.toBeInTheDocument();
+  });
+
+  it('shows no provenance before the job is parsed', async () => {
+    getJob.mockResolvedValue(mappedJob);
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Job #7' })).toBeInTheDocument();
+    expect(screen.queryByTestId('parse-provenance')).not.toBeInTheDocument();
+  });
+});

@@ -78,4 +78,35 @@ describe('IngestionListPage', () => {
       await screen.findByText(/parse and map automatically/i)
     ).toBeInTheDocument();
   });
+
+  it('tags jobs that code read, and leaves AI-read jobs unmarked (ws23)', async () => {
+    const base = { templateId: 1, currentStep: 'VALIDATED', status: 'COMPLETED', validationErrorCount: 0 };
+    listJobs.mockResolvedValue([
+      { ...base, ingestionJobId: 1, fileName: 'ai.pdf', parsedBy: 'AI' },
+      {
+        ...base,
+        ingestionJobId: 2,
+        fileName: 'fallback.pdf',
+        parsedBy: 'CODE',
+        parseConfidence: 0.9,
+        parseFallbackReason: 'QUOTA',
+        parseLowConfidence: false,
+      },
+      {
+        ...base,
+        ingestionJobId: 3,
+        fileName: 'weak.txt',
+        parsedBy: 'CODE',
+        parseConfidence: 0.5,
+        parseFallbackReason: 'MODE_CODE_ONLY',
+        parseLowConfidence: true,
+      },
+    ]);
+    renderPage();
+
+    const tags = await screen.findAllByTestId('job-parsed-by');
+    expect(tags.map((tag) => tag.textContent).sort()).toEqual(['Code', 'Code · low confidence']);
+    // The full provenance is available to screen readers and on hover.
+    expect(screen.getByText(': Extracted by code — AI unavailable (quota)')).toBeInTheDocument();
+  });
 });
