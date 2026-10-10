@@ -1,6 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { readFileSync } from 'node:fs';
+
+// ws24: the release version has ONE source per side — pom.xml for the API,
+// package.json here (scripts/bump-version.sh keeps them equal). It is baked
+// into the bundle as __APP_VERSION__ (read it via src/version.js) so the SPA
+// can tell when the backend runs a different release.
+const { version: appVersion } = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8')
+);
 
 const backend = process.env.VITE_BACKEND_URL || 'http://localhost:8080';
 
@@ -25,6 +34,9 @@ const proxiedPaths = [
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   server: {
     port: 3000,
     proxy: Object.fromEntries(

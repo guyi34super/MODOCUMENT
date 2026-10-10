@@ -85,7 +85,7 @@ class RoutePermissionCoverageTest {
             Permission.PLATFORM_READ, Permission.PLATFORM_BANKS,        // ws21
             Permission.PLATFORM_SETTINGS,                               // ws20
             Permission.TEMPLATE_PUBLISH,                                // ws22
-            Permission.SYSTEM_INFO, Permission.PLATFORM_ANNOUNCE,       // ws24
+            Permission.PLATFORM_ANNOUNCE,                               // ws24
             Permission.INTEGRATION_ADMIN, Permission.INTEGRATION_RUN,   // ws25
             Permission.INTEGRATION_INGEST, Permission.INTEGRATION_RESULTS,
             Permission.INTEGRATION_DOCS, Permission.INTEGRATION_EVENTS, // ws26
