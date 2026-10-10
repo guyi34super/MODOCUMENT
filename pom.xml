@@ -82,6 +82,49 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Bank integration hub (ws25, SE4): JDBC drivers of the bank
+             databases a DATABASE connection may target. Runtime scope - the
+             connector loads them by class name for the vendor it builds the
+             URL for (never DriverManager discovery). Versions pinned (equal
+             to the Spring Boot 3.5.3 managed ones). MySQL is reached through
+             the MariaDB Connector/J (LGPL-2.1), never the GPL MySQL driver.
+             Licences: ojdbc11 Oracle Free Use Terms and Conditions (FUTC),
+             mssql-jdbc MIT, mariadb-java-client LGPL-2.1. -->
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc11</artifactId>
+            <version>23.7.0.25.01</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.sqlserver</groupId>
+            <artifactId>mssql-jdbc</artifactId>
+            <version>12.10.0.jre11</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mariadb.jdbc</groupId>
+            <artifactId>mariadb-java-client</artifactId>
+            <version>3.5.3</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- SFTP connector (ws25): Apache MINA SSHD client (Apache-2.0).
+             Compile scope: the connector pins host keys and confines paths
+             through its API. -->
+        <dependency>
+            <groupId>org.apache.sshd</groupId>
+            <artifactId>sshd-sftp</artifactId>
+            <version>2.15.0</version>
+            <exclusions>
+                <!-- commons-logging is already bridged by spring-jcl; a second
+                     org.apache.commons.logging copy would shadow it. -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>jcl-over-slf4j</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <!-- Schema migrations: Flyway owns the PostgreSQL schema in production
              (the H2 local/test profiles keep Hibernate ddl-auto: create) -->
         <dependency>
@@ -311,6 +354,7 @@
                          default H2 unit run. -->
                     <excludes>
                         <exclude>**/*PgIT.java</exclude>
+                        <exclude>**/*ConnIT.java</exclude>
                     </excludes>
                 </configuration>
             </plugin>
@@ -361,6 +405,71 @@
                                 <include>**/*PgIT.java</include>
                             </includes>
                             <groups>postgres</groups>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- mvn -B verify -Pconnectors-it — the live connector contract suite
+             (ws25, src/test/java/com/modocument/connectorsit/*ConnIT.java):
+             the DATABASE connector against Testcontainers Oracle Free, SQL
+             Server and MariaDB. Needs Docker (CI); excluded from the default
+             build, and its Testcontainers modules are test-scoped here only. -->
+        <profile>
+            <id>connectors-it</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.testcontainers</groupId>
+                    <artifactId>oracle-free</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.testcontainers</groupId>
+                    <artifactId>mssqlserver</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.testcontainers</groupId>
+                    <artifactId>mariadb</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>connectors-it-sources</id>
+                                <phase>generate-test-sources</phase>
+                                <goals>
+                                    <goal>add-test-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/connectors-it/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/*ConnIT.java</include>
+                            </includes>
                         </configuration>
                         <executions>
                             <execution>

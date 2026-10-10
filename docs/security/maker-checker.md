@@ -27,6 +27,8 @@ undecided request (`CANCELLED`).
 | `API_CLIENT_CREATE` | A machine identity for a bank system (ws26); payload `{name, authMethod, scopes, allowedCidrs, expiresAt, certFingerprint?, certSubject?}` — no secret at submit. APPLY generates the client id and secret, stores the Argon2id hash, seals the plaintext (SecretVault) for the **maker's** one-time read within 24 h (`GET …/api-clients/{id}/initial-secret`) and sets the change's target to the new client; audited `API_CLIENT_CREATED` | `integration:admin` | `POST /api/admin/integrations/api-clients` → 202 | `change:approve` (same bank) |
 | `EGRESS_RULE_APPROVE` | Open a bank's requested private-network destination (host or CIDR + port) to its DIRECT connections (ws25); payload `{ruleId}` (+ `bankId, bankCode, host\|cidr, port, reason` for review only); the rule must still be `PENDING` at apply; audited `EGRESS_RULE_APPROVED` in the bank and the platform bank. Revoking is direct, by the bank (`DELETE /api/admin/integrations/egress-rules/{id}`). Details: [docs/integration/secrets.md](../integration/secrets.md) | `platform:banks` | `POST /api/platform/egress-rules/{id}/approve` → 202 | `change:approve` (a second platform admin) |
 | `AGENT_REGISTER`   | Register an on-prem Connector Agent (ws26); payload `{name}`. Applying creates the agent `PENDING_ENROLMENT` with a one-time enrolment token (15 min; only its SHA-256 is kept, the token is sealed for the **maker**, who reads it once via `GET /api/admin/integrations/agents/{id}/enrolment`); audited `AGENT_REGISTERED`, then `AGENT_ENROLLED` when the agent enrols. Revoking (`POST …/agents/{id}/revoke`, audit `AGENT_REVOKED`) is direct | `integration:admin` | `POST /api/admin/integrations/agents` → 202 | `change:approve` (same bank) |
+| `INTEGRATION_CONNECTION_CHANGE` | A new integration connection, or a change of an existing one's host, settings, mode or credentials (ws25). The secret is **sealed at submit** by the SecretVault: the queue holds `{connectionId?, name, type, mode, agentId?, config, authType, secretCiphertext?, secretKeyVersion?, secretRef?, baseVersion?}` and the API strips `secretCiphertext` from every response. Apply refuses a connection changed since the request (`baseVersion`), resets it to UNTESTED and audits `INTEGRATION_CONNECTION_CHANGED` | `integration:admin` | `POST /api/admin/integrations/connections` → 202, `PUT …/{id}` (anything but a rename) → 202 | `change:approve` (a second admin) |
+| `INTEGRATION_FLOW_ENABLE` | Enable an OUTBOUND flow — data leaving the bank's tenant — or re-enable one an admin widened (masking turned off, more payload kinds or events, another connection, target, template, mapping or format: the flow is disabled at once). Payload `{flowId, flowVersion}`: a flow edited after the request is refused at apply. Audited `INTEGRATION_FLOW_ENABLED` | `integration:admin` | `POST /api/admin/integrations/flows/{id}/enable` → 202 (outbound), `PUT …/flows/{id}` that widens an enabled outbound flow → 202 | `change:approve` (a second admin) |
 
 Everything can also be submitted through the generic
 `POST /api/admin/changes` (`{changeType, payload, comment}`); the use case
@@ -63,6 +65,15 @@ and the API strips the hashes at any depth). Reactivating a suspended bank
 (`POST /api/platform/banks/{id}/reactivate`) is direct — the lower-risk
 direction.
 Both resets share the `admin-security` rate-limit bucket (10 per window).
+
+The integration hub (ws25) keeps the lower-risk directions direct:
+renaming a connection (`PUT …/connections/{id}` changing only the name,
+200), deleting a connection no flow uses, creating or editing a flow (it
+is created DISABLED), enabling an INBOUND flow (data enters the bank's own
+tenant), disabling any flow, and running an enabled flow. All of them are
+audited (`INTEGRATION_CONNECTION_CHANGED`, `INTEGRATION_FLOW_SAVED`,
+`INTEGRATION_FLOW_DELETED`, `INTEGRATION_FLOW_ENABLED`,
+`INTEGRATION_FLOW_DISABLED`).
 
 ## Flow
 

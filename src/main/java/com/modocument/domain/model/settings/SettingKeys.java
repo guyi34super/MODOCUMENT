@@ -75,6 +75,11 @@ public final class SettingKeys {
             "alerts.apiClientAuthFailures.threshold";
     public static final String ALERT_API_CLIENT_AUTH_FAILURES_WINDOW =
             "alerts.apiClientAuthFailures.window";
+    /** ws25 (SE4): the integration-failures windowed alert rule. */
+    public static final String ALERT_INTEGRATION_FAILURES_THRESHOLD =
+            "alerts.integrationFailures.threshold";
+    public static final String ALERT_INTEGRATION_FAILURES_WINDOW =
+            "alerts.integrationFailures.window";
     public static final String ALERT_WEBHOOK_MIN_SEVERITY = "alerts.webhook.minSeverity";
     public static final String ALERT_EMAIL_MIN_SEVERITY = "alerts.email.minSeverity";
 

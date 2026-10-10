@@ -483,6 +483,25 @@ modocument:
         group-by: ACTOR
         window: 5m
         severity: MEDIUM
+      # ws25 (SE4): integration runs failing repeatedly in one bank (a bank
+      # system down, rotated credentials, a changed table).
+      - name: integration-failures
+        description: Repeated integration run failures
+        trigger: WINDOWED
+        actions: [INTEGRATION_RUN_FAILED]
+        group-by: BANK
+        threshold: ${MODOCUMENT_ALERT_INTEGRATION_FAILURES_THRESHOLD:5}
+        window: 1h
+        severity: MEDIUM
+      # ws25 (SE4): an outbound delivery gave up after its retries - data the
+      # bank expects did not arrive; replay it from the run page.
+      - name: integration-dead-letter
+        description: Outbound integration delivery dead-lettered
+        trigger: IMMEDIATE
+        actions: [INTEGRATION_DELIVERY_DEAD]
+        group-by: BANK
+        window: 15m
+        severity: HIGH
   settings:
     # ws20 editable settings (docs/settings/catalogue.md). The catalogue,
     # types and hard limits are code; administrators' values live in the
@@ -846,3 +865,36 @@ modocument:
       # AI_WITH_CODE_FALLBACK mode; batches not started by then are parsed
       # by code (ParsedBy AI_PARTIAL, reason TIMEOUT).
       time-budget: ${MODOCUMENT_AI_EXTRACTION_TIME_BUDGET:10m}
+
+---
+# ============================================================================
+# ws25 (SE4, phase 2) - Bank Integration Hub: connectors and flow engine.
+# Infrastructure wiring only; the editable knobs are the settings catalogue's
+# integration.* keys (max rows per run, run timeout, minimum schedule
+# interval, webhook retry attempts, outbound PII masking default).
+# ============================================================================
+modocument:
+  integration:
+    connectors:
+      # Every connector call (HTTP, JDBC, SFTP) has both timeouts.
+      connect-timeout: ${MODOCUMENT_INTEGRATION_CONNECT_TIMEOUT:10s}
+      read-timeout: ${MODOCUMENT_INTEGRATION_READ_TIMEOUT:30s}
+      # Largest SFTP file pulled or pushed, and largest HTTP response read.
+      max-file-bytes: ${MODOCUMENT_INTEGRATION_MAX_FILE_BYTES:52428800}
+      max-response-bytes: ${MODOCUMENT_INTEGRATION_MAX_RESPONSE_BYTES:20971520}
+      # Plain http:// REST/WEBHOOK targets. Never in staging/production:
+      # credentials and records must not travel unencrypted.
+      allow-plain-http: false
+    engine:
+      # IntegrationScheduler tick: due SCHEDULE flows, run timeouts, outbox.
+      scheduler-enabled: ${MODOCUMENT_INTEGRATION_SCHEDULER_ENABLED:true}
+      tick-ms: 30000
+      # Threads executing runs (each holds one connection to a bank system).
+      worker-threads: ${MODOCUMENT_INTEGRATION_WORKER_THREADS:4}
+      # Outbox: deliveries claimed per bank per tick, the claim lease, and
+      # the exponential retry backoff (30 s, 1 m, 2 m, ... capped at 1 h).
+      dispatch-batch-size: 50
+      dispatch-lease: 2m
+      base-backoff: 30s
+      max-backoff: 1h
+      read-page-size: 1000

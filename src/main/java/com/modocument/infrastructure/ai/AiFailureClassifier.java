@@ -7,6 +7,7 @@ import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.io.InterruptedIOException;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.net.http.HttpTimeoutException;
@@ -15,6 +16,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -30,7 +32,8 @@ import java.util.concurrent.TimeoutException;
  *   <li>{@link AiPromptRefusedException} → PROMPT_REFUSED;</li>
  *   <li>{@link AiOutputRejectedException} → OUTPUT_REJECTED;</li>
  *   <li>transport failures and timeouts ({@link ResourceAccessException},
- *       socket/HTTP timeouts, refused connections) → TIMEOUT;</li>
+ *       socket/HTTP timeouts, interrupted I/O, a cancelled exchange,
+ *       refused connections) → TIMEOUT;</li>
  *   <li>provider errors ({@link TransientAiException} after retries,
  *       {@link NonTransientAiException}, HTTP error responses) → ERROR;</li>
  *   <li>{@link LlmExtractionFailedException} with none of the above → INVALID_OUTPUT;</li>
@@ -112,8 +115,16 @@ public final class AiFailureClassifier {
         return true;
     }
 
+    /**
+     * BUG-03: a model read timeout can surface as a bare
+     * {@link CancellationException} (the HTTP client cancels the exchange) or
+     * an {@link InterruptedIOException}; both are timeouts — they count for
+     * the breaker and never earn a corrective re-prompt.
+     */
     private static boolean isTimeoutOrUnreachable(Throwable t) {
         return t instanceof ResourceAccessException
+                || t instanceof CancellationException
+                || t instanceof InterruptedIOException
                 || t instanceof SocketTimeoutException
                 || t instanceof HttpTimeoutException
                 || t instanceof ConnectException

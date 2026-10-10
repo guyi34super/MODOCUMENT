@@ -70,7 +70,11 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     "apiclient", "apiclientsecret", "apiclientinitialsecret",
                     "idempotencykey",
                     // V261 (ws26): a bank's on-prem Connector Agents.
-                    "integrationagent");
+                    "integrationagent",
+                    // V250/V252 (ws25): the integration hub's connections,
+                    // flows, runs, run log, outbox and event stream.
+                    "integrationconnection", "integrationflow", "integrationrun",
+                    "integrationrunevent", "outbounddelivery", "integrationevent");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

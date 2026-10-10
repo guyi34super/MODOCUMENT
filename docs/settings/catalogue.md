@@ -176,6 +176,8 @@ application.yml has exactly one threshold and one window setting
 | `alerts.parseFallbackSurge.window` | Security alerts | PLATFORM | SECURITY | DURATION | 1h | 1m – 1h |  |  | `modocument.alerts.rules[parse-fallback-surge].window` |
 | `alerts.apiClientAuthFailures.threshold` | Security alerts | PLATFORM | SECURITY | INT | 10 events | 1 – 40 |  |  | `modocument.alerts.rules[api-client-auth-failures].threshold` |
 | `alerts.apiClientAuthFailures.window` | Security alerts | PLATFORM | SECURITY | DURATION | 5m | 1m – 1h |  |  | `modocument.alerts.rules[api-client-auth-failures].window` |
+| `alerts.integrationFailures.threshold` | Security alerts | PLATFORM | SECURITY | INT | 5 events | 1 – 20 |  |  | `modocument.alerts.rules[integration-failures].threshold` |
+| `alerts.integrationFailures.window` | Security alerts | PLATFORM | SECURITY | DURATION | 1h | 1m – 1h |  |  | `modocument.alerts.rules[integration-failures].window` |
 | `alerts.webhook.minSeverity` | Security alerts | PLATFORM | SECURITY | ENUM | INFO | INFO, LOW, MEDIUM |  |  | `modocument.alerts.webhook.min-severity` |
 | `alerts.email.minSeverity` | Security alerts | PLATFORM | SECURITY | ENUM | INFO | INFO, LOW, MEDIUM |  |  | `modocument.alerts.email.min-severity` |
 | `extraction.defaultMode` | AI & extraction | BANK | OPERATIONAL | ENUM | AI_WITH_CODE_FALLBACK | AI_WITH_CODE_FALLBACK, CODE_ONLY, AI_ONLY |  |  | — (code default) |

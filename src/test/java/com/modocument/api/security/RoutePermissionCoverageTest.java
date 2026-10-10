@@ -83,20 +83,13 @@ class RoutePermissionCoverageTest {
      * /api/doccreation/instances).
      */
     /**
-     * Phase-2 vocabulary whose routes have not landed yet. Each workstream
-     * removes its own entries when it adds the routes (wave 0 contract,
-     * docs/phase2/contracts.md).
+     * Permissions whose routes have not landed yet. Empty since wave 3: every
+     * phase-2 permission now guards a route (ws20 settings, ws21 platform
+     * banks, ws22 template publish, ws24 system info and announcements, ws25
+     * integration admin and runs, ws26 client scopes and agent connect). A
+     * future permission is listed here until its first route lands.
      */
-    private static final Set<Permission> RESERVED = EnumSet.of(
-            // ws20 landed SETTINGS_READ/SETTINGS_WRITE, PLATFORM_SETTINGS and
-            // PLATFORM_READ; ws21 landed PLATFORM_BANKS; ws22 landed
-            // TEMPLATE_PUBLISH (PUT /Templates/{id}/Visibility); ws24 landed
-            // PLATFORM_ANNOUNCE.
-            // ws26 landed INTEGRATION_INGEST/RESULTS/DOCS/EVENTS
-            // (/api/integration/v1/**), INTEGRATION_ADMIN
-            // (/api/admin/integrations/api-clients and /agents, ws25 egress
-            // rules) and AGENT_CONNECT (/api/agent/v1/**).
-            Permission.INTEGRATION_RUN);                                // ws25
+    private static final Set<Permission> RESERVED = EnumSet.noneOf(Permission.class);
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

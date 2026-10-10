@@ -33,9 +33,34 @@ public class UploadStorage {
     /** Saves the file and returns the stored (timestamped) file name. */
     public String store(MultipartFile file) {
         try {
+            Path target = newTarget(file.getOriginalFilename());
+            file.transferTo(target.toAbsolutePath());
+            return target.getFileName().toString();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not store uploaded file.", e);
+        }
+    }
+
+    /**
+     * ws25: saves bytes a machine delivered (an integration flow's SFTP pull)
+     * under the same naming rules; returns the stored file name.
+     */
+    public String store(String originalFileName, byte[] content) {
+        try {
+            Path target = newTarget(originalFileName);
+            Files.write(target, content);
+            return target.getFileName().toString();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not store the delivered file.", e);
+        }
+    }
+
+    /** A fresh, collision-free stored name in uploads/ (timestamp suffix, length-capped). */
+    private Path newTarget(String original) throws IOException {
+        {
             Files.createDirectories(uploadsDir);
 
-            String originalName = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
+            String originalName = original == null ? "file" : original;
             // Keep only the last path segment; browsers/clients may send paths.
             // getFileName() is null for a bare "/" or "C:\\", hence the fallback.
             Path lastSegment = Path.of(originalName).getFileName();
@@ -64,10 +89,7 @@ public class UploadStorage {
             for (int attempt = 2; Files.exists(uploadsDir.resolve(storedName)); attempt++) {
                 storedName = baseName + "_" + stamp + "-" + attempt + extension;
             }
-            file.transferTo(uploadsDir.resolve(storedName).toAbsolutePath());
-            return storedName;
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not store uploaded file.", e);
+            return uploadsDir.resolve(storedName);
         }
     }
 

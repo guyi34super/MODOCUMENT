@@ -175,7 +175,8 @@ public class IntegrationApiController {
             uploadOwnership.rejectDuplicate(originalName, sha256);
             String storedName = uploadStorage.store(file);
             uploadOwnership.record(storedName, originalName, file.getSize(), sha256);
-            IngestionJob job = ingestion.create(storedName, templateId);
+            IngestionJob job = ingestion.create(storedName, templateId,
+                    "api-client:" + client.apiClientId());
             jobRunner.enqueueResume(job.getIngestionJobId(), JobStep.VALIDATED);
             return accepted(job.getIngestionJobId());
         });

@@ -268,6 +268,10 @@ public final class SettingDefinitions {
                     "API client authentication failures", "10", "40"),
             alertWindow(ALERT_API_CLIENT_AUTH_FAILURES_WINDOW, "api-client-auth-failures",
                     "API client authentication failures: window", "5m"),
+            alertThreshold(ALERT_INTEGRATION_FAILURES_THRESHOLD, "integration-failures",
+                    "Integration run failures", "5", "20"),
+            alertWindow(ALERT_INTEGRATION_FAILURES_WINDOW, "integration-failures",
+                    "Integration run failures: window", "60m"),
             builder(ALERT_WEBHOOK_MIN_SEVERITY, ENUM).platform().security()
                     .group(SettingGroup.SECURITY_ALERTS)
                     .label("Webhook: minimum severity")

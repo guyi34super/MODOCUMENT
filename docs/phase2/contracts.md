@@ -192,8 +192,9 @@ Ports: `application/port/integration/`.
 | `ApiClientIssuer.issueAgentClient(...)` | SE2 | SE5 `POST /api/agent/v1/enroll` |
 | `AgentRunPort` (`claimTasks`, `acceptRecords`, `payload`, `complete`) | SE4 | SE5 `/api/agent/v1/**` |
 
-**Placeholders.** `infrastructure/integration/placeholder/` holds one bean per
-port so each branch boots alone. **The owner deletes its placeholder in the
+**Placeholders (all replaced at the Wave-3 merge; the package is gone).**
+`infrastructure/integration/placeholder/` held one bean per port so each
+branch booted alone. **The owner deletes its placeholder in the
 same commit that adds the real `@Component`.** Nobody else edits those files.
 Consumers unit-test against mocks of the port, never the placeholder.
 

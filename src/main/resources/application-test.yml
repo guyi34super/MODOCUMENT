@@ -33,6 +33,15 @@ modocument:
     # deliberately worthless value) so the secret vault works in the H2
     # suite; real deployments set MODOCUMENT_CONNECTOR_KEY.
     connector-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    engine:
+      # ws25: no scheduled integration tick against the shared H2 schema;
+      # the engine tests drive IntegrationScheduler.tick() directly, and
+      # "Run now" executes in the request thread (deterministic).
+      scheduler-enabled: false
+      synchronous: true
+    connectors:
+      # The connector tests talk to loopback JDK HTTP stubs.
+      allow-plain-http: true
   platform:
     # ws21 BankDirectory: no caching in tests. Test contexts with different
     # configurations recreate the shared H2 schema (ddl-auto: create), so a

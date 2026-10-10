@@ -5,7 +5,7 @@
 # docs/api/versioning-policy.md. Regenerate with:
 #   mvn -Dtest=OpenApiContractTest \
 #       -Dmodocument.contract.update=true test
-# 187 operations.
+# 205 operations.
 POST /ImportDetails/Create
 GET /ImportDetails/GetAll
 GET /ImportDetails/GetById/{id}
@@ -63,10 +63,28 @@ POST /api/admin/integrations/api-clients
 GET /api/admin/integrations/api-clients/{id}/initial-secret
 POST /api/admin/integrations/api-clients/{id}/revoke
 POST /api/admin/integrations/api-clients/{id}/rotate
+GET /api/admin/integrations/connections
+POST /api/admin/integrations/connections
+DELETE /api/admin/integrations/connections/{id}
+GET /api/admin/integrations/connections/{id}
+PUT /api/admin/integrations/connections/{id}
+POST /api/admin/integrations/connections/{id}/test
 GET /api/admin/integrations/egress-rules
 POST /api/admin/integrations/egress-rules
 DELETE /api/admin/integrations/egress-rules/{id}
 POST /api/admin/integrations/egress-rules/{id}/revoke
+GET /api/admin/integrations/flows
+POST /api/admin/integrations/flows
+DELETE /api/admin/integrations/flows/{id}
+GET /api/admin/integrations/flows/{id}
+PUT /api/admin/integrations/flows/{id}
+POST /api/admin/integrations/flows/{id}/disable
+POST /api/admin/integrations/flows/{id}/enable
+POST /api/admin/integrations/flows/{id}/preview
+POST /api/admin/integrations/flows/{id}/run
+GET /api/admin/integrations/runs
+GET /api/admin/integrations/runs/{id}
+POST /api/admin/integrations/runs/{id}/retry
 POST /api/admin/retention/run
 GET /api/admin/retention/status
 GET /api/admin/settings

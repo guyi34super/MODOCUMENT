@@ -70,6 +70,8 @@ public class DocReleaseUseCase {
     private final AuditRecorder audit;
     private final SodPolicy sodPolicy;
     private final StorageProperties storage;
+    /** ws25: DOC_RELEASED joins the release transaction (outbound EVENT flows). */
+    private final com.modocument.application.port.integration.IntegrationEventLog eventLog;
 
     public DocReleaseUseCase(DocInstanceRepository instances,
                              DocBlueprintRepository blueprints,
@@ -80,7 +82,9 @@ public class DocReleaseUseCase {
                              AppUserRepository users,
                              AuditRecorder audit,
                              SodPolicy sodPolicy,
-                             StorageProperties storage) {
+                             StorageProperties storage,
+                             com.modocument.application.port.integration.IntegrationEventLog eventLog) {
+        this.eventLog = eventLog;
         this.instances = instances;
         this.blueprints = blueprints;
         this.sections = sections;
@@ -171,6 +175,14 @@ public class DocReleaseUseCase {
                 .entity("DocInstance", String.valueOf(saved.getDocInstanceId()))
                 .newValues(values)
                 .build());
+        // ws25: the integration event (and the outbox rows of subscribed
+        // outbound flows) commit with the release, or not at all.
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("documentId", saved.getDocInstanceId());
+        event.put("blueprintId", saved.getBlueprintId());
+        event.put("aiComposed", saved.isAiComposed());
+        eventLog.publish(saved.getBankId(), com.modocument.domain.model.integration.FlowEvent.DOC_RELEASED,
+                "DocInstance", String.valueOf(saved.getDocInstanceId()), event);
         return toSummary(saved);
     }
 

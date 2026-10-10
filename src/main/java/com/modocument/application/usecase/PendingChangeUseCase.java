@@ -393,6 +393,10 @@ public class PendingChangeUseCase {
         if (node instanceof ObjectNode object) {
             object.remove("passwordHash");
             object.remove("temporaryPassword");
+            // ws25: a connection change holds its secret sealed; even the
+            // ciphertext stays in the backend.
+            object.remove("secretCiphertext");
+            object.remove("secret");
             object.elements().forEachRemaining(PendingChangeUseCase::stripCredentials);
         } else if (node != null && node.isArray()) {
             node.elements().forEachRemaining(PendingChangeUseCase::stripCredentials);

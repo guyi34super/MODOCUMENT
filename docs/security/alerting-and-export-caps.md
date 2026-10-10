@@ -82,6 +82,8 @@ HIGH < CRITICAL), `enabled`.
 | `platform-change` (ws20/ws21) | immediate | `PLATFORM_SETTING_UPDATED`, `PLATFORM_BOOTSTRAPPED`, `BANK_ONBOARDED`, `BANK_SUSPENDED`, `BANK_REACTIVATED`, `BANK_ADMIN_ADDED`, `EGRESS_RULE_APPROVED` (wave 3) | entity (bank lifecycle rows are audited in the customer bank and the platform bank: one alert each) | – / 5m | HIGH | |
 | `parse-fallback-surge` (ws23) | windowed | `INGESTION_PARSE_FALLBACK` | bank | ≥ 20 / 1h | MEDIUM | `MODOCUMENT_ALERT_PARSE_FALLBACK_SURGE_THRESHOLD` |
 | `ai-circuit-opened` (ws23) | immediate | `AI_CIRCUIT_OPENED` | bank | – / 15m | HIGH | |
+| `integration-failures` (ws25) | windowed | `INTEGRATION_RUN_FAILED` | bank | ≥ 5 / 1h | MEDIUM | `MODOCUMENT_ALERT_INTEGRATION_FAILURES_THRESHOLD` |
+| `integration-dead-letter` (ws25) | immediate | `INTEGRATION_DELIVERY_DEAD` | bank | – / 15m | HIGH | |
 
 **Platform tuning (ws20).** Every windowed rule's threshold and window is
 also a platform setting (`alerts.<rule>.threshold` / `.window`, Security
