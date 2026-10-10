@@ -160,7 +160,12 @@ test.describe('code extraction fallback @phase2 @wave2', () => {
     await labelPattern.fill('Ref([');
     await section.getByRole('button', { name: 'Save hints' }).click();
     await expect(labelPattern).toHaveAttribute('aria-invalid', 'true');
-    await expect(section.getByRole('alert').filter({ hasText: /pattern/i }).first()).toBeVisible();
+    // The server's 400 is split per field: the message sits under THIS input.
+    const errorId = (await labelPattern.getAttribute('aria-describedby')).split(' ').find((id) => id.endsWith('-error'));
+    const fieldError = page.locator(`[id="${errorId}"]`);
+    await expect(fieldError).toHaveAttribute('role', 'alert');
+    await expect(fieldError).not.toBeEmpty();
+    await expect(section.getByLabel('Value pattern')).not.toHaveAttribute('aria-invalid', 'true');
 
     await labelPattern.fill('Ref(erence)?');
     await section.getByLabel('Aliases').fill('Ref No\nInvoice');

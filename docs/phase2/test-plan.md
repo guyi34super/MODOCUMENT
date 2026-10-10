@@ -307,11 +307,11 @@ Full list with repro steps and the go/no-go: `docs/qa/phase2-signoff.md`.
 | BUG-06 | P4 | A REST_API/WEBHOOK connection whose base URL is the cloud metadata endpoint (`169.254.169.254`, `fd00:ec2::254`) is accepted at submit (202) and can be approved; only the connect-time egress guard refuses it. | `IntegrationHubSecurityQaTest#bug06MetadataDestinationRefusedAtSubmit` (`@Disabled`) | SE4 (ConnectionValidator) / SE1 |
 | BUG-07 | P4 | Renaming a connection answers 200 with the version from before the rename (JPA bumps `@Version` at commit); sending it back as `expectedVersion` gives 409. | `IntegrationHubSecurityQaTest#bug07RenameAnswersTheCommittedVersion` (`@Disabled`); E2E AC-INT-01 re-reads | SE4 |
 | BUG-08 | P3 | Raising or clearing the row cap of an ENABLED outbound flow is applied directly (200); the security plan (S37) treats it as a widening that needs a second admin. | `IntegrationHubSecurityQaTest#bug08RaisingTheRowCapIsAWidening` (`@Disabled`) | SE4 |
-| OBS-07..15 | P3–P4 | See `docs/qa/phase2-signoff.md` §4 (DNS re-resolution window, no FILE_TOO_LARGE event, no webhook secret overlap, S28 signing not built, agent h2c on plain http, code-extraction gaps found by SE4). | | |
+| OBS-07..17 | P3–P4 | See `docs/qa/phase2-signoff.md` §4: agent h2c on plain http, AGENT `secretSet` meaning, DNS re-resolution window, no FILE_TOO_LARGE event, no webhook secret overlap, S28 signing not built, four code-extraction gaps found by SE4 (HDR/TRL rows, non-English totals label, pipe in a summary line, merged fixed-width columns), a11y pass not covering phase-1 pages. | | |
 
 ## 9. Sign-off record
 
 | Wave | Date | Result | Waivers | QA | Supervisor |
 |---|---|---|---|---|---|
 | 1 | | | BUG-01 (owner mode for the smoke gate) pending decision | | |
-| 4 | 2026-10-10 | QA: **GO** for v1.1.0-rc.1 (no open P1/P2; see `docs/qa/phase2-signoff.md`) | BUG-03, BUG-04, BUG-06, BUG-07, BUG-08 (P3/P4); AWS-only checks listed in the sign-off | QA | |
+| 4 | 2026-10-10 | QA: **GO** for v1.1.0-rc.1 (no open P1/P2; see `docs/qa/phase2-signoff.md`) | BUG-03, BUG-06, BUG-07, BUG-08 open (P3/P4); BUG-04 fixed; AWS-only checks listed in the sign-off | QA | |
