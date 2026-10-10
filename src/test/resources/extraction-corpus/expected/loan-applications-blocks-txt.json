@@ -1,0 +1,71 @@
+{
+  "name": "loan-applications-blocks-txt",
+  "file": "loan-applications.txt",
+  "strategy": "KEY_VALUE",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "'=' and ' - ' separators; a label with a parenthesised unit matched by alias",
+  "fields": [
+    {
+      "name": "Application No",
+      "type": "TEXT"
+    },
+    {
+      "name": "Applicant Name",
+      "type": "TEXT"
+    },
+    {
+      "name": "Product",
+      "type": "TEXT"
+    },
+    {
+      "name": "Amount Requested",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Tenor",
+      "type": "NUMBER",
+      "aliases": [
+        "Tenor (months)"
+      ]
+    },
+    {
+      "name": "Date Received",
+      "type": "DATE"
+    }
+  ],
+  "rows": [
+    [
+      "LA-3301",
+      "Vikram Ramsurrun",
+      "Home loan",
+      "2500000.00",
+      "240",
+      "2024-05-06"
+    ],
+    [
+      "LA-3302",
+      "Sophie Ng",
+      "Car loan",
+      "850000.00",
+      "60",
+      "2024-05-07"
+    ],
+    [
+      "LA-3303",
+      "Ibrahim Joomun",
+      "Personal loan",
+      "150000.00",
+      "36",
+      "2024-05-07"
+    ],
+    [
+      "LA-3304",
+      "Clarisse Perrine",
+      "Education loan",
+      "400000.00",
+      "84",
+      "2024-05-09"
+    ]
+  ]
+}

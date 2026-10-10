@@ -1,0 +1,30 @@
+Account opening requests - branch Rose-Hill
+========================================
+Request Ref: AOR-7001
+Account Type: Savings
+Applicant: Jean-Marc Labonte
+Currency: MUR
+Initial Deposit: 5000.00
+Received: 2024-04-02
+----------------------------------------
+Request Ref: AOR-7002
+Account Type: Current
+Applicant: Pooja Ramlall
+Currency: USD
+Initial Deposit: 1000.00
+Received: 2024-04-02
+----------------------------------------
+Request Ref: AOR-7003
+Account Type: Savings
+Applicant: Li Wen Chung
+Currency: MUR
+Initial Deposit: 250.00
+Received: 2024-04-03
+----------------------------------------
+Request Ref: AOR-7004
+Account Type: Fixed Deposit
+Applicant: Nadia Bundhoo
+Currency: EUR
+Initial Deposit: 20000.00
+Received: 2024-04-04
+----------------------------------------

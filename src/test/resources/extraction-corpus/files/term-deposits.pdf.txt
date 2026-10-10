@@ -1,0 +1,10 @@
+TERM DEPOSITS MATURING - JULY/AUGUST 2024
+
+Deposit No  Customer                           Principal  Rate %  Maturity
+TD-100231   Rajesh Bholah                     500,000.00    4.25  2024-07-15
+TD-100232   Marie-Claire Ah Chuen           1,200,000.00    4.50  2024-07-18
+TD-100245   Kestrel Partners Ltd            3,000,000.00    4.75  2024-07-22
+TD-100250   Yusuf Dawreeawoo                  250,000.00    4.00  2024-07-30
+TD-100266   Blue Lagoon Holdings           10,000,000.00    5.10  2024-08-01
+
+Prepared by Treasury Operations

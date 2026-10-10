@@ -1,0 +1,76 @@
+{
+  "name": "card-settlement-pipe-txt",
+  "file": "card-settlement.txt",
+  "strategy": "DELIMITED",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "pipe-delimited .txt with a dashed rule and a summary line after the table (QA: a summary line that itself contains a pipe is read as a row)",
+  "fields": [
+    {
+      "name": "Settlement ID",
+      "type": "TEXT"
+    },
+    {
+      "name": "Merchant ID",
+      "type": "TEXT"
+    },
+    {
+      "name": "Scheme",
+      "type": "TEXT"
+    },
+    {
+      "name": "Gross Amount",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Fee",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Value Date",
+      "type": "DATE"
+    }
+  ],
+  "rows": [
+    [
+      "STL-55101",
+      "MERCH-0042",
+      "VISA",
+      "152340.00",
+      "1523.40",
+      "2024-04-02"
+    ],
+    [
+      "STL-55102",
+      "MERCH-0042",
+      "MASTERCARD",
+      "98110.25",
+      "1177.32",
+      "2024-04-02"
+    ],
+    [
+      "STL-55103",
+      "MERCH-0107",
+      "VISA",
+      "12450.00",
+      "124.50",
+      "2024-04-02"
+    ],
+    [
+      "STL-55104",
+      "MERCH-0219",
+      "AMEX",
+      "40500.00",
+      "1012.50",
+      "2024-04-03"
+    ],
+    [
+      "STL-55105",
+      "MERCH-0219",
+      "VISA",
+      "7300.80",
+      "73.01",
+      "2024-04-03"
+    ]
+  ]
+}

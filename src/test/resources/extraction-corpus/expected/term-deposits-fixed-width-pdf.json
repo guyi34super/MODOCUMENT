@@ -1,0 +1,70 @@
+{
+  "name": "term-deposits-fixed-width-pdf",
+  "file": "term-deposits.pdf",
+  "strategy": "FIXED_WIDTH",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "Courier PDF, multi-word names, large amounts with thousands separators",
+  "fields": [
+    {
+      "name": "Deposit No",
+      "type": "TEXT"
+    },
+    {
+      "name": "Customer",
+      "type": "TEXT"
+    },
+    {
+      "name": "Principal",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Rate",
+      "type": "NUMBER",
+      "aliases": [
+        "Rate %"
+      ]
+    },
+    {
+      "name": "Maturity",
+      "type": "DATE"
+    }
+  ],
+  "rows": [
+    [
+      "TD-100231",
+      "Rajesh Bholah",
+      "500000.00",
+      "4.25",
+      "2024-07-15"
+    ],
+    [
+      "TD-100232",
+      "Marie-Claire Ah Chuen",
+      "1200000.00",
+      "4.50",
+      "2024-07-18"
+    ],
+    [
+      "TD-100245",
+      "Kestrel Partners Ltd",
+      "3000000.00",
+      "4.75",
+      "2024-07-22"
+    ],
+    [
+      "TD-100250",
+      "Yusuf Dawreeawoo",
+      "250000.00",
+      "4.00",
+      "2024-07-30"
+    ],
+    [
+      "TD-100266",
+      "Blue Lagoon Holdings",
+      "10000000.00",
+      "5.10",
+      "2024-08-01"
+    ]
+  ]
+}

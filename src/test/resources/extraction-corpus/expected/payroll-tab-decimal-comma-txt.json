@@ -1,0 +1,70 @@
+{
+  "name": "payroll-tab-decimal-comma-txt",
+  "file": "payroll-tab.txt",
+  "strategy": "DELIMITED",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "TAB delimiter, CRLF, decimal comma with dot thousands, title line, a totals row (QA: a non-English totals label such as Summe is kept as a row)",
+  "fields": [
+    {
+      "name": "Personnel No",
+      "type": "TEXT"
+    },
+    {
+      "name": "Name",
+      "type": "TEXT"
+    },
+    {
+      "name": "Department",
+      "type": "TEXT"
+    },
+    {
+      "name": "Gross Pay",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Payment Date",
+      "type": "DATE",
+      "dateFormats": [
+        "dd.MM.yyyy"
+      ]
+    }
+  ],
+  "rows": [
+    [
+      "1001",
+      "Lea Koenig",
+      "Operations",
+      "3250.00",
+      "2024-01-31"
+    ],
+    [
+      "1002",
+      "Marco Rossi",
+      "Treasury",
+      "4120.45",
+      "2024-01-31"
+    ],
+    [
+      "1003",
+      "Nina Jaworski",
+      "Compliance",
+      "3890.10",
+      "2024-01-31"
+    ],
+    [
+      "1004",
+      "Olaf Berg",
+      "IT",
+      "5002.00",
+      "2024-01-31"
+    ],
+    [
+      "1005",
+      "Pia Lindqvist",
+      "Retail",
+      "2975.60",
+      "2024-01-31"
+    ]
+  ]
+}
