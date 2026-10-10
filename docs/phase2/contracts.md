@@ -34,6 +34,15 @@ permission removes it from RESERVED in the same commit.**
 - for `API_CLIENT` principals the token's `scope` claim narrows the grant
   (granted = role grant ∩ scopes).
 
+**Platform bank** (landed in Wave 0): `application/port/PlatformBankLookup`
+(`platformBankId()`, `isPlatformBank(id)`), implemented by
+`infrastructure/platform/PlatformBankDirectory` — resolves the bank whose
+code is `modocument.platform.bank-code` (default `MOI-PLATFORM`) as system in
+its own read-only transaction (the Bank table is RLS-protected) and caches
+the id. Platform settings rows, platform announcements and egress approvals
+are owned by this bank. SE2 creates the bank (bootstrap) and may extend the
+directory (kind/status) but keeps this interface.
+
 ## 2. Maker/checker change types (landed in Wave 0; appliers per workstream)
 
 | ChangeType | Maker permission | Applier owner | Payload (JSON) |

@@ -50,6 +50,9 @@ import java.util.concurrent.Callable;
  *   <li>{@code OidcClientConfig#oidcBankCodeValidator} — startup check that
  *       every configured OIDC provider's bank-code names an existing Bank,
  *       {@code runAsSystem} (reads the RLS-protected Bank table).</li>
+ *   <li>{@code PlatformBankDirectory#platformBankId} — phase 2: resolves
+ *       the platform bank by code, {@code runAsSystem} in its own read-only
+ *       transaction (the Bank table is RLS-protected); id cached.</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker
