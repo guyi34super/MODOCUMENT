@@ -3,6 +3,7 @@ package com.modocument.application.usecase;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.entity.Template;
+import com.modocument.domain.model.ExtractionMode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,12 +29,27 @@ public class UpdateTemplateUseCase {
     }
 
     /**
+     * ws23: a change of the template's extraction mode; {@code mode} null
+     * resets it to "inherit the bank default". Passing no change (null)
+     * keeps the stored mode.
+     */
+    public record ExtractionModeChange(ExtractionMode mode) {
+    }
+
+    /** Renames/redescribes; the extraction mode is kept. */
+    @Transactional
+    public Template handle(int templateId, String name, String description, int ownerUserId) {
+        return handle(templateId, name, description, null, ownerUserId);
+    }
+
+    /**
      * @param ownerUserId whose template this must be: the caller on the
      *     direct path, the MAKER when an approved pending change applies —
      *     a template the owner does not own is a 404, never an edit.
      */
     @Transactional
-    public Template handle(int templateId, String name, String description, int ownerUserId) {
+    public Template handle(int templateId, String name, String description,
+                           ExtractionModeChange modeChange, int ownerUserId) {
         Template existing = templates.getByIdAndOwner(templateId, ownerUserId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template " + templateId + " not found."));
@@ -43,6 +59,9 @@ public class UpdateTemplateUseCase {
         Map<String, Object> before = snapshot(existing);
         existing.setName(name);
         existing.setDescription(description);
+        if (modeChange != null) {
+            existing.setExtractionMode(modeChange.mode() == null ? null : modeChange.mode().name());
+        }
 
         Template response = templates.update(existing);
         audit.success("TEMPLATE_UPDATED", "Template", String.valueOf(response.getTemplateId()),
@@ -55,6 +74,7 @@ public class UpdateTemplateUseCase {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("name", template.getName());
         values.put("description", template.getDescription());
+        values.put("extractionMode", template.getExtractionMode());
         return values;
     }
 }

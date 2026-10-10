@@ -236,4 +236,46 @@ class AutoMapUseCaseTest {
         rule.setConfigJson(configJson);
         return rule;
     }
+
+    // ---- ws23 per-field aliases ---------------------------------------------------
+
+    @Test
+    void aFieldsOwnAliasesMapItsColumnsWithoutTheLlm() {
+        List<TemplateFields> fields = fields("CustomerName", "AccountNumber", "HireDate");
+        fields.get(0).setAliases(List.of("Nom du client"));
+        fields.get(1).setAliases(List.of("IBAN / Compte"));
+
+        Map<String, String> mapping = useCase.map(
+                context(List.of("nom du client", "IBAN/Compte", "Hire date"), fields));
+
+        assertThat(mapping).containsEntry("nom du client", "CustomerName")
+                .containsEntry("IBAN/Compte", "AccountNumber")
+                .containsEntry("Hire date", "HireDate");
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
+        verify(ai, never()).sendPrompt(any(PromptEnvelope.class));
+    }
+
+    @Test
+    void aliasesFeedTheSimilarityTierToo() {
+        // "Reference No" is no normalized form of the alias, but the alias
+        // table expands "No" to "Number": the similarity tier scores 0.95.
+        List<TemplateFields> fields = fields("TxnRef", "Amount");
+        fields.get(0).setAliases(List.of("Reference Number"));
+
+        Map<String, String> mapping = useCase.map(
+                context(List.of("Reference No", "Amount"), fields));
+
+        assertThat(mapping).containsEntry("Reference No", "TxnRef")
+                .containsEntry("Amount", "Amount");
+    }
+
+    @Test
+    void aFieldNameAlwaysBeatsAnotherFieldsAlias() {
+        List<TemplateFields> fields = fields("Email", "BackupEmail");
+        fields.get(1).setAliases(List.of("email"));
+
+        Map<String, String> mapping = useCase.map(context(List.of("EMAIL"), fields));
+
+        assertThat(mapping).containsEntry("EMAIL", "Email");
+    }
 }

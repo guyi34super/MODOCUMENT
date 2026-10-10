@@ -88,6 +88,16 @@ public class AutoMapUseCase {
         for (String field : fieldNames) {
             normalizedFields.putIfAbsent(normalize(field), field);
         }
+        // ws23: a field's own aliases count as its normalized names too —
+        // after every real field name, so a field name always wins.
+        for (TemplateFields field : context.fields()) {
+            for (String alias : field.getAliases()) {
+                String key = normalize(alias);
+                if (!key.isEmpty() && field.getFieldName() != null) {
+                    normalizedFields.putIfAbsent(key, field.getFieldName());
+                }
+            }
+        }
         // Exact matches claim their field before normalized ones, so a column
         // named exactly like a field never loses it to a fuzzier neighbour.
         List<String> unresolved = new ArrayList<>();
@@ -160,7 +170,10 @@ public class AutoMapUseCase {
             String votedField = historyVotes.get(normalize(column));
             for (String field : pool) {
                 double history = field.equals(votedField) ? HISTORY_SCORE : 0;
-                double name = ColumnNameSimilarity.score(column, field, properties.getAliases());
+                TemplateFields fieldEntity = fieldsByName.get(field);
+                double name = ColumnNameSimilarity.score(column, field,
+                        fieldEntity == null ? List.of() : fieldEntity.getAliases(),
+                        properties.getAliases());
                 double base = Math.max(history, name);
                 OptionalDouble shape = OptionalDouble.empty();
                 if (shapeBudget > 0) {

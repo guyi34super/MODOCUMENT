@@ -7,6 +7,7 @@ import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.entity.PendingChange;
 import com.modocument.domain.model.ChangeType;
+import com.modocument.domain.model.ExtractionMode;
 import org.springframework.stereotype.Component;
 
 import java.util.NoSuchElementException;
@@ -17,6 +18,9 @@ import java.util.NoSuchElementException;
  * endpoint); APPLY delegates to {@link UpdateTemplateUseCase} scoped to the
  * MAKER's ownership — the checker approves the maker's change, they do not
  * acquire edit rights over the template.
+ *
+ * <p>ws23: the payload may carry {@code extractionMode} (a mode name, or
+ * null to inherit the bank default); without the key the mode is kept.
  */
 @Component
 public class TemplateUpdateChangeApplier implements PendingChangeApplier {
@@ -46,6 +50,7 @@ public class TemplateUpdateChangeApplier implements PendingChangeApplier {
         int templateId = ChangePayloads.requireInt(payload, "templateId");
         String name = ChangePayloads.requireText(payload, "name", 255);
         String description = ChangePayloads.optionalText(payload, "description", 255);
+        UpdateTemplateUseCase.ExtractionModeChange modeChange = modeChange(payload);
         templates.getByIdAndOwner(templateId, currentUser.requireUserId())
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template " + templateId + " not found."));
@@ -56,7 +61,24 @@ public class TemplateUpdateChangeApplier implements PendingChangeApplier {
         if (description != null) {
             stored.put("description", description);
         }
+        if (modeChange != null) {
+            if (modeChange.mode() == null) {
+                stored.putNull("extractionMode");
+            } else {
+                stored.put("extractionMode", modeChange.mode().name());
+            }
+        }
         return new Prepared(stored, String.valueOf(templateId));
+    }
+
+    /** Null when the payload does not name the mode; a 400 for an unknown one. */
+    private static UpdateTemplateUseCase.ExtractionModeChange modeChange(JsonNode payload) {
+        if (payload == null || !payload.has("extractionMode")) {
+            return null;
+        }
+        JsonNode value = payload.get("extractionMode");
+        return new UpdateTemplateUseCase.ExtractionModeChange(
+                value == null || value.isNull() ? null : ExtractionMode.parse(value.asText()));
     }
 
     @Override
@@ -66,6 +88,7 @@ public class TemplateUpdateChangeApplier implements PendingChangeApplier {
                 ChangePayloads.requireInt(payload, "templateId"),
                 ChangePayloads.requireText(payload, "name", 255),
                 ChangePayloads.optionalText(payload, "description", 255),
+                modeChange(payload),
                 change.getMakerUserId());
     }
 }

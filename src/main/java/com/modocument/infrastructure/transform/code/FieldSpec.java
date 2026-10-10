@@ -12,9 +12,8 @@ import java.util.Objects;
  * the optional extraction hints a template author can give (aliases, a label
  * regex, a value regex with one capture group, accepted date formats).
  *
- * <p>The hints live on {@code TemplateFields} from V230 (Wave 2); until then
- * {@link #from(TemplateFields)} carries the name and type only and callers
- * add hints with the {@code with*} methods.
+ * <p>The hints live on {@code TemplateFields} (V230): {@link #from(TemplateFields)}
+ * carries them over; the {@code with*} methods override them.
  *
  * @param name         field name, also the output column name for label/regex strategies
  * @param type         TEXT, NUMBER or DATE (TemplateDataType ids 1, 2, 3)
@@ -67,10 +66,12 @@ public record FieldSpec(String name,
         return new FieldSpec(name, type, List.of(), null, null, List.of());
     }
 
-    /** Name and data type of a template field (extraction hints arrive with V230). */
+    /** A template field: name, data type and its V230 extraction hints. */
     public static FieldSpec from(TemplateFields field) {
-        return of(field.getFieldName(),
-                Type.of(field.getTemplateDataType(), field.getTemplateDataTypeId()));
+        return new FieldSpec(field.getFieldName(),
+                Type.of(field.getTemplateDataType(), field.getTemplateDataTypeId()),
+                field.getAliases(), field.getLabelPattern(), field.getValuePattern(),
+                field.getDateFormats());
     }
 
     public FieldSpec withAliases(List<String> newAliases) {

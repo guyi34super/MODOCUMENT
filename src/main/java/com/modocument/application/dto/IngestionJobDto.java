@@ -8,7 +8,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
-/** API view of an ingestion job with its checkpoints deserialized. */
+/**
+ * API view of an ingestion job with its checkpoints deserialized and (ws23)
+ * its parse provenance: {@code parsedBy} AI/CODE/AI_PARTIAL,
+ * {@code parseStrategy}, {@code parseConfidence} (0..1, code extractions
+ * only) and {@code parseFallbackReason} (a {@code FallbackReason} name) — all
+ * null until the job is parsed.
+ */
 public record IngestionJobDto(int ingestionJobId,
                               int templateId,
                               String fileName,
@@ -27,9 +33,28 @@ public record IngestionJobDto(int ingestionJobId,
                               List<String> reachableSteps,
                               Map<String, Object> exportInfo,
                               LocalDateTime createdDate,
-                              LocalDateTime updatedDate) {
+                              LocalDateTime updatedDate,
+                              String parsedBy,
+                              String parseStrategy,
+                              Double parseConfidence,
+                              String parseFallbackReason) {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /** A view without parse provenance (pre-ws23 shape). */
+    public IngestionJobDto(int ingestionJobId, int templateId, String fileName,
+                           Integer importHistoryId, String currentStep, String status,
+                           String wizardStep, String errorMessage, TableData parsedTable,
+                           Map<String, String> suggestedMapping, Map<String, String> mapping,
+                           TableData mappedRows, List<RowValidationResult> validationResults,
+                           Long validationErrorCount, List<String> unmappedFields,
+                           List<String> reachableSteps, Map<String, Object> exportInfo,
+                           LocalDateTime createdDate, LocalDateTime updatedDate) {
+        this(ingestionJobId, templateId, fileName, importHistoryId, currentStep, status,
+                wizardStep, errorMessage, parsedTable, suggestedMapping, mapping, mappedRows,
+                validationResults, validationErrorCount, unmappedFields, reachableSteps,
+                exportInfo, createdDate, updatedDate, null, null, null, null);
+    }
 
     /**
      * {@code unmappedFields} and {@code reachableSteps} are computed by
@@ -77,7 +102,11 @@ public record IngestionJobDto(int ingestionJobId,
                 reachableSteps,
                 exportInfo,
                 job.getCreatedDate(),
-                job.getUpdatedDate());
+                job.getUpdatedDate(),
+                job.getParsedBy(),
+                job.getParseStrategy(),
+                job.getParseConfidence() == null ? null : job.getParseConfidence().doubleValue(),
+                job.getParseFallbackReason());
     }
 
     private static <T> T read(String json, TypeReference<T> type) {

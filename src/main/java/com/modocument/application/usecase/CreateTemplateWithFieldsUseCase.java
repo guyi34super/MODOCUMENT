@@ -13,10 +13,12 @@ import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.port.ValidationRuleRepository;
 import com.modocument.application.validation.RegexPatternChecker;
 import com.modocument.application.validation.TemplateDefinitionException;
+import com.modocument.application.validation.TemplateFieldHints;
 import com.modocument.domain.entity.Template;
 import com.modocument.domain.entity.TemplateDataType;
 import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.entity.ValidationRule;
+import com.modocument.domain.model.ExtractionMode;
 import com.modocument.domain.model.PiiKind;
 import com.modocument.domain.model.RuleType;
 import org.springframework.stereotype.Service;
@@ -68,6 +70,8 @@ public class CreateTemplateWithFieldsUseCase {
         }
 
         Template template = new Template(0, request.getName().trim(), request.getDescription());
+        ExtractionMode mode = ExtractionMode.parse(request.getExtractionMode());
+        template.setExtractionMode(mode == null ? null : mode.name());
         template.setOwnerUserId(currentUser.requireUserId());
         int bankId = currentUser.requireBankId();
         template.setBankId(bankId);
@@ -85,6 +89,11 @@ public class CreateTemplateWithFieldsUseCase {
             // Explicit PII tag (ws12, PRIV-004): validated above; null means
             // "auto-classify on first use" (PiiClassifier persists its result).
             field.setPiiKind(parsePiiKind(fieldDto.getPiiKind()).orElse(null));
+            // ws23 extraction hints, vetted in validate() above.
+            field.setAliases(fieldDto.getAliases());
+            field.setLabelPattern(fieldDto.getLabelPattern());
+            field.setValuePattern(fieldDto.getValuePattern());
+            field.setDateFormats(fieldDto.getDateFormats());
             templateFieldsRepository.add(field);
 
             List<CreateTemplateResponse.CreatedRule> createdRules = new ArrayList<>();
@@ -102,11 +111,14 @@ public class CreateTemplateWithFieldsUseCase {
                     field.getTemplateFieldsId(), field.getFieldName(),
                     dataType.getTemplateDataTypeId(), dataType.getDataType(),
                     field.getPiiKind() == null ? null : field.getPiiKind().name(),
-                    createdRules));
+                    createdRules,
+                    field.getAliases(), field.getLabelPattern(), field.getValuePattern(),
+                    field.getDateFormats()));
         }
 
         return new CreateTemplateResponse(
-                template.getTemplateId(), template.getName(), template.getDescription(), createdFields);
+                template.getTemplateId(), template.getName(), template.getDescription(),
+                createdFields, template.getExtractionMode());
     }
 
     private List<TemplateValidationError> validate(CreateTemplateRequest request,
@@ -115,6 +127,11 @@ public class CreateTemplateWithFieldsUseCase {
 
         if (request.getName() == null || request.getName().isBlank()) {
             errors.add(new TemplateValidationError(null, null, "Template name is required."));
+        }
+        try {
+            ExtractionMode.parse(request.getExtractionMode());
+        } catch (IllegalArgumentException e) {
+            errors.add(new TemplateValidationError(null, null, e.getMessage()));
         }
         if (request.getFields() == null || request.getFields().isEmpty()) {
             errors.add(new TemplateValidationError(null, null, "At least one field is required."));
@@ -141,6 +158,10 @@ public class CreateTemplateWithFieldsUseCase {
                 errors.add(new TemplateValidationError(fieldName, null,
                         "Unknown PII kind '" + field.getPiiKind()
                                 + "'; use NIC, ACCOUNT_NUMBER, EMAIL, PHONE, NAME, or NONE."));
+            }
+            for (String problem : TemplateFieldHints.problems(field.getAliases(),
+                    field.getLabelPattern(), field.getValuePattern(), field.getDateFormats())) {
+                errors.add(new TemplateValidationError(fieldName, null, problem));
             }
 
             for (CreateTemplateRuleDto rule : rulesOf(field)) {

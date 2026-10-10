@@ -1,5 +1,6 @@
 package com.modocument.application.mapping;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Locale;
@@ -57,6 +58,23 @@ public final class ColumnNameSimilarity {
         }
         return 0.6 * jaccard(columnTokens, fieldTokens)
                 + 0.4 * levenshteinRatio(columnJoined, fieldJoined);
+    }
+
+    /**
+     * ws23: the best of the field's own name and its per-field aliases (a
+     * template author's alternative header texts, {@code TemplateFields.Aliases}).
+     */
+    public static double score(String column, String field, Collection<String> fieldAliases,
+                               Map<String, String> extraAliases) {
+        double best = score(column, field, extraAliases);
+        if (fieldAliases != null) {
+            for (String alias : fieldAliases) {
+                if (alias != null && !alias.isBlank()) {
+                    best = Math.max(best, score(column, alias, extraAliases));
+                }
+            }
+        }
+        return best;
     }
 
     static Set<String> expandedTokens(String header, Map<String, String> extraAliases) {

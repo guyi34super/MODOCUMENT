@@ -5,11 +5,14 @@ import com.modocument.application.port.AiPurpose;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.PromptEnvelope;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.TenantContext;
 import com.modocument.application.privacy.PiiPatterns;
 import com.modocument.domain.model.AuditOutcome;
+import com.modocument.domain.model.settings.SettingKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClient.ChatClientRequestSpec;
 import org.springframework.ai.chat.metadata.Usage;
@@ -27,6 +30,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
@@ -55,6 +59,12 @@ import java.util.regex.Pattern;
  *       caller falls back to its non-AI path), LENIENT purposes scrub and
  *       flag it ({@code AI_OUTPUT_FLAGGED}).</li>
  * </ol>
+ *
+ * <p>Availability (ws23): a bank whose {@code ai.enabled} setting is off gets
+ * no model call at all, and every call passes the {@link AiCircuitBreaker}
+ * — while it is open the call is refused at once instead of waiting on a
+ * failing endpoint. Both refusals are {@link AiUnavailableException} (503 at
+ * the API, the code fallback in the ingestion parse stage).
  */
 @Service
 public class AiGateway implements AiFilesService {
@@ -77,13 +87,25 @@ public class AiGateway implements AiFilesService {
     private final ChatClient chatClient;
     private final AiOutputScanner outputScanner;
     private final AuditRecorder audit;
+    private final AiCircuitBreaker circuitBreaker;
+    private final SettingsReader settings;
 
+    /** Without a circuit breaker or settings (every bank AI-enabled) — unit tests. */
     public AiGateway(AiFilesProperties properties, ChatClient chatClient,
                      AiOutputScanner outputScanner, AuditRecorder audit) {
+        this(properties, chatClient, outputScanner, audit, AiCircuitBreaker.disabled(), null);
+    }
+
+    @Autowired
+    public AiGateway(AiFilesProperties properties, ChatClient chatClient,
+                     AiOutputScanner outputScanner, AuditRecorder audit,
+                     AiCircuitBreaker circuitBreaker, SettingsReader settings) {
         this.properties = properties;
         this.chatClient = chatClient;
         this.outputScanner = outputScanner;
         this.audit = audit;
+        this.circuitBreaker = circuitBreaker == null ? AiCircuitBreaker.disabled() : circuitBreaker;
+        this.settings = settings;
     }
 
     @Override
@@ -108,7 +130,7 @@ public class AiGateway implements AiFilesService {
         BeanOutputConverter<T> converter = new BeanOutputConverter<>(type);
         String raw = callModel(envelope, prompt + "\n" + converter.getFormat());
         if (LlmStructuredJsonParser.looksLikeInstructionEcho(raw)) {
-            throw new IllegalStateException(
+            throw new AiPromptRefusedException(
                     "The AI model repeated its own formatting instructions instead of returning a result. "
                             + "This usually means the selected model is too small or the input exceeded its "
                             + "context window. Nothing was changed — try a smaller selection or a stronger model.");
@@ -135,11 +157,10 @@ public class AiGateway implements AiFilesService {
         if (model != null && !model.isBlank()) {
             request = request.options(OpenAiChatOptions.builder().model(model).build());
         }
-        ChatResponse response = request
+        ChatClientRequestSpec ready = request
                 .user(u -> u.text(instruction)
-                        .media(new Media(MimeTypeUtils.IMAGE_PNG, new ByteArrayResource(pngBytes))))
-                .call()
-                .chatResponse();
+                        .media(new Media(MimeTypeUtils.IMAGE_PNG, new ByteArrayResource(pngBytes))));
+        ChatResponse response = guarded(() -> ready.call().chatResponse());
         return finish(envelope, instruction, response);
     }
 
@@ -159,7 +180,7 @@ public class AiGateway implements AiFilesService {
                             : "envelope bank does not match the bound tenant",
                     "boundBank", boundBank.map(String::valueOf).orElse("none"),
                     "envelopeBank", String.valueOf(envelope.bankId())));
-            throw new IllegalStateException("AI prompt refused: the call is not bound to exactly "
+            throw new AiPromptRefusedException("AI prompt refused: the call is not bound to exactly "
                     + "the one bank the prompt's data belongs to.");
         }
         for (PromptEnvelope.Part part : envelope.parts()) {
@@ -168,7 +189,7 @@ public class AiGateway implements AiFilesService {
                         "reason", "prompt part sourced from another bank",
                         "envelopeBank", String.valueOf(envelope.bankId()),
                         "partBank", String.valueOf(part.bankId())));
-                throw new IllegalStateException(
+                throw new AiPromptRefusedException(
                         "AI prompt refused: it would mix data from two banks.");
             }
         }
@@ -183,11 +204,50 @@ public class AiGateway implements AiFilesService {
             // A raw shape here means a call site skipped tokenization — never
             // send it, and never quote the value in the log/audit either.
             refuse("AI_PROMPT_BLOCKED_PII", envelope, Map.of("shapes", leaked.toString()));
-            throw new IllegalStateException("AI prompt refused: it still contains raw "
+            throw new AiPromptRefusedException("AI prompt refused: it still contains raw "
                     + "identifier-shaped values (" + leaked
                     + "); the call site must tokenize them first.");
         }
+        if (!aiEnabledFor(envelope.bankId())) {
+            throw AiUnavailableException.disabledForBank();
+        }
         return prompt;
+    }
+
+    /** The bank's {@code ai.enabled} master switch (on without a settings reader). */
+    private boolean aiEnabledFor(Integer bankId) {
+        if (settings == null || bankId == null) {
+            return true;
+        }
+        try {
+            return settings.getBool(SettingKeys.AI_ENABLED, bankId);
+        } catch (RuntimeException e) {
+            // An unreadable setting must not silently switch the AI off.
+            log.warn("Could not read ai.enabled for bank {}: {}", bankId, e.getClass().getSimpleName());
+            return true;
+        }
+    }
+
+    /**
+     * Runs one model call through the circuit breaker: refused at once while
+     * it is open; every outcome is reported back so transport failures,
+     * timeouts and 5xx open it and an answer closes it.
+     */
+    private ChatResponse guarded(Supplier<ChatResponse> call) {
+        if (!circuitBreaker.tryAcquire()) {
+            throw AiUnavailableException.circuitOpen(circuitBreaker.secondsUntilRetry());
+        }
+        ChatResponse response;
+        try {
+            response = call.get();
+        } catch (RuntimeException | Error e) {
+            // Only transport failures, timeouts and 5xx count; anything else
+            // means the endpoint answered and just releases the trial slot.
+            circuitBreaker.onFailure(e);
+            throw e;
+        }
+        circuitBreaker.onSuccess();
+        return response;
     }
 
     private String callModel(PromptEnvelope envelope, String prompt) {
@@ -196,7 +256,8 @@ public class AiGateway implements AiFilesService {
         if (model != null && !model.isBlank()) {
             request = request.options(OpenAiChatOptions.builder().model(model).build());
         }
-        ChatResponse response = request.user(prompt).call().chatResponse();
+        ChatClientRequestSpec ready = request.user(prompt);
+        ChatResponse response = guarded(() -> ready.call().chatResponse());
         return finish(envelope, prompt, response);
     }
 

@@ -23,6 +23,13 @@ public class CreateTemplateRequest {
     @Valid
     private List<CreateTemplateFieldDto> fields;
 
+    /**
+     * ws23: AI_WITH_CODE_FALLBACK, CODE_ONLY or AI_ONLY; null inherits the
+     * bank's {@code extraction.defaultMode}.
+     */
+    @Size(max = 30)
+    private String extractionMode;
+
     public CreateTemplateRequest() {
     }
 
@@ -54,5 +61,13 @@ public class CreateTemplateRequest {
 
     public void setFields(List<CreateTemplateFieldDto> fields) {
         this.fields = fields;
+    }
+
+    public String getExtractionMode() {
+        return extractionMode;
+    }
+
+    public void setExtractionMode(String extractionMode) {
+        this.extractionMode = extractionMode;
     }
 }

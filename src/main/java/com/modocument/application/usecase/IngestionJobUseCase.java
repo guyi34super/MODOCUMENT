@@ -4,11 +4,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.ParseContext;
+import com.modocument.application.dto.ParseProvenance;
 import com.modocument.application.dto.ParseResult;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
 import com.modocument.application.mapping.MappingContext;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.privacy.LogSafe;
 import com.modocument.application.port.ImportDetailsRepository;
@@ -20,15 +22,20 @@ import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.entity.ImportDetails;
 import com.modocument.domain.entity.ImportHistory;
 import com.modocument.domain.entity.IngestionJob;
+import com.modocument.domain.entity.Template;
 import com.modocument.domain.entity.TemplateFields;
+import com.modocument.domain.model.ExtractionMode;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
 import com.modocument.infrastructure.ai.AiErrorMessages;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -62,7 +69,9 @@ public class IngestionJobUseCase {
     private final AutoMapUseCase autoMap;
     private final ValidateRowsUseCase validateRows;
     private final CurrentUserProvider currentUser;
+    private final AuditRecorder audit;
 
+    /** Without an audit recorder (parse fallbacks are not audited) — unit tests. */
     public IngestionJobUseCase(IngestionJobRepository jobs,
                                TemplateRepository templates,
                                TemplateFieldsRepository templateFields,
@@ -72,6 +81,22 @@ public class IngestionJobUseCase {
                                AutoMapUseCase autoMap,
                                ValidateRowsUseCase validateRows,
                                CurrentUserProvider currentUser) {
+        this(jobs, templates, templateFields, importHistory, importDetails, parseStep, autoMap,
+                validateRows, currentUser, null);
+    }
+
+    @Autowired
+    public IngestionJobUseCase(IngestionJobRepository jobs,
+                               TemplateRepository templates,
+                               TemplateFieldsRepository templateFields,
+                               ImportHistoryRepository importHistory,
+                               ImportDetailsRepository importDetails,
+                               IngestionParseStep parseStep,
+                               AutoMapUseCase autoMap,
+                               ValidateRowsUseCase validateRows,
+                               CurrentUserProvider currentUser,
+                               AuditRecorder audit) {
+        this.audit = audit;
         this.jobs = jobs;
         this.templates = templates;
         this.templateFields = templateFields;
@@ -352,7 +377,9 @@ public class IngestionJobUseCase {
                 job.getFileName(),
                 job.getTemplateId(),
                 job.getOwnerUserId(),
-                templateFields.listByTemplateId(job.getTemplateId())));
+                templateFields.listByTemplateId(job.getTemplateId()),
+                job.getBankId() > 0 ? job.getBankId() : null,
+                templateExtractionMode(job.getTemplateId())));
         TableData table = parsed.table();
         if (table != null && table.getColumns() != null && !table.getColumns().isEmpty()
                 && (table.getRows() == null || table.getRows().isEmpty())) {
@@ -367,8 +394,47 @@ public class IngestionJobUseCase {
         job.setParsedTableJson(toJson(table));
         job.setSuggestedMappingJson(parsed.suggestedMapping().isEmpty()
                 ? null : toJson(parsed.suggestedMapping()));
+        recordProvenance(job, parsed.provenance());
         clearDownstream(job, JobStep.PARSED);
         recordImportDetails(job, STEP_TRANSFORMING, job.getParsedTableJson());
+    }
+
+    /** The template's own extraction mode (null = inherit the bank default). */
+    private ExtractionMode templateExtractionMode(int templateId) {
+        try {
+            return templates.getById(templateId)
+                    .map(Template::getExtractionMode)
+                    .map(ExtractionMode::parseLenient)
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            log.warn("Could not read the extraction mode of template {}: {}",
+                    templateId, e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
+     * ws23: stores who produced the parsed table on the job, and audits
+     * INGESTION_PARSE_FALLBACK when code stood in for an AI that was meant to
+     * run (labels and a score only — never data).
+     */
+    private void recordProvenance(IngestionJob job, ParseProvenance provenance) {
+        job.setParsedBy(provenance == null ? null : provenance.parsedBy().name());
+        job.setParseStrategy(provenance == null ? null : provenance.strategy());
+        job.setParseConfidence(provenance == null || provenance.confidence() == null ? null
+                : BigDecimal.valueOf(provenance.confidence()).setScale(3, RoundingMode.HALF_UP));
+        job.setParseFallbackReason(provenance == null || provenance.fallbackReason() == null
+                ? null : provenance.fallbackReason().name());
+        if (audit == null || provenance == null || !provenance.isFallback()) {
+            return;
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("parsedBy", provenance.parsedBy().name());
+        values.put("reason", provenance.fallbackReason().name());
+        values.put("strategy", provenance.strategy());
+        values.put("confidence", provenance.confidence());
+        audit.success("INGESTION_PARSE_FALLBACK", "IngestionJob",
+                String.valueOf(job.getIngestionJobId()), null, values);
     }
 
     private void doMap(IngestionJob job) {

@@ -31,6 +31,24 @@ public class CreateTemplateFieldDto {
     @Size(max = 20)
     private String piiKind;
 
+    /*
+     * ws23 extraction hints for the code extractor (all optional): alternative
+     * header/label texts, a label regex, a value regex (group 1 when present)
+     * and DateTimeFormatter patterns. The regexes are vetted by SafeRegex.
+     */
+
+    @Size(max = 50)
+    private List<@Size(max = 255) String> aliases;
+
+    @Size(max = 500)
+    private String labelPattern;
+
+    @Size(max = 500)
+    private String valuePattern;
+
+    @Size(max = 20)
+    private List<@Size(max = 100) String> dateFormats;
+
     public CreateTemplateFieldDto() {
     }
 
@@ -76,5 +94,37 @@ public class CreateTemplateFieldDto {
 
     public void setPiiKind(String piiKind) {
         this.piiKind = piiKind;
+    }
+
+    public List<String> getAliases() {
+        return aliases;
+    }
+
+    public void setAliases(List<String> aliases) {
+        this.aliases = aliases;
+    }
+
+    public String getLabelPattern() {
+        return labelPattern;
+    }
+
+    public void setLabelPattern(String labelPattern) {
+        this.labelPattern = labelPattern;
+    }
+
+    public String getValuePattern() {
+        return valuePattern;
+    }
+
+    public void setValuePattern(String valuePattern) {
+        this.valuePattern = valuePattern;
+    }
+
+    public List<String> getDateFormats() {
+        return dateFormats;
+    }
+
+    public void setDateFormats(List<String> dateFormats) {
+        this.dateFormats = dateFormats;
     }
 }
