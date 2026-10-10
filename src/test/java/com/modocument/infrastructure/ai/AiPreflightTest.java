@@ -4,7 +4,6 @@ import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.SettingsReader;
 import com.modocument.domain.model.FallbackReason;
 import com.modocument.domain.model.settings.SettingKeys;
-import com.modocument.infrastructure.ratelimit.LlmQuotaGate;
 import com.modocument.infrastructure.ratelimit.LlmRateLimiter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,7 +25,7 @@ class AiPreflightTest {
 
     private final SettingsReader settings = mock(SettingsReader.class);
     private final AiFilesService aiFiles = mock(AiFilesService.class);
-    private final LlmQuotaGate quota = mock(LlmQuotaGate.class);
+    private final LlmRateLimiter quota = mock(LlmRateLimiter.class);
     private final AiCircuitBreaker breaker = new AiCircuitBreaker(() -> 1,
             () -> Duration.ofMinutes(2), Clock.systemUTC(), opened -> {
             });
@@ -36,13 +35,14 @@ class AiPreflightTest {
     void allClear() {
         when(settings.getBool(SettingKeys.AI_ENABLED, 5)).thenReturn(true);
         when(aiFiles.isConfigured()).thenReturn(true);
-        when(quota.tryAcquire(anyInt(), any())).thenReturn(true);
+        when(quota.tryCheck(anyInt())).thenReturn(true);
+        when(quota.tryCheck(anyInt(), anyInt())).thenReturn(true);
     }
 
     @Test
     void passesWhenEverythingIsAvailable() {
         assertThat(preflight.check(5, 9)).isEmpty();
-        verify(quota).tryAcquire(9, 5);
+        verify(quota).tryCheck(9, 5);
     }
 
     @Test
@@ -51,7 +51,7 @@ class AiPreflightTest {
         when(aiFiles.isConfigured()).thenReturn(false);
 
         assertThat(preflight.check(5, 9)).contains(FallbackReason.AI_DISABLED);
-        verify(quota, never()).tryAcquire(anyInt(), any());
+        verify(quota, never()).tryCheck(anyInt(), anyInt());
     }
 
     @Test
@@ -59,7 +59,7 @@ class AiPreflightTest {
         when(aiFiles.isConfigured()).thenReturn(false);
 
         assertThat(preflight.check(5, 9)).contains(FallbackReason.NOT_CONFIGURED);
-        verify(quota, never()).tryAcquire(anyInt(), any());
+        verify(quota, never()).tryCheck(anyInt(), anyInt());
     }
 
     @Test
@@ -68,24 +68,25 @@ class AiPreflightTest {
         breaker.onFailure(new ResourceAccessException("refused"));
 
         assertThat(preflight.check(5, 9)).contains(FallbackReason.CIRCUIT_OPEN);
-        verify(quota, never()).tryAcquire(anyInt(), any());
+        verify(quota, never()).tryCheck(anyInt(), anyInt());
     }
 
     @Test
     void aSpentQuotaIsQuota() {
-        when(quota.tryAcquire(anyInt(), any())).thenReturn(false);
+        when(quota.tryCheck(anyInt(), anyInt())).thenReturn(false);
 
         assertThat(preflight.check(5, 9)).contains(FallbackReason.QUOTA);
     }
 
     @Test
-    void theQuotaGateSpendsTheUsersLlmQuotaWithoutThrowing() {
-        LlmQuotaGate real = new LlmQuotaGate(new LlmRateLimiter(2, 3_600_000, 1000));
+    void theRealLimiterSpendsTheUsersLlmQuotaWithoutThrowing() {
+        AiPreflight real = new AiPreflight(settings, aiFiles, AiCircuitBreaker.disabled(),
+                new LlmRateLimiter(2, 3_600_000, 1000));
 
-        assertThat(real.tryAcquire(1, 5)).isTrue();
-        assertThat(real.tryAcquire(1, 5)).isTrue();
-        assertThat(real.tryAcquire(1, 5)).isFalse();
-        assertThat(real.tryAcquire(2, 5)).isTrue();
+        assertThat(real.check(5, 1)).isEmpty();
+        assertThat(real.check(5, 1)).isEmpty();
+        assertThat(real.check(5, 1)).contains(FallbackReason.QUOTA);
+        assertThat(real.check(5, 2)).isEmpty();
     }
 
     @Test

@@ -34,7 +34,8 @@ import com.modocument.infrastructure.file.TableExtractionBatchPlanner;
 import com.modocument.infrastructure.file.TableExtractionHintsBuilder;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.prompt.PromptFactory;
-import com.modocument.infrastructure.ratelimit.LlmQuotaGate;
+import com.modocument.infrastructure.file.ParsingSettings;
+import com.modocument.infrastructure.ratelimit.LlmRateLimiter;
 import com.modocument.infrastructure.transform.code.ExtractionCorpus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -85,7 +86,7 @@ class IngestionParseStepImplTest {
     private final StructuredTableMaterializer structuredMaterializer =
             mock(StructuredTableMaterializer.class);
     private final SettingsReader settings = mock(SettingsReader.class);
-    private final LlmQuotaGate quota = mock(LlmQuotaGate.class);
+    private final LlmRateLimiter quota = mock(LlmRateLimiter.class);
     private final AiClientProperties aiClient = new AiClientProperties();
     private AiCircuitBreaker breaker = AiCircuitBreaker.disabled();
 
@@ -155,17 +156,23 @@ class IngestionParseStepImplTest {
                 .thenReturn(new BigDecimal("0.75"));
         when(settings.getBoolForPlatform(SettingKeys.AI_ENABLED)).thenReturn(true);
         when(aiFilesService.isConfigured()).thenReturn(true);
-        when(quota.tryAcquire(anyInt(), any())).thenReturn(true);
+        when(quota.tryCheck(anyInt())).thenReturn(true);
+        when(quota.tryCheck(anyInt(), anyInt())).thenReturn(true);
     }
 
     private void rebuildStep() {
+        rebuildStep(null);
+    }
+
+    private void rebuildStep(ParsingSettings parsingSettings) {
         CodeParseSupport codeParse = new CodeParseSupport(
                 ExtractionCorpus.extractor(), new MappingProperties(), null);
         step = new IngestionParseStepImpl(uploadStorage, tabularNormalizer, documentParser,
                 promptFactory, aiFilesService, tokenizer, excelParsing, parsingProperties,
                 hintsBuilder, batchPlanner, structuredMaterializer, codeParse,
                 new ExtractionModeResolver(settings),
-                new AiPreflight(settings, aiFilesService, breaker, quota), aiClient);
+                new AiPreflight(settings, aiFilesService, breaker, quota), aiClient,
+                parsingSettings);
     }
 
     // ---- the AI path (unchanged behaviour) ---------------------------------------
@@ -204,6 +211,30 @@ class IngestionParseStepImplTest {
         assertThat(result.provenance().strategy()).isEqualTo(ParseProvenance.STRUCTURED);
         assertThat(result.provenance().isFallback()).isFalse();
         verifyNoInteractions(aiFilesService);
+    }
+
+    /** ws20: the bank's parsing settings, resolved per job, can turn the fast path ON too. */
+    @Test
+    void theBanksParsingSettingsDecideTheDeterministicFastPath() {
+        parsingProperties.setDeterministicEnabled(false);
+        for (int bank : new int[] {7, 8}) {
+            when(settings.getBool(SettingKeys.PARSING_DETERMINISTIC_ENABLED, bank)).thenReturn(bank == 7);
+            when(settings.getBool(SettingKeys.PARSING_COMBINED_EXTRACTION_MAPPING, bank)).thenReturn(true);
+            when(settings.getBool(SettingKeys.PARSING_EXCEL_LLM_ENABLED, bank)).thenReturn(true);
+            when(settings.getInt(SettingKeys.PARSING_LLM_BATCH_SIZE, bank)).thenReturn(50);
+            when(settings.getInt(SettingKeys.PARSING_LLM_BATCH_CONCURRENCY, bank)).thenReturn(8);
+            when(settings.getEnum(SettingKeys.EXTRACTION_DEFAULT_MODE, bank)).thenReturn("AI_ONLY");
+        }
+        rebuildStep(new ParsingSettings(parsingProperties, settings));
+        when(structuredMaterializer.tryMaterialize(any(), anyString(), any(), any()))
+                .thenReturn(Optional.of(LLM_TABLE));
+
+        ParseResult bankOn = step.parse(new ParseContext("notes.txt", 1, 1, List.of(), 7, null));
+        assertThat(bankOn.provenance().strategy()).isEqualTo(ParseProvenance.STRUCTURED);
+        verifyNoInteractions(aiFilesService);
+
+        ParseResult bankOff = step.parse(new ParseContext("notes.txt", 1, 1, List.of(), 8, null));
+        assertThat(bankOff.provenance().parsedBy()).isEqualTo(ParsedBy.AI);
     }
 
     @Test
@@ -395,7 +426,7 @@ class IngestionParseStepImplTest {
 
     @Test
     void aSpentQuotaSkipsTheAi() {
-        when(quota.tryAcquire(anyInt(), any())).thenReturn(false);
+        when(quota.tryCheck(anyInt())).thenReturn(false);
 
         ParseResult result = step.parse(NOTES);
 

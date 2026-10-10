@@ -21,9 +21,9 @@ import com.modocument.infrastructure.ai.AiPreflight;
 import com.modocument.infrastructure.file.StorageProperties;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.prompt.PromptFactory;
-import com.modocument.infrastructure.ratelimit.LlmQuotaGate;
 import com.modocument.infrastructure.transform.code.ExtractionCorpus;
 import com.modocument.testsupport.FixedUser;
+import com.modocument.infrastructure.ratelimit.LlmRateLimiter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.ai.retry.TransientAiException;
@@ -105,7 +105,7 @@ class TransformServiceImplTest {
     private final SettingsReader settings = mock(SettingsReader.class);
     private final TemplateRepository templates = mock(TemplateRepository.class);
     private final TemplateFieldsRepository templateFields = mock(TemplateFieldsRepository.class);
-    private final LlmQuotaGate quota = mock(LlmQuotaGate.class);
+    private final LlmRateLimiter quota = mock(LlmRateLimiter.class);
 
     private static final String FORM = "Customer form\nName: Ada Lovelace\nCity: London\n";
     private static final String MODEL = "[\"Name\",\"City\"]";
@@ -125,7 +125,8 @@ class TransformServiceImplTest {
                 .thenReturn(new BigDecimal("0.75"));
         when(settings.getBoolForPlatform(SettingKeys.AI_ENABLED)).thenReturn(true);
         when(ai.isConfigured()).thenReturn(true);
-        when(quota.tryAcquire(anyInt(), any())).thenReturn(true);
+        when(quota.tryCheck(anyInt())).thenReturn(true);
+        when(quota.tryCheck(anyInt(), anyInt())).thenReturn(true);
         PromptStrategy strategy = mock(PromptStrategy.class);
         when(strategy.buildPrompt(any())).thenReturn("prompt");
         when(prompts.getPrompt(any())).thenReturn(strategy);

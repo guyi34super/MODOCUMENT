@@ -34,6 +34,7 @@ import com.modocument.infrastructure.ai.LlmExtractionFailedException;
 import com.modocument.infrastructure.ai.LlmStructuredJsonParser;
 import com.modocument.infrastructure.file.ExcelParsingProperties;
 import com.modocument.infrastructure.file.ParsingProperties;
+import com.modocument.infrastructure.file.ParsingSettings;
 import com.modocument.infrastructure.file.StructuredTableMaterializer;
 import com.modocument.infrastructure.file.TabularNormalizer;
 import com.modocument.infrastructure.file.TableExtractionBatchPlanner;
@@ -120,6 +121,8 @@ public class IngestionParseStepImpl implements IngestionParseStep {
     private final ExtractionModeResolver modes;
     private final AiPreflight preflight;
     private final AiClientProperties aiClient;
+    /** Null = the yml parsing properties only (unit-test wiring). */
+    private final ParsingSettings parsingSettings;
 
     public IngestionParseStepImpl(UploadStorage uploadStorage,
                                   TabularNormalizer tabularNormalizer,
@@ -135,7 +138,8 @@ public class IngestionParseStepImpl implements IngestionParseStep {
                                   CodeParseSupport codeParse,
                                   ExtractionModeResolver modes,
                                   AiPreflight preflight,
-                                  AiClientProperties aiClient) {
+                                  AiClientProperties aiClient,
+                                  ParsingSettings parsingSettings) {
         this.uploadStorage = uploadStorage;
         this.tabularNormalizer = tabularNormalizer;
         this.documentParser = documentParser;
@@ -151,6 +155,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
         this.modes = modes;
         this.preflight = preflight;
         this.aiClient = aiClient;
+        this.parsingSettings = parsingSettings;
     }
 
     @Override
@@ -176,13 +181,13 @@ public class IngestionParseStepImpl implements IngestionParseStep {
 
     /** The pre-phase-2 pipeline: fast paths, then the LLM; an AI failure is the job's failure. */
     private ParseResult parseAiOnly(Run run) {
-        if (isExcel(run.extension) && !excelParsing.isLlmEnabled()) {
+        if (isExcel(run.extension) && !run.excel.isLlmEnabled()) {
             return excelFastPath(run, null);
         }
         DocumentExtractionResult extraction = documentParser.extract(run.file);
         String text = requireText(extraction.text(), run);
         TableExtractionHints hints = hintsBuilder.build(run.file, text, extraction.extractionSource());
-        TableExtractionPlan plan = batchPlanner.plan(text, hints, parsingProperties);
+        TableExtractionPlan plan = batchPlanner.plan(text, hints, run.parsing);
 
         PiiTokenizer.Session session = tokenizer.newSession();
         Optional<ParseResult> deterministic = deterministic(run, session, text, hints, plan, null);
@@ -194,13 +199,13 @@ public class IngestionParseStepImpl implements IngestionParseStep {
 
     /** AI first, code whenever the AI is skipped or fails (the default mode). */
     private ParseResult parseWithFallback(Run run) {
-        if (isExcel(run.extension) && !excelParsing.isLlmEnabled()) {
+        if (isExcel(run.extension) && !run.excel.isLlmEnabled()) {
             return excelFastPath(run, null);
         }
         DocumentExtractionResult extraction = readDocument(run);
         String text = requireText(extraction.text(), run);
         TableExtractionHints hints = safeHints(run, text, extraction.extractionSource());
-        TableExtractionPlan plan = batchPlanner.plan(text, hints, parsingProperties);
+        TableExtractionPlan plan = batchPlanner.plan(text, hints, run.parsing);
 
         PiiTokenizer.Session session = tokenizer.newSession();
         Optional<ParseResult> deterministic = deterministic(run, session, text, hints, plan, null);
@@ -237,7 +242,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
         DocumentExtractionResult extraction = readDocument(run);
         String text = requireText(extraction.text(), run);
         TableExtractionHints hints = safeHints(run, text, extraction.extractionSource());
-        TableExtractionPlan plan = batchPlanner.plan(text, hints, parsingProperties);
+        TableExtractionPlan plan = batchPlanner.plan(text, hints, run.parsing);
 
         Optional<ParseResult> deterministic =
                 deterministic(run, null, text, hints, plan, FallbackReason.MODE_CODE_ONLY);
@@ -266,7 +271,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
     private Optional<ParseResult> deterministic(Run run, PiiTokenizer.Session session, String text,
                                                 TableExtractionHints hints, TableExtractionPlan plan,
                                                 FallbackReason reason) {
-        if (!parsingProperties.isDeterministicEnabled()) {
+        if (!run.parsing.isDeterministicEnabled()) {
             return Optional.empty();
         }
         Optional<TableData> table = structuredMaterializer.tryMaterialize(run.file, text, hints, plan);
@@ -376,7 +381,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
                                        TableExtractionHints hints, TableExtractionPlan plan) {
         PromptStrategy strategy = promptFactory.getPrompt("TableExtraction");
         List<TemplateFields> templateFields = run.context.templateFields();
-        boolean combined = parsingProperties.isCombinedExtractionMapping()
+        boolean combined = run.parsing.isCombinedExtractionMapping()
                 && useCombinedExtraction(templateFields);
         run.headerText = plan.headerText() == null ? "" : plan.headerText();
 
@@ -411,7 +416,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
                                           String text, TableExtractionHints hints,
                                           List<TemplateFields> templateFields, boolean combined) {
         String tokenizedText = session.tokenizeText(text);
-        if (combined && parsingProperties.isCombinedExtractionMapping()) {
+        if (combined && run.parsing.isCombinedExtractionMapping()) {
             String prompt = strategy.buildPrompt(new TableExtractionPromptInput(
                     tokenizedText, hints, TableExtractionMode.EXTRACT_AND_MAP,
                     null, null, templateFields));
@@ -427,7 +432,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
     private ParseResult extractBatched(Run run, PromptStrategy strategy, PiiTokenizer.Session session,
                                        TableExtractionPlan plan, TableExtractionHints hints,
                                        List<TemplateFields> templateFields, boolean combined) {
-        if (combined && parsingProperties.isCombinedExtractionMapping()) {
+        if (combined && run.parsing.isCombinedExtractionMapping()) {
             return extractCombinedBatched(run, strategy, session, plan, hints, templateFields);
         }
 
@@ -435,7 +440,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
 
         log.info("Batched LLM extraction: {} columns, {} batches (~{} rows), concurrency {}",
                 columns.size(), plan.batches().size(), plan.estimatedDataRows(),
-                parsingProperties.getLlmBatchConcurrency());
+                run.parsing.getLlmBatchConcurrency());
 
         List<Map<String, String>> allRows = extractBatchesParallel(
                 run, strategy, session, plan.batches(), columns, hints);
@@ -466,7 +471,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
 
         log.info("Combined batched extraction: {} columns, {} batches (~{} rows), concurrency {}",
                 columns.size(), batches.size(), plan.estimatedDataRows(),
-                parsingProperties.getLlmBatchConcurrency());
+                run.parsing.getLlmBatchConcurrency());
 
         List<Map<String, String>> allRows = new ArrayList<>(
                 firstResult.getRows() == null ? List.of() : firstResult.getRows());
@@ -491,7 +496,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
         if (batches.isEmpty()) {
             return List.of();
         }
-        int concurrency = Math.max(1, parsingProperties.getLlmBatchConcurrency());
+        int concurrency = Math.max(1, run.parsing.getLlmBatchConcurrency());
         if (concurrency == 1 || batches.size() == 1) {
             List<Map<String, String>> allRows = new ArrayList<>();
             for (TableRowBatch batch : batches) {
@@ -863,10 +868,23 @@ public class IngestionParseStepImpl implements IngestionParseStep {
         final Duration budget;
         final long startedNanos = System.nanoTime();
         final Queue<Repair> repairs = new ConcurrentLinkedQueue<>();
+        /** The bank's parsing settings (ws20), resolved once for the document. */
+        final ParsingProperties parsing;
+        final ExcelParsingProperties excel;
         volatile String headerText = "";
 
         Run(ParseContext context, Path file, String extension, Integer bankId, ExtractionMode mode) {
             this.context = context;
+            if (parsingSettings == null) {
+                this.parsing = parsingProperties;
+                this.excel = excelParsing;
+            } else if (bankId == null) {
+                this.parsing = parsingSettings.forCurrentBank();
+                this.excel = excelParsing;
+            } else {
+                this.parsing = parsingSettings.forBank(bankId);
+                this.excel = parsingSettings.excelForBank(bankId);
+            }
             this.file = file;
             this.extension = extension;
             this.bankId = bankId;

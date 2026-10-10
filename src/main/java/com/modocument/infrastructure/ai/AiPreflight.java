@@ -4,7 +4,7 @@ import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.SettingsReader;
 import com.modocument.domain.model.FallbackReason;
 import com.modocument.domain.model.settings.SettingKeys;
-import com.modocument.infrastructure.ratelimit.LlmQuotaGate;
+import com.modocument.infrastructure.ratelimit.LlmRateLimiter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -18,8 +18,10 @@ import java.util.Optional;
  *   <li>the bank's {@code ai.enabled} switch → AI_DISABLED;</li>
  *   <li>an AI endpoint key is configured → NOT_CONFIGURED;</li>
  *   <li>the {@link AiCircuitBreaker} would admit a call → CIRCUIT_OPEN;</li>
- *   <li>one request from the user's LLM quota → QUOTA (last, because it
- *       spends a permit).</li>
+ *   <li>one request from the user's LLM quota
+ *       ({@link LlmRateLimiter#tryCheck(int, int)}, the bank's
+ *       {@code ratelimit.llm.perUserMax}) → QUOTA (last, because it spends a
+ *       permit).</li>
  * </ol>
  */
 @Component
@@ -30,10 +32,10 @@ public class AiPreflight {
     private final SettingsReader settings;
     private final AiFilesService aiFiles;
     private final AiCircuitBreaker circuitBreaker;
-    private final LlmQuotaGate quota;
+    private final LlmRateLimiter quota;
 
     public AiPreflight(SettingsReader settings, AiFilesService aiFiles,
-                       AiCircuitBreaker circuitBreaker, LlmQuotaGate quota) {
+                       AiCircuitBreaker circuitBreaker, LlmRateLimiter quota) {
         this.settings = settings;
         this.aiFiles = aiFiles;
         this.circuitBreaker = circuitBreaker;
@@ -56,7 +58,7 @@ public class AiPreflight {
         if (!circuitBreaker.allow()) {
             return Optional.of(FallbackReason.CIRCUIT_OPEN);
         }
-        if (!quota.tryAcquire(userId, bankId)) {
+        if (!(bankId == null ? quota.tryCheck(userId) : quota.tryCheck(userId, bankId))) {
             return Optional.of(FallbackReason.QUOTA);
         }
         return Optional.empty();
