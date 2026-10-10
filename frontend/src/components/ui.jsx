@@ -80,9 +80,17 @@ export function Badge({ status }) {
  * sits inside a toast or a button rather than standing in for a whole panel.
  */
 export function Spinner({ label = 'Loading…', inline = false }) {
+  // A panel-sized spinner announces itself (role=status, polite); an inline
+  // one sits inside something that already does (a toast, a button).
   return (
-    <div className={`flex items-center gap-2 text-sm text-muted ${inline ? '' : 'py-8'}`}>
-      <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent" />
+    <div
+      role={inline ? undefined : 'status'}
+      className={`flex items-center gap-2 text-sm text-muted ${inline ? '' : 'py-8'}`}
+    >
+      <span
+        aria-hidden="true"
+        className="size-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent"
+      />
       {label}
     </div>
   );
@@ -91,7 +99,10 @@ export function Spinner({ label = 'Loading…', inline = false }) {
 export function ErrorBanner({ message, onDismiss }) {
   if (!message) return null;
   return (
-    <div className="mb-4 flex items-start justify-between rounded-md bg-danger-bg px-4 py-3 text-sm text-danger-ink">
+    <div
+      role="alert"
+      className="mb-4 flex items-start justify-between rounded-md bg-danger-bg px-4 py-3 text-sm text-danger-ink"
+    >
       <span>{message}</span>
       {onDismiss && (
         <button onClick={onDismiss} className="ml-4 cursor-pointer font-bold" aria-label="Dismiss">
@@ -129,8 +140,8 @@ export function StatCard({ label, value, hint }) {
 const KPI_TONES = {
   neutral: { bar: 'border-l-line', value: 'text-ink' },
   success: { bar: 'border-l-success-ink', value: 'text-success-ink' },
-  warning: { bar: 'border-l-amber-500', value: 'text-amber-800' },
-  danger: { bar: 'border-l-danger-ink', value: 'text-danger-ink' },
+  warning: { bar: 'border-l-amber-500', value: 'text-amber-800', text: 'Needs attention.' },
+  danger: { bar: 'border-l-danger-ink', value: 'text-danger-ink', text: 'Needs action.' },
 };
 
 /**
@@ -149,6 +160,8 @@ export function KpiTile({ label, value, hint, to, tone = 'neutral', testId }) {
       <p data-testid="kpi-value" className={`mt-1 text-3xl font-semibold ${colors.value}`}>
         {value ?? '—'}
       </p>
+      {/* The tone is a colour; say it in words too (WCAG 1.4.1). */}
+      {colors.text && <span className="sr-only">{colors.text}</span>}
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </>
   );
@@ -170,6 +183,79 @@ export function KpiTile({ label, value, hint, to, tone = 'neutral', testId }) {
   return (
     <div data-tone={tone} data-testid={testId} className={frame}>
       {body}
+    </div>
+  );
+}
+
+/**
+ * Whole-number percentages of `values` that add up to exactly 100 (largest
+ * remainder), or all zeros when the total is 0.
+ */
+export function sharePercents(values) {
+  const numbers = values.map((v) => Math.max(0, Number(v) || 0));
+  const total = numbers.reduce((a, b) => a + b, 0);
+  if (total === 0) return numbers.map(() => 0);
+  const exact = numbers.map((n) => (n * 100) / total);
+  const floors = exact.map(Math.floor);
+  let missing = 100 - floors.reduce((a, b) => a + b, 0);
+  const order = exact
+    .map((x, i) => ({ i, rest: x - Math.floor(x) }))
+    .sort((a, b) => b.rest - a.rest);
+  for (const { i } of order) {
+    if (missing <= 0) break;
+    floors[i] += 1;
+    missing -= 1;
+  }
+  return floors;
+}
+
+/**
+ * A dashboard tile showing how a whole splits into parts: a stacked bar
+ * (decorative, aria-hidden) plus a legend list that states every part's
+ * count and percentage in text, so nothing depends on colour alone.
+ * `parts`: [{ key, label, value, swatch }] where `swatch` is a background
+ * class. `testId` lands on the tile; each legend row is
+ * `data-testid="share-<key>"`.
+ */
+export function ShareTile({ label, parts, testId, emptyText = 'Nothing yet', className = '' }) {
+  const total = parts.reduce((sum, p) => sum + (Number(p.value) || 0), 0);
+  const percents = sharePercents(parts.map((p) => p.value));
+  const headingId = testId ? `${testId}-label` : undefined;
+  return (
+    <div
+      data-testid={testId}
+      className={`block min-w-40 flex-1 rounded-lg border border-l-4 border-line border-l-line bg-white p-5 ${className}`}
+    >
+      <p id={headingId} className="text-xs font-medium uppercase tracking-wide text-muted">
+        {label}
+      </p>
+      {total === 0 ? (
+        <p className="mt-2 text-sm text-muted">{emptyText}</p>
+      ) : (
+        <>
+          <div
+            aria-hidden="true"
+            className="mt-3 flex h-3 w-full gap-px overflow-hidden rounded-full bg-neutral-100"
+          >
+            {parts.map((p, i) =>
+              percents[i] > 0 ? (
+                <span key={p.key} className={p.swatch} style={{ width: `${percents[i]}%` }} />
+              ) : null
+            )}
+          </div>
+          <ul aria-labelledby={headingId} className="mt-3 space-y-1 text-sm text-ink">
+            {parts.map((p, i) => (
+              <li key={p.key} data-testid={`share-${p.key}`} className="flex items-center gap-2">
+                <span aria-hidden="true" className={`inline-block size-2.5 shrink-0 rounded-sm ${p.swatch}`} />
+                <span className="flex-1">{p.label}</span>
+                <span className="tabular-nums">
+                  {Number(p.value) || 0} ({percents[i]}%)
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

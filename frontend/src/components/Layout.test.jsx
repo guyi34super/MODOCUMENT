@@ -39,6 +39,17 @@ describe('Layout sidebar', () => {
     localStorage.setItem('modoc.token', 'test-token');
   });
 
+  it('starts with a skip link to the main content', async () => {
+    stubViewport(true);
+    renderLayout();
+
+    await userEvent.tab();
+    const skip = screen.getByRole('link', { name: 'Skip to main content' });
+    expect(skip).toHaveFocus();
+    expect(skip).toHaveAttribute('href', '#main-content');
+    expect(screen.getByRole('main')).toHaveAttribute('id', 'main-content');
+  });
+
   it('docks the sidebar open on a desktop viewport', () => {
     stubViewport(true);
     renderLayout();

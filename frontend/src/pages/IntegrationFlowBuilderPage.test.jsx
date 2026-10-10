@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import IntegrationFlowBuilderPage, { cronFor, presetOf } from './IntegrationFlowBuilderPage';
+import IntegrationFlowBuilderPage, { cronFor, plainDotPath, presetOf } from './IntegrationFlowBuilderPage';
 import { pendingChange, renderWithProviders } from '../test/renderWithProviders';
+import { expectAccessible } from '../test/a11y';
 import { getTemplates } from '../api/cache';
 import {
   createFlow,
@@ -80,6 +81,16 @@ const renderBuilder = (id = 'new') =>
     path: `/admin/integrations/flows/${id}`,
     route: '/admin/integrations/flows/:id',
   });
+
+describe('plainDotPath', () => {
+  it('drops a leading "$." or "$" and keeps plain dot paths as they are', () => {
+    expect(plainDotPath('$.meta.next')).toBe('meta.next');
+    expect(plainDotPath(' $.next ')).toBe('next');
+    expect(plainDotPath('meta.nextCursor')).toBe('meta.nextCursor');
+    expect(plainDotPath('')).toBe('');
+    expect(plainDotPath(undefined)).toBe('');
+  });
+});
 
 describe('cron helper', () => {
   it('maps presets to six-field Spring cron expressions and back', () => {
@@ -237,8 +248,30 @@ describe('IntegrationFlowBuilderPage', () => {
       path: '/loans',
       query: { status: 'open' },
       pagination: { type: 'PAGE', pageParam: 'page', sizeParam: 'size', pageSize: 100 },
-      recordsPath: '$.items',
+      // A stored JSONPath-style "$.items" goes back as the plain dot path
+      // the server-side REST connector accepts.
+      recordsPath: 'items',
     });
+  });
+
+  it('sends cursor and records paths as plain dot paths (no "$.")', async () => {
+    renderBuilder(12);
+    await userEvent.selectOptions(await screen.findByLabelText('Pagination'), 'CURSOR');
+    const cursorPath = screen.getByLabelText(/Next-cursor path/);
+    expect(cursorPath).toHaveAttribute('placeholder', 'meta.nextCursor');
+    expect(screen.getByLabelText(/Records path/)).toHaveAttribute('placeholder', 'data.items');
+    await userEvent.type(screen.getByLabelText('Cursor parameter'), 'cursor');
+    await userEvent.type(cursorPath, '$.meta.nextCursor');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(updateFlow).toHaveBeenCalled());
+    const [, body] = updateFlow.mock.calls[0];
+    expect(body.sourceSpec.pagination).toEqual({
+      type: 'CURSOR',
+      cursorParam: 'cursor',
+      cursorPath: 'meta.nextCursor',
+    });
+    expect(body.sourceSpec.recordsPath).toBe('items');
   });
 
   it('warns that turning PII masking off needs approval', async () => {
@@ -261,6 +294,48 @@ describe('IntegrationFlowBuilderPage', () => {
     expect(await screen.findByText('Sent for approval (change #50)')).toBeInTheDocument();
     expect(screen.getByText('Pending approval')).toBeInTheDocument();
     expect(screen.getByText(/Enabling flow "Push results" is change #50/)).toBeInTheDocument();
+  });
+
+  it('keeps keyboard focus in the mapping table when rows are added and removed', async () => {
+    const user = userEvent.setup();
+    renderBuilder(12);
+    const addRow = await screen.findByRole('button', { name: 'Add row' });
+
+    // Keyboard only: activate "Add row" with Enter.
+    addRow.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByLabelText('Mapping 1 from')).toHaveFocus();
+    await user.keyboard('loan_id');
+    await user.tab();
+    expect(screen.getByLabelText('Mapping 1 to')).toHaveFocus();
+    await user.keyboard('loanId');
+
+    addRow.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByLabelText('Mapping 2 from')).toHaveFocus();
+
+    // Removing row 1 moves focus to the row that took its place.
+    screen.getByRole('button', { name: 'Remove mapping 1' }).focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: 'Remove mapping 1' })).toHaveFocus();
+    // Removing the last row hands focus back to "Add row", not to <body>.
+    await user.keyboard('{Enter}');
+    expect(screen.queryByRole('table', { name: 'Field mapping' })).toBeNull();
+    expect(addRow).toHaveFocus();
+  });
+
+  it('announces the dry run result in a status region', async () => {
+    previewFlow.mockResolvedValue({
+      columns: ['loan_id', 'amount'],
+      rows: [{ loan_id: 'L-1', amount: 10 }],
+      suggestedMapping: [],
+    });
+    renderBuilder(12);
+    await userEvent.click(await screen.findByRole('button', { name: 'Dry run / preview' }));
+    const status = await screen.findByRole('status');
+    expect(status).toHaveTextContent('Dry run — nothing was written');
+    expect(screen.getByRole('table', { name: 'Dry run: first rows read' })).toBeInTheDocument();
+    expectAccessible();
   });
 
   it('enables an INBOUND flow at once and disables immediately', async () => {

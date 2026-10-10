@@ -219,7 +219,7 @@ function EgressRules() {
       <SentForApproval what={sent?.what} change={sent?.change} onDismiss={() => setSent(null)} />
       {!rules && !error && <Spinner label="Loading destinations…" />}
       {rules && (
-        <DataTable columns={columns} rows={rules} emptyMessage="No private destinations requested." />
+        <DataTable caption="Requested private destinations" columns={columns} rows={rules} emptyMessage="No private destinations requested." />
       )}
 
       <ConfirmDialog

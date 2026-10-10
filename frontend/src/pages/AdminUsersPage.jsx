@@ -230,7 +230,7 @@ export default function AdminUsersPage() {
             <Button variant="secondary" onClick={exportCsv}>
               Export CSV
             </Button>
-            <Button onClick={() => setShowCreate((open) => !open)}>
+            <Button aria-expanded={showCreate} onClick={() => setShowCreate((open) => !open)}>
               {showCreate ? 'Close' : 'Create user'}
             </Button>
           </>
@@ -263,16 +263,18 @@ export default function AdminUsersPage() {
         <Card padding="compact">
           {!users && <Spinner label="Loading users…" />}
           {users && (
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="Users">
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="px-2 py-2">Email</th>
-                  <th className="px-2 py-2">Name</th>
-                  <th className="px-2 py-2">Role</th>
-                  <th className="px-2 py-2">Status</th>
-                  <th className="px-2 py-2">Last login</th>
-                  <th className="px-2 py-2">MFA</th>
-                  <th className="px-2 py-2" />
+                  <th scope="col" className="px-2 py-2">Email</th>
+                  <th scope="col" className="px-2 py-2">Name</th>
+                  <th scope="col" className="px-2 py-2">Role</th>
+                  <th scope="col" className="px-2 py-2">Status</th>
+                  <th scope="col" className="px-2 py-2">Last login</th>
+                  <th scope="col" className="px-2 py-2">MFA</th>
+                  <th scope="col" className="px-2 py-2">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -372,6 +374,7 @@ export default function AdminUsersPage() {
                             <Button
                               variant={row.disabled ? 'secondary' : 'danger'}
                               size="sm"
+                              aria-label={`${row.disabled ? 'Enable' : 'Disable'} ${row.email}`}
                               onClick={() => openDialog('disable', row)}
                             >
                               {row.disabled ? 'Enable' : 'Disable'}
@@ -397,16 +400,16 @@ export default function AdminUsersPage() {
           </p>
           {!review && <Spinner label="Generating worksheet…" />}
           {review && (
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="Access review">
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="px-2 py-2">Email</th>
-                  <th className="px-2 py-2">Role</th>
-                  <th className="px-2 py-2">Status</th>
-                  <th className="px-2 py-2">MFA</th>
-                  <th className="px-2 py-2">Last login</th>
-                  <th className="px-2 py-2">Days since</th>
-                  <th className="px-2 py-2">Inactivity</th>
+                  <th scope="col" className="px-2 py-2">Email</th>
+                  <th scope="col" className="px-2 py-2">Role</th>
+                  <th scope="col" className="px-2 py-2">Status</th>
+                  <th scope="col" className="px-2 py-2">MFA</th>
+                  <th scope="col" className="px-2 py-2">Last login</th>
+                  <th scope="col" className="px-2 py-2">Days since</th>
+                  <th scope="col" className="px-2 py-2">Inactivity</th>
                 </tr>
               </thead>
               <tbody>

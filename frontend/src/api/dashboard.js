@@ -2,8 +2,8 @@ import { api } from './client';
 
 // Admin dashboard (phase 2, ws22): metrics:read (ADMIN). Counts for the
 // caller's own bank only, cached server-side for 30 seconds — `generatedAt`
-// says when the numbers were taken. Shape (sections owned by later
-// workstreams stay zero/null until their data exists):
+// says when the numbers were taken. A null counter means "not tracked" (the
+// tiles show "—"). Shape:
 //   { generatedAt, bank:{code,name},
 //     users:{total, active, disabled, locked, mustChangePassword, byRole:{},
 //            mfaEnrolled, adminsWithoutMfa, activeLast7d},

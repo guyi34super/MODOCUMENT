@@ -31,7 +31,11 @@ export default function ForceChangePasswordPage() {
         loading: 'Changing password…',
         success: 'Password changed — sign in with your new password',
       });
-      await logout({ revoke: false });
+      // The notice travels with the sign-out itself: ProtectedRoute around
+      // this page redirects to /login as soon as the user is cleared, before
+      // the navigate below runs (BUG-04). The navigate stays for when the
+      // page is rendered without that guard.
+      await logout({ revoke: false, notice: 'password-changed' });
       navigate('/login', { replace: true, state: { notice: 'password-changed' } });
     } catch {
       // The error toast is already shown.

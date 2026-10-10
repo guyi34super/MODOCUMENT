@@ -22,6 +22,9 @@ public interface OutboundDeliveryJpaRepository extends JpaRepository<OutboundDel
 
     List<OutboundDelivery> findByBankIdAndFlowId(int bankId, long flowId);
 
+    /** Admin dashboard: deliveries of one bank in {@code status} (DEAD = dead letters). */
+    long countByBankIdAndStatus(int bankId, DeliveryStatus status);
+
     long countByBankIdAndRunIdAndStatus(int bankId, Long runId, DeliveryStatus status);
 
     @Modifying

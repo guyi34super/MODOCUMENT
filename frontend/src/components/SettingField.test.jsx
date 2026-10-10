@@ -122,7 +122,7 @@ describe('SettingField', () => {
     expect(within(row).getByText('Locked')).toBeInTheDocument();
     expect(within(row).getByRole('switch', { name: 'MFA for administrators' })).toBeDisabled();
     expect(within(row).queryByText('Requires approval')).not.toBeInTheDocument();
-    expect(within(row).queryByRole('button', { name: 'Reset to inherited' })).toBeNull();
+    expect(within(row).queryByRole('button', { name: /^Reset to inherited/ })).toBeNull();
   });
 
   it('marks a clamped value and a pending change, and blocks editing while pending', () => {
@@ -139,7 +139,7 @@ describe('SettingField', () => {
 
   it('offers "Reset to inherited" only for a value set at its own layer', async () => {
     const { onDraft, rerender } = renderField({ setting: settingView({ source: 'BANK' }) });
-    await userEvent.click(screen.getByRole('button', { name: 'Reset to inherited' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Reset to inherited/ }));
     expect(onDraft).toHaveBeenCalledWith({ reset: true });
 
     rerender(
@@ -147,7 +147,7 @@ describe('SettingField', () => {
         <SettingField setting={settingView({ source: 'PLATFORM' })} onDraft={onDraft} />
       </MemoryRouter>
     );
-    expect(screen.queryByRole('button', { name: 'Reset to inherited' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Reset to inherited/ })).toBeNull();
   });
 
   it('shows a pending reset and lets it be undone', async () => {
@@ -157,7 +157,7 @@ describe('SettingField', () => {
     });
     expect(screen.getByText('Resets to the inherited value when saved.')).toBeInTheDocument();
     expect(screen.getByLabelText('Password minimum length')).toBeDisabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await userEvent.click(screen.getByRole('button', { name: /^Undo/ }));
     expect(onDraft).toHaveBeenCalledWith(undefined);
   });
 

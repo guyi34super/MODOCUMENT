@@ -7,6 +7,9 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(getStoredUser);
+  // Why the last sign-out happened, for the login page (BUG-04). Never a
+  // secret: one of a few fixed words; cleared by the next sign-in.
+  const [signOutNotice, setSignOutNotice] = useState(null);
 
   /**
    * Phase one. When the account has (or must enrol) a second factor the
@@ -26,6 +29,7 @@ export function AuthProvider({ children }) {
       };
     }
     setSession(data.token, data.user);
+    setSignOutNotice(null);
     setUser(data.user);
     return { mfaRequired: false };
   }, []);
@@ -34,6 +38,7 @@ export function AuthProvider({ children }) {
   const completeMfaLogin = useCallback(async (challenge, code) => {
     const { token, user: verified } = await authApi.verifyMfa(challenge, code);
     setSession(token, verified);
+    setSignOutNotice(null);
     setUser(verified);
   }, []);
 
@@ -42,6 +47,7 @@ export function AuthProvider({ children }) {
   // here so the SPA state matches a password login's.
   const completeLogin = useCallback((token, loggedIn) => {
     setSession(token, loggedIn);
+    setSignOutNotice(null);
     setUser(loggedIn);
   }, []);
 
@@ -49,8 +55,13 @@ export function AuthProvider({ children }) {
    * Ends the session. `revoke: false` skips the server call — for when the
    * server already ended it (a password change kills every token): calling
    * logout with the dead token would only earn a 401 (BUG-02).
+   *
+   * `notice` (e.g. 'password-changed') is what the login page should say.
+   * It is committed in the same render as the sign-out, so whichever
+   * redirect reaches /login first — the caller's navigate or the
+   * ProtectedRoute around the page that signed out — carries it (BUG-04).
    */
-  const logout = useCallback(async ({ revoke = true } = {}) => {
+  const logout = useCallback(async ({ revoke = true, notice = null } = {}) => {
     if (revoke) {
       try {
         // Best-effort server-side revocation (access-token jti + refresh
@@ -62,6 +73,7 @@ export function AuthProvider({ children }) {
     }
     clearSession();
     clearCaches();
+    setSignOutNotice(notice);
     setUser(null);
   }, []);
 
@@ -74,13 +86,14 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       isAuthenticated: Boolean(getToken()),
+      signOutNotice,
       login,
       completeMfaLogin,
       completeLogin,
       logout,
       updateUser,
     }),
-    [user, login, completeMfaLogin, completeLogin, logout, updateUser]
+    [user, signOutNotice, login, completeMfaLogin, completeLogin, logout, updateUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

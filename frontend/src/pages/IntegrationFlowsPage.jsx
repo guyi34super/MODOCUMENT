@@ -223,6 +223,7 @@ function Flows() {
       {!flows && !error && <Spinner label="Loading flows…" />}
       {flows && (
         <DataTable
+          caption="Flows"
           columns={columns}
           rows={flows}
           emptyMessage="No flows yet. A flow says what to receive or send over a connection, and when."

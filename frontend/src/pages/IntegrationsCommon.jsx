@@ -249,6 +249,15 @@ export function OneTimeSecret({ items, expiresAt, warning }) {
           </div>
         </div>
       ))}
+      {/* Screen readers hear the copy confirmation (the button keeps its
+          aria-label) and the expiry, never the secret itself. */}
+      <p aria-live="polite" className="sr-only" data-testid="secret-announcer">
+        {left === 0
+          ? 'This one-time value has expired.'
+          : copied
+            ? `${copied} copied to the clipboard.`
+            : ''}
+      </p>
       {left !== null && (
         <p className="text-xs text-muted">
           {left > 0 ? (

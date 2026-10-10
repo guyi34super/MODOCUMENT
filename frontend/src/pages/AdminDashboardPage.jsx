@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getDashboard } from '../api/dashboard';
 import PageHeader from '../components/PageHeader';
 import Modal from '../components/Modal';
 import CreateUserForm from '../components/CreateUserForm';
 import InviteUserDialog from '../components/InviteUserDialog';
-import { Button, ErrorBanner, KpiTile, Spinner } from '../components/ui';
+import { Button, ErrorBanner, KpiTile, ShareTile, Spinner, sharePercents } from '../components/ui';
+
+/** ws23 parse provenance, in the order the share bar and the tiles show it. */
+const PARSED_BY = [
+  { key: 'AI', label: 'AI', swatch: 'bg-accent' },
+  { key: 'CODE', label: 'Code', swatch: 'bg-success-ink' },
+  { key: 'AI_PARTIAL', label: 'AI with code fallback', swatch: 'bg-amber-500' },
+];
 
 const sum = (counts) =>
   counts ? Object.values(counts).reduce((total, n) => total + (Number(n) || 0), 0) : null;
@@ -26,9 +33,12 @@ function formatDateTime(value) {
 const tracked = (value) => (value === null || value === undefined ? null : value);
 
 function Section({ title, children }) {
+  const headingId = useId();
   return (
-    <section className="mb-6" aria-label={title}>
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">{title}</h2>
+    <section className="mb-6" aria-labelledby={headingId}>
+      <h2 id={headingId} className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
+        {title}
+      </h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
     </section>
   );
@@ -40,8 +50,9 @@ function Section({ title, children }) {
  * KPI tiles (`data-testid="kpi-<metric>"`, value in `kpi-value`), plus the
  * quick actions an administrator needs most: add a user, invite one (with a
  * copyable invitation — there is no email channel), create a bank-shared
- * template, review approvals. Counters the backend does not track yet
- * (null — the integration hub's until its tables exist) show "—".
+ * template, review approvals. A counter the backend reports as null (not
+ * tracked) shows "—". The parse provenance of the last 7 days is a share
+ * tile (stacked bar + a legend that states every count and percentage).
  */
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -73,6 +84,12 @@ export default function AdminDashboardPage() {
   const urgentAlerts = (Number(severity?.CRITICAL) || 0) + (Number(severity?.HIGH) || 0);
   const mfaPct =
     users && users.total > 0 ? Math.round((users.mfaEnrolled / users.total) * 100) : null;
+  const parsedValues = PARSED_BY.map((p) => Number(ingestion?.parsedBy?.[p.key]) || 0);
+  const parsedTotal = parsedValues.reduce((a, b) => a + b, 0);
+  const parsedPercents = sharePercents(parsedValues);
+  const withShare = (pct, text) =>
+    [parsedTotal > 0 ? `${pct}% of parsed uploads` : null, text].filter(Boolean).join(' · ') ||
+    undefined;
 
   return (
     <div>
@@ -197,23 +214,6 @@ export default function AdminDashboardPage() {
               hint={nonZero(data.extraction?.last7d?.byStatus) || undefined}
             />
             <KpiTile
-              testId="kpi-parsed-by-ai"
-              label="Parsed by AI"
-              value={ingestion?.parsedBy?.AI}
-            />
-            <KpiTile
-              testId="kpi-parsed-by-code"
-              label="Parsed by code"
-              value={ingestion?.parsedBy?.CODE}
-              hint="Code-based extraction (fallback or code-only templates)"
-            />
-            <KpiTile
-              testId="kpi-parsed-by-ai-partial"
-              label="AI with code fallback"
-              value={ingestion?.parsedBy?.AI_PARTIAL}
-              hint="Some batches re-parsed by code"
-            />
-            <KpiTile
               testId="kpi-templates-private"
               label="Private templates"
               value={templates?.private}
@@ -225,6 +225,36 @@ export default function AdminDashboardPage() {
               value={templates?.shared}
               hint="Usable by everyone in the bank"
               to="/templates"
+            />
+          </Section>
+
+          <Section title="How uploads were parsed (7 days)">
+            <ShareTile
+              testId="kpi-parsed-by"
+              label="AI vs code"
+              parts={PARSED_BY.map((p, i) => ({ ...p, value: parsedValues[i] }))}
+              emptyText="No uploads parsed in the last 7 days"
+            />
+            <KpiTile
+              testId="kpi-parsed-by-ai"
+              label="Parsed by AI"
+              value={ingestion?.parsedBy?.AI}
+              hint={withShare(parsedPercents[0])}
+            />
+            <KpiTile
+              testId="kpi-parsed-by-code"
+              label="Parsed by code"
+              value={ingestion?.parsedBy?.CODE}
+              hint={withShare(
+                parsedPercents[1],
+                'Code-based extraction (fallback or code-only templates)'
+              )}
+            />
+            <KpiTile
+              testId="kpi-parsed-by-ai-partial"
+              label="AI with code fallback"
+              value={ingestion?.parsedBy?.AI_PARTIAL}
+              hint={withShare(parsedPercents[2], 'Some batches re-parsed by code')}
             />
           </Section>
 
@@ -296,7 +326,7 @@ export default function AdminDashboardPage() {
             />
           </Section>
 
-          <p className="text-xs text-muted">
+          <p className="text-xs text-muted" aria-live="polite">
             Numbers as of {formatDateTime(data.generatedAt) || 'now'} — refreshed at most every
             30 seconds.
           </p>

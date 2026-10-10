@@ -169,7 +169,7 @@ Run it alone with `FAKE_LLM_PORT=18089 node stubs/fake-llm.mjs`.
 |---|---|---|---|
 | BUG-01 | P1 | **Fixed (Wave 2)** — kept as a regression test. `POST /api/auth/mfa/verify` returned 502 under `modocument_app` (LOGIN_SUCCESS audit flushed outside the tenant binding). | — |
 | BUG-02 | P4 | **Fixed (Wave 2)** — kept as a regression test. "Your session expired" after a forced password change. | — |
-| BUG-04 | P4 | Open (`test.fixme`, phase-2 QA rule for new bugs). After a forced password change the inline "Password changed — sign in again" notice never shows (ProtectedRoute redirects before the page navigates with state); the toast does show. | none needed |
+| BUG-04 | P4 | **Fixed (Wave 4)** — kept as a regression test. After a forced password change the inline "Password changed — sign in again" notice never showed (ProtectedRoute redirected before the page navigated with state). `logout({notice})` now commits the notice with the sign-out and ProtectedRoute's redirect carries it. | — |
 
 An open bug's test fails until the bug is fixed; from phase 2 Wave 2 on, a
 NEWLY found bug's test is committed as `test.fixme` (with the repro in the

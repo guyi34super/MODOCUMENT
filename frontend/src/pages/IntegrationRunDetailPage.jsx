@@ -90,7 +90,11 @@ function RunDetail({ runId }) {
     <div className="space-y-5">
       <ErrorBanner message={error} onDismiss={() => setError('')} />
       <div className="flex flex-wrap items-center gap-3">
-        <StatusChip status={run.status} />
+        {/* The page polls an active run: a status change is announced. */}
+        <span aria-live="polite" data-testid="run-status">
+          <span className="sr-only">Run status: </span>
+          <StatusChip status={run.status} />
+        </span>
         <span className="text-sm text-muted">
           {canManageIntegrations(user?.role) ? (
             <Link to={`/admin/integrations/flows/${run.flowId}`} className="text-accent hover:underline">
@@ -162,6 +166,7 @@ function RunDetail({ runId }) {
       <section aria-label="Deliveries">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Deliveries</h2>
         <DataTable
+          caption="Deliveries"
           columns={[
             { key: 'id', label: 'Delivery', render: (d) => `#${d.id}` },
             { key: 'status', label: 'Status', render: (d) => <StatusChip status={d.status} /> },

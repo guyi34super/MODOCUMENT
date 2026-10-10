@@ -81,9 +81,12 @@ test.describe('authentication @smoke', () => {
       // Book the new password before any further assertion: every later
       // spec signs in (and clones users) with it.
       saveAccount(email, { password: newPassword, passwordChangedAt: new Date().toISOString() });
-      // The confirmation toast. (The inline "Password changed — sign in again"
-      // notice on the login page never shows: BUG-04, 04-known-bugs.spec.js.)
+      // The confirmation toast, and the inline login-page notice (BUG-04,
+      // fixed in Wave 4; regression test in 04-known-bugs.spec.js).
       await expect(page.getByText('Password changed — sign in with your new password')).toBeVisible();
+      await expect(
+        page.getByRole('status').filter({ hasText: 'Password changed — sign in again' })
+      ).toBeVisible();
 
       // The env-provided password is dead; the new one plus TOTP opens a session.
       const stale = await new ApiClient().request('POST', '/api/auth/login', {
