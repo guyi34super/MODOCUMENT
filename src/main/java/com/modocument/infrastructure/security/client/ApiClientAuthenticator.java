@@ -57,7 +57,7 @@ import java.util.function.Supplier;
  *
  * <p><b>Every method enforces</b> (in {@link #check}): status ACTIVE, not
  * expired, the client's bank not suspended, the auth method still allowed
- * for the bank (platform settings {@code integration.auth.allow*}), and the
+ * for the bank ({@code integration.auth.allow*}: platform-set, per bank), and the
  * caller's IP inside {@code AllowedCidrs} (the forwarded-aware address of
  * {@link ClientIps}). Client tokens additionally carry {@code token_ver}:
  * a revocation bumps TokenVersion, so a token stops working on its very next
@@ -327,7 +327,7 @@ public class ApiClientAuthenticator {
         return Result.ok(principalOf(client, scopes), client);
     }
 
-    /** Whether the bank may use {@code method} (platform settings integration.auth.allow*). */
+    /** Whether the bank may use {@code method} (integration.auth.allow*, platform-set per bank). */
     public boolean methodAllowed(ApiAuthMethod method, int bankId) {
         try {
             return settings.isAuthMethodAllowed(method, bankId);

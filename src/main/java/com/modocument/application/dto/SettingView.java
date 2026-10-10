@@ -21,7 +21,9 @@ import java.util.List;
  *       {@code locked} — exactly one allowed value; {@code clamped} — the
  *       stored value lies outside the current limits and was corrected;</li>
  *   <li>{@code pendingChangeId} — the open change covering this key, if any;
- *       {@code version} — send it back as {@code expectedVersion}.</li>
+ *       {@code version} — send it back as {@code expectedVersion};</li>
+ *   <li>{@code platformControlled} — the bank's value of this setting is set
+ *       by the platform owner (per bank); read-only on the bank layer.</li>
  * </ul>
  */
 public record SettingView(String key, String type, String tier, String scope, String group,
@@ -30,5 +32,6 @@ public record SettingView(String key, String type, String tier, String scope, St
                           Object min, Object max, Object hardMin, Object hardMax,
                           List<String> allowed, boolean requiresApproval,
                           boolean requiresRestart, boolean locked, boolean clamped,
-                          Integer pendingChangeId, int version) {
+                          Integer pendingChangeId, int version,
+                          boolean platformControlled) {
 }

@@ -1,14 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ToastProvider } from '../context/ToastContext';
 import SettingsPage from './SettingsPage';
 
 import {
   getBankSettings,
+  getBankSettingsForPlatform,
   getPlatformSettings,
   updateBankSettings,
+  updateBankSettingsForPlatform,
   updatePlatformSettings,
 } from '../api/settings';
 
@@ -17,15 +19,25 @@ vi.mock('../api/settings', async () => {
   const updateBankSettings = vi.fn();
   const getPlatformSettings = vi.fn();
   const updatePlatformSettings = vi.fn();
+  const getBankSettingsForPlatform = vi.fn();
+  const updateBankSettingsForPlatform = vi.fn();
   return {
     getBankSettings,
     updateBankSettings,
     getPlatformSettings,
     updatePlatformSettings,
-    settingsApi: (mode) =>
-      mode === 'platform'
-        ? { load: getPlatformSettings, save: updatePlatformSettings }
-        : { load: getBankSettings, save: updateBankSettings },
+    getBankSettingsForPlatform,
+    updateBankSettingsForPlatform,
+    settingsApi: (mode, bankId) => {
+      if (mode === 'platform') return { load: getPlatformSettings, save: updatePlatformSettings };
+      if (mode === 'platformBank') {
+        return {
+          load: () => getBankSettingsForPlatform(bankId),
+          save: (changes, comment) => updateBankSettingsForPlatform(bankId, changes, comment),
+        };
+      }
+      return { load: getBankSettings, save: updateBankSettings };
+    },
   };
 });
 
@@ -331,6 +343,65 @@ describe('SettingsPage (platform)', () => {
     await waitFor(() =>
       expect(updatePlatformSettings).toHaveBeenCalledWith(
         [{ key: 'security.password.minLength', expectedVersion: 0, bankMin: 14 }],
+        undefined
+      )
+    );
+    expect(await screen.findByText('0 applied, 1 sent for approval')).toBeInTheDocument();
+    expect(getBankSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('SettingsPage (platform, one bank)', () => {
+  const FLAG = view({
+    key: 'integration.auth.allowApiKeys',
+    group: 'integrations',
+    type: 'BOOLEAN',
+    label: 'Allow API keys',
+    value: true,
+    allowed: ['true', 'false'],
+    platformControlled: true,
+  });
+
+  beforeEach(() => {
+    getBankSettings.mockReset();
+    getBankSettingsForPlatform.mockReset().mockResolvedValue({
+      layer: 'BANK_BY_PLATFORM',
+      revision: 2,
+      groups: [{ id: 'integrations', label: 'Integrations', settings: [FLAG] }],
+    });
+    updateBankSettingsForPlatform.mockReset().mockResolvedValue({
+      applied: [],
+      pendingChange: { pendingChangeId: 9, status: 'REQUESTED', payload: { changes: [{}] } },
+    });
+  });
+
+  it("loads and saves the bank's platform-set values under the bank's id", async () => {
+    render(
+      <MemoryRouter initialEntries={['/platform/banks/42/settings']}>
+        <ToastProvider>
+          <Routes>
+            <Route
+              path="/platform/banks/:id/settings"
+              element={<SettingsPage mode="platformBank" />}
+            />
+          </Routes>
+        </ToastProvider>
+      </MemoryRouter>
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Settings set by the platform' })
+    ).toBeInTheDocument();
+    expect(getBankSettingsForPlatform).toHaveBeenCalledWith('42');
+    const row = screen.getByTestId('setting-integration.auth.allowApiKeys');
+    expect(within(row).queryByText('Set by platform')).toBeNull();
+    await userEvent.click(within(row).getByRole('switch', { name: 'Allow API keys' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Integrations' }));
+
+    await waitFor(() =>
+      expect(updateBankSettingsForPlatform).toHaveBeenCalledWith(
+        '42',
+        [{ key: 'integration.auth.allowApiKeys', expectedVersion: 0, value: false }],
         undefined
       )
     );

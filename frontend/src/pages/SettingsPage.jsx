@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { settingsApi } from '../api/settings';
 import { useToast } from '../context/ToastContext';
 import PageHeader from '../components/PageHeader';
@@ -24,6 +24,19 @@ const COPY = {
       'Values here are what every bank inherits. "Banks may choose" narrows the range a bank ' +
       'administrator can pick, inside the go-live limits. Security values and every range ' +
       'change need a second platform administrator.',
+  },
+  platformBank: {
+    crumbs: (bankId) => [
+      { label: 'Platform', to: '/platform' },
+      { label: 'Banks', to: '/platform/banks' },
+      { label: 'Bank', to: `/platform/banks/${bankId}` },
+      { label: 'Settings' },
+    ],
+    title: 'Settings set by the platform',
+    subtitle: "This bank's own values of the settings only the platform may set",
+    intro:
+      'The bank sees these values but cannot change them. "Reset to inherited" returns the ' +
+      'bank to the platform default. Security values need a second platform administrator.',
   },
 };
 
@@ -64,11 +77,16 @@ function needsApproval(setting, draft, mode) {
  * `mode="bank"` (/admin/settings): the caller's bank layer.
  * `mode="platform"` (/platform/settings): the platform layer, with the
  * bank-bounds editors.
+ * `mode="platformBank"` (/platform/banks/:id/settings): one customer bank's
+ * platform-set settings (e.g. the allowed API-client auth methods), which
+ * that bank sees read-only.
  */
 export default function SettingsPage({ mode = 'bank' }) {
   const toast = useToast();
-  const api = useMemo(() => settingsApi(mode), [mode]);
+  const { id: bankId } = useParams();
+  const api = useMemo(() => settingsApi(mode, bankId), [mode, bankId]);
   const copy = COPY[mode] || COPY.bank;
+  const crumbs = typeof copy.crumbs === 'function' ? copy.crumbs(bankId) : copy.crumbs;
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [page, setPage] = useState(null);
@@ -191,7 +209,7 @@ export default function SettingsPage({ mode = 'bank' }) {
   return (
     <div>
       <PageHeader
-        crumbs={copy.crumbs}
+        crumbs={crumbs}
         title={copy.title}
         subtitle={copy.subtitle}
         actions={

@@ -150,6 +150,42 @@ describe('SettingField', () => {
     expect(screen.queryByRole('button', { name: 'Reset to inherited' })).toBeNull();
   });
 
+  it('renders a platform-set setting read-only for the bank, editable for the platform', async () => {
+    const flag = settingView({
+      key: 'integration.auth.allowApiKeys',
+      type: 'BOOLEAN',
+      label: 'Allow API keys',
+      unit: null,
+      value: false,
+      source: 'BANK',
+      allowed: ['true', 'false'],
+      min: null,
+      max: null,
+      hardMin: null,
+      hardMax: null,
+      platformControlled: true,
+    });
+    const { onDraft, rerender } = renderField({ setting: flag });
+
+    let row = screen.getByTestId('setting-integration.auth.allowApiKeys');
+    expect(within(row).getByText('Set by platform')).toBeInTheDocument();
+    expect(within(row).getByRole('switch', { name: 'Allow API keys' })).toBeDisabled();
+    expect(within(row).queryByText('Requires approval')).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Reset to inherited' })).toBeNull();
+
+    // The platform's per-bank screen edits the same view.
+    rerender(
+      <MemoryRouter>
+        <SettingField setting={flag} mode="platformBank" onDraft={onDraft} />
+      </MemoryRouter>
+    );
+    row = screen.getByTestId('setting-integration.auth.allowApiKeys');
+    expect(within(row).queryByText('Set by platform')).toBeNull();
+    expect(within(row).getByText('Requires approval')).toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: 'Reset to inherited' }));
+    expect(onDraft).toHaveBeenCalledWith({ reset: true });
+  });
+
   it('shows a pending reset and lets it be undone', async () => {
     const { onDraft } = renderField({
       setting: settingView({ source: 'BANK' }),
