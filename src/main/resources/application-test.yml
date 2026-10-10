@@ -38,6 +38,12 @@ modocument:
       # gate tests drive AlertSweepJob.runOnce() explicitly. Immediate
       # (post-commit) alerting stays on everywhere.
       enabled: false
+  settings:
+    # ws20: no scheduled ConfigRevision poll against the shared H2 schema
+    # (every cached test context would poll it). Writes reload their own
+    # snapshot after commit and the settings endpoints refresh explicitly;
+    # SettingsPropagationPgIT drives the poller directly.
+    poll-interval-ms: 3600000
   security:
     jwt:
       # Test-only signing key; production requires MODOCUMENT_JWT_SECRET.

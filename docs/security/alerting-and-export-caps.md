@@ -71,13 +71,15 @@ HIGH < CRITICAL), `enabled`.
 | `sod-attempt-blocked` | immediate | `SELF_APPROVAL_BLOCKED`, `DOC_SELF_RELEASE_BLOCKED` | actor | – / 15m | MEDIUM | |
 | `ai-prompt-refused` | immediate | `AI_PROMPT_REFUSED` | actor | – / 5m | HIGH | |
 | `ai-output-blocked` | immediate | `AI_OUTPUT_BLOCKED` | actor | – / 15m | MEDIUM | |
-| `privileged-change` | immediate | `BOOTSTRAP_ADMIN_CREATED`, `USER_ROLE_CHANGED`, `MFA_DISABLED`, `USER_LIST_EXPORTED`, `DSR_EXPORTED`, `DSR_ERASED` | actor | – / 5m | MEDIUM | |
+| `privileged-change` | immediate | `BOOTSTRAP_ADMIN_CREATED`, `USER_ROLE_CHANGED`, `MFA_DISABLED`, `USER_LIST_EXPORTED`, `DSR_EXPORTED`, `DSR_ERASED`, `USER_PASSWORD_RESET`, `USER_MFA_RESET` | actor | – / 5m | MEDIUM | |
 | `admin-login` | immediate | `LOGIN_SUCCESS` by role ADMIN | actor | – / 60m | LOW | `MODOCUMENT_ALERT_ADMIN_LOGIN_WINDOW` |
 | `login-failures-per-user` | windowed | `LOGIN_FAILED` | actor | ≥ 5 / 5m | HIGH | `MODOCUMENT_ALERT_LOGIN_FAILURES_PER_USER`, `..._WINDOW` |
 | `login-failures-per-ip` | windowed | `LOGIN_FAILED` | ip | ≥ 5 / 5m | HIGH | `MODOCUMENT_ALERT_LOGIN_FAILURES_PER_IP`, `..._WINDOW` |
 | `authorization-denied-burst` | windowed | `AUTHORIZATION_DENIED` | actor | ≥ 10 / 5m | MEDIUM | `MODOCUMENT_ALERT_AUTHZ_DENIED_THRESHOLD` |
 | `admin-action-burst` | windowed | any SUCCESS by role ADMIN | actor | ≥ 30 / 10m | MEDIUM | `MODOCUMENT_ALERT_ADMIN_BURST_THRESHOLD` |
 | `export-burst` | windowed | `EXPORT_RUN` | actor | ≥ 5 / 10m | MEDIUM | `MODOCUMENT_ALERT_EXPORT_BURST_THRESHOLD` |
+| `security-setting-changed` (ws20) | immediate | `SECURITY_SETTING_UPDATED` | actor (the approver) | – / 5m | MEDIUM | |
+| `platform-change` (ws20/ws21) | immediate | `PLATFORM_SETTING_UPDATED`, `PLATFORM_BOOTSTRAPPED` | actor | – / 5m | HIGH | |
 
 How the D1 signals map: *failed logins* → `login-failures-per-user/-ip`
 (+ `account-locked` on the 6th wrong password); *admin/root use* →

@@ -53,6 +53,15 @@ import java.util.concurrent.Callable;
  *   <li>{@code PlatformBankDirectory#platformBankId} — phase 2: resolves
  *       the platform bank by code, {@code runAsSystem} in its own read-only
  *       transaction (the Bank table is RLS-protected); id cached.</li>
+ *   <li>{@code SettingsCache#reload} / {@code SettingsCache#refreshIfChanged}
+ *       — phase 2 (ws20) settings snapshot: {@code runAsSystem} in its own
+ *       read-only REQUIRES_NEW transaction to read the tenant-less
+ *       ConfigRevision counter and EVERY bank's BankSetting rows (the
+ *       platform layer is the platform bank's rows, so each bank's effective
+ *       values need two banks' rows). Called at startup, after each settings
+ *       write commits, and by {@code ConfigRevisionPoller#poll} every
+ *       {@code modocument.settings.poll-interval-ms}. Read-only; writes stay
+ *       under the writer's own tenant.</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker

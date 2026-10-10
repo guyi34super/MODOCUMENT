@@ -56,7 +56,11 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     // V80 (ws10): the maker/checker queue is bank-scoped.
                     "pendingchange",
                     // V160 (ws18): a bank's security alerts are its own.
-                    "alertlog");
+                    "alertlog",
+                    // V200 (ws20): a bank's settings overrides; the platform
+                    // layer is the platform bank's rows (WITH CHECK keeps
+                    // every other bank out of them).
+                    "banksetting");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

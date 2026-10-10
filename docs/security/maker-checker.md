@@ -17,6 +17,8 @@ undecided request (`CANCELLED`).
 | `USER_DISABLE`     | Disable a user (leaver switch, PRIV-017)  | `user:admin`     | `PUT /api/admin/users/{id}/disabled` (true) → 202 | `change:approve` |
 | `TEMPLATE_UPDATE`  | Rename/redescribe a template              | `template:write` | `PUT /Templates/Update` → 202                    | `change:approve` |
 | `TEMPLATE_DELETE`  | Delete a template (+ fields, rules)       | `template:write` | `DELETE /Templates/{id}` → 202                   | `change:approve` |
+| `SETTING_UPDATE`   | Security-tier bank settings (ws20); payload `{changes:[{key, from, to, baseVersion}]}`; audited `SECURITY_SETTING_UPDATED` per key | `settings:write` | `PUT /api/admin/settings` → 202 (operational keys in the same request apply at once) | `change:approve` (same bank) |
+| `PLATFORM_SETTING_UPDATE` | Platform security defaults and every bank-bound (`bankMin`/`bankMax`) change (ws20); payload `{changes:[{key, from, to, bankMin?, bankMax?, baseVersion}]}`; audited `PLATFORM_SETTING_UPDATED` | `platform:settings` | `PUT /api/platform/settings` → 202 | `change:approve` (a second platform admin) |
 
 Everything can also be submitted through the generic
 `POST /api/admin/changes` (`{changeType, payload, comment}`); the use case
@@ -56,6 +58,16 @@ POST .../{id}/cancel (maker only)      ├─ applier.apply() — the EXISTING
   that an invariant refuses (e.g. the last-admin guard) rolls the domain
   change back, answers the checker with the refusal, and bookkeeps the row
   as `FAILED` in an independent transaction.
+- Settings (ws20): `SettingUpdateApplier` / `PlatformSettingUpdateApplier`
+  re-judge every key at apply time against the limits in force NOW (the
+  platform may have narrowed a bank's bounds meanwhile → 400
+  `SETTING_OUT_OF_RANGE`) and write a row only if its version still equals
+  the payload's `baseVersion` (else 409 `SETTING_VERSION_CONFLICT`); either
+  refusal marks the change `FAILED`. While a change is `REQUESTED` its keys
+  are frozen (409 `SETTING_CHANGE_PENDING`). The settings use the same
+  submit path as everything else, so `POST /api/admin/changes` with
+  `SETTING_UPDATE` is validated identically (`from` is re-read from the
+  database, never trusted from the maker). Details: docs/settings/catalogue.md.
 - `PendingChange` carries `BankId` and is covered by the standard RLS tenant
   policy (the afterMigrate callback); the application additionally filters
   every read by the caller's bank and asserts maker/checker bank equality on
@@ -117,7 +129,8 @@ workstream's design review.
 | `CHANGE_APPLY_FAILED`   | FAILED   | approved apply hit a changed invariant     |
 
 The applier's own domain rows (`USER_CREATED`, `USER_ROLE_CHANGED`,
-`USER_DISABLED`, `TEMPLATE_UPDATED`, `TEMPLATE_DELETED`) are written in the
+`USER_DISABLED`, `TEMPLATE_UPDATED`, `TEMPLATE_DELETED`,
+`SECURITY_SETTING_UPDATED`, `PLATFORM_SETTING_UPDATED`) are written in the
 approval's transaction with the **checker** as actor; `CHANGE_REQUESTED`
 names the maker. Together the trail answers "who asked, who approved, what
 happened" for every critical change.

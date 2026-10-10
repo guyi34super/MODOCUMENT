@@ -81,9 +81,9 @@ class RoutePermissionCoverageTest {
      * docs/phase2/contracts.md).
      */
     private static final Set<Permission> RESERVED = EnumSet.of(
-            Permission.SETTINGS_READ, Permission.SETTINGS_WRITE,        // ws20
-            Permission.PLATFORM_READ, Permission.PLATFORM_BANKS,        // ws21
-            Permission.PLATFORM_SETTINGS,                               // ws20
+            // ws20 landed SETTINGS_READ/SETTINGS_WRITE, PLATFORM_SETTINGS and
+            // PLATFORM_READ (GET /api/platform/settings is its first route).
+            Permission.PLATFORM_BANKS,                                  // ws21
             Permission.TEMPLATE_PUBLISH,                                // ws22
             Permission.SYSTEM_INFO, Permission.PLATFORM_ANNOUNCE,       // ws24
             Permission.INTEGRATION_ADMIN, Permission.INTEGRATION_RUN,   // ws25

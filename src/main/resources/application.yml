@@ -349,7 +349,7 @@ modocument:
       - name: privileged-change
         description: Privileged (admin/root) action
         trigger: IMMEDIATE
-        actions: [BOOTSTRAP_ADMIN_CREATED, USER_ROLE_CHANGED, MFA_DISABLED, USER_LIST_EXPORTED, DSR_EXPORTED, DSR_ERASED]
+        actions: [BOOTSTRAP_ADMIN_CREATED, USER_ROLE_CHANGED, MFA_DISABLED, USER_LIST_EXPORTED, DSR_EXPORTED, DSR_ERASED, USER_PASSWORD_RESET, USER_MFA_RESET]
         group-by: ACTOR
         window: 5m
         severity: MEDIUM
@@ -403,6 +403,44 @@ modocument:
         threshold: ${MODOCUMENT_ALERT_EXPORT_BURST_THRESHOLD:5}
         window: 10m
         severity: MEDIUM
+      # ws20 settings: an approved maker/checker change of a security-tier
+      # setting (one audit row per key; grouped per approving user).
+      - name: security-setting-changed
+        description: Security setting changed (maker/checker approved)
+        trigger: IMMEDIATE
+        actions: [SECURITY_SETTING_UPDATED]
+        group-by: ACTOR
+        window: 5m
+        severity: MEDIUM
+      # ws20/ws21: the platform owner changed a global default or the range
+      # a bank may choose from (affects every bank), or the platform was
+      # bootstrapped.
+      - name: platform-change
+        description: Platform setting, bank bound or platform bootstrap by the platform owner
+        trigger: IMMEDIATE
+        actions: [PLATFORM_SETTING_UPDATED, PLATFORM_BOOTSTRAPPED]
+        group-by: ACTOR
+        window: 5m
+        severity: HIGH
+  settings:
+    # ws20 editable settings (docs/settings/catalogue.md). The catalogue,
+    # types and hard limits are code; administrators' values live in the
+    # BankSetting table. Each task polls the ConfigRevision counter this
+    # often and reloads its in-memory snapshot when another task wrote a
+    # setting (not itself an editable setting).
+    poll-interval-ms: ${MODOCUMENT_SETTINGS_POLL_INTERVAL_MS:5000}
+    # Staging/production: refuse to start when a shipped default (this file
+    # or its env override) lies outside its setting's hard limits; off, each
+    # violation is a startup WARN and the configured value stays in force.
+    enforce-guardrails: ${MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS:false}
+  platform:
+    # Phase 2 (ws21): the platform owner's (MO Intelligence) own bank, found
+    # by this code (and Kind = PLATFORM). Platform settings, announcements and
+    # egress approvals are rows of this bank; only its users may hold the
+    # platform:* permissions. PlatformBankLookup caches the resolved id for
+    # bank-cache-ttl (the test profile uses 0s).
+    bank-code: ${MODOCUMENT_PLATFORM_BANK_CODE:MOI-PLATFORM}
+    bank-cache-ttl: 30s
   siem:
     # ws18 SIEM export (SEC-031, gate E6). Schema + transports:
     # docs/security/siem-event-schema.md.
