@@ -1,5 +1,6 @@
 package com.modocument.application.usecase;
 
+import org.springframework.transaction.PlatformTransactionManager;
 import com.modocument.application.dto.AuthResponse;
 import com.modocument.application.dto.UserDto;
 import com.modocument.application.port.AppUserRepository;
@@ -57,8 +58,10 @@ class MfaUseCaseTest {
     private final AuthUseCase auth = mock(AuthUseCase.class);
     private final AuditRecorder audit = mock(AuditRecorder.class);
     private final MfaRateLimiter rateLimiter = new MfaRateLimiter(1000, 1000, 60_000, 1000);
+    // A mock manager: TransactionTemplate then simply runs the callback.
+    private final PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
     private final MfaUseCase useCase = new MfaUseCase(userMfa, recoveryCodes, users, encoder,
-            cipher, challengeTokens, auth, audit, rateLimiter);
+            cipher, challengeTokens, auth, audit, rateLimiter, transactions);
 
     private AppUser demoUser() {
         AppUser user = new AppUser(1, "demo@modocument.local", "irrelevant", "Demo User");
@@ -237,7 +240,8 @@ class MfaUseCaseTest {
         MfaUseCase.Enrollment enrollment = useCase.enroll(1);
         useCase.activate(1, currentCode(enrollment.secret()));
         MfaUseCase throttled = new MfaUseCase(userMfa, recoveryCodes, users, encoder, cipher,
-                challengeTokens, auth, audit, new MfaRateLimiter(1000, 5, 60_000, 1000));
+                challengeTokens, auth, audit, new MfaRateLimiter(1000, 5, 60_000, 1000),
+                transactions);
         when(challengeTokens.parse("challenge")).thenReturn(challengeJwt(0));
 
         for (int attempt = 0; attempt < 5; attempt++) {

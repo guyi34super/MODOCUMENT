@@ -4,6 +4,7 @@ import com.modocument.application.port.AppUserRepository;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.RecoveryCodeRepository;
+import com.modocument.application.port.TenantContext;
 import com.modocument.application.port.UserMfaRepository;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.RecoveryCode;
@@ -19,7 +20,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -28,6 +31,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.function.Supplier;
 
 /**
  * TOTP second factor (SEC-014/022, gate B3): enrolment, activation, disable
@@ -58,11 +62,13 @@ public class MfaUseCase {
     private final AuthUseCase auth;
     private final AuditRecorder audit;
     private final MfaRateLimiter rateLimiter;
+    private final TransactionTemplate transactions;
 
     public MfaUseCase(UserMfaRepository userMfa, RecoveryCodeRepository recoveryCodes,
                       AppUserRepository users, PasswordEncoder passwordEncoder,
                       MfaSecretCipher cipher, MfaChallengeTokens challengeTokens,
-                      AuthUseCase auth, AuditRecorder audit, MfaRateLimiter rateLimiter) {
+                      AuthUseCase auth, AuditRecorder audit, MfaRateLimiter rateLimiter,
+                      PlatformTransactionManager transactionManager) {
         this.userMfa = userMfa;
         this.recoveryCodes = recoveryCodes;
         this.users = users;
@@ -72,6 +78,7 @@ public class MfaUseCase {
         this.auth = auth;
         this.audit = audit;
         this.rateLimiter = rateLimiter;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
     public MfaStatus status(int userId) {
@@ -187,8 +194,17 @@ public class MfaUseCase {
      * through the same issuance path as a password-only login —
      * LOGIN_SUCCESS is recorded here for MFA users. Every failure is the
      * same generic 401.
+     *
+     * <p>Not one {@code @Transactional} method on purpose: the caller is
+     * anonymous until this succeeds, so no tenant is bound when the request
+     * arrives, and the tenant is stamped on a transaction's connection when
+     * the transaction BEGINS (TenantAwareJpaTransactionManager). The user is
+     * resolved first (AppUsers is outside RLS), then every write — the TOTP
+     * counter, the refresh family, LOGIN_SUCCESS — runs in a transaction
+     * opened inside the user's own bank, so the PostgreSQL RLS WITH CHECK
+     * accepts them. (One transaction opened before the bank was known made
+     * every MFA sign-in fail at commit under the production DB role.)
      */
-    @Transactional
     public AuthUseCase.AuthSession verify(String challenge, String code,
                                           String ip, String userAgent) {
         Jwt parsed;
@@ -218,6 +234,12 @@ public class MfaUseCase {
         if (challengeVersion != user.getTokenVersion()) {
             throw new AuthUseCase.BadCredentialsException("Invalid or expired MFA challenge.");
         }
+        return inUsersBank(user, () -> verifySecondFactorAndOpenSession(user, code, ip, userAgent));
+    }
+
+    private AuthUseCase.AuthSession verifySecondFactorAndOpenSession(AppUser user, String code,
+                                                                     String ip, String userAgent) {
+        int userId = user.getAppUserId();
         UserMfa row = userMfa.getByUserId(userId)
                 .orElseThrow(() -> new AuthUseCase.BadCredentialsException(
                         "Invalid verification code."));
@@ -235,6 +257,18 @@ public class MfaUseCase {
             throw new AuthUseCase.BadCredentialsException("Invalid verification code.");
         }
         return auth.completeMfaLogin(user, ip, userAgent);
+    }
+
+    /** Runs {@code work} in a new transaction that begins inside the user's bank. */
+    private <T> T inUsersBank(AppUser user, Supplier<T> work) {
+        try {
+            return TenantContext.runAs(user.getBankId(),
+                    () -> transactions.execute(status -> work.get()));
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /**
