@@ -413,6 +413,26 @@ class AuthUseCaseTest {
                 .isInstanceOf(AuthUseCase.AuthSession.class);
     }
 
+    @Test
+    void platformAdminWithoutMfaIsForcedIntoEnrollmentEvenWithRequireForAdminOff() {
+        // ws21: no setting switches the platform owner's second factor off.
+        AuthUseCase relaxed = new AuthUseCase(repo, encoder, passwordPolicy, lockoutPolicy,
+                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
+                userSecurity, audit, false, IDLE_TIMEOUT);
+        AppUser platformAdmin = demoUser();
+        platformAdmin.setRole(Role.PLATFORM_ADMIN);
+        when(repo.getByEmail("demo@modocument.local")).thenReturn(Optional.of(platformAdmin));
+        when(repo.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(userMfa.isEnabled(1)).thenReturn(false);
+        when(challengeTokens.issue(platformAdmin)).thenReturn("challenge-jwt");
+
+        for (AuthUseCase auth : new AuthUseCase[] {useCase, relaxed}) {
+            assertThat(auth.login("demo@modocument.local", "Demo123!", null, null))
+                    .isEqualTo(new AuthUseCase.MfaChallenge("challenge-jwt", true));
+        }
+        verify(jwtService, never()).issueToken(any(AppUser.class));
+    }
+
     // --------------------------------------------------------------- refresh
 
     @Test

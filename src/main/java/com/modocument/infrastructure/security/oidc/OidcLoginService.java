@@ -7,6 +7,7 @@ import com.modocument.application.usecase.AuthUseCase;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.AuditOutcome;
+import com.modocument.domain.model.BankKind;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
@@ -34,6 +35,12 @@ import java.util.Map;
  * USER_PROVISIONED_OIDC). When the provider declares a role claim, a valid
  * value maps onto the account's role on every login, so role changes made at
  * the IdP propagate.
+ *
+ * <p>Platform owner (ws21): OIDC never reaches the platform bank. A provider
+ * whose bank-code names the PLATFORM bank provisions nobody, and an
+ * identity that resolves to a PLATFORM_ADMIN (or any account of the platform
+ * bank) is refused — platform admins sign in with their local password and
+ * the always-on TOTP second factor only.
  *
  * <p>Registered only by {@link OidcClientConfig}, i.e. only when OIDC
  * providers are configured.
@@ -100,8 +107,9 @@ public class OidcLoginService {
             user = users.findByEmailIgnoreCase(email).orElse(null);
             if (user != null) {
                 // Checked BEFORE linking: a disabled account must not even
-                // acquire a fresh IdP binding.
+                // acquire a fresh IdP binding — nor may a platform account.
                 refuseIfDisabled(user, registrationId);
+                refuseIfPlatformAccount(user, registrationId);
                 linkByEmail(user, registrationId, subject);
             } else {
                 user = createUser(registrationId, provider, subject, email, oidcUser);
@@ -112,6 +120,7 @@ public class OidcLoginService {
             // outcome as a disabled password login, detail only in the audit.
             refuseIfDisabled(user, registrationId);
         }
+        refuseIfPlatformAccount(user, registrationId);
         applyRoleClaim(user, registrationId, provider, oidcUser);
         updateDisplayName(user, oidcUser);
         return user;
@@ -121,6 +130,23 @@ public class OidcLoginService {
         if (user.isDisabled()) {
             throw new OidcLoginException("Account '" + user.getEmail()
                     + "' is disabled; refusing OIDC login via '" + registrationId + "'.");
+        }
+    }
+
+    /**
+     * ws21: a platform account (PLATFORM_ADMIN, or any account of the
+     * platform bank) never gets an OIDC session — its MFA is mandatory and
+     * local, and no IdP is trusted to vouch for the platform owner.
+     */
+    private void refuseIfPlatformAccount(AppUser user, String registrationId) {
+        boolean platformRole = user.getRole() != null && !user.getRole().isBankRole();
+        boolean platformBank = banks.findById(user.getBankId())
+                .map(bank -> bank.getKind() == BankKind.PLATFORM)
+                .orElse(false);
+        if (platformRole || platformBank) {
+            throw new OidcLoginException("Account '" + user.getEmail()
+                    + "' is a platform account; refusing OIDC login via '" + registrationId
+                    + "'.");
         }
     }
 
@@ -160,6 +186,14 @@ public class OidcLoginService {
                         + "' maps to bank code '" + provider.getBankCode()
                         + "', which does not exist — create the bank or fix "
                         + "modocument.oidc.providers." + registrationId + ".bank-code."));
+        if (bank.getKind() == BankKind.PLATFORM) {
+            // ws21: the platform bank holds PLATFORM_ADMIN only, never
+            // IdP-provisioned bank users (OidcClientConfig refuses the
+            // mapping at startup too; this covers a bank created later).
+            throw new OidcLoginException("OIDC provider '" + registrationId
+                    + "' maps to the platform bank '" + bank.getCode()
+                    + "'; OIDC never provisions into it.");
+        }
         Role role = provider.getDefaultRole() == null ? Role.READ_ONLY : provider.getDefaultRole();
         AppUser user = new AppUser();
         user.setEmail(email);

@@ -65,6 +65,8 @@ public class SecretFileEnvironmentPostProcessor implements EnvironmentPostProces
             "SPRING_DATASOURCE_PASSWORD",
             "SPRING_FLYWAY_PASSWORD",
             "MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD",
+            // ws21: the two platform admins' temporary passwords (one per line).
+            "MODOCUMENT_PLATFORM_ADMIN_PASSWORDS",
             "MODOCUMENT_AI_API_KEY",
             "MODOCUMENT_OIDC_ENTRA_CLIENT_SECRET",
             "MODOCUMENT_OIDC_KEYCLOAK_CLIENT_SECRET",

@@ -1,6 +1,7 @@
 package com.modocument.application.port;
 
 import com.modocument.domain.entity.AppUser;
+import com.modocument.domain.model.Role;
 
 import java.util.List;
 import java.util.Optional;
@@ -24,4 +25,7 @@ public interface AppUserRepository {
 
     /** How many enabled (not disabled) ADMIN accounts the bank still has. */
     long countActiveAdmins(int bankId);
+
+    /** How many enabled (not disabled) accounts with this role the bank has (ws21). */
+    long countActiveByRole(int bankId, Role role);
 }

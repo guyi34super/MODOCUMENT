@@ -25,10 +25,13 @@ import java.time.LocalDateTime;
 @Table(name = "AppUsers", uniqueConstraints = @UniqueConstraint(
         name = "ux_appusers_provider_subject",
         columnNames = {"AuthProvider", "ProviderSubject"}))
-// SCHEMA PARITY with V30 (ck_appusers_role) on the H2 test schema: the Role
-// vocabulary is closed — see com.modocument.domain.model.Role.
+// SCHEMA PARITY with V30/V210 (ck_appusers_role) on the H2 test schema: the
+// Role vocabulary is closed — the four bank roles plus PLATFORM_ADMIN (ws21;
+// API_CLIENT is never an AppUsers row) — see com.modocument.domain.model.Role.
+// The V210 trigger that pins PLATFORM_ADMIN to the platform bank is
+// PostgreSQL-only.
 @Check(name = "ck_appusers_role",
-        constraints = "Role in ('ADMIN', 'APPROVER', 'READ_WRITE', 'READ_ONLY')")
+        constraints = "Role in ('ADMIN', 'APPROVER', 'READ_WRITE', 'READ_ONLY', 'PLATFORM_ADMIN')")
 public class AppUser {
 
     @Id

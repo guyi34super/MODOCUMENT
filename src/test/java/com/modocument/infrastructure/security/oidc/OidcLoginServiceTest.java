@@ -5,6 +5,7 @@ import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.usecase.AuthUseCase;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
+import com.modocument.domain.model.BankKind;
 import com.modocument.domain.model.Role;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +41,8 @@ import static org.mockito.Mockito.when;
  * clear message that never reaches the browser.
  */
 class OidcLoginServiceTest {
+
+    private static final String PLATFORM_CODE = "MOI-PLATFORM";
 
     private AppUserJpaRepository users;
     private BankJpaRepository banks;
@@ -256,7 +259,7 @@ class OidcLoginServiceTest {
         when(banks.findByCode("ACME")).thenReturn(Optional.empty());
         OidcClientConfig config = new OidcClientConfig();
         assertThatThrownBy(() ->
-                config.oidcBankCodeValidator(properties, banks, false).run(null))
+                config.oidcBankCodeValidator(properties, banks, false, PLATFORM_CODE).run(null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("bank code 'ACME'");
     }
@@ -266,11 +269,69 @@ class OidcLoginServiceTest {
         when(banks.findByCode("ACME")).thenReturn(Optional.empty());
         OidcClientConfig config = new OidcClientConfig();
         // permit-dev-paths=true: H2 dev/test schemas boot empty — warn only.
-        config.oidcBankCodeValidator(properties, banks, true).run(null);
+        config.oidcBankCodeValidator(properties, banks, true, PLATFORM_CODE).run(null);
 
         Bank acme = new Bank("ACME", "Acme Bank");
         when(banks.findByCode("ACME")).thenReturn(Optional.of(acme));
-        config.oidcBankCodeValidator(properties, banks, false).run(null);
+        config.oidcBankCodeValidator(properties, banks, false, PLATFORM_CODE).run(null);
+    }
+
+    // ------------------------------------------------- ws21 platform owner
+
+    @Test
+    void aProviderMappedToThePlatformBankProvisionsNobody() {
+        when(users.findByAuthProviderAndProviderSubject("keycloak", "sub-1"))
+                .thenReturn(Optional.empty());
+        when(users.findByEmailIgnoreCase("ana@acme.example")).thenReturn(Optional.empty());
+        Bank platform = new Bank("ACME", "Mis-mapped", BankKind.PLATFORM);
+        platform.setBankId(3);
+        when(banks.findByCode("ACME")).thenReturn(Optional.of(platform));
+
+        assertThatThrownBy(() -> service.login("keycloak", oidcUser(Map.of(
+                "sub", "sub-1", "email", "ana@acme.example")), null, null))
+                .isInstanceOf(OidcLoginService.OidcLoginException.class)
+                .hasMessageContaining("platform bank");
+        verify(users, never()).save(any(AppUser.class));
+        verify(auth, never()).openOidcSession(any(), any(), any(), any());
+    }
+
+    @Test
+    void aPlatformAdminIsNeverLinkedOrSignedInThroughOidc() {
+        AppUser platformAdmin = localUser(42, "ops@moi.example");
+        platformAdmin.setRole(Role.PLATFORM_ADMIN);
+        platformAdmin.setBankId(3);
+        when(users.findByAuthProviderAndProviderSubject("keycloak", "sub-1"))
+                .thenReturn(Optional.empty());
+        when(users.findByEmailIgnoreCase("ops@moi.example"))
+                .thenReturn(Optional.of(platformAdmin));
+
+        assertThatThrownBy(() -> service.login("keycloak", oidcUser(Map.of(
+                "sub", "sub-1", "email", "ops@moi.example")), null, null))
+                .isInstanceOf(OidcLoginService.OidcLoginException.class)
+                .hasMessageContaining("platform account");
+        assertThat(platformAdmin.getAuthProvider()).isNull();
+        verify(users, never()).save(any(AppUser.class));
+        verify(auth, never()).openOidcSession(any(), any(), any(), any());
+    }
+
+    @Test
+    void startupValidatorRefusesAProviderMappedToThePlatformBankUnderEveryProfile() {
+        OidcClientConfig config = new OidcClientConfig();
+        // By the configured platform code, even before the bank exists ...
+        properties.provider("keycloak").setBankCode(PLATFORM_CODE);
+        when(banks.findByCode(PLATFORM_CODE)).thenReturn(Optional.empty());
+        assertThatThrownBy(() ->
+                config.oidcBankCodeValidator(properties, banks, true, PLATFORM_CODE).run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("platform bank");
+        // ... and by kind, whatever the bank's code.
+        properties.provider("keycloak").setBankCode("ACME");
+        when(banks.findByCode("ACME"))
+                .thenReturn(Optional.of(new Bank("ACME", "Acme", BankKind.PLATFORM)));
+        assertThatThrownBy(() ->
+                config.oidcBankCodeValidator(properties, banks, true, PLATFORM_CODE).run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("platform bank");
     }
 
     private static AppUser localUser(int id, String email) {

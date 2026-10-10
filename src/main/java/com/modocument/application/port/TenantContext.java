@@ -53,6 +53,19 @@ import java.util.concurrent.Callable;
  *   <li>{@code PlatformBankDirectory#platformBankId} — phase 2: resolves
  *       the platform bank by code, {@code runAsSystem} in its own read-only
  *       transaction (the Bank table is RLS-protected); id cached.</li>
+ *   <li>{@code PlatformBankDirectory#find} — ws21 {@code BankDirectory}:
+ *       one Bank row's kind/status by id (permission guard, role policy,
+ *       wave-2 suspension checks), {@code runAsSystem} in its own read-only
+ *       transaction; identifying columns only, short-TTL cache.</li>
+ *   <li>{@code BootstrapPlatformRunner#run} — ws21 startup seeding of the
+ *       platform bank and its two PLATFORM_ADMIN accounts,
+ *       {@code runAsSystem} (reads/creates an RLS-protected Bank row
+ *       before any tenant exists), one transaction.</li>
+ *   <li>{@code PlatformBankUseCase#listBanks} / {@code #getBank} — ws21
+ *       platform console ({@code GET /api/platform/banks[/{id}]},
+ *       PLATFORM_READ, platform bank only): {@code runAsSystem} in its own
+ *       read-only transaction for a cross-bank COUNTS-ONLY read (Bank
+ *       identifying columns + COUNT/MAX/SUM aggregates; no row content).</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker

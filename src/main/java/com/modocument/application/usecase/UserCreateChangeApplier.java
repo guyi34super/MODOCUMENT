@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.modocument.application.port.AppUserRepository;
+import com.modocument.application.port.BankDirectory;
+import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.security.PasswordPolicy;
 import com.modocument.domain.entity.PendingChange;
 import com.modocument.domain.model.ChangeType;
@@ -21,6 +23,11 @@ import java.util.Locale;
  * sits in the PendingChange row or in front of the checker. APPLY delegates
  * to {@link UserAdminUseCase#createApprovedUser}, which re-checks the
  * duplicate and writes the USER_CREATED audit row exactly like before.
+ *
+ * <p>The role vocabulary depends on the bank the user is created in
+ * (ws21, {@code RoleAssignmentPolicy}): the maker's bank at submit, the
+ * change's bank at apply — the same bank, re-checked because nothing may be
+ * assumed between submit and approval.
  */
 @Component
 public class UserCreateChangeApplier implements PendingChangeApplier {
@@ -30,15 +37,20 @@ public class UserCreateChangeApplier implements PendingChangeApplier {
     private final PasswordEncoder passwordEncoder;
     private final UserAdminUseCase userAdmin;
     private final ObjectMapper objectMapper;
+    private final CurrentUserProvider currentUser;
+    private final BankDirectory bankDirectory;
 
     public UserCreateChangeApplier(AppUserRepository users, PasswordPolicy passwordPolicy,
                                    PasswordEncoder passwordEncoder, UserAdminUseCase userAdmin,
-                                   ObjectMapper objectMapper) {
+                                   ObjectMapper objectMapper, CurrentUserProvider currentUser,
+                                   BankDirectory bankDirectory) {
         this.users = users;
         this.passwordPolicy = passwordPolicy;
         this.passwordEncoder = passwordEncoder;
         this.userAdmin = userAdmin;
         this.objectMapper = objectMapper;
+        this.currentUser = currentUser;
+        this.bankDirectory = bankDirectory;
     }
 
     @Override
@@ -53,7 +65,8 @@ public class UserCreateChangeApplier implements PendingChangeApplier {
             throw new IllegalArgumentException("A valid email is required.");
         }
         String displayName = ChangePayloads.optionalText(payload, "displayName", 200);
-        Role role = ChangePayloads.parseRole(ChangePayloads.requireText(payload, "role", 20));
+        Role role = ChangePayloads.parseRole(ChangePayloads.requireText(payload, "role", 20),
+                bankDirectory.kindOf(currentUser.requireBankId()));
         String temporaryPassword = ChangePayloads.requireText(payload, "temporaryPassword", 200);
         // The maker learns about a weak password or a duplicate NOW, not the
         // checker at approval time.
@@ -81,7 +94,8 @@ public class UserCreateChangeApplier implements PendingChangeApplier {
         var created = userAdmin.createApprovedUser(
                 ChangePayloads.requireText(payload, "email", 256),
                 ChangePayloads.optionalText(payload, "displayName", 200),
-                ChangePayloads.parseRole(ChangePayloads.requireText(payload, "role", 20)),
+                ChangePayloads.parseRole(ChangePayloads.requireText(payload, "role", 20),
+                        bankDirectory.kindOf(change.getBankId())),
                 ChangePayloads.requireText(payload, "passwordHash", 255),
                 change.getBankId());
         // The target exists only now: stamp its id onto the pending row the
