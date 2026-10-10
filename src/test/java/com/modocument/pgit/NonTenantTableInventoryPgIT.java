@@ -7,6 +7,8 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -32,6 +34,32 @@ class NonTenantTableInventoryPgIT extends PgItSupport {
             ORDER BY t.tablename
             """;
 
+    /**
+     * Every deliberately tenant-less table (lowercase, as pg_tables names
+     * them), each with the migration that adds it and why it holds no bank
+     * data.
+     */
+    private static final Set<String> NON_TENANT_TABLES = Set.of(
+            // Flyway's own bookkeeping (owner only).
+            "flyway_schema_history",
+            // V1/V2 shared lookup vocabularies — the same for every bank;
+            // writes need LOOKUP_ADMIN (platform owner only, phase 2).
+            "processstep", "templatedatatypes",
+            // V15 auth plumbing, read BEFORE any tenant exists (refresh
+            // rotation; the per-request revocation check) and keyed by
+            // the user, whose AppUsers row carries the BankId.
+            "refreshtoken", "revokedtoken",
+            // V41 MFA enrolment + recovery codes: keyed by the user, read
+            // during login before the tenant is known (same reasoning).
+            "usermfa", "recoverycode",
+            // V200 (ws20): the settings change counter — one global row,
+            // no bank data; the runtime role cannot delete it.
+            "configrevision"
+            // V24x (ws24, SE5): the DeployedVersion release log — one row per
+            // deployment, no bank data — is added HERE by the release
+            // workstream together with its migration (not by ws20).
+    );
+
     @Test
     void everyTableWithoutBankIdIsAnExplicitDecision() throws Exception {
         List<String> tables = new ArrayList<>();
@@ -42,21 +70,22 @@ class NonTenantTableInventoryPgIT extends PgItSupport {
                 tables.add(rs.getString(1));
             }
         }
-        assertThat(tables).containsExactlyInAnyOrder(
-                // Flyway's own bookkeeping (owner only).
-                "flyway_schema_history",
-                // V1/V2 shared lookup vocabularies — the same for every bank;
-                // writes need LOOKUP_ADMIN (platform owner only, phase 2).
-                "processstep", "templatedatatypes",
-                // V15 auth plumbing, read BEFORE any tenant exists (refresh
-                // rotation; the per-request revocation check) and keyed by
-                // the user, whose AppUsers row carries the BankId.
-                "refreshtoken", "revokedtoken",
-                // V41 MFA enrolment + recovery codes: keyed by the user, read
-                // during login before the tenant is known (same reasoning).
-                "usermfa", "recoverycode",
-                // V200 (ws20): the settings change counter — one global row,
-                // no bank data; the runtime role cannot delete it.
-                "configrevision");
+        Set<String> unexpected = new TreeSet<>(tables);
+        unexpected.removeAll(NON_TENANT_TABLES);
+        Set<String> gone = new TreeSet<>(NON_TENANT_TABLES);
+        tables.forEach(gone::remove);
+        assertThat(tables)
+                .as("""
+                        Tenant-less tables changed. NEW without BankId: %s; listed but no \
+                        longer tenant-less (or dropped): %s.
+                        For each NEW table, decide in review:
+                          (a) it holds bank data -> add a BankId column in its migration (RLS then \
+                        covers it automatically; RlsPolicyCoveragePgIT checks the policy), or
+                          (b) it holds NO bank data -> add its lowercase name to \
+                        NON_TENANT_TABLES in NonTenantTableInventoryPgIT with a comment naming \
+                        the migration (Vnnn) and why it is tenant-less.
+                        For each listed table that is gone (or gained BankId): remove its entry.""",
+                        unexpected, gone)
+                .containsExactlyInAnyOrderElementsOf(NON_TENANT_TABLES);
     }
 }

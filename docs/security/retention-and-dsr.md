@@ -34,6 +34,11 @@ Configuration: `modocument.retention.customer-data-days`
 `modocument.retention.enabled` (`MODOCUMENT_RETENTION_ENABLED`, default
 **true**; false in the test profile so the purge never races the suite),
 `modocument.retention.cron` (daily at 02:41 by default).
+Per bank (ws20): the period is also the setting `retention.customerDataDays`
+(Data protection tab, maker/checker), limited to **1–30 days** so a bank or
+the platform owner can only shorten it; the sweep computes each bank's
+cutoff from that bank's value. The on/off switch is locked on in the
+settings (the yml flag above still gates the schedule).
 
 ### Policy notes
 

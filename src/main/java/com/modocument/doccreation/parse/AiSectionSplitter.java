@@ -4,7 +4,9 @@ import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.AiPurpose;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.PromptEnvelope;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.application.privacy.PiiTokenizer;
+import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.ratelimit.LlmRateLimiter;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -12,6 +14,7 @@ import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Component;
@@ -89,19 +92,47 @@ public class AiSectionSplitter {
     private final PiiTokenizer tokenizer;
     private final boolean enabled;
     private final String modelId;
+    /** Null = the yml switch only (unit-test wiring). */
+    private final SettingsReader settings;
 
     public AiSectionSplitter(AiFilesService ai,
                              LlmRateLimiter llmQuota,
                              CurrentUserProvider currentUser,
                              PiiTokenizer tokenizer,
+                             boolean enabled,
+                             String modelId) {
+        this(ai, llmQuota, currentUser, tokenizer, enabled, modelId, null);
+    }
+
+    /**
+     * ws20: the switch is the setting {@code doccreation.sectionAiEnabled} of
+     * the caller's bank AND that bank's AI master switch ({@code ai.enabled}),
+     * read per call; with nothing stored, the yml value.
+     */
+    @Autowired
+    public AiSectionSplitter(AiFilesService ai,
+                             LlmRateLimiter llmQuota,
+                             CurrentUserProvider currentUser,
+                             PiiTokenizer tokenizer,
                              @Value("${modocument.doccreation.section-ai-enabled:true}") boolean enabled,
-                             @Value("${modocument.doccreation.section-model-id:}") String modelId) {
+                             @Value("${modocument.doccreation.section-model-id:}") String modelId,
+                             SettingsReader settings) {
         this.ai = ai;
         this.llmQuota = llmQuota;
         this.currentUser = currentUser;
         this.tokenizer = tokenizer;
         this.enabled = enabled;
         this.modelId = modelId;
+        this.settings = settings;
+    }
+
+    /** Whether the section breakdown may ask the AI, for the caller's bank. */
+    public boolean enabled() {
+        if (settings == null) {
+            return enabled;
+        }
+        return settings.getBoolForCurrentBank(SettingKeys.DOCCREATION_SECTION_AI_ENABLED)
+                && settings.getBoolForCurrentBank(SettingKeys.AI_ENABLED);
     }
 
     /** The shape the model must return; validated before anything is trusted. */
@@ -114,7 +145,7 @@ public class AiSectionSplitter {
      *     real document — the caller then uses the heuristic parser.
      */
     public Optional<List<ParsedSection>> split(Path docxPath) {
-        if (!enabled || !ai.isConfigured()) {
+        if (!enabled() || !ai.isConfigured()) {
             return Optional.empty();
         }
         List<IBodyElement> elements;

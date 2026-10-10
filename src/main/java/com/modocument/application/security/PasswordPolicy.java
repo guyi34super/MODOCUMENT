@@ -1,5 +1,8 @@
 package com.modocument.application.security;
 
+import com.modocument.application.port.SettingsReader;
+import com.modocument.domain.model.settings.SettingKeys;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -33,6 +36,14 @@ import java.util.Set;
  * Deliberately NO composition rules (mandatory digits/symbols): they push
  * users toward 'Password123!' patterns, which the breached list rejects
  * anyway. Error messages never echo the password.
+ *
+ * <p><b>Per-bank minimum (ws20):</b> the minimum length is the setting
+ * {@code security.password.minLength} (12–128) of the bank the password is
+ * for, read per call: {@link #validate(String, String, int)} names the bank
+ * (account creation, a user's own change); {@link #validate(String, String)}
+ * uses the caller's bank ({@code TenantContext}) — the platform layer when
+ * no bank is bound (bootstrap, onboarding before the bank exists). With
+ * nothing stored it is {@code modocument.security.password.min-length}.
  */
 @Component
 public class PasswordPolicy {
@@ -44,17 +55,30 @@ public class PasswordPolicy {
 
     private static final Set<String> BREACHED = loadBreachedList();
 
+    /** The yml minimum: the shipped default, and the only value without settings. */
     private final int minLength;
+    /** Null = the fixed yml minimum (unit-test wiring). */
+    private final SettingsReader settings;
 
+    public PasswordPolicy(int minLength) {
+        this(minLength, null);
+    }
+
+    @Autowired
     public PasswordPolicy(
-            @Value("${modocument.security.password.min-length:12}") int minLength) {
+            @Value("${modocument.security.password.min-length:12}") int minLength,
+            SettingsReader settings) {
         if (minLength < 1) {
             throw new IllegalStateException("modocument.security.password.min-length must be positive.");
         }
         this.minLength = minLength;
+        this.settings = settings;
     }
 
     /**
+     * Validates against the CALLER's bank minimum (the bank bound to this
+     * thread; the platform layer when none is).
+     *
      * @param password the candidate password
      * @param email the owning account's email (its local-part must not appear
      *     in the password); null/blank skips that check
@@ -62,6 +86,19 @@ public class PasswordPolicy {
      *     message is safe to return to the caller (no values echoed)
      */
     public void validate(String password, String email) {
+        check(password, email, minLength());
+    }
+
+    /**
+     * Validates against the minimum of the bank the account belongs to.
+     *
+     * @throws IllegalArgumentException when the password is unacceptable
+     */
+    public void validate(String password, String email, int bankId) {
+        check(password, email, minLength(bankId));
+    }
+
+    private void check(String password, String email, int minLength) {
         if (password == null || password.isEmpty()) {
             throw new IllegalArgumentException(
                     "Password must be at least " + minLength + " characters.");
@@ -86,8 +123,16 @@ public class PasswordPolicy {
         }
     }
 
+    /** The minimum in force for the caller's bank (else the platform layer). */
     public int minLength() {
-        return minLength;
+        return settings == null ? minLength
+                : settings.getIntForCurrentBank(SettingKeys.PASSWORD_MIN_LENGTH);
+    }
+
+    /** The minimum in force for one bank's accounts. */
+    public int minLength(int bankId) {
+        return settings == null ? minLength
+                : settings.getInt(SettingKeys.PASSWORD_MIN_LENGTH, bankId);
     }
 
     private static String emailLocalPart(String email) {
