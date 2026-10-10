@@ -264,6 +264,10 @@ public final class SettingDefinitions {
                     "Code-extraction fallback surge", "20", "80"),
             alertWindow(ALERT_PARSE_FALLBACK_SURGE_WINDOW, "parse-fallback-surge",
                     "Code-extraction fallback surge: window", "60m"),
+            alertThreshold(ALERT_API_CLIENT_AUTH_FAILURES_THRESHOLD, "api-client-auth-failures",
+                    "API client authentication failures", "10", "40"),
+            alertWindow(ALERT_API_CLIENT_AUTH_FAILURES_WINDOW, "api-client-auth-failures",
+                    "API client authentication failures: window", "5m"),
             builder(ALERT_WEBHOOK_MIN_SEVERITY, ENUM).platform().security()
                     .group(SettingGroup.SECURITY_ALERTS)
                     .label("Webhook: minimum severity")

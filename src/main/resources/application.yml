@@ -452,6 +452,18 @@ modocument:
         group-by: BANK
         window: 15m
         severity: HIGH
+      # ws26: repeated failed API client authentications (bad secret/key,
+      # unknown or untrusted certificate, revoked/expired client, CIDR
+      # mismatch) from one address - credential stuffing against the
+      # integration API.
+      - name: api-client-auth-failures
+        description: Repeated API client authentication failures from one address
+        trigger: WINDOWED
+        actions: [API_CLIENT_AUTH_FAILED]
+        group-by: IP
+        threshold: ${MODOCUMENT_ALERT_API_CLIENT_AUTH_FAILURES:10}
+        window: 5m
+        severity: HIGH
       # ws24: a new release reached this installation (one VERSION_DEPLOYED
       # row per bank; banks are told through the RELEASE announcement too).
       - name: version-deployed

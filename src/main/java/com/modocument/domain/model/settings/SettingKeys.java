@@ -71,6 +71,10 @@ public final class SettingKeys {
             "alerts.parseFallbackSurge.threshold";
     public static final String ALERT_PARSE_FALLBACK_SURGE_WINDOW =
             "alerts.parseFallbackSurge.window";
+    public static final String ALERT_API_CLIENT_AUTH_FAILURES_THRESHOLD =
+            "alerts.apiClientAuthFailures.threshold";
+    public static final String ALERT_API_CLIENT_AUTH_FAILURES_WINDOW =
+            "alerts.apiClientAuthFailures.window";
     public static final String ALERT_WEBHOOK_MIN_SEVERITY = "alerts.webhook.minSeverity";
     public static final String ALERT_EMAIL_MIN_SEVERITY = "alerts.email.minSeverity";
 

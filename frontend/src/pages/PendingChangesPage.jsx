@@ -153,8 +153,8 @@ function summarize(change) {
     case 'AGENT_REGISTER':
       return `Register connector agent "${p.name || '?'}"`;
     case 'EGRESS_RULE_APPROVE':
-      return p.host
-        ? `Allow egress to ${p.host}${p.port ? `:${p.port}` : ''}${p.bankCode ? ` for ${p.bankCode}` : ''}`
+      return p.host || p.cidr
+        ? `Allow egress to ${p.host ?? p.cidr}${p.port ? `:${p.port}` : ''}${p.bankCode ? ` for ${p.bankCode}` : ''}`
         : `Approve egress rule #${p.ruleId}`;
     default:
       return change.changeType;
