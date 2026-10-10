@@ -62,6 +62,20 @@ class MfaSecretCipherTest {
                 .isEqualTo("JBSWY3DPEHPK3PXP");
     }
 
+    /**
+     * Byte compatibility across the ws25 refactor onto {@link AesGcm}: a
+     * ciphertext in the stored format (fixed IV 00..0b, produced outside
+     * this code base with the same SHA-256 key derivation) still decrypts.
+     */
+    @Test
+    void decryptsCiphertextsStoredBeforeTheSharedAesGcmHelper() {
+        MfaSecretCipher cipher = new MfaSecretCipher(KEY, JWT_SECRET, false);
+
+        assertThat(cipher.decrypt(
+                "AAECAwQFBgcICQoL:VEnx6QPjAnRLk14nqERZ5NGcXnmtnufQvoYPOse9H04="))
+                .isEqualTo("JBSWY3DPEHPK3PXP");
+    }
+
     /** Different keys must not decrypt each other's ciphertexts. */
     @Test
     void ciphertextsAreKeyBound() {

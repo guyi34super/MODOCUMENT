@@ -157,6 +157,25 @@ import java.util.concurrent.Callable;
  *       announcements (RLS hides them from every customer tenant); served
  *       to each bank from memory, filtered by its bank code. Never
  *       {@code runAsSystem}: it reads the platform's rows only.</li>
+ *   <li>{@code EgressRuleUseCase#listForPlatform} /
+ *       {@code #requireApprovable} — ws25 platform console
+ *       ({@code GET /api/platform/egress-rules}, PLATFORM_READ) and the
+ *       EGRESS_RULE_APPROVE submit check (PLATFORM_BANKS):
+ *       {@code runAsSystem} in its own read-only REQUIRES_NEW transaction to
+ *       read BankEgressRule rows across banks (destination host/CIDR, port,
+ *       status, reason — no customer content).</li>
+ *   <li>{@code EgressRuleUseCase#applyApproval} — ws25 EGRESS_RULE_APPROVE
+ *       applier (a SECOND platform admin approves): {@code runAsSystem}
+ *       read-only to find the rule's bank by id, then
+ *       {@code runAs(rule bank)} around a REQUIRES_NEW write transaction that
+ *       flips the rule PENDING → APPROVED and writes its EGRESS_RULE_APPROVED
+ *       audit row in that bank (the platform bank's copy joins the
+ *       approval transaction).</li>
+ *   <li>{@code BankEgressGuard#approvedRules} — ws25 egress check of DIRECT
+ *       connections: {@code runAs(bankId)} in its own read-only REQUIRES_NEW
+ *       transaction to load that bank's APPROVED egress rules (cached
+ *       briefly), whatever context the connector runs in. Never
+ *       {@code runAsSystem}.</li>
  * </ul>
  */
 public final class TenantContext {

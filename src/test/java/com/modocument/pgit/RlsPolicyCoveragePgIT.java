@@ -63,6 +63,8 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     "banksetting",
                     // V241 (ws24): banners, owned by the platform bank.
                     "announcement",
+                    // V251 (ws25): a bank's private egress destinations.
+                    "bankegressrule",
                     // V260 (ws26): machine identity — looked up before any
                     // tenant only through ApiClientAuthenticator (SYSTEM).
                     "apiclient", "apiclientsecret", "apiclientinitialsecret",

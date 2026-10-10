@@ -90,7 +90,7 @@ class RoutePermissionCoverageTest {
             // PLATFORM_ANNOUNCE.
             // ws26 landed INTEGRATION_INGEST/RESULTS/DOCS/EVENTS
             // (/api/integration/v1/**) and INTEGRATION_ADMIN
-            // (/api/admin/integrations/api-clients).
+            // (/api/admin/integrations/api-clients, ws25 egress rules).
             Permission.INTEGRATION_RUN,                                 // ws25
             Permission.AGENT_CONNECT);                                  // ws26
 

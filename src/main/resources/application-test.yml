@@ -28,6 +28,11 @@ spring:
       api-key: test-key
 
 modocument:
+  integration:
+    # ws25: fixed TEST-ONLY connector key (base64 of 32 zero bytes - a
+    # deliberately worthless value) so the secret vault works in the H2
+    # suite; real deployments set MODOCUMENT_CONNECTOR_KEY.
+    connector-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
   platform:
     # ws21 BankDirectory: no caching in tests. Test contexts with different
     # configurations recreate the shared H2 schema (ddl-auto: create), so a
