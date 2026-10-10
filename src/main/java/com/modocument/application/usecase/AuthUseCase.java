@@ -8,6 +8,7 @@ import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.BankDirectory;
 import com.modocument.application.port.RefreshTokenRepository;
 import com.modocument.application.port.RevokedTokenRepository;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.UserMfaRepository;
 import com.modocument.application.security.LoginLockoutPolicy;
 import com.modocument.application.security.PasswordPolicy;
@@ -16,8 +17,10 @@ import com.modocument.domain.entity.RefreshToken;
 import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.model.Hashing;
 import com.modocument.domain.model.Role;
+import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.security.JwtService;
 import com.modocument.infrastructure.security.MfaChallengeTokens;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -51,6 +54,13 @@ import java.util.UUID;
  * (LOGIN_FAILED, reason {@code bank_suspended}) says why. The suspension
  * itself also bumps every user's TokenVersion, so live access tokens die at
  * the RevocationValidator.
+ *
+ * <p><b>Per-bank settings (ws20)</b>, read per call for the user's own bank:
+ * MFA for administrators ({@code security.mfa.requireForAdmins}, locked on)
+ * and for every role ({@code security.mfa.requireForAllRoles}), and the
+ * refresh idle timeout ({@code security.session.idleTimeout}, the token
+ * owner's bank). A PLATFORM_ADMIN always owes a second factor. With nothing
+ * stored each is its yml value.
  */
 @Service
 public class AuthUseCase {
@@ -73,6 +83,8 @@ public class AuthUseCase {
     private final AuditRecorder audit;
     private final BankDirectory bankDirectory;
     private final boolean requireMfaForAdmin;
+    /** Null = the fixed yml values (unit-test wiring). */
+    private final SettingsReader settings;
 
     /**
      * Idle bound (SUP-S02): a refresh token unused for this long is refused
@@ -101,6 +113,24 @@ public class AuthUseCase {
                        boolean requireMfaForAdmin,
                        @Value("${modocument.security.session.idle-timeout:12h}")
                        Duration refreshIdleTimeout) {
+        this(users, passwordEncoder, passwordPolicy, lockoutPolicy, userMfa, challengeTokens,
+                jwtService, refreshTokens, revokedTokens, userSecurity, audit, bankDirectory,
+                requireMfaForAdmin, refreshIdleTimeout, null);
+    }
+
+    @Autowired
+    public AuthUseCase(AppUserRepository users, PasswordEncoder passwordEncoder,
+                       PasswordPolicy passwordPolicy, LoginLockoutPolicy lockoutPolicy,
+                       UserMfaRepository userMfa, MfaChallengeTokens challengeTokens,
+                       JwtService jwtService, RefreshTokenRepository refreshTokens,
+                       RevokedTokenRepository revokedTokens, UserSecurityService userSecurity,
+                       AuditRecorder audit, BankDirectory bankDirectory,
+                       @Value("${modocument.security.mfa.require-for-admin:true}")
+                       boolean requireMfaForAdmin,
+                       @Value("${modocument.security.session.idle-timeout:12h}")
+                       Duration refreshIdleTimeout,
+                       SettingsReader settings) {
+        this.settings = settings;
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.passwordPolicy = passwordPolicy;
@@ -135,7 +165,7 @@ public class AuthUseCase {
         if (email == null || email.isBlank() || !email.contains("@")) {
             throw new IllegalArgumentException("A valid email is required.");
         }
-        passwordPolicy.validate(password, email);
+        passwordPolicy.validate(password, email, bankId);
         return createUserWithHash(email, passwordEncoder.encode(password), displayName, bankId,
                 role, mustChangePassword);
     }
@@ -260,7 +290,7 @@ public class AuthUseCase {
         user = upgradeHashIfNeeded(user, password);
 
         boolean mfaEnabled = userMfa.isEnabled(user.getAppUserId());
-        boolean enrollmentRequired = !mfaEnabled && mustEnrolMfa(user.getRole());
+        boolean enrollmentRequired = !mfaEnabled && mustEnrolMfa(user);
         if (mfaEnabled || enrollmentRequired) {
             // Password OK but a second factor is owed: persist the counter
             // reset, hand out ONLY the challenge. LastLoginAt/LOGIN_SUCCESS
@@ -272,14 +302,33 @@ public class AuthUseCase {
     }
 
     /**
-     * Whether a role must enrol a second factor before it gets a session.
-     * ADMIN follows {@code modocument.security.mfa.require-for-admin}
-     * (default on); PLATFORM_ADMIN (ws21) ALWAYS must — the platform owner
-     * is the most cross-cutting account there is, so no setting can switch
-     * its second factor off.
+     * Whether a user must enrol a second factor before they get a session.
+     * PLATFORM_ADMIN (ws21) ALWAYS must — the platform owner is the most
+     * cross-cutting account there is, so no setting can switch its second
+     * factor off. Otherwise the user's bank decides: every role when
+     * {@code security.mfa.requireForAllRoles} is on, else ADMIN per
+     * {@code security.mfa.requireForAdmins} (locked on; with nothing stored
+     * {@code modocument.security.mfa.require-for-admin}).
      */
-    private boolean mustEnrolMfa(Role role) {
-        return role == Role.PLATFORM_ADMIN || (requireMfaForAdmin && role == Role.ADMIN);
+    public boolean mustEnrolMfa(AppUser user) {
+        Role role = user.getRole();
+        if (role == Role.PLATFORM_ADMIN) {
+            return true;
+        }
+        if (settings == null) {
+            return requireMfaForAdmin && role == Role.ADMIN;
+        }
+        int bankId = user.getBankId();
+        if (settings.getBool(SettingKeys.MFA_REQUIRE_FOR_ALL_ROLES, bankId)) {
+            return true;
+        }
+        return role == Role.ADMIN && settings.getBool(SettingKeys.MFA_REQUIRE_FOR_ADMINS, bankId);
+    }
+
+    /** How long a bank's sessions may sit unused before refresh is refused. */
+    public Duration refreshIdleTimeout(int bankId) {
+        return settings == null ? refreshIdleTimeout
+                : settings.getDuration(SettingKeys.SESSION_IDLE_TIMEOUT, bankId);
     }
 
     /**
@@ -440,7 +489,12 @@ public class AuthUseCase {
             audit.record(sessionExpired("SESSION_ABSOLUTE_EXPIRED", current).build());
             throw new BadCredentialsException("Refresh token has expired.");
         }
-        if (Duration.between(current.getIssuedAt(), now).compareTo(refreshIdleTimeout) > 0) {
+        // The idle bound is the token OWNER's bank setting (an owner gone
+        // since is refused below anyway; the platform layer stands in).
+        Duration idleTimeout = presenter != null ? refreshIdleTimeout(presenter.getBankId())
+                : settings == null ? refreshIdleTimeout
+                : settings.getDurationForPlatform(SettingKeys.SESSION_IDLE_TIMEOUT);
+        if (Duration.between(current.getIssuedAt(), now).compareTo(idleTimeout) > 0) {
             // Idle bound: the presented token is the family's newest, so its
             // IssuedAt is the last rotation — the last use. A session
             // untouched past the idle timeout is over even when young. The
@@ -535,7 +589,7 @@ public class AuthUseCase {
         if (!passwordEncoder.matches(currentPassword == null ? "" : currentPassword, user.getPasswordHash())) {
             throw new IllegalArgumentException("Current password is incorrect.");
         }
-        passwordPolicy.validate(newPassword, user.getEmail());
+        passwordPolicy.validate(newPassword, user.getEmail(), user.getBankId());
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         // A changed password discharges the forced-change requirement set
         // when an admin issued the temporary password (ws09). The token

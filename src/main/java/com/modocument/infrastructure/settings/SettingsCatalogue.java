@@ -174,6 +174,14 @@ public class SettingsCatalogue {
         if (text == null || text.isBlank()) {
             return definition.codeDefault();
         }
+        if (definition.type() == SettingType.BOOLEAN) {
+            // The consumer's @Value/@ConfigurationProperties binding accepts
+            // Spring's spellings; the shipped default must read the same.
+            Boolean spring = springBoolean(text);
+            if (spring != null) {
+                return spring;
+            }
+        }
         try {
             return definition.type() == SettingType.ENUM
                     ? definition.parse(text)
@@ -182,6 +190,21 @@ public class SettingsCatalogue {
             log.warn("Setting {}: property {} holds an invalid value ({}); using the code default",
                     definition.key(), property, invalid.getMessage());
             return definition.codeDefault();
+        }
+    }
+
+    /** Spring's boolean conversion (true/on/yes/1, false/off/no/0); null otherwise. */
+    private static Boolean springBoolean(String text) {
+        switch (text.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "true", "on", "yes", "1" -> {
+                return Boolean.TRUE;
+            }
+            case "false", "off", "no", "0" -> {
+                return Boolean.FALSE;
+            }
+            default -> {
+                return null;
+            }
         }
     }
 

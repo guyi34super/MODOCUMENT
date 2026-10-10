@@ -1,14 +1,18 @@
 package com.modocument.infrastructure.alerting;
 
+import com.modocument.application.port.SettingsReader;
 import com.modocument.domain.model.AlertSeverity;
+import com.modocument.domain.model.settings.SettingKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * SMTP alert channel (also an SMS path through an operator's
@@ -29,8 +33,17 @@ public class EmailAlertChannel implements AlertChannel {
 
     private final AlertProperties.Email config;
     private final ObjectProvider<JavaMailSender> mailSender;
+    /** Null = the yml minimum severity only (unit-test wiring). */
+    private final SettingsReader settings;
 
     public EmailAlertChannel(AlertProperties properties, ObjectProvider<JavaMailSender> mailSender) {
+        this(properties, mailSender, null);
+    }
+
+    @Autowired
+    public EmailAlertChannel(AlertProperties properties, ObjectProvider<JavaMailSender> mailSender,
+                             SettingsReader settings) {
+        this.settings = settings;
         this.config = properties.getEmail();
         this.mailSender = mailSender;
         if (!recipients().isEmpty() && mailSender.getIfAvailable() == null) {
@@ -49,9 +62,22 @@ public class EmailAlertChannel implements AlertChannel {
         return !recipients().isEmpty() && mailSender.getIfAvailable() != null;
     }
 
+
+    /**
+     * The platform setting {@code alerts.email.minSeverity} (INFO/LOW/MEDIUM; HIGH and CRITICAL
+     * always pass), read per alert; with nothing stored the yml value.
+     */
     @Override
     public AlertSeverity minSeverity() {
-        return config.getMinSeverity();
+        if (settings == null) {
+            return config.getMinSeverity();
+        }
+        String effective = settings.getEnumForPlatform(SettingKeys.ALERT_EMAIL_MIN_SEVERITY);
+        try {
+            return AlertSeverity.valueOf(effective.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException unknown) {
+            return config.getMinSeverity();
+        }
     }
 
     @Override

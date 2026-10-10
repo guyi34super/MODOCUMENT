@@ -3,8 +3,11 @@ package com.modocument.infrastructure.export;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.model.Role;
+import com.modocument.domain.model.settings.SettingKeys;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -30,6 +33,12 @@ import java.util.Map;
  * </ul>
  * The alerts need no code here: the immediate rules match the audit
  * actions (the audit trail is the single event source).
+ *
+ * <p><b>Per-bank caps (ws20):</b> the READ_WRITE and ADMIN caps are the
+ * settings {@code export.cap.readWrite} / {@code export.cap.admin} of the
+ * caller's bank ({@code TenantContext}), read per export; with nothing
+ * stored they are {@code modocument.export.caps.*}. Every other role keeps
+ * its yml cap (none configured = 0, fail closed).
  */
 @Service
 public class ExportGuard {
@@ -41,12 +50,49 @@ public class ExportGuard {
     private final ExportCapProperties properties;
     private final AuditRecorder audit;
     private final CurrentUserProvider currentUser;
+    /** Null = the yml caps only (unit-test wiring). */
+    private final SettingsReader settings;
 
     public ExportGuard(ExportCapProperties properties, AuditRecorder audit,
                        CurrentUserProvider currentUser) {
+        this(properties, audit, currentUser, null);
+    }
+
+    @Autowired
+    public ExportGuard(ExportCapProperties properties, AuditRecorder audit,
+                       CurrentUserProvider currentUser, SettingsReader settings) {
         this.properties = properties;
         this.audit = audit;
         this.currentUser = currentUser;
+        this.settings = settings;
+    }
+
+    /** The row cap of {@code role} for one bank's users (0 = always needs a reason). */
+    public int capFor(Role role, int bankId) {
+        String key = capKey(role);
+        if (settings == null || key == null) {
+            return properties.capFor(role);
+        }
+        return Math.max(0, settings.getInt(key, bankId));
+    }
+
+    /** {@link #capFor(Role, int)} for the caller's bank (else the platform layer). */
+    private int currentCapFor(Role role) {
+        String key = capKey(role);
+        if (settings == null || key == null) {
+            return properties.capFor(role);
+        }
+        return Math.max(0, settings.getIntForCurrentBank(key));
+    }
+
+    private static String capKey(Role role) {
+        if (role == Role.READ_WRITE) {
+            return SettingKeys.EXPORT_CAP_READ_WRITE;
+        }
+        if (role == Role.ADMIN) {
+            return SettingKeys.EXPORT_CAP_ADMIN;
+        }
+        return null;
     }
 
     /**
@@ -73,7 +119,7 @@ public class ExportGuard {
     public Decision authorize(Attempt attempt) {
         String reason = normalizeReason(attempt.reason());
         Role role = currentUser.role();
-        int cap = properties.capFor(role);
+        int cap = currentCapFor(role);
         if (attempt.rows() <= cap) {
             return new Decision(cap, false, null);
         }

@@ -5,6 +5,7 @@ import com.modocument.application.dto.AutoMappingPromptInput;
 import com.modocument.application.mapping.ColumnNameSimilarity;
 import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.mapping.MappingProperties;
+import com.modocument.application.mapping.MappingSettings;
 import com.modocument.application.mapping.ValueShapeScorer;
 import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.AiPurpose;
@@ -16,6 +17,7 @@ import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.entity.ValidationRule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 
@@ -60,6 +62,8 @@ public class AutoMapUseCase {
     private final IngestionJobRepository jobs;
     private final MappingProperties properties;
     private final PiiTokenizer tokenizer;
+    /** Null = the yml mapping properties only (unit-test wiring). */
+    private final MappingSettings mappingSettings;
 
     public AutoMapUseCase(List<PromptStrategy> promptStrategies,
                           AiFilesService aiFilesService,
@@ -67,6 +71,23 @@ public class AutoMapUseCase {
                           IngestionJobRepository jobs,
                           MappingProperties properties,
                           PiiTokenizer tokenizer) {
+        this(promptStrategies, aiFilesService, shapeScorer, jobs, properties, tokenizer, null);
+    }
+
+    /**
+     * ws20: the LLM fallback switch and the confidence threshold are the
+     * caller's bank's settings ({@link MappingSettings#forCurrentBank()}),
+     * resolved once per {@link #map} call.
+     */
+    @Autowired
+    public AutoMapUseCase(List<PromptStrategy> promptStrategies,
+                          AiFilesService aiFilesService,
+                          ValueShapeScorer shapeScorer,
+                          IngestionJobRepository jobs,
+                          MappingProperties properties,
+                          PiiTokenizer tokenizer,
+                          MappingSettings mappingSettings) {
+        this.mappingSettings = mappingSettings;
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
         this.shapeScorer = shapeScorer;
@@ -76,6 +97,9 @@ public class AutoMapUseCase {
     }
 
     public Map<String, String> map(MappingContext context) {
+        // The bank's effective knobs for this whole call (shadows the yml bean).
+        MappingProperties properties = mappingSettings == null
+                ? this.properties : mappingSettings.forCurrentBank();
         List<String> fieldNames = context.fields().stream().map(TemplateFields::getFieldName).toList();
         Map<String, TemplateFields> fieldsByName = new LinkedHashMap<>();
         context.fields().forEach(f -> fieldsByName.putIfAbsent(f.getFieldName(), f));
@@ -112,7 +136,8 @@ public class AutoMapUseCase {
 
         // Tiers 3-6: scored candidates + threshold-gated unique assignment.
         if (!unresolved.isEmpty() && !pool.isEmpty()) {
-            unresolved = assignScored(context, unresolved, pool, fieldsByName, mapping);
+            unresolved = assignScored(context, unresolved, pool, fieldsByName, mapping,
+                    properties);
         }
 
         // Tier 7: LLM mapping — full scope (all columns) or unresolved fallback.
@@ -140,7 +165,7 @@ public class AutoMapUseCase {
     /** Returns the columns that remain unresolved after code-tier assignment. */
     private List<String> assignScored(MappingContext context, List<String> unresolved,
                                       Set<String> pool, Map<String, TemplateFields> fieldsByName,
-                                      Map<String, String> mapping) {
+                                      Map<String, String> mapping, MappingProperties properties) {
         Map<String, String> historyVotes = historyVotes(context.templateId(), context.ownerUserId());
         Map<String, List<ValidationRule>> rulesByField = shapeScorer.rulesByField(context.templateId());
 

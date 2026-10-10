@@ -30,13 +30,22 @@ import static com.modocument.domain.model.settings.SettingType.INT;
  *       environment configuration.</li>
  *   <li><b>Hard limits</b> are the go-live gate's floors and ceilings: no
  *       platform value, bank bound or bank override can leave them.</li>
- *   <li><b>No property</b> — settings whose consumer lands later (circuit
- *       breaker, extraction mode/confidence, MFA for all roles, the AI master
- *       switch, the integration tab) carry only their code default.</li>
+ *   <li><b>No property</b> — settings that had no yml knob before ws20
+ *       (circuit breaker, extraction mode/confidence, MFA for all roles, the
+ *       AI master switch, the integration tab) carry only their code
+ *       default.</li>
  * </ul>
- * Settings are not consumed through this catalogue until the Wave 2
- * consumer refactor; with no stored override every consumer keeps its
- * existing behaviour.
+ * Consumers read these through {@code SettingsReader} per call (Wave 2
+ * consumer refactor); with no stored override every consumer keeps its
+ * existing behaviour exactly ({@code SettingsConsumersParityTest}). A few
+ * stay yml-only on purpose: the locked switches (rate limiting, retention,
+ * PII tokenization) and the restart-only rate-limit window.
+ *
+ * <p><b>Alert tuning</b> ({@link #alertThreshold}/{@link #alertWindow})
+ * exists for every WINDOWED rule of the shipped catalogue and names it in
+ * its property ({@code modocument.alerts.rules[<rule>].threshold}); the alert
+ * catalogue overlays stored values by that name and
+ * {@code SettingsCatalogueSafetyTest} keeps the two lists in sync.
  */
 public final class SettingDefinitions {
 
@@ -77,7 +86,7 @@ public final class SettingDefinitions {
                     .label("Idle session timeout")
                     .description("A session unused for this long must sign in again "
                             + "(the 7-day absolute limit is fixed).")
-                    .property("modocument.security.session.idle-timeout")
+                    .property("modocument.security.session.idle-timeout", ChronoUnit.MILLIS)
                     .defaultValue("12h").range("15m", "12h").build(),
             builder(MFA_REQUIRE_FOR_ALL_ROLES, BOOLEAN).bank().security()
                     .group(SettingGroup.SIGN_IN)
@@ -136,6 +145,9 @@ public final class SettingDefinitions {
                     .unit("per user per window")
                     .property("modocument.ratelimit.admin-jobs")
                     .defaultValue("10").range("1", "50").build(),
+            bucket(RATELIMIT_ADMIN_SECURITY, "modocument.ratelimit.admin-security",
+                    "Credential resets",
+                    "Admin-issued password and MFA resets of another user.", "10", "100"),
             builder(RATELIMIT_LLM_PER_USER, INT).bank().security().group(SettingGroup.RATE_LIMITS)
                     .label("AI requests per user")
                     .description("LLM quota per user per hour.")
@@ -156,17 +168,24 @@ public final class SettingDefinitions {
                     .unit("per 15 minutes")
                     .property("modocument.security.rate-limit.auth.per-email-max")
                     .defaultValue("10").range("1", "40").build(),
+            // OBS-04: per ADDRESS is only a coarse flood guard — a whole bank
+            // signs in from behind one NAT, so 5/min locked out colleagues
+            // verifying at the same time. The brute-force control is the
+            // strict per-USER limit below (docs/settings/catalogue.md).
             builder(RATELIMIT_MFA_PER_IP, INT).platform().security()
                     .group(SettingGroup.RATE_LIMITS)
                     .label("MFA attempts per address")
-                    .description("Second-factor attempts per network address per minute.")
+                    .description("Second-factor attempts per network address per minute — a "
+                            + "flood guard sized for a bank's shared NAT; the per-user limit "
+                            + "is the brute-force control.")
                     .unit("per minute")
                     .property("modocument.security.rate-limit.mfa.per-ip-max")
-                    .defaultValue("5").range("1", "20").build(),
+                    .defaultValue("30").range("1", "120").build(),
             builder(RATELIMIT_MFA_PER_USER, INT).platform().security()
                     .group(SettingGroup.RATE_LIMITS)
                     .label("MFA attempts per user")
-                    .description("Second-factor attempts per user per minute.")
+                    .description("Second-factor attempts per user per minute (the TOTP "
+                            + "brute-force control; keep it strict).")
                     .unit("per minute")
                     .property("modocument.security.rate-limit.mfa.per-user-max")
                     .defaultValue("5").range("1", "20").build(),
@@ -241,6 +260,10 @@ public final class SettingDefinitions {
                     "Export burst", "5", "20"),
             alertWindow(ALERT_EXPORT_BURST_WINDOW, "export-burst",
                     "Export burst: window", "10m"),
+            alertThreshold(ALERT_PARSE_FALLBACK_SURGE_THRESHOLD, "parse-fallback-surge",
+                    "Code-extraction fallback surge", "20", "80"),
+            alertWindow(ALERT_PARSE_FALLBACK_SURGE_WINDOW, "parse-fallback-surge",
+                    "Code-extraction fallback surge: window", "60m"),
             builder(ALERT_WEBHOOK_MIN_SEVERITY, ENUM).platform().security()
                     .group(SettingGroup.SECURITY_ALERTS)
                     .label("Webhook: minimum severity")
@@ -433,7 +456,7 @@ public final class SettingDefinitions {
         return builder(key, DURATION).platform().security().group(SettingGroup.SECURITY_ALERTS)
                 .label(label)
                 .description("Aggregation and dedupe window of the '" + rule + "' alert.")
-                .property("modocument.alerts.rules[" + rule + "].window")
+                .property("modocument.alerts.rules[" + rule + "].window", ChronoUnit.MILLIS)
                 .defaultValue(dflt).range("1m", "60m").build();
     }
 }

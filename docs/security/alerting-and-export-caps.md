@@ -79,7 +79,17 @@ HIGH < CRITICAL), `enabled`.
 | `admin-action-burst` | windowed | any SUCCESS by role ADMIN | actor | ≥ 30 / 10m | MEDIUM | `MODOCUMENT_ALERT_ADMIN_BURST_THRESHOLD` |
 | `export-burst` | windowed | `EXPORT_RUN` | actor | ≥ 5 / 10m | MEDIUM | `MODOCUMENT_ALERT_EXPORT_BURST_THRESHOLD` |
 | `security-setting-changed` (ws20) | immediate | `SECURITY_SETTING_UPDATED` | actor (the approver) | – / 5m | MEDIUM | |
-| `platform-change` (ws20/ws21) | immediate | `PLATFORM_SETTING_UPDATED`, `PLATFORM_BOOTSTRAPPED` | actor | – / 5m | HIGH | |
+| `platform-change` (ws20/ws21) | immediate | `PLATFORM_SETTING_UPDATED`, `PLATFORM_BOOTSTRAPPED`, `BANK_ONBOARDED`, `BANK_SUSPENDED`, `BANK_REACTIVATED`, `BANK_ADMIN_ADDED`, `EGRESS_RULE_APPROVED` (wave 3) | entity (bank lifecycle rows are audited in the customer bank and the platform bank: one alert each) | – / 5m | HIGH | |
+| `parse-fallback-surge` (ws23) | windowed | `INGESTION_PARSE_FALLBACK` | bank | ≥ 20 / 1h | MEDIUM | `MODOCUMENT_ALERT_PARSE_FALLBACK_SURGE_THRESHOLD` |
+| `ai-circuit-opened` (ws23) | immediate | `AI_CIRCUIT_OPENED` | bank | – / 15m | HIGH | |
+
+**Platform tuning (ws20).** Every windowed rule's threshold and window is
+also a platform setting (`alerts.<rule>.threshold` / `.window`, Security
+alerts tab, maker/checker): a stored value overlays the yml one on every
+task within one settings poll, without a restart. Thresholds range from 1
+to 4x the shipped default, windows from 1 to 60 minutes; the channels'
+minimum severities (`alerts.webhook.minSeverity`, `alerts.email.minSeverity`)
+are platform settings too.
 
 How the D1 signals map: *failed logins* → `login-failures-per-user/-ip`
 (+ `account-locked` on the 6th wrong password); *admin/root use* →
