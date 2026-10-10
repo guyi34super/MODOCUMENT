@@ -63,6 +63,37 @@ describe('PlatformBankDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Reactivate bank' })).not.toBeInTheDocument();
   });
 
+  it('shows integration health (counts only) only when the platform API carries it', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Acme Bank (ACME)' });
+    expect(screen.queryByRole('region', { name: 'Integration health' })).not.toBeInTheDocument();
+  });
+
+  it('renders the per-bank integration counts', async () => {
+    getBank.mockResolvedValue({
+      ...ACTIVE,
+      integrations: {
+        connections: 4,
+        connectionsFailing: 1,
+        flowsEnabled: 3,
+        runs24h: { ok: 20, failed: 2 },
+        deadLetters: 1,
+        agentsOffline: 0,
+      },
+    });
+    renderPage();
+
+    const health = await screen.findByRole('region', { name: 'Integration health' });
+    const value = (id) => within(within(health).getByTestId(id)).getByTestId('kpi-value');
+    expect(value('kpi-bank-connections')).toHaveTextContent('4');
+    expect(within(health).getByText('1 failing')).toBeInTheDocument();
+    expect(value('kpi-bank-flows')).toHaveTextContent('3');
+    expect(value('kpi-bank-runs')).toHaveTextContent('20');
+    expect(within(health).getByText('2 failed')).toBeInTheDocument();
+    expect(value('kpi-bank-dead-letters')).toHaveTextContent('1');
+    expect(value('kpi-bank-agents-offline')).toHaveTextContent('0');
+  });
+
   it('requests a suspension with a reason and says it was sent for approval', async () => {
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: 'Suspend bank' }));

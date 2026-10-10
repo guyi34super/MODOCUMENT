@@ -236,6 +236,55 @@ describe('PendingChangesPage', () => {
     expect(screen.getByText('Approve egress rule #12')).toBeInTheDocument();
   });
 
+  it('names the destination, allowlist and template extraction mode for the checker', async () => {
+    const row = (id, changeType, payload) => ({
+      pendingChangeId: id,
+      changeType,
+      status: 'REQUESTED',
+      makerUserId: 2,
+      requestedAt: '2026-10-05T10:00:00',
+      payload,
+    });
+    listChanges.mockResolvedValue([
+      row(50, 'INTEGRATION_CONNECTION_CHANGE', {
+        connectionId: 7,
+        name: 'Core DB',
+        type: 'DATABASE',
+        mode: 'DIRECT',
+        config: { host: 'db.bank.example', port: '5432' },
+        secretCiphertext: 'AAAA',
+      }),
+      row(51, 'API_CLIENT_CREATE', {
+        name: 'Treasury',
+        authMethod: 'API_KEY',
+        scopes: ['INTEGRATION_EVENTS'],
+        allowedCidrs: ['10.0.0.0/8'],
+      }),
+      row(52, 'TEMPLATE_UPDATE', { templateId: 3, name: 'Loans', extractionMode: 'CODE_ONLY' }),
+      row(53, 'TEMPLATE_UPDATE', { templateId: 4, name: 'Cards', extractionMode: null }),
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        'Change connection "Core DB" (DATABASE, DIRECT, new credentials) to db.bank.example:5432'
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Create API client "Treasury" (API_KEY) with scopes INTEGRATION_EVENTS, from 10.0.0.0/8'
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Rename template 3 to "Loans"; extraction mode → code only')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Rename template 4 to "Cards"; extraction mode → the bank default')
+    ).toBeInTheDocument();
+    // The sealed secret itself is never rendered.
+    expect(document.body.textContent).not.toContain('AAAA');
+  });
+
   it('lets a platform admin decide platform changes', async () => {
     listChanges.mockResolvedValue([
       {

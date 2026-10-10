@@ -20,6 +20,8 @@ const sections = [
       // ws24: announcements (maintenance / release banners) and release notes.
       { to: '/platform/announcements', label: 'Announcements', roles: PLATFORM_ONLY },
       { to: '/platform/releases', label: 'Release notes', roles: PLATFORM_ONLY },
+      // ws25: private destinations banks asked to reach (EGRESS_RULE_APPROVE).
+      { to: '/platform/egress-rules', label: 'Egress rules', roles: PLATFORM_ONLY },
     ],
   },
   {
@@ -73,6 +75,21 @@ const sections = [
       { to: '/admin/retention', label: 'Privacy & retention', roles: ['ADMIN'] },
       // ws18: security alerts raised for the bank + their delivery evidence.
       { to: '/admin/alerts', label: 'Security alerts', roles: ['ADMIN'] },
+    ],
+  },
+  {
+    // ws25/ws26 integration hub: integration:admin (ADMIN); the run history
+    // also integration:run (READ_WRITE).
+    label: 'Integrations',
+    hideFor: PLATFORM_ONLY,
+    links: [
+      { to: '/admin/integrations', label: 'Integration hub', roles: ['ADMIN'], end: true },
+      { to: '/admin/integrations/connections', label: 'Connections', roles: ['ADMIN'] },
+      { to: '/admin/integrations/flows', label: 'Flows', roles: ['ADMIN'] },
+      { to: '/admin/integrations/runs', label: 'Runs', roles: ['ADMIN', 'READ_WRITE'] },
+      { to: '/admin/integrations/api-clients', label: 'API clients', roles: ['ADMIN'] },
+      { to: '/admin/integrations/agents', label: 'Agents', roles: ['ADMIN'] },
+      { to: '/admin/integrations/egress-rules', label: 'Egress destinations', roles: ['ADMIN'] },
     ],
   },
   {

@@ -168,8 +168,12 @@ public class AdminDashboardUseCase {
                 new Settings(pendingChanges.countByBankIdAndStatusAndChangeType(bankId,
                         PendingChangeStatus.REQUESTED, ChangeType.SETTING_UPDATE), 0),
                 version(),
-                // The integration hub (ws25/ws26) has no data yet: null = "not
-                // tracked" (the UI shows "—"), never a misleading zero.
+                // Integration hub (ws25/ws26): every counter stays null ("not
+                // tracked", the UI shows "—"), never a misleading zero. The
+                // counts are filled from IntegrationRun / OutboundDelivery
+                // (runs24h, deadLetters), IntegrationAgent (agentsOffline) and
+                // the API-client audit trail (apiCalls24h) once those tables
+                // exist; this use case must not query them before then.
                 Integrations.notTrackedYet());
     }
 

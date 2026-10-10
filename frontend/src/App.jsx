@@ -31,6 +31,16 @@ import AdminDashboardPage from './pages/AdminDashboardPage';
 import SettingsPage from './pages/SettingsPage';
 import PlatformAnnouncementsPage from './pages/PlatformAnnouncementsPage';
 import PlatformReleasesPage from './pages/PlatformReleasesPage';
+import IntegrationsOverviewPage from './pages/IntegrationsOverviewPage';
+import IntegrationConnectionsPage from './pages/IntegrationConnectionsPage';
+import IntegrationFlowsPage from './pages/IntegrationFlowsPage';
+import IntegrationFlowBuilderPage from './pages/IntegrationFlowBuilderPage';
+import IntegrationRunsPage from './pages/IntegrationRunsPage';
+import IntegrationRunDetailPage from './pages/IntegrationRunDetailPage';
+import IntegrationApiClientsPage from './pages/IntegrationApiClientsPage';
+import IntegrationAgentsPage from './pages/IntegrationAgentsPage';
+import IntegrationEgressRulesPage from './pages/IntegrationEgressRulesPage';
+import PlatformEgressRulesPage from './pages/PlatformEgressRulesPage';
 
 /** ws21: the platform owner has no domain home page — its home is the console. */
 function Home() {
@@ -98,6 +108,20 @@ export default function App() {
             PLATFORM_ADMIN of the platform bank only). */}
         <Route path="/platform/announcements" element={<PlatformAnnouncementsPage />} />
         <Route path="/platform/releases" element={<PlatformReleasesPage />} />
+        {/* ws25/ws26 integration hub (server: integration:admin; the runs
+            pages also integration:run). */}
+        <Route path="/admin/integrations" element={<IntegrationsOverviewPage />} />
+        <Route path="/admin/integrations/connections" element={<IntegrationConnectionsPage />} />
+        <Route path="/admin/integrations/flows" element={<IntegrationFlowsPage />} />
+        <Route path="/admin/integrations/flows/new" element={<IntegrationFlowBuilderPage />} />
+        <Route path="/admin/integrations/flows/:id" element={<IntegrationFlowBuilderPage />} />
+        <Route path="/admin/integrations/runs" element={<IntegrationRunsPage />} />
+        <Route path="/admin/integrations/runs/:id" element={<IntegrationRunDetailPage />} />
+        <Route path="/admin/integrations/api-clients" element={<IntegrationApiClientsPage />} />
+        <Route path="/admin/integrations/agents" element={<IntegrationAgentsPage />} />
+        <Route path="/admin/integrations/egress-rules" element={<IntegrationEgressRulesPage />} />
+        {/* ws25 platform console: egress approvals (server: platform:banks). */}
+        <Route path="/platform/egress-rules" element={<PlatformEgressRulesPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

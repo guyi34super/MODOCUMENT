@@ -31,6 +31,13 @@ const TYPE_LABELS = {
   EGRESS_RULE_APPROVE: 'Approve egress destination',
 };
 
+/** ws23 template extraction modes (contracts §4 ExtractionMode). */
+const EXTRACTION_MODE_LABELS = {
+  AI_WITH_CODE_FALLBACK: 'AI with code fallback',
+  CODE_ONLY: 'code only',
+  AI_ONLY: 'AI only',
+};
+
 /** Roles allowed to decide (change:approve, see role-permission-matrix.csv). */
 const DECIDER_ROLES = ['ADMIN', 'APPROVER', 'PLATFORM_ADMIN'];
 
@@ -77,8 +84,16 @@ function summarize(change) {
       return `Change ${p.targetEmail || `user ${p.targetUserId}`} to ${p.role || '?'}`;
     case 'USER_DISABLE':
       return `Disable ${p.targetEmail || `user ${p.targetUserId}`}`;
-    case 'TEMPLATE_UPDATE':
-      return `Rename template ${p.templateId} to "${p.name}"`;
+    case 'TEMPLATE_UPDATE': {
+      const rename = `Rename template ${p.templateId} to "${p.name}"`;
+      // ws23: the key is present only when the mode changes (null = bank default).
+      if (!Object.prototype.hasOwnProperty.call(p, 'extractionMode')) return rename;
+      const mode =
+        p.extractionMode === null
+          ? 'the bank default'
+          : EXTRACTION_MODE_LABELS[p.extractionMode] || p.extractionMode;
+      return `${rename}; extraction mode → ${mode}`;
+    }
     case 'TEMPLATE_DELETE':
       return `Delete template ${p.name ? `"${p.name}"` : p.templateId}`;
     case 'USER_PASSWORD_RESET':
@@ -109,10 +124,15 @@ function summarize(change) {
         p.reason
       );
     case 'INTEGRATION_CONNECTION_CHANGE': {
+      // The payload carries the sealed secret (never shown) and the
+      // non-secret config: name the destination the checker approves.
       const credentials = p.secretCiphertext || p.secretRef ? ', new credentials' : '';
+      const c = p.config || {};
+      const where = c.baseUrl || c.url || (c.host ? `${c.host}${c.port ? `:${c.port}` : ''}` : '');
       return (
         `${p.connectionId ? 'Change' : 'Create'} connection "${p.name || '?'}" ` +
-        `(${[p.type, p.mode].filter(Boolean).join(', ')}${credentials})`
+        `(${[p.type, p.mode].filter(Boolean).join(', ')}${credentials})` +
+        `${where ? ` to ${where}` : ''}`
       );
     }
     case 'INTEGRATION_FLOW_ENABLE':
@@ -122,9 +142,12 @@ function summarize(change) {
       );
     case 'API_CLIENT_CREATE': {
       const scopes = Array.isArray(p.scopes) ? p.scopes.join(', ') : p.scopes;
+      const cidrs = Array.isArray(p.allowedCidrs) ? p.allowedCidrs : [];
       return (
         `Create API client "${p.name || '?'}" (${p.authMethod || '?'})` +
-        `${scopes ? ` with scopes ${scopes}` : ''}`
+        `${scopes ? ` with scopes ${scopes}` : ''}` +
+        `${cidrs.length ? `, from ${cidrs.join(', ')}` : ''}` +
+        `${p.expiresAt ? `, expires ${formatDate(p.expiresAt)}` : ''}`
       );
     }
     case 'AGENT_REGISTER':

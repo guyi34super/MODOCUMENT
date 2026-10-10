@@ -108,6 +108,25 @@ describe('AdminDashboardPage', () => {
     expect(screen.getByText('Available with the integration hub')).toBeInTheDocument();
   });
 
+  it('shows the integration counters once the hub tracks them', async () => {
+    getDashboard.mockResolvedValue({
+      ...DASHBOARD,
+      integrations: { runs24h: { ok: 12, failed: 2 }, deadLetters: 1, agentsOffline: 0, apiCalls24h: 340 },
+    });
+    renderPage();
+    await screen.findByTestId('kpi-integration-runs');
+
+    expect(kpi('integration-runs')).toHaveTextContent('12');
+    expect(screen.getByText('12 ok · 2 failed')).toBeInTheDocument();
+    expect(screen.getByTestId('kpi-integration-runs')).toHaveAttribute('data-tone', 'danger');
+    expect(kpi('integration-dead-letters')).toHaveTextContent('1');
+    expect(kpi('agents-offline')).toHaveTextContent('0');
+    expect(kpi('api-calls')).toHaveTextContent('340');
+
+    await userEvent.click(screen.getByTestId('kpi-agents-offline'));
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/integrations/agents');
+  });
+
   it('links the tiles to the pages behind them', async () => {
     renderPage();
     await userEvent.click(await screen.findByTestId('kpi-pending-approvals'));
