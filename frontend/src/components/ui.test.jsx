@@ -2,7 +2,45 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { Badge, Button, Callout, Card, ErrorBanner, KpiTile, StatCard, Switch, Tag } from './ui';
+import {
+  Badge,
+  Button,
+  Callout,
+  Card,
+  ErrorBanner,
+  KpiTile,
+  Spinner,
+  StatCard,
+  Switch,
+  Tag,
+  sharePercents,
+} from './ui';
+
+describe('sharePercents', () => {
+  it('rounds to whole percentages that add up to 100', () => {
+    expect(sharePercents([1, 1, 1])).toEqual([34, 33, 33]);
+    expect(sharePercents([6, 3, 1])).toEqual([60, 30, 10]);
+    expect(sharePercents([2, 0, 1]).reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  it('is all zeros for an empty whole', () => {
+    expect(sharePercents([0, 0, null])).toEqual([0, 0, 0]);
+  });
+});
+
+describe('announcements', () => {
+  it('a panel spinner is a status region, an inline one is not', () => {
+    const { rerender } = render(<Spinner label="Loading runs…" />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading runs…');
+    rerender(<Spinner inline label="" />);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('an error banner is announced as an alert', () => {
+    render(<ErrorBanner message="Request failed (500)" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Request failed (500)');
+  });
+});
 
 describe('Callout', () => {
   it('renders title and children', () => {
