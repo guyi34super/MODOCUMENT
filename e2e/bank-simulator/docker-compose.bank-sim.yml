@@ -16,17 +16,18 @@
 #   docker compose -f e2e/bank-simulator/docker-compose.bank-sim.yml \
 #     --env-file e2e/.run/bank-sim.env up -d --wait
 # With the E2E stack (same project and network, so the app reaches
-# bank-db:5432, http://bank-rest:18090 and bank-sftp:22): add
-#   include:
-#     - e2e/bank-simulator/docker-compose.bank-sim.yml
-# to docker-compose.e2e.yml when the Wave-3 specs are switched on (README).
+# bank-db:5432, http://bank-rest:18090 and bank-sftp:22): the overlay
+# docker-compose.e2e-bank-sim.yml (repo root) includes this file and passes
+# the coordinates to the Playwright runner; CI uses it on main.
 #
 # Every credential is REQUIRED and generated per run (README: "Per-run
 # secrets"); nothing secret has a default.
 
 services:
   bank-db:
-    image: postgres:16
+    # Every image is pinned by digest (Wave 4), like docker-compose.e2e.yml;
+    # the tag stays for readability.
+    image: postgres:16@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
     environment:
       POSTGRES_DB: bank
       POSTGRES_USER: bankadmin
@@ -49,7 +50,7 @@ services:
       retries: 30
 
   bank-rest:
-    image: node:22-alpine
+    image: node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
     working_dir: /stub
     command: ["node", "/stub/server.mjs"]
     environment:
@@ -70,8 +71,9 @@ services:
       retries: 20
 
   bank-sftp:
-    # Pin by digest in CI once the image is mirrored (SE5 owns image pinning).
-    image: atmoz/sftp:alpine
+    # atmoz/sftp publishes no version tags; its `alpine` tag is a single
+    # linux/amd64 manifest (the CI runners' architecture), pinned here.
+    image: atmoz/sftp:alpine@sha256:7e439fabeae536fa254340724c042e11999924d906417dbb5c73602ad518813f
     # user:password:uid:gid — the account MoDocument's SFTP connector uses.
     command: ["${BANK_SIM_SFTP_USER:-bank}:${BANK_SIM_SFTP_PASSWORD:?Set BANK_SIM_SFTP_PASSWORD}:1001:100"]
     environment:

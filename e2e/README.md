@@ -56,7 +56,8 @@ E2E_WAVE3=1 E2E_BANK_SIM=1 e2e/run-local.sh   # + switch the Wave-3 integration 
 Per run, the script also generates the two bootstrap **platform admins**
 (`MODOCUMENT_PLATFORM_ADMIN_EMAILS/PASSWORDS` for the backend,
 `E2E_PLATFORM_ADMIN_{1,2}_{EMAIL,PASSWORD}` for the suite; fixtures
-`platformApi` / `platformCheckerApi`) and sets two more E2E-only
+`platformApi` / `platformCheckerApi`) and a throwaway connector key
+(`MODOCUMENT_CONNECTOR_KEY`), and sets two more E2E-only
 relaxations: the AI read timeout is 5 s (so the fake LLM's `timeout` mode
 reaches the code fallback inside a test). The bootstrap admin's password is
 temporary since phase 2 (OBS-02): `SMK-AUTH-01` replaces it, and
@@ -177,74 +178,48 @@ test) and switched on by the fix. BUG-03 (AI timeout surfacing as
 `CancellationException`) is a backend unit-level bug: see
 `AiTimeoutCancellationBug03Test` and test plan §8b.
 
-## CI (for SE5 to add — QA does not own workflows)
+## CI (`.github/workflows/ci.yml`, job `e2e`)
 
 The CI stack is `docker-compose.e2e.yml` at the repo root: postgres:16 on
 tmpfs, the app image, the frontend nginx image, the fake LLM on
 node:22-alpine, and a runner on `mcr.microsoft.com/playwright:v1.56.1-noble`.
-It honours the same `E2E_*` contract as `run-local.sh`. A job to add to
-`.github/workflows/ci.yml`, or to a new `e2e.yml` on `pull_request` and
-`push` to main:
+Every pulled image is **pinned by digest** (the tag stays for readability),
+in the bank simulator's compose file too. It honours the same `E2E_*`
+contract as `run-local.sh`.
 
-```yaml
-  e2e:
-    name: E2E (Playwright on the compose stack)
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - name: Generate run-scoped secrets
-        run: |
-          umask 077
-          mkdir -p e2e/.run            # gitignored (e2e/.gitignore)
-          app_pw=$(openssl rand -hex 24)
-          {
-            echo "E2E_POSTGRES_PASSWORD=$(openssl rand -hex 24)"
-            echo "E2E_APP_DB_PASSWORD=$app_pw"
-            echo "E2E_APP_DB_USER_PASSWORD=$app_pw"
-            echo "E2E_JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')"
-            echo "E2E_MFA_KEY=$(openssl rand -base64 48 | tr -d '\n')"
-            echo "E2E_BOOTSTRAP_ADMIN_EMAIL=e2e-admin-${GITHUB_RUN_ID}@e2e.modocument.test"
-            echo "E2E_BOOTSTRAP_ADMIN_PASSWORD=E2e-$(openssl rand -base64 18 | tr -d '/+=\n')-7q"
-            echo "E2E_AI_KEY=e2e-$(openssl rand -hex 8)"
-            echo "E2E_PLATFORM_ADMIN_1_EMAIL=e2e-platform1-${GITHUB_RUN_ID}@e2e.modocument.test"
-            echo "E2E_PLATFORM_ADMIN_1_PASSWORD=E2p-$(openssl rand -base64 18 | tr -d '/+=,\n')-7q"
-            echo "E2E_PLATFORM_ADMIN_2_EMAIL=e2e-platform2-${GITHUB_RUN_ID}@e2e.modocument.test"
-            echo "E2E_PLATFORM_ADMIN_2_PASSWORD=E2p-$(openssl rand -base64 18 | tr -d '/+=,\n')-8q"
-            echo "E2E_RUN_ID=${GITHUB_RUN_ID}"
-          } > e2e/.run/ci.env
-          while IFS='=' read -r name value; do
-            case "$name" in *EMAIL|E2E_RUN_ID) ;; *) echo "::add-mask::$value" ;; esac
-          done < e2e/.run/ci.env
-      - name: Run the suite
-        run: |
-          docker compose -f docker-compose.e2e.yml --env-file e2e/.run/ci.env config -q
-          docker compose -f docker-compose.e2e.yml --env-file e2e/.run/ci.env up --build \
-            --abort-on-container-exit --exit-code-from e2e
-      - name: Stack logs on failure
-        if: failure()
-        run: docker compose -f docker-compose.e2e.yml --env-file e2e/.run/ci.env logs --tail 300 app frontend fake-llm
-      - name: Upload report and traces
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: e2e-report
-          path: |
-            e2e/e2e-report
-            e2e/test-results
-          retention-days: 14
-      - name: Tear down
-        if: always()
-        run: docker compose -f docker-compose.e2e.yml --env-file e2e/.run/ci.env down -v
+The job (non-blocking until it has been green on `main` for a week):
+
+| Event | Stack | Suite |
+|---|---|---|
+| pull request | `docker-compose.e2e.yml` | `--grep @smoke` |
+| push to `main` | + `docker-compose.e2e-bank-sim.yml` (bank DB, REST stub, SFTP; `E2E_BANK_SIM=1`) | everything, Wave-3 specs on (`E2E_WAVE3=1`) |
+| release tag | skipped | — |
+
+Its first step generates every secret for this run only into the gitignored
+`e2e/.run/ci.env` (mode 0600) and masks each value in the log: database
+passwords, JWT, MFA and **connector** keys (`E2E_CONNECTOR_KEY`, 32 random
+bytes, the app's `MODOCUMENT_CONNECTOR_KEY`), the bootstrap admin, the two
+bootstrap **platform admins** (`E2E_PLATFORM_ADMIN_{1,2}_{EMAIL,PASSWORD}`,
+the app's `MODOCUMENT_PLATFORM_ADMIN_EMAILS/PASSWORDS`) and, on `main`, the
+bank simulator's `BANK_SIM_*` credentials. It selects the compose files
+through `COMPOSE_FILE`. To reproduce a CI run locally:
+
+```bash
+COMPOSE_FILE=docker-compose.e2e.yml:docker-compose.e2e-bank-sim.yml \
+  docker compose --env-file e2e/.run/ci.env up --build \
+  --abort-on-container-exit --exit-code-from e2e
 ```
+
+Known gap: `AC-INT-15` checks the bank side of the SFTP flow with
+`docker exec` into the SFTP container. The Playwright container has no
+Docker CLI (and gets no Docker socket), so that step cannot pass in CI.
+List the folders over SFTP instead.
 
 BUG-01 is fixed: the gate runs production-shaped (`E2E_DB_APP_ROLE=rls`).
 The owner-mode switch (`E2E_DB_APP_ROLE=owner`, `E2E_APP_DB_USER=modocument`,
 `E2E_APP_DB_USER_PASSWORD=<E2E_POSTGRES_PASSWORD>`) stays for debugging only.
-For a per-PR smoke job, set `E2E_PLAYWRIGHT_ARGS=--grep @smoke`; the full
-suite runs on main and nightly.
+Pull requests set `E2E_PLAYWRIGHT_ARGS=--grep @smoke`; the full suite runs
+on pushes to `main`.
 
 ## Troubleshooting
 

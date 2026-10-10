@@ -15,15 +15,19 @@
 # E2E_DB_APP_ROLE=owner, E2E_APP_DB_USER=modocument and
 # E2E_APP_DB_USER_PASSWORD=<E2E_POSTGRES_PASSWORD> so the app runs as the
 # schema owner. Default is the production two-role model.
-# Wave 3: the bank simulator joins with
-#   include: [e2e/bank-simulator/docker-compose.bank-sim.yml]
-# (see e2e/bank-simulator/README.md for its variables).
+# Wave 3: the bank simulator (bank DB, REST stub, SFTP) joins through the
+# overlay docker-compose.e2e-bank-sim.yml, which also switches the Wave-3
+# specs on (E2E_WAVE3=1). Variables: e2e/bank-simulator/README.md.
+#   COMPOSE_FILE=docker-compose.e2e.yml:docker-compose.e2e-bank-sim.yml \
+#     docker compose --env-file .env.e2e up --build --abort-on-container-exit --exit-code-from e2e
 
 name: modocument-e2e
 
 services:
   postgres:
-    image: postgres:16
+    # Every image is pinned by digest (Wave 4): CI runs exactly these bytes;
+    # refresh a digest deliberately (the tag stays for readability).
+    image: postgres:16@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
     environment:
       POSTGRES_DB: modocument
       POSTGRES_USER: modocument
@@ -43,7 +47,7 @@ services:
       retries: 30
 
   fake-llm:
-    image: node:22-alpine
+    image: node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
     working_dir: /stubs
     command: ["node", "/stubs/fake-llm.mjs"]
     environment:
@@ -75,6 +79,9 @@ services:
       MODOCUMENT_FLYWAY_PASSWORD: ${E2E_POSTGRES_PASSWORD}
       MODOCUMENT_JWT_SECRET: ${E2E_JWT_SECRET:?Set E2E_JWT_SECRET (openssl rand -base64 48)}
       MODOCUMENT_MFA_KEY: ${E2E_MFA_KEY:?Set E2E_MFA_KEY (openssl rand -base64 48)}
+      # ws25 connector SecretVault key (mandatory outside dev): throwaway,
+      # base64 of exactly 32 bytes, generated per run like every secret here.
+      MODOCUMENT_CONNECTOR_KEY: ${E2E_CONNECTOR_KEY:?Set E2E_CONNECTOR_KEY (openssl rand -base64 32)}
       MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL: ${E2E_BOOTSTRAP_ADMIN_EMAIL:?Set E2E_BOOTSTRAP_ADMIN_EMAIL}
       MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD: ${E2E_BOOTSTRAP_ADMIN_PASSWORD:?Set E2E_BOOTSTRAP_ADMIN_PASSWORD}
       # The platform owner (ws21): two PLATFORM_ADMIN accounts. Optional —
@@ -126,7 +133,7 @@ services:
 
   e2e:
     # Same Playwright version as e2e/package.json, browsers preinstalled.
-    image: mcr.microsoft.com/playwright:v1.56.1-noble
+    image: mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
     working_dir: /e2e
     command: ["bash", "-c", "npm ci --no-audit --no-fund && npx playwright test $${E2E_PLAYWRIGHT_ARGS:-}"]
     environment:
