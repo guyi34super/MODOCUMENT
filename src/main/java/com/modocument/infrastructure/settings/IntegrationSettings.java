@@ -61,7 +61,7 @@ public class IntegrationSettings {
         return settings.getDuration(SettingKeys.INTEGRATION_AGENT_HEARTBEAT_TIMEOUT, bankId);
     }
 
-    /** The API-client authentication methods the platform allows (platform scope). */
+    /** The API-client authentication methods the platform allows (platform layer). */
     public Set<ApiAuthMethod> allowedAuthMethods() {
         EnumSet<ApiAuthMethod> allowed = EnumSet.noneOf(ApiAuthMethod.class);
         for (ApiAuthMethod method : ApiAuthMethod.values()) {
@@ -72,13 +72,22 @@ public class IntegrationSettings {
         return allowed;
     }
 
-    /** Whether the platform allows this API-client authentication method. */
+    /** Whether the platform allows this API-client authentication method (platform layer). */
     public boolean isAuthMethodAllowed(ApiAuthMethod method) {
-        String key = switch (method) {
+        return settings.getBoolForPlatform(authMethodKey(method));
+    }
+
+    /** Whether {@code bankId}'s API clients may use this authentication method. */
+    public boolean isAuthMethodAllowed(ApiAuthMethod method, int bankId) {
+        return settings.getBool(authMethodKey(method), bankId);
+    }
+
+    /** The {@code integration.auth.allow*} key governing one authentication method. */
+    public static String authMethodKey(ApiAuthMethod method) {
+        return switch (method) {
             case OAUTH2_CLIENT_CREDENTIALS -> SettingKeys.INTEGRATION_ALLOW_OAUTH2;
             case API_KEY -> SettingKeys.INTEGRATION_ALLOW_API_KEYS;
             case MTLS -> SettingKeys.INTEGRATION_ALLOW_MTLS;
         };
-        return settings.getBoolForPlatform(key);
     }
 }

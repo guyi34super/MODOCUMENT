@@ -1,6 +1,5 @@
 package com.modocument.infrastructure.integration.engine;
 
-import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.UploadedFileRepository;
 import com.modocument.application.port.integration.ConnectionContext;
 import com.modocument.application.port.integration.IntegrationConnector;
@@ -21,13 +20,13 @@ import com.modocument.domain.model.integration.DeliveryStatus;
 import com.modocument.domain.model.integration.FlowDirection;
 import com.modocument.domain.model.integration.PayloadKind;
 import com.modocument.domain.model.integration.RunStatus;
-import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.file.SupportedDocumentTypes;
 import com.modocument.infrastructure.file.UploadContentChecker;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.persistence.IntegrationConnectionJpaRepository;
 import com.modocument.infrastructure.persistence.IntegrationFlowJpaRepository;
 import com.modocument.infrastructure.persistence.OutboundDeliveryJpaRepository;
+import com.modocument.infrastructure.settings.IntegrationSettings;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -83,7 +82,7 @@ public class FlowRunner {
     private final SupportedDocumentTypes supportedTypes;
     private final UploadContentChecker contentChecker;
     private final OutboundDispatcher dispatcher;
-    private final SettingsReader settings;
+    private final IntegrationSettings settings;
     private final IntegrationEngineProperties properties;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
@@ -95,7 +94,7 @@ public class FlowRunner {
                       RecordsIngestion recordsIngestion, IngestionJobUseCase ingestion,
                       UploadStorage uploads, UploadedFileRepository uploadedFiles,
                       SupportedDocumentTypes supportedTypes, UploadContentChecker contentChecker,
-                      OutboundDispatcher dispatcher, SettingsReader settings,
+                      OutboundDispatcher dispatcher, IntegrationSettings settings,
                       IntegrationEngineProperties properties, JdbcTemplate jdbc,
                       PlatformTransactionManager transactionManager) {
         this.runs = runs;
@@ -364,11 +363,11 @@ public class FlowRunner {
     // ---- limits ----------------------------------------------------------------------
 
     int cap(IntegrationFlow flow) {
-        int maxRows = settings.getInt(SettingKeys.INTEGRATION_MAX_ROWS_PER_RUN, flow.getBankId());
+        int maxRows = settings.maxRowsPerRun(flow.getBankId());
         return flow.getRowCap() == null ? maxRows : Math.min(flow.getRowCap(), maxRows);
     }
 
     Duration runTimeout(int bankId) {
-        return settings.getDuration(SettingKeys.INTEGRATION_RUN_TIMEOUT, bankId);
+        return settings.runTimeout(bankId);
     }
 }

@@ -1,13 +1,12 @@
 package com.modocument.infrastructure.security.client;
 
-import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.integration.ClientPrincipal;
 import com.modocument.domain.entity.ApiClient;
 import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.integration.ApiAuthMethod;
 import com.modocument.domain.model.integration.ApiClientKind;
-import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.security.JwtService;
+import com.modocument.infrastructure.settings.IntegrationSettings;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -66,9 +65,9 @@ public class ClientTokenService {
     public static final String CONFIRMATION_X5T_S256 = "x5t#S256";
 
     private final JwtEncoder encoder;
-    private final SettingsReader settings;
+    private final IntegrationSettings settings;
 
-    public ClientTokenService(JwtEncoder encoder, SettingsReader settings) {
+    public ClientTokenService(JwtEncoder encoder, IntegrationSettings settings) {
         this.encoder = encoder;
         this.settings = settings;
     }
@@ -83,7 +82,7 @@ public class ClientTokenService {
     }
 
     public Duration ttlFor(int bankId) {
-        return settings.getDuration(SettingKeys.INTEGRATION_CLIENT_TOKEN_TTL, bankId);
+        return settings.clientTokenTtl(bankId);
     }
 
     /**
