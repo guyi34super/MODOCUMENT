@@ -20,7 +20,9 @@ import org.springframework.web.bind.annotation.RestController;
  * Maker/checker approval queue (ws10, gate B7, SEC-023).
  *
  * <p>Permissions: approve/reject are the checker verbs and carry
- * {@code CHANGE_APPROVE} (APPROVER + ADMIN) on the route. The maker-side
+ * {@code CHANGE_APPROVE} (APPROVER, ADMIN, PLATFORM_ADMIN) on the route;
+ * the use case further narrows each type to its checker audience (a second
+ * platform admin for platform types, see {@code ChangeAudience}). The maker-side
  * routes (submit, list, cancel) cannot be expressed as ONE route-level
  * permission — the required permission depends on the change TYPE (user
  * ops need USER_ADMIN, template ops TEMPLATE_WRITE) or on being the row's

@@ -75,6 +75,25 @@ audited (`INTEGRATION_CONNECTION_CHANGED`, `INTEGRATION_FLOW_SAVED`,
 `INTEGRATION_FLOW_DELETED`, `INTEGRATION_FLOW_ENABLED`,
 `INTEGRATION_FLOW_DISABLED`).
 
+## Who sees and who decides
+
+Every change type has exactly one checker audience
+(`application/security/ChangeAudience`; the switch is exhaustive, so a new
+type does not compile until it is placed, and `PendingChangeAudienceTest`
+walks every type against every role):
+
+| Audience | Types | Listed to and decided by |
+|---|---|---|
+| **Bank** | `USER_CREATE`, `USER_ROLE_CHANGE`, `USER_DISABLE`, `USER_PASSWORD_RESET`, `USER_MFA_RESET`, `TEMPLATE_UPDATE`, `TEMPLATE_DELETE`, `SETTING_UPDATE`, `INTEGRATION_CONNECTION_CHANGE`, `INTEGRATION_FLOW_ENABLE`, `API_CLIENT_CREATE`, `AGENT_REGISTER` | any other `change:approve` holder of the maker's bank (APPROVER, ADMIN; in the platform bank another PLATFORM_ADMIN) |
+| **Platform** | `PLATFORM_SETTING_UPDATE`, `BANK_CREATE`, `BANK_SUSPEND`, `BANK_ADMIN_ADD`, `EGRESS_RULE_APPROVE` | a second platform admin only: `change:approve` **plus** the type's own platform permission (`platform:settings` / `platform:banks`), which `PermissionChecker` grants only inside the platform bank. A platform type found in any other bank is decided by nobody |
+
+`GET /api/admin/changes` returns the rows the caller may decide plus the
+caller's own submissions; it needs `change:approve` or the maker permission
+of at least one type (so an integration or platform maker sees their own
+requests without holding `change:approve`). Approve/reject answer 403 to a
+checker outside the type's audience, before the self-approval check (409,
+`SodPolicy`), which still applies to everyone.
+
 ## Flow
 
 ```
