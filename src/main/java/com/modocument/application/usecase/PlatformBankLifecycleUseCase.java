@@ -17,14 +17,19 @@ import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
 import com.modocument.infrastructure.persistence.RefreshTokenJpaRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -56,17 +61,31 @@ import java.util.function.Supplier;
  * AppUsers/RefreshToken rows and AuditEvent — never any customer content.
  *
  * <p><b>Atomicity.</b> Each operation is ONE system transaction: a bank is
- * onboarded with all of its first users or not at all. That transaction
- * commits before the approval bookkeeping does (it cannot join the
- * platform-bound approval transaction); should that bookkeeping fail
- * afterwards, the change stays REQUESTED and approving it again fails on the
- * now-taken code — nothing is applied twice.
+ * onboarded with all of its first users or not at all — the users are
+ * written under {@code runAs(newBank)} INSIDE that transaction, so a failed
+ * user insert rolls the Bank row back with it. That transaction commits
+ * before the approval bookkeeping does (it cannot join the platform-bound
+ * approval transaction). For onboarding, should anything fail after that
+ * commit — the directory refresh, the APPLIED row, the CHANGE_APPROVED
+ * audit — the approval rolls back and a compensating system transaction
+ * deletes the new bank and its first users again, audited
+ * {@value #ONBOARDING_REVERTED} in the platform bank, so a failed approval
+ * never leaves a committed bank behind (the change ends FAILED, or stays
+ * REQUESTED when only the bookkeeping failed, and the code is free again). A process crash between the two commits is
+ * the one window this cannot close; the BANK_ONBOARDED row then has no
+ * CHANGE_APPROVED partner. Suspension and break-glass leave nothing to
+ * compensate (re-approval answers "already suspended" / "already exists").
  */
 @Service
 public class PlatformBankLifecycleUseCase {
 
     /** At most this many first users per onboarding request. */
     public static final int MAX_ONBOARDING_USERS = 20;
+
+    /** Audit action of the compensating cleanup after a failed onboarding approval. */
+    public static final String ONBOARDING_REVERTED = "BANK_ONBOARDING_REVERTED";
+
+    private static final Logger log = LoggerFactory.getLogger(PlatformBankLifecycleUseCase.class);
 
     private final BankJpaRepository banks;
     private final AppUserJpaRepository users;
@@ -173,6 +192,7 @@ public class PlatformBankLifecycleUseCase {
     public BankRef applyOnboarding(String code, String name, List<NewBankUser> firstUsers,
                                    int platformBankId, int makerUserId) {
         int checkerUserId = currentUser.requireUserId();
+        List<Integer> createdUsers = new ArrayList<>();
         Bank bank = inSystem(systemTx, () -> {
             String normalized = normalizeCode(code);
             if (normalized.equalsIgnoreCase(platformBankCode)
@@ -196,17 +216,75 @@ public class PlatformBankLifecycleUseCase {
             values.put("admins", firstUsers.stream().filter(u -> u.role() == Role.ADMIN).count());
             values.put("makerUserId", makerUserId);
             values.put("checkerUserId", checkerUserId);
+            // Same system transaction: a failing user insert rolls the bank back too.
             TenantContext.runAs(bankId, () -> {
                 for (NewBankUser user : firstUsers) {
-                    createBankUser(bankId, user, "BANK_CREATE");
+                    createdUsers.add(createBankUser(bankId, user, "BANK_CREATE"));
                 }
                 recordInBank("BANK_ONBOARDED", bankId, bankId, null, values);
             });
             recordInBank("BANK_ONBOARDED", platformBankId, bankId, null, values);
             return created;
         });
+        revertOnboardingIfApprovalRollsBack(bank, List.copyOf(createdUsers), platformBankId,
+                makerUserId, checkerUserId);
         bankDirectory.refresh(bank.getBankId());
         return toRef(bank);
+    }
+
+    /**
+     * The onboarding committed in its own system transaction; when the
+     * enclosing approval transaction then rolls back, delete what it created
+     * (first users, then the bank) in a compensating system transaction and
+     * audit {@value #ONBOARDING_REVERTED} in the platform bank. Nothing to do
+     * when there is no enclosing transaction.
+     */
+    private void revertOnboardingIfApprovalRollsBack(Bank bank, List<Integer> userIds,
+                                                     int platformBankId, int makerUserId,
+                                                     int checkerUserId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_ROLLED_BACK) {
+                    revertOnboarding(bank, userIds, platformBankId, makerUserId, checkerUserId);
+                }
+            }
+        });
+    }
+
+    /** The compensating cleanup (registered runAsSystem call site). */
+    private void revertOnboarding(Bank bank, List<Integer> userIds, int platformBankId, int makerUserId,
+                          int checkerUserId) {
+        int bankId = bank.getBankId();
+        try {
+            inSystem(systemTx, () -> {
+                for (Integer userId : userIds) {
+                    refreshTokens.findByUserId(userId).forEach(refreshTokens::delete);
+                }
+                users.deleteAllByIdInBatch(userIds);
+                banks.deleteById(bankId);
+                banks.flush();
+                Map<String, Object> values = new LinkedHashMap<>();
+                values.put("bankCode", bank.getCode());
+                values.put("usersRemoved", userIds.size());
+                values.put("reason", "approval rolled back after the bank was created");
+                values.put("makerUserId", makerUserId);
+                values.put("checkerUserId", checkerUserId);
+                recordInBank(ONBOARDING_REVERTED, platformBankId, bankId, null, values);
+                return null;
+            });
+            log.warn("Onboarding of bank {} ({}) reverted: the approval rolled back after the "
+                    + "bank was created", bank.getCode(), bankId);
+        } catch (RuntimeException e) {
+            log.error("Could not revert the onboarding of bank {} ({}) after its approval rolled "
+                    + "back; remove the bank and its {} first user(s) by hand",
+                    bank.getCode(), bankId, userIds.size(), e);
+        } finally {
+            bankDirectory.refresh(bankId);
+        }
     }
 
     /**

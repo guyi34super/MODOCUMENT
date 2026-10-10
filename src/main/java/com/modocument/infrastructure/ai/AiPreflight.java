@@ -49,6 +49,24 @@ public class AiPreflight {
      * @param bankId the document's bank; null reads the platform layer
      */
     public Optional<FallbackReason> check(Integer bankId, int userId) {
+        Optional<FallbackReason> unavailable = unavailableReason(bankId);
+        if (unavailable.isPresent()) {
+            return unavailable;
+        }
+        if (!(bankId == null ? quota.tryCheck(userId) : quota.tryCheck(userId, bankId))) {
+            return Optional.of(FallbackReason.QUOTA);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The first three checks of {@link #check} without spending a quota
+     * permit: for endpoints whose quota the {@code LlmQuotaInterceptor}
+     * already took (infer-schema, summary). Empty when the AI may be tried.
+     *
+     * @param bankId the caller's bank; null reads the platform layer
+     */
+    public Optional<FallbackReason> unavailableReason(Integer bankId) {
         if (!aiEnabled(bankId)) {
             return Optional.of(FallbackReason.AI_DISABLED);
         }
@@ -57,9 +75,6 @@ public class AiPreflight {
         }
         if (!circuitBreaker.allow()) {
             return Optional.of(FallbackReason.CIRCUIT_OPEN);
-        }
-        if (!(bankId == null ? quota.tryCheck(userId) : quota.tryCheck(userId, bankId))) {
-            return Optional.of(FallbackReason.QUOTA);
         }
         return Optional.empty();
     }

@@ -20,7 +20,8 @@ import java.util.Locale;
  * for a customer bank that has lost its administrators (or, on a fresh
  * install, never had a second one). SUBMIT, as the maker: the bank must
  * exist (404) and be a customer bank (409), the email must be new (409), the
- * temporary password must pass the policy (400) and a reason is required;
+ * temporary password must pass the TARGET bank's password policy (400; its
+ * own {@code security.password.minLength}) and a reason is required;
  * the password is replaced by its hash, so the persisted payload is
  * {@code {bankId, bankCode, bankName, email, displayName, passwordHash,
  * reason}}. APPLY delegates to
@@ -65,7 +66,9 @@ public class BankAdminAddChangeApplier implements PendingChangeApplier {
         String reason = ChangePayloads.requireText(payload, "reason", 500).trim();
         BankRef bank = lifecycle.requireCustomerBank(bankId, "Platform administrators are "
                 + "added through the platform's own user administration, not break-glass.");
-        passwordPolicy.validate(temporaryPassword, email);
+        // The TARGET bank's policy (its security.password.minLength), not the
+        // maker's: the maker is bound to the platform bank, the account is not.
+        passwordPolicy.validate(temporaryPassword, email, bank.bankId());
         if (users.existsByEmail(email)) {
             throw new IllegalStateException("An account with this email already exists.");
         }

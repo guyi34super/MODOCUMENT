@@ -1,5 +1,8 @@
 package com.modocument.application.port;
 
+import com.modocument.application.dto.BankIntegrations;
+
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -26,4 +29,12 @@ public interface PlatformBankStats {
      * @param jobsSince the start of the job window (inclusive)
      */
     Map<Integer, BankCounts> countsByBank(Integer bankId, LocalDateTime jobsSince);
+
+    /**
+     * One bank's integration health (wave 4): connections (and FAILED ones),
+     * enabled flows, runs finished since {@code runsSince} by outcome, DEAD
+     * outbound deliveries, and enrolled (ONLINE) agents whose last heartbeat
+     * is before {@code heartbeatBefore} or missing. Aggregates only.
+     */
+    BankIntegrations integrationCounts(int bankId, Instant runsSince, Instant heartbeatBefore);
 }

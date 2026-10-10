@@ -61,7 +61,12 @@ same rules between two PLATFORM_ADMINs of the platform bank. `BANK_CREATE`
 and `BANK_ADMIN_ADD` hash every temporary password at submit (the queue
 holds `{code, name, users:[{email, displayName, role, passwordHash}]}` /
 `{bankId, bankCode, bankName, email, displayName, passwordHash, reason}`,
-and the API strips the hashes at any depth). Reactivating a suspended bank
+and the API strips the hashes at any depth). `BANK_ADMIN_ADD` checks the
+temporary password against the TARGET bank's password policy. `BANK_CREATE`
+writes the bank, its first users and `BANK_ONBOARDED` in one system
+transaction; if the approval then fails after that commit, a compensating
+transaction deletes the bank and its users again and audits
+`BANK_ONBOARDING_REVERTED` in the platform bank. Reactivating a suspended bank
 (`POST /api/platform/banks/{id}/reactivate`) is direct — the lower-risk
 direction.
 Both resets share the `admin-security` rate-limit bucket (10 per window).

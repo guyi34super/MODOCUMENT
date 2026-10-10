@@ -191,7 +191,10 @@ public class ExtractionJobController {
                 request.getMaxRows(), request.isLlmClean()));
     }
 
-    /** LLM: suggest a template schema from sample records. */
+    /**
+     * Suggests a template schema from sample records: the LLM, or the
+     * sample values when the AI is unavailable ({@code generatedBy: CODE}).
+     */
     @RequiresPermission(Permission.AI_USE)
     @PostMapping("/api/extraction/jobs/{id}/infer-schema")
     public ResponseEntity<?> inferSchema(@PathVariable String id) {
@@ -199,12 +202,15 @@ public class ExtractionJobController {
         return ResponseEntity.ok(inferSchema.infer(id));
     }
 
-    /** LLM: short human summary of the run. */
+    /**
+     * Short human summary of the run: the LLM's prose, or one built from the
+     * run's counters when the AI is unavailable ({@code generatedBy: CODE}).
+     */
     @RequiresPermission(Permission.AI_USE)
     @GetMapping("/api/extraction/jobs/{id}/summary")
     public ResponseEntity<?> summary(@PathVariable String id) {
         jobs.get(id); // owner gate: 404 before summarizing another user's job
-        return ResponseEntity.ok(Map.of("summary", summarize.summarize(id)));
+        return ResponseEntity.ok(summarize.summarize(id));
     }
 
     private ExtractionJobDto dto(ExtractionJob job) {

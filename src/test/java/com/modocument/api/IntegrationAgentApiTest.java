@@ -234,6 +234,8 @@ class IntegrationAgentApiTest {
 
         assertThat(auditActions(agentId))
                 .containsExactly("AGENT_REGISTERED", "AGENT_ENROLLED", "AGENT_REVOKED");
+        // The agent's ApiClient is revoked with it: its tokens die at once.
+        verify(issuer).revokeAgentClient(bankA.getBankId(), 4711);
         AuditEvent enrolledAudit = audits(agentId).get(1);
         assertThat(enrolledAudit.getBankId()).isEqualTo(bankA.getBankId());
         assertThat(enrolledAudit.getNewValues()).doesNotContain("s3cret-once").doesNotContain(token);

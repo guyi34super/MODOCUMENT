@@ -47,7 +47,8 @@ import java.util.UUID;
  * key and are kept apart by the {@code typ} claim — both ways: a token with
  * {@code typ=client} is validated ONLY as a client token (by
  * {@link ApiClientAuthenticator#validateToken}: the ApiClient must exist, be
- * ACTIVE, unexpired, its bank not suspended, the method still allowed, the
+ * ACTIVE, unexpired, its bank not suspended, its creator still an enabled
+ * user of that bank (AGENT clients exempt), the method still allowed, the
  * caller's IP inside AllowedCidrs, {@code token_ver} not older than
  * ApiClient.TokenVersion — a revocation is a 401 on the very next request —
  * and a certificate-bound token must come with the same certificate); any

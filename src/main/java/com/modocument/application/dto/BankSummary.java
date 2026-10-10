@@ -1,5 +1,6 @@
 package com.modocument.application.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.modocument.domain.model.BankKind;
 import com.modocument.domain.model.BankStatus;
 
@@ -20,9 +21,20 @@ import java.time.LocalDateTime;
  *                         (0–1); null until parse provenance lands (ws23)
  * @param codeShare7d      same for the code fallback; null until ws23
  * @param lastActivityAt   most recent sign-in of any enabled account, or null
+ * @param integrations     integration health counts; on the one-bank read
+ *                         ({@code GET /api/platform/banks/{id}}) only, left
+ *                         out of the list and the overview
  */
 public record BankSummary(int bankId, String code, String name, BankKind kind,
                           BankStatus status, long users, Integer mfaEnrolledPct,
                           long jobs7d, long failures7d, Double aiShare7d, Double codeShare7d,
-                          LocalDateTime lastActivityAt) {
+                          LocalDateTime lastActivityAt,
+                          @JsonInclude(JsonInclude.Include.NON_NULL)
+                          BankIntegrations integrations) {
+
+    /** This summary with the one-bank integration counts attached. */
+    public BankSummary withIntegrations(BankIntegrations counts) {
+        return new BankSummary(bankId, code, name, kind, status, users, mfaEnrolledPct, jobs7d,
+                failures7d, aiShare7d, codeShare7d, lastActivityAt, counts);
+    }
 }

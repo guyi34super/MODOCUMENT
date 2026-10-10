@@ -57,8 +57,8 @@ Per call site:
 | `AutoMapperController` (legacy endpoint) | `AUTO_MAP` | Column and field names only — no data values by construction. |
 | `ChatEditTableUseCase` | `CHAT_EDIT` | Table rows tokenized (`tokenizeRows`); the envelope is pinned to the job's bank; patch/table reply detokenized. |
 | `CleanRecordsUseCase` | `DATA_CLEANING` | Row batches tokenized; cleaned rows detokenized. |
-| `InferSchemaUseCase` | `SCHEMA_INFERENCE` | Sample records already tokenized upstream; envelope pinned to the job's bank. |
-| `SummarizeExtractionUseCase` | `EXTRACTION_SUMMARY` | Stats + tokenized samples; summary detokenized. |
+| `InferSchemaUseCase` | `SCHEMA_INFERENCE` | Sample records already tokenized upstream; envelope pinned to the job's bank. When `AiPreflight` reports the AI off/unconfigured/circuit-open or the call fails, types are inferred from the sample values in code (`generatedBy: CODE`, `fallbackReason`). |
+| `SummarizeExtractionUseCase` | `EXTRACTION_SUMMARY` | Stats + tokenized samples; summary detokenized. Same fallback: a summary from counters, fill rates and distinct counts that quotes no value (`generatedBy: CODE`). |
 | `AiSectionSplitter` | `DOC_SECTION_SPLIT` | Body listing **one-way masked** (`maskText`), not tokenized: the model's anchors are body-element indexes (`[3]`), not character offsets, so length changes are safe, and the accepted titles/anchor text are re-read from the document itself — nothing from the model needs unmasking. |
 | `AiDocumentComposer` | `DOC_COMPOSE` | **Reversible tokenization** of the template listing, user paragraphs, captions, section titles and image file names in one session; the validated plan is detokenized before rendering, so the generated document carries the real values while the model never saw them. (Deliberately NOT the one-way masking used for classification snippets/section splitting: masking would bake `[ID]` placeholders into the generated document.) |
 | `AiFilesController` (`POST /api/aifiles/send`) | `DIAGNOSTIC` | User-typed prompt tokenized; reply detokenized. |

@@ -90,6 +90,18 @@ class AiPreflightTest {
     }
 
     @Test
+    void unavailableReasonRunsTheSameChecksButNeverSpendsQuota() {
+        assertThat(preflight.unavailableReason(5)).isEmpty();
+        when(aiFiles.isConfigured()).thenReturn(false);
+        assertThat(preflight.unavailableReason(5)).contains(FallbackReason.NOT_CONFIGURED);
+        when(settings.getBool(SettingKeys.AI_ENABLED, 5)).thenReturn(false);
+        assertThat(preflight.unavailableReason(5)).contains(FallbackReason.AI_DISABLED);
+
+        verify(quota, never()).tryCheck(anyInt());
+        verify(quota, never()).tryCheck(anyInt(), anyInt());
+    }
+
+    @Test
     void anUnreadableSwitchCountsAsOn() {
         when(settings.getBool(SettingKeys.AI_ENABLED, 5)).thenThrow(new IllegalStateException("x"));
 
