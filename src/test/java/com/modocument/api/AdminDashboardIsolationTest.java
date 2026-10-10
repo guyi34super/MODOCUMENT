@@ -260,6 +260,13 @@ class AdminDashboardIsolationTest {
         // The integration hub is not tracked yet: null, never a fake zero.
         assertThat(body.get("integrations").get("runs24h").get("failed").isNull()).isTrue();
         assertThat(body.get("integrations").get("deadLetters").isNull()).isTrue();
+        // The full contracts §3 shape is present so the UI tiles render "—".
+        assertThat(body.get("integrations").get("runs24h").has("ok")).isTrue();
+        assertThat(body.get("integrations").get("runs24h").get("ok").isNull()).isTrue();
+        assertThat(body.get("integrations").has("agentsOffline")).isTrue();
+        assertThat(body.get("integrations").get("agentsOffline").isNull()).isTrue();
+        assertThat(body.get("integrations").has("apiCalls24h")).isTrue();
+        assertThat(body.get("integrations").get("apiCalls24h").isNull()).isTrue();
 
         // Counts only: no account, template or other-bank identifier anywhere.
         assertThat(json)

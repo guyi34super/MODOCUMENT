@@ -100,8 +100,14 @@ public record AdminDashboardDto(Instant generatedAt, BankInfo bank, Users users,
     }
 
     /**
-     * Integration hub tiles (ws25/ws26). A null counter means "not tracked
-     * yet" (the hub has not landed) and renders as "—", unlike a real zero.
+     * Integration hub tiles (ws25/ws26, contracts §3 SE3). A null counter
+     * means "not tracked yet" and renders as "—", unlike a real zero; the
+     * counts are filled once the integration tables exist.
+     *
+     * @param runs24h       integration runs of the last 24 h, finished OK / FAILED
+     * @param deadLetters   outbound deliveries in DEAD status
+     * @param agentsOffline enrolled connector agents without a recent heartbeat
+     * @param apiCalls24h   Integration API v1 calls by the bank's clients, last 24 h
      */
     public record Integrations(Runs runs24h, Long deadLetters, Long agentsOffline,
                                Long apiCalls24h) {

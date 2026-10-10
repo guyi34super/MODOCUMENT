@@ -180,6 +180,62 @@ describe('Layout sidebar', () => {
     expect(screen.getByText('Document Flow')).toBeInTheDocument();
   });
 
+  /** ws25/ws26: the Integrations section — integration:admin (ADMIN), runs also integration:run. */
+  it('shows ADMINs the whole Integrations section', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 1, role: 'ADMIN' }));
+    renderLayout();
+
+    expect(screen.getByText('Integrations')).toBeInTheDocument();
+    for (const [name, href] of [
+      ['Integration hub', '/admin/integrations'],
+      ['Connections', '/admin/integrations/connections'],
+      ['Flows', '/admin/integrations/flows'],
+      ['Runs', '/admin/integrations/runs'],
+      ['API clients', '/admin/integrations/api-clients'],
+      ['Agents', '/admin/integrations/agents'],
+      ['Egress destinations', '/admin/integrations/egress-rules'],
+    ]) {
+      expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);
+    }
+  });
+
+  it('shows READ_WRITE users only the integration runs', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 2, role: 'READ_WRITE' }));
+    renderLayout();
+
+    expect(screen.getByText('Integrations')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Runs' })).toHaveAttribute(
+      'href',
+      '/admin/integrations/runs'
+    );
+    for (const hidden of ['Integration hub', 'Connections', 'Flows', 'API clients', 'Agents']) {
+      expect(screen.queryByRole('link', { name: hidden })).not.toBeInTheDocument();
+    }
+  });
+
+  it('hides the Integrations section from READ_ONLY, APPROVER and the platform owner', () => {
+    stubViewport(true);
+    for (const role of ['READ_ONLY', 'APPROVER', 'PLATFORM_ADMIN']) {
+      localStorage.setItem('modoc.user', JSON.stringify({ userId: 4, role }));
+      const { unmount } = renderLayout();
+      expect(screen.queryByText('Integrations')).not.toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Runs' })).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('gives the platform owner the egress approvals', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 9, role: 'PLATFORM_ADMIN' }));
+    renderLayout();
+    expect(screen.getByRole('link', { name: 'Egress rules' })).toHaveAttribute(
+      'href',
+      '/platform/egress-rules'
+    );
+  });
+
   it('closes the drawer on Escape and on a backdrop click', async () => {
     stubViewport(false);
     renderLayout();

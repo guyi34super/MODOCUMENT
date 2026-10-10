@@ -40,8 +40,8 @@ function Section({ title, children }) {
  * KPI tiles (`data-testid="kpi-<metric>"`, value in `kpi-value`), plus the
  * quick actions an administrator needs most: add a user, invite one (with a
  * copyable invitation — there is no email channel), create a bank-shared
- * template, review approvals. Counters of features not live yet (the
- * integration hub) show "—".
+ * template, review approvals. Counters the backend does not track yet
+ * (null — the integration hub's until its tables exist) show "—".
  */
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
@@ -267,23 +267,32 @@ export default function AdminDashboardPage() {
               hint={
                 tracked(integrations?.runs24h?.failed) === null
                   ? 'Available with the integration hub'
-                  : `${integrations.runs24h.failed} failed`
+                  : `${integrations.runs24h.ok ?? 0} ok · ${integrations.runs24h.failed} failed`
               }
+              tone={integrations?.runs24h?.failed > 0 ? 'danger' : 'neutral'}
+              to="/admin/integrations/runs"
             />
             <KpiTile
               testId="kpi-integration-dead-letters"
               label="Dead letters"
               value={tracked(integrations?.deadLetters)}
+              hint="Deliveries that ran out of retries"
+              tone={integrations?.deadLetters > 0 ? 'danger' : 'neutral'}
+              to="/admin/integrations/runs"
             />
             <KpiTile
               testId="kpi-agents-offline"
               label="Agents offline"
               value={tracked(integrations?.agentsOffline)}
+              tone={integrations?.agentsOffline > 0 ? 'warning' : 'neutral'}
+              to="/admin/integrations/agents"
             />
             <KpiTile
               testId="kpi-api-calls"
               label="API calls (24 h)"
               value={tracked(integrations?.apiCalls24h)}
+              hint="Integration API calls by your API clients"
+              to="/admin/integrations/api-clients"
             />
           </Section>
 

@@ -220,6 +220,57 @@ export default function PlatformBankDetailPage() {
         />
       </div>
 
+      {/* ws25/ws26: per-bank integration health, counts only — rendered only
+          when the platform API carries it. */}
+      {bank.integrations && (
+        <section aria-label="Integration health" className="mt-6">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">
+            Integration health
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            <KpiTile
+              testId="kpi-bank-connections"
+              label="Connections"
+              value={bank.integrations.connections}
+              hint={
+                bank.integrations.connectionsFailing > 0
+                  ? `${bank.integrations.connectionsFailing} failing`
+                  : undefined
+              }
+              tone={bank.integrations.connectionsFailing > 0 ? 'warning' : 'neutral'}
+            />
+            <KpiTile
+              testId="kpi-bank-flows"
+              label="Flows enabled"
+              value={bank.integrations.flowsEnabled}
+            />
+            <KpiTile
+              testId="kpi-bank-runs"
+              label="Runs (24 h)"
+              value={bank.integrations.runs24h?.ok}
+              hint={
+                bank.integrations.runs24h
+                  ? `${bank.integrations.runs24h.failed ?? 0} failed`
+                  : undefined
+              }
+              tone={bank.integrations.runs24h?.failed > 0 ? 'danger' : 'neutral'}
+            />
+            <KpiTile
+              testId="kpi-bank-dead-letters"
+              label="Dead letters"
+              value={bank.integrations.deadLetters}
+              tone={bank.integrations.deadLetters > 0 ? 'danger' : 'neutral'}
+            />
+            <KpiTile
+              testId="kpi-bank-agents-offline"
+              label="Agents offline"
+              value={bank.integrations.agentsOffline}
+              tone={bank.integrations.agentsOffline > 0 ? 'warning' : 'neutral'}
+            />
+          </div>
+        </section>
+      )}
+
       <ConfirmDialog
         open={dialog === 'suspend'}
         title={`Suspend ${bank.code}`}
