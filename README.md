@@ -622,8 +622,8 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 | `GET /api/extraction/jobs/{id}/records?kind=raw\|processed` | Cursor-paged record peek |
 | `GET /api/extraction/jobs/{id}/audit` | Cursor-paged audit trail (fetches, robots/domain blocks, retries, dedups, LLM calls) |
 | `POST /api/extraction/jobs/{id}/bridge` | Hand records to the document pipeline (auto-map + validate → standard ingestion job) |
-| `POST /api/extraction/jobs/{id}/infer-schema` | LLM: suggest a template schema from sample records |
-| `GET /api/extraction/jobs/{id}/summary` | LLM: short human summary of the run |
+| `POST /api/extraction/jobs/{id}/infer-schema` | Suggest a template schema from sample records (LLM; code inference when the AI is unavailable, `generatedBy`) |
+| `GET /api/extraction/jobs/{id}/summary` | Short human summary of the run (LLM; counter-based when the AI is unavailable, `generatedBy`) |
 | `GET /api/extraction/metrics` | Queue depth, compliance counters, worker pool state |
 
 ### Legacy pipeline & utilities
