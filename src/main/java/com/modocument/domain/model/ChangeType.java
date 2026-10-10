@@ -22,7 +22,33 @@ public enum ChangeType {
     /** Rename/redescribe a template the maker owns. */
     TEMPLATE_UPDATE(Permission.TEMPLATE_WRITE, "Template"),
     /** Delete a template the maker owns (with its fields and rules). */
-    TEMPLATE_DELETE(Permission.TEMPLATE_WRITE, "Template");
+    TEMPLATE_DELETE(Permission.TEMPLATE_WRITE, "Template"),
+
+    // ---- Phase 2 (each type's applier lands with its workstream) -----------
+    /** Security-tier bank setting changes (ws20). */
+    SETTING_UPDATE(Permission.SETTINGS_WRITE, "Setting"),
+    /** Platform defaults or bank bounds (ws20). */
+    PLATFORM_SETTING_UPDATE(Permission.PLATFORM_SETTINGS, "Setting"),
+    /** Set a temporary password, force a change, kill sessions (ws22). */
+    USER_PASSWORD_RESET(Permission.USER_ADMIN, "AppUser"),
+    /** Remove a user's MFA enrolment so they re-enrol (ws22). */
+    USER_MFA_RESET(Permission.USER_ADMIN, "AppUser"),
+    /** Onboard a bank with at least two first users (ws21). */
+    BANK_CREATE(Permission.PLATFORM_BANKS, "Bank"),
+    /** Suspend a bank: every token of its users dies (ws21). */
+    BANK_SUSPEND(Permission.PLATFORM_BANKS, "Bank"),
+    /** Break-glass: add an admin to a bank (ws21). */
+    BANK_ADMIN_ADD(Permission.PLATFORM_BANKS, "Bank"),
+    /** New integration connection, or a host/credential change (ws25). */
+    INTEGRATION_CONNECTION_CHANGE(Permission.INTEGRATION_ADMIN, "IntegrationConnection"),
+    /** Enable or widen an OUTBOUND flow — data leaving the tenant (ws25). */
+    INTEGRATION_FLOW_ENABLE(Permission.INTEGRATION_ADMIN, "IntegrationFlow"),
+    /** Create an API client for a bank system (ws26). */
+    API_CLIENT_CREATE(Permission.INTEGRATION_ADMIN, "ApiClient"),
+    /** Register an on-prem Connector Agent (ws26). */
+    AGENT_REGISTER(Permission.INTEGRATION_ADMIN, "IntegrationAgent"),
+    /** Approve a bank's private-network egress destination (ws25, platform). */
+    EGRESS_RULE_APPROVE(Permission.PLATFORM_BANKS, "BankEgressRule");
 
     private final Permission makerPermission;
     private final String targetEntityType;

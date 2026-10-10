@@ -67,11 +67,15 @@ public class MaskingPolicy {
         };
     }
 
-    /** The screen channel a caller's role lands on. Fail closed: no role → read-only. */
+    /**
+     * The screen channel a caller's role lands on. Fail closed: no role →
+     * read-only; only the three authoring bank roles get the working view
+     * (platform admins and API clients never edit a bank's rows).
+     */
     public Channel screenChannel(Role role) {
-        return role == Role.READ_ONLY || role == null
-                ? Channel.SCREEN_READONLY
-                : Channel.SCREEN_WORKING;
+        return role == Role.ADMIN || role == Role.APPROVER || role == Role.READ_WRITE
+                ? Channel.SCREEN_WORKING
+                : Channel.SCREEN_READONLY;
     }
 
     /**

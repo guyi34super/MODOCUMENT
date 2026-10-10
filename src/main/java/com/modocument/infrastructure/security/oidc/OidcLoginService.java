@@ -256,7 +256,10 @@ public class OidcLoginService {
 
     private static Role parseRole(String value) {
         try {
-            return Role.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT));
+            Role role = Role.valueOf(value.trim().toUpperCase(java.util.Locale.ROOT));
+            // An IdP can only ever map to a bank role: platform admins and
+            // API clients are never provisioned through OIDC.
+            return role.isBankRole() ? role : null;
         } catch (IllegalArgumentException unknown) {
             return null;
         }

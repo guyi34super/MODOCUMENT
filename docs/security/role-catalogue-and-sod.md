@@ -11,16 +11,28 @@ pins to it:
 
 ## 1. Role catalogue (SEC-012)
 
-Every MoDocument account holds **exactly one** of four roles (a single
+Every bank user holds **exactly one** of four bank roles (a single
 enum-typed column on `AppUsers`; see §3 on why that is itself an SoD
-control). The mapping to banking job functions:
+control). Phase 2 adds two roles that are never a bank user's role —
+`PLATFORM_ADMIN` and `API_CLIENT`, see the end of this section. The mapping
+to banking job functions:
 
 | Role         | Banking job function                                                                 | Permission profile (full matrix: [CSV](role-permission-matrix.csv)) |
 |--------------|--------------------------------------------------------------------------------------|---------------------------------------------------------------------|
 | `READ_ONLY`  | Auditors, controllers, second-line risk — people who must SEE operations, never move them. | Every domain `*:read` + self-service. No writes, exports, uploads or LLM spend (PRIV-005). |
 | `READ_WRITE` | Operations staff / report authors — the makers: they design templates, ingest data, author and generate documents. | `READ_ONLY` plus every `*:write`, uploads, AI use, exports, extraction runs, `doc:generate`. |
 | `APPROVER`   | Supervisors / four-eyes checkers — they review, they do not author.                   | `READ_ONLY` plus the two approval verbs: `change:approve` (ws10) and `doc:release` (ws11). |
-| `ADMIN`      | The bank's application owner / IT administration — user management, shared lookups, governance functions (retention run, SoD scan). | Everything, including `user:admin`. |
+| `ADMIN`      | The bank's application owner / IT administration — user management, bank settings, integrations, governance functions (retention run, SoD scan). | Everything a bank can hold, including `user:admin`, `settings:*`, `integration:admin`. Not the platform-owner permissions (incl. `lookup:admin`: the lookup tables are shared by every bank) and not the API-client scopes. |
+
+**Phase-2 roles outside the bank catalogue**
+
+| Role | Who | Permission profile |
+|---|---|---|
+| `PLATFORM_ADMIN` (ws21) | MO Intelligence staff, only in the single platform bank (enforced by a DB trigger and `RoleAssignmentPolicy`). | `platform:*` + `lookup:admin`, plus managing their own platform-bank users, approving platform changes, the platform bank's audit feed, the version. **No domain permission**: no bank's templates, jobs or data. Platform changes (bank onboarding/suspension, platform settings, egress rules) are maker/checker between two platform admins. |
+| `API_CLIENT` (ws26) | A bank system's machine principal, never an `AppUsers` row. | Only the `integration:*` / `agent:connect` scopes, further narrowed by the client's granted scopes; bound to one bank. |
+
+Neither role can be assigned through user administration, maker/checker
+payloads or OIDC (`Role.isBankRole()` guards each path).
 
 **Job-function customization:** banks that model finer-grained job functions
 in their IdP do not need new MoDocument roles — the OIDC integration maps an

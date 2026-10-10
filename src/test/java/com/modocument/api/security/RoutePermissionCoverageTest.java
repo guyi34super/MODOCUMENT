@@ -75,7 +75,21 @@ class RoutePermissionCoverageTest {
      * ws11 (the release/reject/queue/review routes on
      * /api/doccreation/instances).
      */
-    private static final Set<Permission> RESERVED = EnumSet.noneOf(Permission.class);
+    /**
+     * Phase-2 vocabulary whose routes have not landed yet. Each workstream
+     * removes its own entries when it adds the routes (wave 0 contract,
+     * docs/phase2/contracts.md).
+     */
+    private static final Set<Permission> RESERVED = EnumSet.of(
+            Permission.SETTINGS_READ, Permission.SETTINGS_WRITE,        // ws20
+            Permission.PLATFORM_READ, Permission.PLATFORM_BANKS,        // ws21
+            Permission.PLATFORM_SETTINGS,                               // ws20
+            Permission.TEMPLATE_PUBLISH,                                // ws22
+            Permission.SYSTEM_INFO, Permission.PLATFORM_ANNOUNCE,       // ws24
+            Permission.INTEGRATION_ADMIN, Permission.INTEGRATION_RUN,   // ws25
+            Permission.INTEGRATION_INGEST, Permission.INTEGRATION_RESULTS,
+            Permission.INTEGRATION_DOCS, Permission.INTEGRATION_EVENTS, // ws26
+            Permission.AGENT_CONNECT);                                  // ws26
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

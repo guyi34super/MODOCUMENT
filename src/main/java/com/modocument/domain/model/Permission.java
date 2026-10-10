@@ -5,11 +5,10 @@ package com.modocument.domain.model;
  * mapped onto via {@code @RequiresPermission}. Roles grant sets of these (see
  * {@code RolePermissions}); the enum is only the vocabulary.
  *
- * <p>No constant is reserved any more: {@link #USER_ADMIN} left the
- * reserved list with ws09 (user management), {@link #CHANGE_APPROVE} with
- * ws10 (maker/checker approval workflow) and {@link #DOC_RELEASE} with
- * ws11 (document release — it now guards the release/reject/queue/review
- * routes on /api/doccreation/instances).
+ * <p>The phase-2 constants (settings, platform owner, integrations) are
+ * listed as RESERVED in {@code RoutePermissionCoverageTest} until the
+ * workstream that owns each one lands its routes; each workstream removes
+ * its own entries.
  */
 public enum Permission {
 
@@ -79,7 +78,43 @@ public enum Permission {
      * SEC-031, gate E6: GET /api/siem/events). ADMIN only — a bank's SIEM
      * integration authenticates as a dedicated admin account of that bank.
      */
-    SIEM_READ("siem:read");
+    SIEM_READ("siem:read"),
+
+    // ---- Phase 2: bank-level administration ---------------------------------
+    /** Read the bank's effective settings (ws20: GET /api/admin/settings). */
+    SETTINGS_READ("settings:read"),
+    /** Change bank settings (operational tier applies, security tier needs approval). */
+    SETTINGS_WRITE("settings:write"),
+    /** Running version, build and release notes (ws24: /api/system/**). */
+    SYSTEM_INFO("system:info"),
+    /** Share a template with the whole bank, or edit a bank-shared one (ws22). */
+    TEMPLATE_PUBLISH("template:publish"),
+    /** Manage bank integrations: connections, flows, API clients, agents (ws25/26). */
+    INTEGRATION_ADMIN("integration:admin"),
+    /** Trigger integration runs and read their history (ws25). */
+    INTEGRATION_RUN("integration:run"),
+
+    // ---- Phase 2: platform owner (granted ONLY to PLATFORM_ADMIN) ------------
+    /** Read the platform console: banks, counts-only overview, releases (ws21). */
+    PLATFORM_READ("platform:read"),
+    /** Onboard, suspend and reactivate banks; approve bank egress rules (ws21/25). */
+    PLATFORM_BANKS("platform:banks"),
+    /** Platform defaults and the bounds banks may set (ws20). */
+    PLATFORM_SETTINGS("platform:settings"),
+    /** Post maintenance and release announcements (ws24). */
+    PLATFORM_ANNOUNCE("platform:announce"),
+
+    // ---- Phase 2: integration API scopes (granted ONLY to API_CLIENT) --------
+    /** Send records or files into the bank's tenant (POST /api/integration/v1/records|files). */
+    INTEGRATION_INGEST("integration:ingest"),
+    /** Read job status, validated results and rejected rows. */
+    INTEGRATION_RESULTS("integration:results"),
+    /** Download released documents. */
+    INTEGRATION_DOCS("integration:docs"),
+    /** Read the integration event feed. */
+    INTEGRATION_EVENTS("integration:events"),
+    /** The on-prem Connector Agent's protocol (/api/agent/v1/**). */
+    AGENT_CONNECT("agent:connect");
 
     private final String code;
 

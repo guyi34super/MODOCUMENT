@@ -60,13 +60,22 @@ final class ChangePayloads {
         return node.asInt();
     }
 
-    /** Same vocabulary and refusal message the ws09 endpoints used. */
+    /**
+     * Same vocabulary and refusal message the ws09 endpoints used. Only the
+     * four bank roles parse: PLATFORM_ADMIN and API_CLIENT are never a bank
+     * user's role (ws21/ws26 assign them through their own paths).
+     */
     static Role parseRole(String value) {
+        Role role;
         try {
-            return Role.valueOf(value.trim().toUpperCase(Locale.ROOT));
+            role = Role.valueOf(value.trim().toUpperCase(Locale.ROOT));
         } catch (RuntimeException invalid) {
+            role = null;
+        }
+        if (role == null || !role.isBankRole()) {
             throw new IllegalArgumentException(
                     "Unknown role '" + value + "'; use ADMIN, APPROVER, READ_WRITE or READ_ONLY.");
         }
+        return role;
     }
 }

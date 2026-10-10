@@ -240,14 +240,16 @@ class PermissionEnforcementTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"admin template\",\"description\":\"d\"}"))
                 .andExpect(status().isCreated());
+        // The shared lookup tables affect every bank, so even a bank ADMIN
+        // may not change them (phase 2: LOOKUP_ADMIN is platform-owner only).
         mvc.perform(post("/ProcessStep/Create").header("Authorization", auth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Archiving\",\"description\":\"admin-managed\"}"))
-                .andExpect(status().isCreated());
+                .andExpect(status().isForbidden());
         mvc.perform(post("/TemplateDataTypes/Create").header("Authorization", auth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"dataType\":\"Geo\"}"))
-                .andExpect(status().isCreated());
+                .andExpect(status().isForbidden());
         mvc.perform(get("/api/extraction/metrics").header("Authorization", auth))
                 .andExpect(status().isOk());
     }

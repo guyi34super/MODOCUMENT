@@ -96,6 +96,7 @@ public class UserAdminUseCase {
     @Transactional
     public UserDto createApprovedUser(String email, String displayName, Role role,
                                       String passwordHash, int bankId) {
+        requireBankRole(role);
         UserDto created = auth.createUserWithHash(email, passwordHash, displayName, bankId,
                 role, true);
         audit.record(AuditEventSpec.builder("USER_CREATED", AuditOutcome.SUCCESS)
@@ -119,6 +120,7 @@ public class UserAdminUseCase {
         if (newRole == null) {
             throw new IllegalArgumentException("A role is required.");
         }
+        requireBankRole(newRole);
         AppUser target = requireSameBankUser(targetUserId);
         if (targetUserId == currentUser.requireUserId()) {
             // Also one half of the last-admin protection: an admin cannot
@@ -270,5 +272,13 @@ public class UserAdminUseCase {
     }
 
     private record BankUser(AppUser user, boolean mfaEnabled) {
+    }
+
+    /** Bank user administration only ever hands out the four bank roles. */
+    private static void requireBankRole(Role role) {
+        if (role != null && !role.isBankRole()) {
+            throw new IllegalArgumentException(
+                    "Unknown role '" + role + "'; use ADMIN, APPROVER, READ_WRITE or READ_ONLY.");
+        }
     }
 }

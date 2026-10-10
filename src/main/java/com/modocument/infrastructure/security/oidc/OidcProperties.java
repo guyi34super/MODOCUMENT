@@ -133,6 +133,10 @@ public class OidcProperties {
         }
 
         public void setDefaultRole(Role defaultRole) {
+            if (defaultRole != null && !defaultRole.isBankRole()) {
+                throw new IllegalArgumentException(
+                        "An OIDC provider's default-role must be a bank role, not " + defaultRole);
+            }
             this.defaultRole = defaultRole;
         }
 
