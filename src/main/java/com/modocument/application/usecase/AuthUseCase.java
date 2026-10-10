@@ -5,6 +5,7 @@ import com.modocument.application.dto.UserDto;
 import com.modocument.application.port.AppUserRepository;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
+import com.modocument.application.port.BankDirectory;
 import com.modocument.application.port.RefreshTokenRepository;
 import com.modocument.application.port.RevokedTokenRepository;
 import com.modocument.application.port.UserMfaRepository;
@@ -43,6 +44,13 @@ import java.util.UUID;
  * recovery) code checks out. Wrong passwords feed the lockout counters
  * (gate B4, {@link LoginLockoutPolicy}); the lock check runs BEFORE the
  * password is verified and still burns a dummy hash so timing stays uniform.
+ *
+ * <p>Bank suspension (ws21): a user of a SUSPENDED bank gets no session —
+ * not at sign-in, not after the second factor, not by refresh — and the
+ * answer is the same generic 401 as a wrong password; only the audit row
+ * (LOGIN_FAILED, reason {@code bank_suspended}) says why. The suspension
+ * itself also bumps every user's TokenVersion, so live access tokens die at
+ * the RevocationValidator.
  */
 @Service
 public class AuthUseCase {
@@ -63,6 +71,7 @@ public class AuthUseCase {
     private final RevokedTokenRepository revokedTokens;
     private final UserSecurityService userSecurity;
     private final AuditRecorder audit;
+    private final BankDirectory bankDirectory;
     private final boolean requireMfaForAdmin;
 
     /**
@@ -87,7 +96,7 @@ public class AuthUseCase {
                        UserMfaRepository userMfa, MfaChallengeTokens challengeTokens,
                        JwtService jwtService, RefreshTokenRepository refreshTokens,
                        RevokedTokenRepository revokedTokens, UserSecurityService userSecurity,
-                       AuditRecorder audit,
+                       AuditRecorder audit, BankDirectory bankDirectory,
                        @Value("${modocument.security.mfa.require-for-admin:true}")
                        boolean requireMfaForAdmin,
                        @Value("${modocument.security.session.idle-timeout:12h}")
@@ -106,6 +115,7 @@ public class AuthUseCase {
         // case, not Spring's AuthenticationManager - there is no
         // AuthenticationEventPublisher to listen to.
         this.audit = audit;
+        this.bankDirectory = bankDirectory;
         this.requireMfaForAdmin = requireMfaForAdmin;
         this.refreshIdleTimeout = refreshIdleTimeout;
         this.dummyHash = passwordEncoder.encode("timing-equalizer-dummy-password");
@@ -200,6 +210,13 @@ public class AuthUseCase {
                     .build());
             throw new BadCredentialsException("Invalid email or password.");
         }
+        if (bankDirectory.isSuspendedUncached(user.getBankId())) {
+            // ws21: same shape as the disabled branch — generic answer, dummy
+            // hash, before the password check, no lockout counting.
+            passwordEncoder.matches(password == null ? "" : password, dummyHash);
+            recordBankSuspendedRefusal(user, "password");
+            throw new BadCredentialsException("Invalid email or password.");
+        }
         LocalDateTime now = LocalDateTime.now();
         if (lockoutPolicy.isLocked(user, now)) {
             // Locked accounts answer BEFORE the password is verified — a
@@ -275,7 +292,28 @@ public class AuthUseCase {
             // the short challenge window must not outlive the leaver switch.
             throw new BadCredentialsException("Invalid email or password.");
         }
+        if (bankDirectory.isSuspendedUncached(user.getBankId())) {
+            // ws21: suspended between the password phase and the second
+            // factor (the TokenVersion bump normally kills the challenge
+            // first; this is the belt to that brace).
+            recordBankSuspendedRefusal(user, "mfa");
+            throw new BadCredentialsException("Invalid email or password.");
+        }
         return openSession(user, ip, userAgent);
+    }
+
+    /**
+     * The audit trail is the only place that says why a suspended bank's
+     * user was refused (FAILED: written in its own transaction).
+     */
+    private void recordBankSuspendedRefusal(AppUser user, String method) {
+        audit.record(AuditEventSpec.builder("LOGIN_FAILED", AuditOutcome.FAILED)
+                .actorUserId(user.getAppUserId())
+                .actorEmail(user.getEmail())
+                .actorRole(user.getRole() == null ? null : user.getRole().name())
+                .bankId(user.getBankId())
+                .newValues(Map.of("reason", "bank_suspended", "method", method))
+                .build());
     }
 
     /** Stamps LastLoginAt, issues the token pair and records LOGIN_SUCCESS. */
@@ -330,6 +368,11 @@ public class AuthUseCase {
      * strictly after Spring Security validated the provider's ID token.
      */
     public AuthSession openOidcSession(AppUser user, String provider, String ip, String userAgent) {
+        if (bankDirectory.isSuspendedUncached(user.getBankId())) {
+            // ws21: OidcLoginService refuses first (with the reason in its
+            // LOGIN_FAILED row); this keeps the issuance path itself closed.
+            throw new BadCredentialsException("Invalid email or password.");
+        }
         user.setLastLoginAt(LocalDateTime.now());
         user = users.save(user);
         Instant familyExpiry = Instant.now().plus(REFRESH_FAMILY_DAYS, ChronoUnit.DAYS);
@@ -363,6 +406,15 @@ public class AuthUseCase {
         }
         RefreshToken current = refreshTokens.getByTokenHash(Hashing.sha256(refreshTokenValue))
                 .orElseThrow(() -> new BadCredentialsException("Refresh token is not recognized."));
+        AppUser presenter = users.getById(current.getUserId()).orElse(null);
+        if (presenter != null && bankDirectory.isSuspendedUncached(presenter.getBankId())) {
+            // ws21: checked BEFORE reuse detection. Suspension revoked every
+            // refresh token of the bank, so each browser's next refresh
+            // would otherwise read as a replayed (stolen) token and raise a
+            // CRITICAL theft alert per user. The generic 401 is all the
+            // caller learns; the BANK_SUSPENDED audit row is the evidence.
+            throw new BadCredentialsException("Refresh token has been revoked.");
+        }
         Instant now = Instant.now();
         if (current.getRevokedAt() != null || current.getReplacedByJti() != null) {
             // Reuse detected: someone presented a token that was already

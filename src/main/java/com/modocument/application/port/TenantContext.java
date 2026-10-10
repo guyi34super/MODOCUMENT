@@ -40,13 +40,16 @@ import java.util.concurrent.Callable;
  *       {@code runAsSystem} (requeues every tenant's expired tasks).</li>
  *   <li>{@code SqlExtractionStartupRecovery#run} — startup crash recovery,
  *       {@code runAsSystem} (settles every tenant's interrupted jobs).</li>
- *   <li>{@code BootstrapAdminRunner#run} — startup first-admin seeding,
- *       {@code runAsSystem} (reads/creates the default Bank row before any
- *       tenant exists).</li>
+ *   <li>{@code BootstrapAdminRunner#run} — startup first-admin seeding
+ *       (first and optional second ADMIN, one transaction) and the
+ *       every-start "fewer than two approvers" warning (a COUNT of the
+ *       default bank's enabled accounts by role), {@code runAsSystem}
+ *       (reads/creates the default Bank row before any tenant exists).</li>
  *   <li>{@code OidcLoginService#login} — OIDC JIT provisioning,
  *       {@code runAsSystem} (resolves the provider's Bank and links/creates
  *       the user before any tenant context exists — the caller is
- *       anonymous until MoDocument issues its own tokens).</li>
+ *       anonymous until MoDocument issues its own tokens; ws21 also reads
+ *       the user's Bank status there to refuse suspended banks).</li>
  *   <li>{@code OidcClientConfig#oidcBankCodeValidator} — startup check that
  *       every configured OIDC provider's bank-code names an existing Bank,
  *       {@code runAsSystem} (reads the RLS-protected Bank table).</li>
@@ -62,10 +65,27 @@ import java.util.concurrent.Callable;
  *       {@code runAsSystem} (reads/creates an RLS-protected Bank row
  *       before any tenant exists), one transaction.</li>
  *   <li>{@code PlatformBankUseCase#listBanks} / {@code #getBank} — ws21
- *       platform console ({@code GET /api/platform/banks[/{id}]},
- *       PLATFORM_READ, platform bank only): {@code runAsSystem} in its own
- *       read-only transaction for a cross-bank COUNTS-ONLY read (Bank
- *       identifying columns + COUNT/MAX/SUM aggregates; no row content).</li>
+ *       platform console ({@code GET /api/platform/banks[/{id}]}, and
+ *       {@code GET /api/platform/overview} through {@code #overview} →
+ *       {@code #listBanks}; PLATFORM_READ, platform bank only):
+ *       {@code runAsSystem} in its own read-only transaction for a
+ *       cross-bank COUNTS-ONLY read (Bank identifying columns +
+ *       COUNT/MAX/SUM aggregates; no row content).</li>
+ *   <li>{@code PlatformBankLifecycleUseCase#requireAvailableCode} — ws21
+ *       BANK_CREATE submit: {@code runAsSystem} in its own read-only
+ *       transaction to check that no bank carries the requested code (the
+ *       maker's tenant sees only the platform bank).</li>
+ *   <li>{@code PlatformBankLifecycleUseCase#applyOnboarding},
+ *       {@code #applySuspension}, {@code #applyAdminAdd} (the BANK_CREATE /
+ *       BANK_SUSPEND / BANK_ADMIN_ADD appliers, run when a SECOND platform
+ *       admin approves) and {@code #reactivate} (direct, PLATFORM_BANKS):
+ *       {@code runAsSystem} around a REQUIRES_NEW write transaction — the
+ *       approval transaction is bound to the platform bank. They write the
+ *       target Bank row, that bank's AppUsers (create, or TokenVersion bump
+ *       + RefreshToken revocation on suspension) and AuditEvent rows
+ *       stamped explicitly with the customer bank and the platform bank;
+ *       new users and their USER_CREATED rows are written under
+ *       {@code runAs(newBank)}. No customer content is read.</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker

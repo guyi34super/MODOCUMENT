@@ -19,6 +19,9 @@ undecided request (`CANCELLED`).
 | `USER_MFA_RESET`   | Remove a user's TOTP enrolment + recovery codes; sessions killed (ws22) | `user:admin` | `POST /api/admin/users/{id}/mfa-reset` → 202 | `change:approve` |
 | `TEMPLATE_UPDATE`  | Rename/redescribe a template              | `template:write` | `PUT /Templates/Update` → 202                    | `change:approve` |
 | `TEMPLATE_DELETE`  | Delete a template (+ fields, rules)       | `template:write` | `DELETE /Templates/{id}` → 202                   | `change:approve` |
+| `BANK_CREATE`      | Onboard a customer bank with ≥ 2 first users (≥ 1 ADMIN, ≥ 2 ADMIN/APPROVER), each with MustChangePassword (ws21) | `platform:banks` | `POST /api/platform/banks` → 202 | `change:approve` (a second platform admin) |
+| `BANK_SUSPEND`     | Suspend a customer bank: every user's TokenVersion bumped, refresh tokens revoked, sign-in refused (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/suspend` → 202 | `change:approve` (a second platform admin) |
+| `BANK_ADMIN_ADD`   | Break-glass: a new ADMIN (MustChangePassword) in a customer bank (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/admins` → 202 | `change:approve` (a second platform admin) |
 
 Everything can also be submitted through the generic
 `POST /api/admin/changes` (`{changeType, payload, comment}`); the use case
@@ -38,6 +41,16 @@ renaming a user (`PATCH /api/admin/users/{id}`, display name only, audit
 `USER_PASSWORD_RESET` follows `USER_CREATE`: the temporary password is
 checked against the password policy and hashed at submit; the queue holds
 `{userId, targetEmail, passwordHash}` and the hash never leaves the backend.
+
+The platform owner's bank changes (ws21, details in
+[docs/platform/platform-owner.md](../platform/platform-owner.md)) follow the
+same rules between two PLATFORM_ADMINs of the platform bank. `BANK_CREATE`
+and `BANK_ADMIN_ADD` hash every temporary password at submit (the queue
+holds `{code, name, users:[{email, displayName, role, passwordHash}]}` /
+`{bankId, bankCode, bankName, email, displayName, passwordHash, reason}`,
+and the API strips the hashes at any depth). Reactivating a suspended bank
+(`POST /api/platform/banks/{id}/reactivate`) is direct — the lower-risk
+direction.
 Both resets share the `admin-security` rate-limit bucket (10 per window).
 
 ## Flow

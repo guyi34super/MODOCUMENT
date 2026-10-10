@@ -376,13 +376,23 @@ public class PendingChangeUseCase {
         return users.getById(userId).map(AppUser::getEmail).orElse(null);
     }
 
-    /** Credential material never leaves the backend, not even hashed. */
+    /**
+     * Credential material never leaves the backend, not even hashed — at any
+     * depth (ws21: BANK_CREATE carries a hash per first user).
+     */
     private JsonNode sanitizedPayload(String payloadJson) {
         JsonNode payload = ChangePayloads.parse(objectMapper, payloadJson);
-        if (payload instanceof ObjectNode object) {
+        stripCredentials(payload);
+        return payload;
+    }
+
+    private static void stripCredentials(JsonNode node) {
+        if (node instanceof ObjectNode object) {
             object.remove("passwordHash");
             object.remove("temporaryPassword");
+            object.elements().forEachRemaining(PendingChangeUseCase::stripCredentials);
+        } else if (node != null && node.isArray()) {
+            node.elements().forEachRemaining(PendingChangeUseCase::stripCredentials);
         }
-        return payload;
     }
 }

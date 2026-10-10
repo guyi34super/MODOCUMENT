@@ -48,7 +48,11 @@ import java.util.Set;
  *       override for the platform owner.</li>
  * </ul>
  * Both accounts get MustChangePassword, and AuthUseCase forces TOTP
- * enrolment for PLATFORM_ADMIN at first login regardless of settings.
+ * enrolment for PLATFORM_ADMIN at first login regardless of settings. The
+ * dev-only MODOCUMENT_BOOTSTRAP_ADMIN_SKIP_PASSWORD_CHANGE switch (shared
+ * with BootstrapAdminRunner) drops the forced password change — never the
+ * TOTP — and refuses startup when modocument.security.permit-dev-paths is
+ * false.
  *
  * <p>Idempotent one-time seeding: the bank is created only when absent, and
  * the accounts only while the platform bank has no PLATFORM_ADMIN at all —
@@ -85,6 +89,8 @@ public class BootstrapPlatformRunner implements ApplicationRunner {
     private final String platformBankCode;
     private final String adminEmails;
     private final String adminPasswords;
+    private final boolean permitDevPaths;
+    private final boolean skipPasswordChange;
 
     public BootstrapPlatformRunner(AppUserJpaRepository users,
                                    BankJpaRepository banks,
@@ -96,7 +102,11 @@ public class BootstrapPlatformRunner implements ApplicationRunner {
                                    String platformBankCode,
                                    @Value("${MODOCUMENT_PLATFORM_ADMIN_EMAILS:}") String adminEmails,
                                    @Value("${MODOCUMENT_PLATFORM_ADMIN_PASSWORDS:}")
-                                   String adminPasswords) {
+                                   String adminPasswords,
+                                   @Value("${modocument.security.permit-dev-paths:false}")
+                                   boolean permitDevPaths,
+                                   @Value("${MODOCUMENT_BOOTSTRAP_ADMIN_SKIP_PASSWORD_CHANGE:false}")
+                                   boolean skipPasswordChange) {
         this.users = users;
         this.banks = banks;
         this.passwordEncoder = passwordEncoder;
@@ -106,10 +116,13 @@ public class BootstrapPlatformRunner implements ApplicationRunner {
         this.platformBankCode = platformBankCode;
         this.adminEmails = adminEmails;
         this.adminPasswords = adminPasswords;
+        this.permitDevPaths = permitDevPaths;
+        this.skipPasswordChange = skipPasswordChange;
     }
 
     @Override
     public void run(ApplicationArguments args) {
+        BootstrapAdminRunner.requireSkipPasswordChangeAllowed(skipPasswordChange, permitDevPaths);
         boolean emailsSet = adminEmails != null && !adminEmails.isBlank();
         boolean passwordsSet = adminPasswords != null && !adminPasswords.isBlank();
         if (!emailsSet && !passwordsSet) {
@@ -185,9 +198,10 @@ public class BootstrapPlatformRunner implements ApplicationRunner {
             admin.setDisplayName("Platform Administrator " + (i + 1));
             admin.setBankId(bankId);
             admin.setRole(Role.PLATFORM_ADMIN);
-            // Temporary password: forced change at first login; TOTP
-            // enrolment is forced for PLATFORM_ADMIN by AuthUseCase.
-            admin.setMustChangePassword(true);
+            // Temporary password: forced change at first login (unless the
+            // dev-only skip switch is on); TOTP enrolment is forced for
+            // PLATFORM_ADMIN by AuthUseCase either way.
+            admin.setMustChangePassword(!skipPasswordChange);
             admin.setSettingsJson("{}");
             admin.setCreatedDate(LocalDateTime.now());
             admin.setUpdatedDate(LocalDateTime.now());
@@ -201,7 +215,7 @@ public class BootstrapPlatformRunner implements ApplicationRunner {
                             "email", admin.getEmail(),
                             "role", Role.PLATFORM_ADMIN.name(),
                             "bankCode", platform.getCode(),
-                            "mustChangePassword", true))
+                            "mustChangePassword", !skipPasswordChange))
                     .build());
         }
         log.info("Platform owner bootstrapped: bank '{}'{}, {} PLATFORM_ADMIN accounts created "

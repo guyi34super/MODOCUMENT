@@ -139,6 +139,10 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
         // password or queues a maker/checker request).
         route("POST", "/api/admin/users/{id}/password-reset", adminSecurity);
         route("POST", "/api/admin/users/{id}/mfa-reset", adminSecurity);
+        // ws21 platform requests that hash temporary passwords at submit
+        // (Argon2id per first user / break-glass admin).
+        route("POST", "/api/platform/banks", adminSecurity);
+        route("POST", "/api/platform/banks/{id}/admins", adminSecurity);
     }
 
     private Bucket bucket(String name, String label, int maxPermits) {

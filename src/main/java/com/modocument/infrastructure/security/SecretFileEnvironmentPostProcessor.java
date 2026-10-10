@@ -65,6 +65,8 @@ public class SecretFileEnvironmentPostProcessor implements EnvironmentPostProces
             "SPRING_DATASOURCE_PASSWORD",
             "SPRING_FLYWAY_PASSWORD",
             "MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD",
+            // Phase 2 (OBS-01): the optional second bootstrap administrator.
+            "MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_PASSWORD",
             // ws21: the two platform admins' temporary passwords (one per line).
             "MODOCUMENT_PLATFORM_ADMIN_PASSWORDS",
             "MODOCUMENT_AI_API_KEY",

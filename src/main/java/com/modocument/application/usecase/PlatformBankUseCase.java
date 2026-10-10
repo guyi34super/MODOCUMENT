@@ -1,10 +1,13 @@
 package com.modocument.application.usecase;
 
 import com.modocument.application.dto.BankSummary;
+import com.modocument.application.dto.PlatformOverview;
 import com.modocument.application.port.PlatformBankStats;
 import com.modocument.application.port.PlatformBankStats.BankCounts;
 import com.modocument.application.port.TenantContext;
 import com.modocument.domain.entity.Bank;
+import com.modocument.domain.model.BankKind;
+import com.modocument.domain.model.BankStatus;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -21,7 +24,8 @@ import java.util.function.Supplier;
 
 /**
  * The platform console's bank reads (ws21, PLATFORM_READ):
- * {@code GET /api/platform/banks} and {@code GET /api/platform/banks/{id}}.
+ * {@code GET /api/platform/overview}, {@code GET /api/platform/banks} and
+ * {@code GET /api/platform/banks/{id}}.
  *
  * <p>A named cross-tenant read: the platform admin's own tenant is the
  * platform bank, so every other bank's rows are invisible to it under RLS.
@@ -62,6 +66,23 @@ public class PlatformBankUseCase {
                     .map(bank -> summarize(bank, counts.get(bank.getBankId())))
                     .toList();
         });
+    }
+
+    /**
+     * The platform console's landing view: every CUSTOMER bank's summary
+     * plus totals across them (bank count by status, enabled accounts).
+     * Counts only, like every read here.
+     */
+    public PlatformOverview overview() {
+        List<BankSummary> customers = listBanks().stream()
+                .filter(bank -> bank.kind() == BankKind.CUSTOMER)
+                .toList();
+        long suspended = customers.stream()
+                .filter(bank -> bank.status() == BankStatus.SUSPENDED)
+                .count();
+        long accounts = customers.stream().mapToLong(BankSummary::users).sum();
+        return new PlatformOverview(customers, new PlatformOverview.Totals(
+                customers.size(), customers.size() - suspended, suspended, accounts));
     }
 
     /** One bank's summary; an unknown id is a 404. */

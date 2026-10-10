@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
@@ -23,6 +24,15 @@ import PendingReleasesPage from './pages/PendingReleasesPage';
 import AdminRetentionPage from './pages/AdminRetentionPage';
 import AdminAlertsPage from './pages/AdminAlertsPage';
 import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
+import PlatformOverviewPage from './pages/PlatformOverviewPage';
+import PlatformBanksPage from './pages/PlatformBanksPage';
+import PlatformBankDetailPage from './pages/PlatformBankDetailPage';
+
+/** ws21: the platform owner has no domain home page — its home is the console. */
+function Home() {
+  const { user } = useAuth();
+  return user?.role === 'PLATFORM_ADMIN' ? <Navigate to="/platform" replace /> : <DashboardPage />;
+}
 
 export default function App() {
   return (
@@ -47,7 +57,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/" element={<Home />} />
         <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/templates/new" element={<TemplateEditorPage />} />
         <Route path="/templates/:id" element={<TemplateEditorPage />} />
@@ -71,6 +81,10 @@ export default function App() {
         <Route path="/admin/retention" element={<AdminRetentionPage />} />
         {/* ws18 security alerts for ADMINs (server: user:admin, bank-scoped). */}
         <Route path="/admin/alerts" element={<AdminAlertsPage />} />
+        {/* ws21 platform console (server: platform:read / platform:banks). */}
+        <Route path="/platform" element={<PlatformOverviewPage />} />
+        <Route path="/platform/banks" element={<PlatformBanksPage />} />
+        <Route path="/platform/banks/:id" element={<PlatformBankDetailPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

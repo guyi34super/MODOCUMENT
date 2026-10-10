@@ -99,6 +99,37 @@ describe('AdminUsersPage', () => {
     updateUser.mockReset().mockResolvedValue({ ...WORKER_ROW, displayName: 'Worker Bee' });
   });
 
+  /** ws21: the platform bank hands out PLATFORM_ADMIN only (the server enforces it too). */
+  it('offers a PLATFORM_ADMIN only the PLATFORM_ADMIN role', async () => {
+    const platformMe = { ...ME, role: 'PLATFORM_ADMIN' };
+    listUsers.mockResolvedValue([
+      { ...ADMIN_ROW, role: 'PLATFORM_ADMIN' },
+      { ...WORKER_ROW, role: 'PLATFORM_ADMIN' },
+    ]);
+    localStorage.setItem('modoc.token', 'test-token');
+    localStorage.setItem('modoc.user', JSON.stringify(platformMe));
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <ToastProvider>
+            <AdminUsersPage />
+          </ToastProvider>
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    const rowPicker = await screen.findByRole('combobox', { name: 'Role of worker@bank.example' });
+    expect(within(rowPicker).getAllByRole('option').map((o) => o.value)).toEqual([
+      'PLATFORM_ADMIN',
+    ]);
+    await userEvent.click(screen.getByRole('button', { name: 'Create user' }));
+    const createPicker = screen.getByLabelText(/Least privilege/);
+    expect(createPicker).toHaveValue('PLATFORM_ADMIN');
+    expect(within(createPicker).getAllByRole('option').map((o) => o.value)).toEqual([
+      'PLATFORM_ADMIN',
+    ]);
+  });
+
   it('renders every user of the bank with role, status and MFA state', async () => {
     renderPage();
 

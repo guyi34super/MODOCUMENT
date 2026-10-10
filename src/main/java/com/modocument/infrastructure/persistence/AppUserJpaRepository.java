@@ -3,6 +3,7 @@ package com.modocument.infrastructure.persistence;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.model.Role;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -25,6 +26,16 @@ public interface AppUserJpaRepository extends JpaRepository<AppUser, Integer> {
 
     /** ws09 last-admin guard: enabled ADMIN accounts remaining in the bank. */
     long countByBankIdAndRoleAndDisabledFalse(int bankId, Role role);
+
+    /**
+     * ws21 bank suspension: bumps EVERY account of the bank in one statement,
+     * so the RevocationValidator rejects each of their outstanding access
+     * tokens on its next request. Returns the number of accounts touched.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update AppUser u set u.tokenVersion = u.tokenVersion + 1, u.updatedDate = :now"
+            + " where u.bankId = :bankId")
+    int bumpTokenVersionForBank(@Param("bankId") int bankId, @Param("now") LocalDateTime now);
 
     // ---- Admin dashboard counts (phase 2, ws22). AppUsers and UserMfa are
     // NOT under RLS: every query names the bank explicitly, and returns
