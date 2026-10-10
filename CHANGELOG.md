@@ -38,8 +38,26 @@ All notable changes to MoDocument are recorded here. The format follows
 - In progress (phase 2): editable settings with guardrails, a platform owner
   console, the admin dashboard, code-based extraction fallback, in-app release
   notices and the bank integration hub.
+- Release pipeline: pushing a `vX.Y.Z-rc.N` or `vX.Y.Z` tag runs the tests,
+  builds each image once, scans it (fixable HIGH/CRITICAL findings stop the
+  release), writes CycloneDX SBOMs, deploys staging with images pinned by
+  digest and smoke-tests it, and creates the GitHub Release. `vX.Y.Z` then
+  deploys the same images to production after two approvals. The *Deploy*
+  workflow redeploys an existing version (rollback or roll-forward).
+- Announcements: the platform owner publishes information, maintenance and
+  release banners to every bank or to chosen banks, with a display window.
+  Maintenance banners show their window in local time and cannot be
+  dismissed. Each new version announces itself once and records
+  `VERSION_DEPLOYED` in every bank's audit trail.
+- The app shows its version on the profile page, offers a reload when the
+  server runs a newer version, and gives admins the release notes of a new
+  version ("What's new").
 
 ### Changed
+- The weekly image rebuild opens (or updates) the issue "Security: base image
+  refresh" when it finds fixable HIGH or CRITICAL vulnerabilities; it never
+  pushes images.
+- `GET /api/system/version` now reports `deployedAt`.
 - Terraform (not yet applied): the ECS service rolls back a failed deployment
   automatically (deployment circuit breaker). CI now owns task-definition
   revisions, so Terraform ignores them.

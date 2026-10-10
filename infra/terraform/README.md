@@ -129,8 +129,9 @@ one run. Operationally, the sequence that avoids dead ends:
 ## Releases and deployments (ws24)
 
 How Terraform and the release pipeline share the ECS service — see
-[docs/release/runbook.md](../../docs/release/runbook.md). `release.yml` and
-`deploy.yml` arrive in Wave 2.
+[docs/release/runbook.md](../../docs/release/runbook.md): `release.yml`
+(tags) and `deploy.yml` (manual roll-forward/rollback) use the outputs
+below as GitHub environment variables (runbook §7).
 
 - **Terraform owns the task-definition template; CI owns its revisions.**
   - Terraform defines the family, roles, environment, secrets, health

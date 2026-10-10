@@ -85,7 +85,6 @@ class RoutePermissionCoverageTest {
             // PLATFORM_READ (GET /api/platform/settings is its first route).
             Permission.PLATFORM_BANKS,                                  // ws21 (wave 2)
             Permission.TEMPLATE_PUBLISH,                                // ws22
-            Permission.PLATFORM_ANNOUNCE,                               // ws24
             Permission.INTEGRATION_ADMIN, Permission.INTEGRATION_RUN,   // ws25
             Permission.INTEGRATION_INGEST, Permission.INTEGRATION_RESULTS,
             Permission.INTEGRATION_DOCS, Permission.INTEGRATION_EVENTS, // ws26

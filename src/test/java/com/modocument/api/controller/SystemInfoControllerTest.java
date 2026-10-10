@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -95,9 +96,14 @@ class SystemInfoControllerTest {
         } else {
             assertThat(body.get("commit").isNull()).isTrue();
         }
-        // H2 test profile: Flyway disabled → no schema version; no recorder yet.
+        // H2 test profile: Flyway disabled → no schema version.
         assertThat(body.get("schemaVersion").isNull()).isTrue();
-        assertThat(body.get("deployedAt").isNull()).isTrue();
+        if (build != null) {
+            // DeployedVersionRecorder recorded this version at context start.
+            assertThat(Instant.parse(body.get("deployedAt").asText())).isBefore(Instant.now());
+        } else {
+            assertThat(body.get("deployedAt").isNull()).isTrue();
+        }
         assertThat(body.get("environment").asText()).isEqualTo("local");
     }
 

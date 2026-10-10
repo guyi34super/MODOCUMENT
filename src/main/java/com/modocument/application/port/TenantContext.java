@@ -106,6 +106,18 @@ import java.util.concurrent.Callable;
  *       {@code runAsSystem} to look the configured bank-code up in the
  *       RLS-protected Bank table (startup, then each sweep until it
  *       resolves); the forwarder touches no other table.</li>
+ *   <li>{@code DeployedVersionRecorder#record} — ws24 startup record of a
+ *       newly deployed version (only the task that inserted the non-tenant
+ *       DeployedVersion row): {@code runAsSystem} in its own read-only
+ *       transaction to list the Bank ids, then {@code runAs(bank)} per bank
+ *       for that bank's VERSION_DEPLOYED audit row, then
+ *       {@code runAs(platform bank)} to write the RELEASE announcement the
+ *       platform bank owns (+ its ANNOUNCEMENT_PUBLISHED audit).</li>
+ *   <li>{@code AnnouncementCache#live} (reload) — ws24: {@code runAs(platform
+ *       bank)} in its own read-only transaction to load the platform-owned
+ *       announcements (RLS hides them from every customer tenant); served
+ *       to each bank from memory, filtered by its bank code. Never
+ *       {@code runAsSystem}: it reads the platform's rows only.</li>
  * </ul>
  */
 public final class TenantContext {

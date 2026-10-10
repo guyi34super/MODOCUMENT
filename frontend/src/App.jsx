@@ -23,6 +23,8 @@ import PendingReleasesPage from './pages/PendingReleasesPage';
 import AdminRetentionPage from './pages/AdminRetentionPage';
 import AdminAlertsPage from './pages/AdminAlertsPage';
 import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
+import PlatformAnnouncementsPage from './pages/PlatformAnnouncementsPage';
+import PlatformReleasesPage from './pages/PlatformReleasesPage';
 
 export default function App() {
   return (
@@ -71,6 +73,10 @@ export default function App() {
         <Route path="/admin/retention" element={<AdminRetentionPage />} />
         {/* ws18 security alerts for ADMINs (server: user:admin, bank-scoped). */}
         <Route path="/admin/alerts" element={<AdminAlertsPage />} />
+        {/* ws24 platform console (server: platform:read / platform:announce,
+            PLATFORM_ADMIN of the platform bank only). */}
+        <Route path="/platform/announcements" element={<PlatformAnnouncementsPage />} />
+        <Route path="/platform/releases" element={<PlatformReleasesPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
