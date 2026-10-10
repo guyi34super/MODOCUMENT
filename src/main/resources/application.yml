@@ -487,6 +487,20 @@ modocument:
     # bank-cache-ttl (the test profile uses 0s).
     bank-code: ${MODOCUMENT_PLATFORM_BANK_CODE:MOI-PLATFORM}
     bank-cache-ttl: 30s
+  integration:
+    # ws25 Bank Integration Hub. Connection secrets (DIRECT mode) are sealed
+    # with AES-256-GCM under a per-bank key derived (HKDF-SHA256) from this
+    # master key - SEPARATE from the MFA key. Base64 of exactly 32 bytes
+    # (`openssl rand -base64 32`). Unset: the app starts, but storing or
+    # using a connection secret is refused. Rotation (new active version,
+    # old keys kept readable): docs/integration/secrets.md.
+    connector-key: ${MODOCUMENT_CONNECTOR_KEY:}
+    connector-key-version: ${MODOCUMENT_CONNECTOR_KEY_VERSION:1}
+    # Retired keys, still accepted for opening: "1:<base64>,2:<base64>".
+    connector-retired-keys: ${MODOCUMENT_CONNECTOR_RETIRED_KEYS:}
+    # BankEgressGuard caches each bank's APPROVED egress rules this long
+    # (approving/revoking a rule on this task invalidates at once).
+    egress-rule-cache-ttl: 30s
   siem:
     # ws18 SIEM export (SEC-031, gate E6). Schema + transports:
     # docs/security/siem-event-schema.md.
