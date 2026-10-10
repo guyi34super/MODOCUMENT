@@ -284,12 +284,8 @@ public class IntegrationAgentUseCase {
 
     private AgentView view(IntegrationAgent agent, Instant now, Duration timeout, int callerId) {
         String latest = versions.version();
-        String status = agent.getStatus().name();
-        if (agent.getStatus() == AgentStatus.ONLINE
-                && (agent.getLastHeartbeatAt() == null
-                || agent.getLastHeartbeatAt().isBefore(now.minus(timeout)))) {
-            status = AgentStatus.OFFLINE.name();
-        }
+        String status = isOffline(agent, now, timeout)
+                ? AgentStatus.OFFLINE.name() : agent.getStatus().name();
         boolean pending = agent.getStatus() == AgentStatus.PENDING_ENROLMENT;
         boolean enrolmentAvailable = pending && agent.getCreatedByUserId() == callerId
                 && agent.getEnrolmentTokenCiphertext() != null
@@ -300,6 +296,34 @@ public class IntegrationAgentUseCase {
                 agent.getLastHeartbeatAt(), agent.getApiClientId(), connectionIds(agent),
                 agent.getCreatedByUserId(), agent.getCreatedAt(),
                 pending ? agent.getEnrolmentExpiresAt() : null, enrolmentAvailable);
+    }
+
+    /**
+     * Agents of one bank that read OFFLINE right now (the admin dashboard's
+     * {@code integrations.agentsOffline}), by the same rule as every view.
+     * Pending and revoked agents are neither online nor offline.
+     */
+    @Transactional(readOnly = true)
+    public long countOffline(int bankId) {
+        Duration timeout = heartbeatTimeout(bankId);
+        Instant now = clock.instant();
+        return agents.findByBank(bankId).stream()
+                .filter(agent -> isOffline(agent, now, timeout))
+                .count();
+    }
+
+    /**
+     * THE online/offline rule: an enrolled (ONLINE) agent whose last
+     * heartbeat is missing or older than the bank's
+     * {@code integration.agentHeartbeatTimeout} reads OFFLINE.
+     */
+    static boolean isOffline(IntegrationAgent agent, Instant now, Duration timeout) {
+        if (agent.getStatus() == AgentStatus.OFFLINE) {
+            return true;
+        }
+        return agent.getStatus() == AgentStatus.ONLINE
+                && (agent.getLastHeartbeatAt() == null
+                || agent.getLastHeartbeatAt().isBefore(now.minus(timeout)));
     }
 
     private List<Long> connectionIds(IntegrationAgent agent) {

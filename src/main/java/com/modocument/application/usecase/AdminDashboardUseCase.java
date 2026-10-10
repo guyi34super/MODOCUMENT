@@ -10,6 +10,7 @@ import com.modocument.application.dto.AdminDashboardDto.Extraction;
 import com.modocument.application.dto.AdminDashboardDto.Ingestion;
 import com.modocument.application.dto.AdminDashboardDto.Integrations;
 import com.modocument.application.dto.AdminDashboardDto.Retention;
+import com.modocument.application.dto.AdminDashboardDto.Runs;
 import com.modocument.application.dto.AdminDashboardDto.Settings;
 import com.modocument.application.dto.AdminDashboardDto.StatusCounts;
 import com.modocument.application.dto.AdminDashboardDto.Templates;
@@ -27,10 +28,15 @@ import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.PendingChangeStatus;
 import com.modocument.domain.model.Role;
 import com.modocument.domain.model.TemplateVisibility;
+import com.modocument.domain.model.integration.DeliveryStatus;
+import com.modocument.domain.model.integration.RunStatus;
+import com.modocument.infrastructure.audit.AuditActionCounter;
 import com.modocument.infrastructure.persistence.AlertLogJpaRepository;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
 import com.modocument.infrastructure.persistence.IngestionJobJpaRepository;
+import com.modocument.infrastructure.persistence.IntegrationRunJpaRepository;
+import com.modocument.infrastructure.persistence.OutboundDeliveryJpaRepository;
 import com.modocument.infrastructure.persistence.PendingChangeJpaRepository;
 import com.modocument.infrastructure.persistence.TemplateJpaRepository;
 import com.modocument.infrastructure.retention.RetentionProperties;
@@ -60,8 +66,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@code modocument.dashboard.cache-ttl} (default 30 s) per bank.
  *
  * <p><b>Tenancy.</b> AppUsers and UserMfa are NOT under RLS, so every user
- * and MFA count names the bank explicitly; the job, template, alert and
- * approval tables ARE RLS-scoped on PostgreSQL and are filtered by BankId
+ * and MFA count names the bank explicitly; the job, template, alert,
+ * approval, audit and integration (run, delivery, agent) tables ARE RLS-scoped on PostgreSQL and are filtered by BankId
  * anyway (defense in depth, and the only boundary on H2). Unlike the
  * owner-scoped listings, the counts here are bank-wide. The cache is keyed
  * by bank id, so one bank's numbers are never served to another.
@@ -77,6 +83,8 @@ public class AdminDashboardUseCase {
     private static final List<String> PARSED_BY = List.of("AI", "CODE", "AI_PARTIAL");
     /** Audit keys of RETENTION_PURGE_COMPLETED that are not purge counts. */
     private static final List<String> RETENTION_NON_COUNTS = List.of("retentionDays", "cutoff");
+    /** The audit action MachineApiInterceptor writes once per Integration API v1 call. */
+    static final String INTEGRATION_API_CALL = "INTEGRATION_API_CALL";
 
     private final CurrentUserProvider currentUser;
     private final BankJpaRepository banks;
@@ -87,6 +95,10 @@ public class AdminDashboardUseCase {
     private final ExtractionJobStore extractionJobs;
     private final AlertLogJpaRepository alerts;
     private final TemplateJpaRepository templates;
+    private final IntegrationRunJpaRepository integrationRuns;
+    private final OutboundDeliveryJpaRepository outboundDeliveries;
+    private final IntegrationAgentUseCase agents;
+    private final AuditActionCounter auditCounts;
     private final RetentionProperties retention;
     private final RetentionRunHistory retentionHistory;
     private final ObjectProvider<BuildProperties> buildProperties;
@@ -104,6 +116,10 @@ public class AdminDashboardUseCase {
                                  IngestionJobJpaRepository ingestionJobs,
                                  ExtractionJobStore extractionJobs,
                                  AlertLogJpaRepository alerts, TemplateJpaRepository templates,
+                                 IntegrationRunJpaRepository integrationRuns,
+                                 OutboundDeliveryJpaRepository outboundDeliveries,
+                                 IntegrationAgentUseCase agents,
+                                 AuditActionCounter auditCounts,
                                  RetentionProperties retention,
                                  RetentionRunHistory retentionHistory,
                                  ObjectProvider<BuildProperties> buildProperties,
@@ -121,6 +137,10 @@ public class AdminDashboardUseCase {
         this.extractionJobs = extractionJobs;
         this.alerts = alerts;
         this.templates = templates;
+        this.integrationRuns = integrationRuns;
+        this.outboundDeliveries = outboundDeliveries;
+        this.agents = agents;
+        this.auditCounts = auditCounts;
         this.retention = retention;
         this.retentionHistory = retentionHistory;
         this.buildProperties = buildProperties;
@@ -168,13 +188,26 @@ public class AdminDashboardUseCase {
                 new Settings(pendingChanges.countByBankIdAndStatusAndChangeType(bankId,
                         PendingChangeStatus.REQUESTED, ChangeType.SETTING_UPDATE), 0),
                 version(),
-                // Integration hub (ws25/ws26): every counter stays null ("not
-                // tracked", the UI shows "—"), never a misleading zero. The
-                // counts are filled from IntegrationRun / OutboundDelivery
-                // (runs24h, deadLetters), IntegrationAgent (agentsOffline) and
-                // the API-client audit trail (apiCalls24h) once those tables
-                // exist; this use case must not query them before then.
-                Integrations.notTrackedYet());
+                integrations(bankId, nowInstant));
+    }
+
+    /**
+     * Integration hub tiles (ws25/ws26): runs that FINISHED in the last 24 h
+     * (SUCCEEDED / FAILED), DEAD outbound deliveries, agents reading OFFLINE
+     * (IntegrationAgentUseCase's rule, not re-derived here) and the bank's
+     * Integration API calls of the last 24 h (one audit row per call).
+     */
+    private Integrations integrations(int bankId, Instant now) {
+        Instant since = now.minus(1, ChronoUnit.DAYS);
+        return new Integrations(
+                new Runs(
+                        integrationRuns.countByBankIdAndStatusAndFinishedAtGreaterThanEqual(
+                                bankId, RunStatus.SUCCEEDED, since),
+                        integrationRuns.countByBankIdAndStatusAndFinishedAtGreaterThanEqual(
+                                bankId, RunStatus.FAILED, since)),
+                outboundDeliveries.countByBankIdAndStatus(bankId, DeliveryStatus.DEAD),
+                agents.countOffline(bankId),
+                auditCounts.countSince(bankId, INTEGRATION_API_CALL, since));
     }
 
     private BankInfo bank(int bankId) {
@@ -218,10 +251,16 @@ public class AdminDashboardUseCase {
                 LocalDate.now().atStartOfDay()));
         Map<String, Long> last7d = jobStatusCounts(ingestionJobs.countByStatusSince(bankId,
                 now.minusDays(RECENT_DAYS)));
-        // Parse provenance lands with ws23 (IngestionJob.ParsedBy); the shape
-        // is fixed now so the dashboard tiles do not change later.
+        // Parse provenance (ws23 IngestionJob.ParsedBy) of the last 7 days;
+        // jobs not parsed yet (or failed before parsing) have none.
         Map<String, Long> parsedBy = new LinkedHashMap<>();
         PARSED_BY.forEach(source -> parsedBy.put(source, 0L));
+        for (Object[] row : ingestionJobs.countByParsedBySince(bankId,
+                now.minusDays(RECENT_DAYS))) {
+            if (row[0] instanceof String source && parsedBy.containsKey(source)) {
+                parsedBy.merge(source, ((Number) row[1]).longValue(), Long::sum);
+            }
+        }
         return new Ingestion(new StatusCounts(today), new StatusCounts(last7d), parsedBy,
                 last7d.getOrDefault(JobStatus.FAILED.name(), 0L));
     }

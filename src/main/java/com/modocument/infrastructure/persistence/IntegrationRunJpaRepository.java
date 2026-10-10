@@ -55,6 +55,10 @@ public interface IntegrationRunJpaRepository extends JpaRepository<IntegrationRu
 
     List<IntegrationRun> findByBankIdAndConnectionId(int bankId, long connectionId);
 
+    /** Admin dashboard: runs of one bank that ended in {@code status} at or after {@code since}. */
+    long countByBankIdAndStatusAndFinishedAtGreaterThanEqual(int bankId, RunStatus status,
+                                                              Instant since);
+
     /** Banks with an unfinished run (the timeout sweep's cross-bank scan, as SYSTEM). */
     @Query("SELECT DISTINCT r.bankId FROM IntegrationRun r WHERE r.status IN :statuses")
     List<Integer> findBankIdsWithRunsIn(@Param("statuses") Collection<RunStatus> statuses);

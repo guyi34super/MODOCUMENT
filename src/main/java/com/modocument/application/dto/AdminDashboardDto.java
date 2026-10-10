@@ -12,11 +12,9 @@ import java.util.Map;
  * {@code byStatus}/{@code bySeverity}/{@code byRole} map lists its whole
  * vocabulary with zeros, so the UI renders stable tiles.
  *
- * <p>Sections owned by later workstreams are already in the shape and stay
- * zero/null until their data exists: {@code ingestion.parsedBy} (ws23),
- * {@code settings.clamped} (ws20), {@code version.deployedAt} (ws24) and
- * {@code integrations} (ws25/ws26 — every counter null, i.e. "not tracked
- * yet", until the hub exists).
+ * <p>{@code settings.clamped} (ws20) and {@code version.deployedAt} (ws24)
+ * stay zero/null until their data is wired; {@code ingestion.parsedBy}
+ * (ws23) and {@code integrations} (ws25/ws26) are live counts.
  *
  * @param generatedAt when these numbers were computed (cached up to 30 s)
  */
@@ -56,8 +54,8 @@ public record AdminDashboardDto(Instant generatedAt, BankInfo bank, Users users,
     /**
      * @param today      jobs created since local midnight, per status
      * @param last7d     jobs created in the last 7 days, per status
-     * @param parsedBy   AI / CODE / AI_PARTIAL parse provenance (ws23; zeros
-     *                   until the ParsedBy column exists)
+     * @param parsedBy   AI / CODE / AI_PARTIAL parse provenance (ws23) of the
+     *                   last 7 days' jobs that were parsed
      * @param failures7d jobs of the last 7 days that ended FAILED
      */
     public record Ingestion(StatusCounts today, StatusCounts last7d,
@@ -95,25 +93,23 @@ public record AdminDashboardDto(Instant generatedAt, BankInfo bank, Users users,
     public record Version(String version, String commit, Instant deployedAt) {
     }
 
-    /** Null counters: not tracked yet. */
+    /** Runs that finished SUCCEEDED ({@code ok}) / FAILED. A null counter reads "not tracked". */
     public record Runs(Long ok, Long failed) {
     }
 
     /**
-     * Integration hub tiles (ws25/ws26, contracts §3 SE3). A null counter
-     * means "not tracked yet" and renders as "—", unlike a real zero; the
-     * counts are filled once the integration tables exist.
+     * Integration hub tiles (ws25/ws26, contracts §3 SE3). The counters are
+     * boxed so a null still means "not tracked" (the UI shows "—", unlike a
+     * real zero).
      *
-     * @param runs24h       integration runs of the last 24 h, finished OK / FAILED
+     * @param runs24h       integration runs that finished in the last 24 h, SUCCEEDED / FAILED
      * @param deadLetters   outbound deliveries in DEAD status
-     * @param agentsOffline enrolled connector agents without a recent heartbeat
+     * @param agentsOffline enrolled connector agents reading OFFLINE (no heartbeat within
+     *                      {@code integration.agentHeartbeatTimeout})
      * @param apiCalls24h   Integration API v1 calls by the bank's clients, last 24 h
+     *                      ({@code INTEGRATION_API_CALL} audit rows)
      */
     public record Integrations(Runs runs24h, Long deadLetters, Long agentsOffline,
                                Long apiCalls24h) {
-
-        public static Integrations notTrackedYet() {
-            return new Integrations(new Runs(null, null), null, null, null);
-        }
     }
 }
