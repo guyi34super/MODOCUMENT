@@ -49,6 +49,16 @@ modocument:
     # snapshot after commit and the settings endpoints refresh explicitly;
     # SettingsPropagationPgIT drives the poller directly.
     poll-interval-ms: 3600000
+  integration:
+    engine:
+      # ws25: no scheduled integration tick against the shared H2 schema;
+      # the engine tests drive IntegrationScheduler.tick() directly, and
+      # "Run now" executes in the request thread (deterministic).
+      scheduler-enabled: false
+      synchronous: true
+    connectors:
+      # The connector tests talk to loopback JDK HTTP stubs.
+      allow-plain-http: true
   security:
     jwt:
       # Test-only signing key; production requires MODOCUMENT_JWT_SECRET.
