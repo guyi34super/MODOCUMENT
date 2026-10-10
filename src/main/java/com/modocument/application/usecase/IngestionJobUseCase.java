@@ -85,12 +85,13 @@ public class IngestionJobUseCase {
 
     public IngestionJob create(String fileName, int templateId) {
         int owner = currentUser.requireUserId();
-        // The template must exist AND belong to the caller — otherwise a user
-        // could stamp their own jobs against someone else's template.
-        templates.getByIdAndOwner(templateId, owner).orElseThrow(
+        int bankId = currentUser.requireBankId();
+        // The template must exist AND be usable by the caller — their own, or
+        // shared with their bank (ws22 read/use rule) — otherwise a user could
+        // stamp their own jobs against someone else's private template.
+        templates.getAccessible(templateId, owner, bankId).orElseThrow(
                 () -> new NoSuchElementException("Template " + templateId + " not found."));
 
-        int bankId = currentUser.requireBankId();
         ImportHistory history = new ImportHistory();
         history.setOwnerUserId(owner);
         history.setBankId(bankId);

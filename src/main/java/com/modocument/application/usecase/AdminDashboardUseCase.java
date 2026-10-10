@@ -10,7 +10,6 @@ import com.modocument.application.dto.AdminDashboardDto.Extraction;
 import com.modocument.application.dto.AdminDashboardDto.Ingestion;
 import com.modocument.application.dto.AdminDashboardDto.Integrations;
 import com.modocument.application.dto.AdminDashboardDto.Retention;
-import com.modocument.application.dto.AdminDashboardDto.Runs;
 import com.modocument.application.dto.AdminDashboardDto.Settings;
 import com.modocument.application.dto.AdminDashboardDto.StatusCounts;
 import com.modocument.application.dto.AdminDashboardDto.Templates;
@@ -27,6 +26,7 @@ import com.modocument.domain.model.ExtractionJobStatus;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.PendingChangeStatus;
 import com.modocument.domain.model.Role;
+import com.modocument.domain.model.TemplateVisibility;
 import com.modocument.infrastructure.persistence.AlertLogJpaRepository;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
@@ -161,13 +161,16 @@ public class AdminDashboardUseCase {
                 new Extraction(new StatusCounts(extractionLast7d(bankId, nowInstant))),
                 alerts(bankId, nowInstant),
                 retention(bankId),
-                // Shared (bank-visible) templates arrive with V220 (wave 2).
-                new Templates(templates.countByBankId(bankId), 0),
+                // ws22 V220: private = owner-only, shared = visible to the bank.
+                new Templates(
+                        templates.countByBankIdAndVisibility(bankId, TemplateVisibility.PRIVATE),
+                        templates.countByBankIdAndVisibility(bankId, TemplateVisibility.BANK)),
                 new Settings(pendingChanges.countByBankIdAndStatusAndChangeType(bankId,
                         PendingChangeStatus.REQUESTED, ChangeType.SETTING_UPDATE), 0),
                 version(),
-                // The integration hub (ws25/ws26) has no data yet.
-                new Integrations(new Runs(0, 0), 0, 0, 0));
+                // The integration hub (ws25/ws26) has no data yet: null = "not
+                // tracked" (the UI shows "—"), never a misleading zero.
+                Integrations.notTrackedYet());
     }
 
     private BankInfo bank(int bankId) {

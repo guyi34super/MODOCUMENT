@@ -87,9 +87,11 @@ public class ExtractionSourceUseCase {
                     + "applicable data-protection law.");
         }
         if (request.getTemplateId() != null) {
-            // The template must exist AND belong to the caller — otherwise a user
-            // could point their source at someone else's template.
-            templates.getByIdAndOwner(request.getTemplateId(), currentUser.requireUserId())
+            // The template must exist AND be usable by the caller (own, or
+            // shared with their bank — ws22 read/use rule) — otherwise a user
+            // could point their source at someone else's private template.
+            templates.getAccessible(request.getTemplateId(), currentUser.requireUserId(),
+                            currentUser.requireBankId())
                     .orElseThrow(() -> new NoSuchElementException(
                             "Template " + request.getTemplateId() + " not found."));
         }

@@ -60,6 +60,15 @@ class IngestionJobUseCaseTest {
         }
 
         @Override
+        public int countActiveByTemplateIdOfOtherUsers(int templateId, int ownerUserId) {
+            return (int) store.values().stream()
+                    .filter(j -> j.getTemplateId() == templateId && j.getOwnerUserId() != ownerUserId)
+                    .filter(j -> j.getStatus() == com.modocument.domain.model.JobStatus.PENDING
+                            || j.getStatus() == com.modocument.domain.model.JobStatus.RUNNING)
+                    .count();
+        }
+
+        @Override
         public List<IngestionJob> listByOwner(int ownerUserId) {
             return store.values().stream()
                     .filter(j -> j.getOwnerUserId() == ownerUserId)
@@ -131,7 +140,7 @@ class IngestionJobUseCaseTest {
 
     @BeforeEach
     void setUp() {
-        when(templates.getByIdAndOwner(1, USER)).thenReturn(Optional.of(new Template(1, "T", null)));
+        when(templates.getAccessible(1, USER, com.modocument.domain.entity.Bank.DEFAULT_BANK_ID)).thenReturn(Optional.of(new Template(1, "T", null)));
         when(importHistory.add(any(ImportHistory.class))).thenAnswer(invocation -> {
             ImportHistory h = invocation.getArgument(0);
             h.setImportHistoryId(42);

@@ -288,4 +288,25 @@ describe('api request wrapper', () => {
 
     Object.defineProperty(window, 'location', { value: original, configurable: true });
   });
+
+  it('BUG-02: a 401 on a noExpiryRedirect call (logout) refreshes once but never redirects', async () => {
+    setSession('dead-after-password-change', { userId: 1 });
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { ...original, assign },
+      writable: true,
+      configurable: true,
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      api.post('/api/auth/logout', undefined, { noExpiryRedirect: true })
+    ).rejects.toMatchObject({ status: 401 });
+    expect(assign).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh')).toHaveLength(1);
+
+    Object.defineProperty(window, 'location', { value: original, configurable: true });
+  });
 });

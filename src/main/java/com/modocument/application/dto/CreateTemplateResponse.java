@@ -6,7 +6,14 @@ import java.util.List;
 public record CreateTemplateResponse(int templateId,
                                      String name,
                                      String description,
-                                     List<CreatedField> fields) {
+                                     List<CreatedField> fields,
+                                     String visibility) {
+
+    /** A PRIVATE template (the pre-ws22 shape). */
+    public CreateTemplateResponse(int templateId, String name, String description,
+                                  List<CreatedField> fields) {
+        this(templateId, name, description, fields, "PRIVATE");
+    }
 
     public record CreatedField(int templateFieldsId,
                                String fieldName,

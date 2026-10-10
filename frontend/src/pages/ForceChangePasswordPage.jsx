@@ -11,7 +11,8 @@ import { Button, Card, Field, inputClass } from '../components/ui';
  * refuses every non-self-service route with PASSWORD_CHANGE_REQUIRED until
  * the password is changed. A successful change ends the session server-side
  * (every token dies), so the user is sent back to the login page to sign in
- * with the password only they know.
+ * with the password only they know — signed out LOCALLY only: the dead token
+ * would earn the logout call a 401 and the "session expired" banner (BUG-02).
  */
 export default function ForceChangePasswordPage() {
   const toast = useToast();
@@ -30,8 +31,8 @@ export default function ForceChangePasswordPage() {
         loading: 'Changing password…',
         success: 'Password changed — sign in with your new password',
       });
-      await logout();
-      navigate('/login');
+      await logout({ revoke: false });
+      navigate('/login', { replace: true, state: { notice: 'password-changed' } });
     } catch {
       // The error toast is already shown.
     } finally {

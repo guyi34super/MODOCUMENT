@@ -23,6 +23,7 @@ import com.modocument.domain.model.ExtractionJobStatus;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.PendingChangeStatus;
 import com.modocument.domain.model.Role;
+import com.modocument.domain.model.TemplateVisibility;
 import com.modocument.infrastructure.persistence.AlertLogJpaRepository;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
@@ -176,6 +177,7 @@ class AdminDashboardIsolationTest {
         pending(bankA, adminA, ChangeType.SETTING_UPDATE);
         template(bankA, adminA, "Secret Template A1");
         template(bankA, writerA, "Secret Template A2");
+        template(bankA, adminA, "Secret Template A3", TemplateVisibility.BANK);
         docInstance(bankA, writerA, DocInstance.STATUS_SUBMITTED);
         docInstance(bankA, writerA, DocInstance.STATUS_RELEASED);
         retentionRun(bankA, 3, 2);
@@ -194,6 +196,7 @@ class AdminDashboardIsolationTest {
             alert(bankB, AlertSeverity.CRITICAL, Instant.now());
             pending(bankB, adminB, ChangeType.SETTING_UPDATE);
             template(bankB, b, "Secret Template B" + i);
+            template(bankB, b, "Secret Shared B" + i, TemplateVisibility.BANK);
             docInstance(bankB, b, DocInstance.STATUS_SUBMITTED);
         }
         retentionRun(bankB, 50, 49);
@@ -250,10 +253,13 @@ class AdminDashboardIsolationTest {
         assertThat(retention.get("lastRunAt").isNull()).isFalse();
         assertThat(retention.get("lastPurged").asLong()).isEqualTo(5);
 
+        // ws22: private = owner-only, shared = visible to the whole bank.
         assertThat(body.get("templates").get("private").asLong()).isEqualTo(2);
-        assertThat(body.get("templates").get("shared").asLong()).isZero();
+        assertThat(body.get("templates").get("shared").asLong()).isEqualTo(1);
         assertThat(body.get("settings").get("pendingSecurityChanges").asLong()).isEqualTo(1);
-        assertThat(body.get("integrations").get("runs24h").get("failed").asLong()).isZero();
+        // The integration hub is not tracked yet: null, never a fake zero.
+        assertThat(body.get("integrations").get("runs24h").get("failed").isNull()).isTrue();
+        assertThat(body.get("integrations").get("deadLetters").isNull()).isTrue();
 
         // Counts only: no account, template or other-bank identifier anywhere.
         assertThat(json)
@@ -272,6 +278,7 @@ class AdminDashboardIsolationTest {
         assertThat(bodyB.get("users").get("total").asLong()).isEqualTo(5);
         assertThat(bodyB.get("users").get("mfaEnrolled").asLong()).isEqualTo(5);
         assertThat(bodyB.get("templates").get("private").asLong()).isEqualTo(4);
+        assertThat(bodyB.get("templates").get("shared").asLong()).isEqualTo(4);
         assertThat(bodyB.get("retention").get("lastPurged").asLong()).isEqualTo(99);
     }
 
@@ -384,9 +391,14 @@ class AdminDashboardIsolationTest {
     }
 
     private void template(Bank bank, AppUser owner, String name) {
+        template(bank, owner, name, TemplateVisibility.PRIVATE);
+    }
+
+    private void template(Bank bank, AppUser owner, String name, TemplateVisibility visibility) {
         Template template = new Template(0, name + " " + tag, "d");
         template.setOwnerUserId(owner.getAppUserId());
         template.setBankId(bank.getBankId());
+        template.setVisibility(visibility);
         createdRows.add(templates.save(template));
     }
 

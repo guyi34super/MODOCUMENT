@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider } from '../context/AuthContext';
 import { ToastProvider } from '../context/ToastContext';
 import ForceChangePasswordPage from './ForceChangePasswordPage';
@@ -12,6 +12,15 @@ vi.mock('../api/auth', () => ({
   changePassword: vi.fn(),
   logout: vi.fn(),
 }));
+
+function LoginProbe() {
+  const location = useLocation();
+  return (
+    <div>
+      LOGIN PAGE {location.search || '(no query)'} {location.state?.notice || '(no notice)'}
+    </div>
+  );
+}
 
 function renderPage() {
   localStorage.setItem('modoc.token', 'temp-token');
@@ -24,7 +33,7 @@ function renderPage() {
       <AuthProvider>
         <ToastProvider>
           <Routes>
-            <Route path="/login" element={<div>LOGIN PAGE</div>} />
+            <Route path="/login" element={<LoginProbe />} />
             <Route path="/force-password-change" element={<ForceChangePasswordPage />} />
           </Routes>
         </ToastProvider>
@@ -51,8 +60,25 @@ describe('ForceChangePasswordPage', () => {
       expect(changePassword).toHaveBeenCalledWith('Temp-Rotor-91x!', 'My-own-secret-42!')
     );
     // The change killed the session server-side: local sign-out + /login.
-    expect(await screen.findByText('LOGIN PAGE')).toBeInTheDocument();
+    expect(await screen.findByText(/LOGIN PAGE/)).toBeInTheDocument();
     expect(localStorage.getItem('modoc.token')).toBeNull();
+  });
+
+  it('BUG-02: lands on a plain /login with a neutral notice, never "session expired"', async () => {
+    renderPage();
+
+    await userEvent.type(screen.getByLabelText(/Temporary password/), 'Temp-Rotor-91x!');
+    await userEvent.type(screen.getByLabelText(/New password/), 'My-own-secret-42!');
+    await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
+
+    // No ?expired=1, and the notice the login page renders as
+    // "Password changed — sign in again".
+    expect(
+      await screen.findByText('LOGIN PAGE (no query) password-changed')
+    ).toBeInTheDocument();
+    // The session is already dead server-side: logging out with its token
+    // would only earn the 401 that triggered the expiry redirect.
+    expect(logout).not.toHaveBeenCalled();
   });
 
   it('stays on the page when the change is rejected', async () => {
@@ -64,7 +90,7 @@ describe('ForceChangePasswordPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Change password' }));
 
     await waitFor(() => expect(changePassword).toHaveBeenCalled());
-    expect(screen.queryByText('LOGIN PAGE')).not.toBeInTheDocument();
+    expect(screen.queryByText(/LOGIN PAGE/)).not.toBeInTheDocument();
     expect(logout).not.toHaveBeenCalled();
   });
 });

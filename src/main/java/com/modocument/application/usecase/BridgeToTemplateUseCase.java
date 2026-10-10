@@ -110,8 +110,9 @@ public class BridgeToTemplateUseCase {
             throw new IllegalStateException(
                     "Extraction job " + extractionJobId + " has not completed yet.");
         }
-        // The bridge target template must belong to the caller.
-        templates.getByIdAndOwner(templateId, owner).orElseThrow(
+        // The bridge target template must be usable by the caller: own, or
+        // shared with their bank (ws22 read/use rule).
+        templates.getAccessible(templateId, owner, currentUser.requireBankId()).orElseThrow(
                 () -> new NoSuchElementException("Template " + templateId + " not found."));
 
         int cap = maxRows != null ? maxRows : DEFAULT_MAX_ROWS;

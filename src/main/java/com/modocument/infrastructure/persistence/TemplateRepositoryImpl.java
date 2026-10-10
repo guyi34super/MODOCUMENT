@@ -22,8 +22,8 @@ public class TemplateRepositoryImpl implements TemplateRepository {
     }
 
     @Override
-    public Optional<Template> getByIdAndOwner(int id, int ownerUserId) {
-        return jpa.findByTemplateIdAndOwnerUserId(id, ownerUserId);
+    public Optional<Template> getAccessible(int id, int userId, int bankId) {
+        return jpa.findAccessible(id, userId, bankId);
     }
 
     @Override
@@ -32,8 +32,8 @@ public class TemplateRepositoryImpl implements TemplateRepository {
     }
 
     @Override
-    public List<Template> listByOwner(int ownerUserId) {
-        return jpa.findByOwnerUserId(ownerUserId);
+    public List<Template> listAccessible(int userId, int bankId) {
+        return jpa.findAccessible(userId, bankId);
     }
 
     @Override

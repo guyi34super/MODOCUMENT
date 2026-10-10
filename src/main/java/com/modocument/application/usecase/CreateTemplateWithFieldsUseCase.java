@@ -6,19 +6,25 @@ import com.modocument.application.dto.CreateTemplateFieldDto;
 import com.modocument.application.dto.CreateTemplateRequest;
 import com.modocument.application.dto.CreateTemplateResponse;
 import com.modocument.application.dto.CreateTemplateRuleDto;
+import com.modocument.application.dto.TemplateVisibilityRequest;
 import com.modocument.application.dto.TemplateValidationError;
 import com.modocument.application.port.TemplateDataTypeRepository;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.port.ValidationRuleRepository;
+import com.modocument.application.security.RolePermissions;
 import com.modocument.application.validation.RegexPatternChecker;
 import com.modocument.application.validation.TemplateDefinitionException;
 import com.modocument.domain.entity.Template;
 import com.modocument.domain.entity.TemplateDataType;
 import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.entity.ValidationRule;
+import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.PiiKind;
+import com.modocument.domain.model.Role;
 import com.modocument.domain.model.RuleType;
+import com.modocument.domain.model.TemplateVisibility;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,7 +40,8 @@ import java.util.Set;
  * Creates a custom template together with its fields and their validation
  * rules (including UI-supplied regex patterns) in one transaction. The whole
  * definition is validated up front; nothing is persisted when any part of it
- * is invalid.
+ * is invalid. ws22: the template may be created bank-shared
+ * ({@code visibility: BANK}) by a template:publish holder (403 otherwise).
  */
 @Service
 public class CreateTemplateWithFieldsUseCase {
@@ -63,11 +70,25 @@ public class CreateTemplateWithFieldsUseCase {
     public CreateTemplateResponse handle(CreateTemplateRequest request) {
         List<TemplateDataType> dataTypes = templateDataTypeRepository.list();
         List<TemplateValidationError> errors = validate(request, dataTypes);
+        TemplateVisibility visibility = TemplateVisibility.PRIVATE;
+        try {
+            TemplateVisibility requested = TemplateVisibilityRequest.parse(request.getVisibility());
+            if (requested != null) {
+                visibility = requested;
+            }
+        } catch (IllegalArgumentException unknown) {
+            errors.add(new TemplateValidationError(null, null, unknown.getMessage()));
+        }
         if (!errors.isEmpty()) {
             throw new TemplateDefinitionException(errors);
         }
+        if (visibility == TemplateVisibility.BANK && !callerCanPublish()) {
+            throw new AccessDeniedException("Only an administrator (template:publish) can create"
+                    + " a template shared with the bank.");
+        }
 
         Template template = new Template(0, request.getName().trim(), request.getDescription());
+        template.setVisibility(visibility);
         template.setOwnerUserId(currentUser.requireUserId());
         int bankId = currentUser.requireBankId();
         template.setBankId(bankId);
@@ -106,7 +127,18 @@ public class CreateTemplateWithFieldsUseCase {
         }
 
         return new CreateTemplateResponse(
-                template.getTemplateId(), template.getName(), template.getDescription(), createdFields);
+                template.getTemplateId(), template.getName(), template.getDescription(), createdFields,
+                visibility.name());
+    }
+
+    private boolean callerCanPublish() {
+        Role role;
+        try {
+            role = currentUser.role();
+        } catch (IllegalStateException noRole) {
+            return false;
+        }
+        return RolePermissions.isGranted(role, Permission.TEMPLATE_PUBLISH);
     }
 
     private List<TemplateValidationError> validate(CreateTemplateRequest request,

@@ -36,10 +36,10 @@ public class ValidationController {
     @Operation(summary = "Run rows through a template's validation rules")
     @PostMapping("/Validation/validate")
     public ResponseEntity<?> validate(@Valid @RequestBody ValidationRequest request) {
-        // The template whose rules are being applied must belong to the caller —
-        // otherwise a user could probe another template's rules through the
-        // validation results.
-        ownership.require(request.getTemplateId());
+        // The template whose rules are being applied must be readable by the
+        // caller (own, or shared with their bank — a USE, ws22) — otherwise a
+        // user could probe another template's rules through the results.
+        ownership.requireReadable(request.getTemplateId());
         return ResponseEntity.ok(useCase.handle(request));
     }
 

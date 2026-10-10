@@ -27,6 +27,8 @@ import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
 import PlatformOverviewPage from './pages/PlatformOverviewPage';
 import PlatformBanksPage from './pages/PlatformBanksPage';
 import PlatformBankDetailPage from './pages/PlatformBankDetailPage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
+import SettingsPage from './pages/SettingsPage';
 
 /** ws21: the platform owner has no domain home page — its home is the console. */
 function Home() {
@@ -85,6 +87,11 @@ export default function App() {
         <Route path="/platform" element={<PlatformOverviewPage />} />
         <Route path="/platform/banks" element={<PlatformBanksPage />} />
         <Route path="/platform/banks/:id" element={<PlatformBankDetailPage />} />
+        {/* Phase 2 (ws22): admin dashboard (server: metrics:read) and the
+            settings screens (server: settings:read / platform:read). */}
+        <Route path="/admin" element={<AdminDashboardPage />} />
+        <Route path="/admin/settings" element={<SettingsPage mode="bank" />} />
+        <Route path="/platform/settings" element={<SettingsPage mode="platform" />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

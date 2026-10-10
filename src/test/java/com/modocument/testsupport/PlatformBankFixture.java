@@ -27,15 +27,17 @@ public final class PlatformBankFixture {
     }
 
     public static Bank ensurePlatformBank(BankJpaRepository banks) {
+        // The H2 schema starts without banks, and most tests park their
+        // users in Bank.DEFAULT_BANK_ID (1) without creating it: claim the
+        // first identity value for the default bank, so the platform bank
+        // can never be bank 1. Checked even when the platform bank already
+        // exists: another fixture (SettingsIntegrationSupport) may have
+        // created it, by a fixed id, in a schema a new context had just
+        // recreated — and callers rely on the DEFAULT code existing.
+        if (banks.findByCode(Bank.DEFAULT_BANK_CODE).isEmpty()) {
+            banks.save(new Bank(Bank.DEFAULT_BANK_CODE, "Default Bank"));
+        }
         return banks.findByCode(CODE).orElseGet(() -> {
-            // The H2 schema starts without banks, and most tests park their
-            // users in Bank.DEFAULT_BANK_ID (1) without creating it: claim
-            // the first identity value for the default bank, so the
-            // platform bank can never be bank 1.
-            if (!banks.existsById(Bank.DEFAULT_BANK_ID)
-                    && banks.findByCode(Bank.DEFAULT_BANK_CODE).isEmpty()) {
-                banks.save(new Bank(Bank.DEFAULT_BANK_CODE, "Default Bank"));
-            }
             Bank platform = banks.save(new Bank(CODE, "MO Intelligence Platform", BankKind.PLATFORM));
             if (platform.getBankId() == Bank.DEFAULT_BANK_ID) {
                 throw new IllegalStateException("The test platform bank must not be bank 1.");

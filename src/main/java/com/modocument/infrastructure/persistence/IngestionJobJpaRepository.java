@@ -1,6 +1,7 @@
 package com.modocument.infrastructure.persistence;
 
 import com.modocument.domain.entity.IngestionJob;
+import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -30,6 +31,14 @@ public interface IngestionJobJpaRepository extends JpaRepository<IngestionJob, I
     List<IngestionJob> findByOwnerUserId(int ownerUserId);
 
     long countByTemplateId(int templateId);
+
+    /**
+     * ws22: jobs of OTHER users (not {@code ownerUserId}) on a template that
+     * are still in one of {@code statuses} — a bank-shared template in active
+     * use by colleagues is not deleted or made private under them.
+     */
+    long countByTemplateIdAndOwnerUserIdNotAndStatusIn(int templateId, int ownerUserId,
+                                                       Collection<JobStatus> statuses);
 
     /** DSR scan (ws14): every job of one bank. RLS backs this on PostgreSQL. */
     List<IngestionJob> findByBankId(int bankId);

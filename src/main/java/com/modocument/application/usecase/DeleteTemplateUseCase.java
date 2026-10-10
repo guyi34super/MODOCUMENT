@@ -15,7 +15,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 
 /**
  * Deletes a template together with the definition it owns — its fields and
@@ -27,6 +26,7 @@ import java.util.NoSuchElementException;
 @Service
 public class DeleteTemplateUseCase {
 
+    private final TemplateOwnership ownership;
     private final TemplateRepository templates;
     private final TemplateFieldsRepository fields;
     private final ValidationRuleRepository rules;
@@ -34,12 +34,14 @@ public class DeleteTemplateUseCase {
     private final ImportHistoryRepository imports;
     private final AuditRecorder audit;
 
-    public DeleteTemplateUseCase(TemplateRepository templates,
+    public DeleteTemplateUseCase(TemplateOwnership ownership,
+                                 TemplateRepository templates,
                                  TemplateFieldsRepository fields,
                                  ValidationRuleRepository rules,
                                  IngestionJobRepository jobs,
                                  ImportHistoryRepository imports,
                                  AuditRecorder audit) {
+        this.ownership = ownership;
         this.templates = templates;
         this.fields = fields;
         this.rules = rules;
@@ -48,13 +50,18 @@ public class DeleteTemplateUseCase {
         this.audit = audit;
     }
 
+    /**
+     * @param actingUserId the caller on the direct path, the MAKER when an
+     *     approved TEMPLATE_DELETE applies (ws22 write rule:
+     *     {@link TemplateOwnership#requireWritableBy})
+     */
     @Transactional
-    public void handle(int templateId, int ownerUserId) {
-        // Owner-scoped: a template the caller does not own is a 404, so deletion
-        // can never reach another user's data.
-        Template template = templates.getByIdAndOwner(templateId, ownerUserId)
-                .orElseThrow(() -> new NoSuchElementException(
-                        "Template " + templateId + " not found."));
+    public void handle(int templateId, int actingUserId) {
+        // A template the acting user cannot read is a 404 and a shared one
+        // without template:publish a 403, so deletion can never reach data
+        // the user may not change.
+        Template template = ownership.requireWritableBy(templateId, actingUserId);
+        requireNotInUseByColleagues(template);
 
         int jobCount = jobs.countByTemplateId(templateId);
         int importCount = imports.countByTemplateId(templateId);
@@ -82,6 +89,27 @@ public class DeleteTemplateUseCase {
         // Joins this @Transactional method's transaction: if the delete rolls
         // back, the audit row of a deletion that never happened goes with it.
         audit.success("TEMPLATE_DELETED", "Template", String.valueOf(templateId), before, null);
+    }
+
+    /**
+     * ws22: colleagues may be mid-upload on a bank-shared template — deleting
+     * it under their unfinished (PENDING/RUNNING) jobs is refused. Checked at
+     * apply AND at submit (TemplateDeleteChangeApplier.prepare), so the maker
+     * hears it at once instead of the checker later.
+     *
+     * @throws IllegalStateException (409)
+     */
+    public void requireNotInUseByColleagues(Template template) {
+        if (!template.isShared()) {
+            return;
+        }
+        int inUse = jobs.countActiveByTemplateIdOfOtherUsers(template.getTemplateId(),
+                template.getOwnerUserId());
+        if (inUse > 0) {
+            throw new IllegalStateException("This shared template is in use by " + inUse
+                    + (inUse == 1 ? " unfinished upload job" : " unfinished upload jobs")
+                    + " of other users. Let them finish (or cancel them) before deleting it.");
+        }
     }
 
     private static String describeBlockers(int jobCount, int importCount) {
