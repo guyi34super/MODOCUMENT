@@ -118,6 +118,18 @@ import java.util.concurrent.Callable;
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker
  *       executor.</li>
+ *   <li>{@code IngestionParseStepImpl#extractBatchesParallel} — the same
+ *       {@link #snapshot()}/{@link #runWith} hand-off onto the short-lived
+ *       pool that sends parallel LLM batches (the AI gateway refuses a
+ *       thread with no bound tenant). It only copies the caller's bank.</li>
+ *   <li>{@code JpaAuditRecorder#write} — anonymous flows (login, refresh,
+ *       MFA) where no tenant is bound yet: {@code runAs(event's bank)} for
+ *       that one AuditEvent insert, so the RLS WITH CHECK passes; restored
+ *       right after. Never {@code runAsSystem}.</li>
+ *   <li>{@code MfaUseCase#inUsersBank} — the MFA login step (the caller is
+ *       anonymous until tokens are issued): {@code runAs(user's bank)}
+ *       around a new transaction for that user's second-factor check and
+ *       session creation. Never {@code runAsSystem}.</li>
  *   <li>{@code RetentionPurgeJob#runOnce} — the ws14 daily retention sweep
  *       (and its manual admin trigger): {@code runAsSystem} to list the
  *       RLS-protected Bank table across tenants, then
