@@ -117,6 +117,19 @@ while IFS=$'\t' read -r line args proxied body; do
         fail "line $line: proxied location '$args' does not clear client-sent '$cleared'"
       fi
     done
+    # ws26: the ALB's client-certificate headers are an identity. Every
+    # proxied location sets each of them explicitly: cleared (""), or — the
+    # mTLS server only — the entrypoint's trusted-peer-only value
+    # (${MODOCUMENT_NGX_MTLS_*}). Never the client's own $http_x_amzn_* value.
+    if grep -Eqi 'http_x_amzn_mtls' <<<"$body"; then
+      fail "line $line: proxied location '$args' forwards a client-sent X-Amzn-Mtls header directly"
+    fi
+    for mtls in X-Amzn-Mtls-Clientcert X-Amzn-Mtls-Clientcert-Serial-Number X-Amzn-Mtls-Clientcert-Issuer \
+        X-Amzn-Mtls-Clientcert-Subject X-Amzn-Mtls-Clientcert-Validity X-Amzn-Mtls-Clientcert-Leaf; do
+      if ! grep -Eqi "proxy_set_header[[:space:]]+$mtls[[:space:]]+(\"\"|\\\$\{MODOCUMENT_NGX_MTLS_[A-Z]+\})[[:space:]]*;" <<<"$body"; then
+        fail "line $line: proxied location '$args' does not clear (or trusted-proxy-gate) '$mtls'"
+      fi
+    done
   fi
   if [[ "$kind" == static ]]; then
     csp="$(grep -Eoi "add_header[[:space:]]+Content-Security-Policy[[:space:]]+\"[^\"]*\"" <<<"$body" || true)"

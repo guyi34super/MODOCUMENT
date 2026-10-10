@@ -68,7 +68,9 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     // V260 (ws26): machine identity — looked up before any
                     // tenant only through ApiClientAuthenticator (SYSTEM).
                     "apiclient", "apiclientsecret", "apiclientinitialsecret",
-                    "idempotencykey");
+                    "idempotencykey",
+                    // V261 (ws26): a bank's on-prem Connector Agents.
+                    "integrationagent");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

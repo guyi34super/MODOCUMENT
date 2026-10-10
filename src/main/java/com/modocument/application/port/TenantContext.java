@@ -176,6 +176,21 @@ import java.util.concurrent.Callable;
  *       transaction to load that bank's APPROVED egress rules (cached
  *       briefly), whatever context the connector runs in. Never
  *       {@code runAsSystem}.</li>
+ *   <li>{@code AgentEnrolmentService#enroll} (via {@code #pendingAgentBank})
+ *       — ws26 {@code POST /api/agent/v1/enroll}, a public route whose
+ *       credential is the agent's one-time enrolment token:
+ *       {@code runAsSystem} in its own read-only REQUIRES_NEW transaction to
+ *       read ONE IntegrationAgent row by the id embedded in the token and
+ *       return only its BankId (when the agent is PENDING_ENROLMENT) —
+ *       the bank is unknown before the token is resolved. The token check
+ *       (constant-time hash compare, expiry, single use), the ApiClient
+ *       issue and the AGENT_ENROLLED audit then run under
+ *       {@code runAs(that bank)}.</li>
+ *   <li>{@code AgentTaskLongPoll} — ws26 agent long poll: the scheduler
+ *       thread re-tries {@code AgentRunPort#claimTasks} for each waiting
+ *       agent under {@code runAs(agent's bank)} (taken from the
+ *       authenticated agent client on the request thread). Never
+ *       {@code runAsSystem}.</li>
  * </ul>
  */
 public final class TenantContext {

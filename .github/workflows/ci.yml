@@ -64,6 +64,24 @@ jobs:
           cache: maven
       - run: mvn -B verify -Ppostgres-it
 
+  # ws26: the on-prem Connector Agent is a standalone Maven project (not a
+  # module of the root build): its unit and end-to-end tests (a fake
+  # MoDocument on a JDK HttpServer, H2, an embedded SFTP server).
+  agent:
+    name: Connector Agent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: agent/pom.xml
+      - run: mvn -B -f agent/pom.xml verify
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

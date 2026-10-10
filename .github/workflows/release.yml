@@ -21,6 +21,11 @@ name: Release
 #   ECR_FRONTEND_REPOSITORY, ECS_CLUSTER, ECS_SERVICE, ECS_TASK_FAMILY,
 #   PUBLIC_BASE_URL. `production` has required reviewers (runbook §2).
 #
+# ws26: the on-prem Connector Agent (agent/, a standalone Maven project) is
+# built, scanned and SBOM'd in the same build job. It is not deployed to ECS:
+# the GitHub Release carries its jar and SBOM, and its image is published to
+# ghcr.io/<owner>/modocument-agent:<image version> for banks to pull.
+#
 # Actions are pinned by full commit SHA (SUP-S05); every job gets only the
 # permissions it uses.
 
@@ -97,6 +102,7 @@ jobs:
     outputs:
       app_digest: ${{ steps.digests.outputs.app_digest }}
       frontend_digest: ${{ steps.digests.outputs.frontend_digest }}
+      agent_digest: ${{ steps.digests.outputs.agent_digest }}
     env:
       IMAGE_VERSION: ${{ needs.version.outputs.image_version }}
       BUILD_TIME: ${{ needs.version.outputs.build_time }}
@@ -123,10 +129,32 @@ jobs:
             --build-arg GIT_COMMIT="$GITHUB_SHA" \
             --build-arg BUILD_TIME="$BUILD_TIME" \
             --output type=oci,dest=dist/frontend.oci.tar frontend
+      # ws26: the Connector Agent image (agent/Dockerfile, its own context).
+      - name: Build the agent image
+        run: |
+          docker buildx build --builder release --pull --provenance=false --sbom=false \
+            --build-arg MODOCUMENT_VERSION="$IMAGE_VERSION" \
+            --build-arg GIT_COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_TIME="$BUILD_TIME" \
+            --output type=oci,dest=dist/agent.oci.tar agent
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: agent/pom.xml
+      # The standalone jar for banks that run the agent without Docker
+      # (its tests ran in the tests job: ci.yml "agent").
+      - name: Build the agent jar
+        run: |
+          mvn -B -q -f agent/pom.xml -DskipTests \
+            -Dproject.build.outputTimestamp="$BUILD_TIME" package
+          version="${IMAGE_VERSION%%-rc.*}"
+          cp "agent/target/modocument-agent-$version.jar" "dist/modocument-agent-$IMAGE_VERSION.jar"
       - name: Image digests
         id: digests
         run: |
-          for image in app frontend; do
+          for image in app frontend agent; do
             digest="$(tar -xOf "dist/$image.oci.tar" index.json \
               | jq -r 'if (.manifests | length) == 1 then .manifests[0].digest else error("expected one manifest") end')"
             if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
@@ -159,6 +187,15 @@ jobs:
           ignore-unfixed: true
           format: table
           exit-code: '1'
+      - name: Trivy scan (agent image)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          input: dist/agent-oci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '1'
       # CycloneDX SBOMs of the exact images (OS packages + application
       # dependencies), attached to the GitHub Release.
       - name: SBOM (API image)
@@ -175,8 +212,15 @@ jobs:
           format: cyclonedx
           output: dist/sbom-frontend.cdx.json
           exit-code: '0'
+      - name: SBOM (agent image)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          input: dist/agent-oci
+          format: cyclonedx
+          output: dist/sbom-agent.cdx.json
+          exit-code: '0'
       - name: Drop the unpacked layouts
-        run: rm -rf dist/app-oci dist/frontend-oci
+        run: rm -rf dist/app-oci dist/frontend-oci dist/agent-oci
       - name: Upload the images
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -196,8 +240,19 @@ jobs:
           path: |
             dist/sbom-app.cdx.json
             dist/sbom-frontend.cdx.json
+            dist/sbom-agent.cdx.json
           if-no-files-found: error
           retention-days: 90
+      - name: Upload the agent image and jar
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-agent
+          path: |
+            dist/agent.oci.tar
+            dist/modocument-agent-*.jar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
 
   staging:
     name: Deploy to staging
@@ -267,13 +322,17 @@ jobs:
 
   github-release:
     name: GitHub Release
-    needs: [version, staging]
+    needs: [version, build, staging]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # ws26: publishes the Connector Agent image to ghcr.io.
+      packages: write
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      IMAGE_VERSION: ${{ needs.version.outputs.image_version }}
       PRERELEASE: ${{ needs.version.outputs.prerelease }}
+      AGENT_DIGEST: ${{ needs.build.outputs.agent_digest }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -282,18 +341,46 @@ jobs:
         with:
           name: release-sbom
           path: sbom
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-agent
+          path: agent-dist
+      # The scanned bytes, unchanged (--preserve-digests), under the release
+      # tag; the registry must report the build job's digest afterwards.
+      - name: Publish the agent image (ghcr.io)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          command -v skopeo > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q skopeo; }
+          image="ghcr.io/${OWNER,,}/modocument-agent"
+          actual="$(tar -xOf agent-dist/agent.oci.tar index.json | jq -r '.manifests[0].digest')"
+          if [ "$actual" != "$AGENT_DIGEST" ]; then
+            echo "::error::agent.oci.tar holds $actual, the build job scanned $AGENT_DIGEST"
+            exit 1
+          fi
+          printf '%s' "$GH_TOKEN" | skopeo login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          skopeo copy --quiet --retry-times 3 --preserve-digests \
+            oci-archive:agent-dist/agent.oci.tar "docker://$image:$IMAGE_VERSION"
+          pushed="$(skopeo inspect --format '{{.Digest}}' "docker://$image:$IMAGE_VERSION")"
+          if [ "$pushed" != "$AGENT_DIGEST" ]; then
+            echo "::error::$image:$IMAGE_VERSION reports $pushed, expected $AGENT_DIGEST"
+            exit 1
+          fi
+          echo "$image:$IMAGE_VERSION = $AGENT_DIGEST"
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           bash scripts/release/changelog-section.sh "$VERSION" > release-notes.md
+          assets=(sbom/*.cdx.json agent-dist/modocument-agent-*.jar)
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" sbom/*.cdx.json --clobber
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
           else
             flags=()
             if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
-            gh release create "$GITHUB_REF_NAME" sbom/*.cdx.json --verify-tag \
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag \
               --title "MoDocument $GITHUB_REF_NAME" --notes-file release-notes.md "${flags[@]}"
           fi
 

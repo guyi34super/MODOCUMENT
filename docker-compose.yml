@@ -60,6 +60,10 @@ services:
       # schema owner below, which bypasses them. The app role is created by
       # the postgres init script (first boot) and by migration V12.
       MODOCUMENT_DB_USERNAME: modocument_app
+      # ws26: peers whose X-Amzn-Mtls-Clientcert-* headers the app accepts
+      # as a client-certificate identity. Compose has no ALB in front, so
+      # empty: mTLS headers are never trusted here (nginx clears them too).
+      MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS: ""
       # REQUIRED (no insecure default): the runtime role's password, shared
       # with the postgres service's first-boot init script below.
       MODOCUMENT_DB_PASSWORD: ${MODOCUMENT_APP_DB_PASSWORD:?Set MODOCUMENT_APP_DB_PASSWORD (openssl rand -hex 24)}

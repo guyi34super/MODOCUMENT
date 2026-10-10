@@ -57,6 +57,10 @@ class RoutePermissionCoverageTest {
             // ws26: OAuth2 client-credentials token endpoint — the client
             // authenticates inside (secret or certificate), per-IP limited.
             "/api/integration/oauth/token",
+            // ws26: Connector Agent enrolment — its credential is the
+            // one-time enrolment token in the body (single use, 15 min,
+            // constant-time hash compare), rate-limited per ip.
+            "/api/agent/v1/enroll",
             "/error");
 
     private static final List<String> PUBLIC_PREFIXES = List.of(
@@ -89,10 +93,10 @@ class RoutePermissionCoverageTest {
             // TEMPLATE_PUBLISH (PUT /Templates/{id}/Visibility); ws24 landed
             // PLATFORM_ANNOUNCE.
             // ws26 landed INTEGRATION_INGEST/RESULTS/DOCS/EVENTS
-            // (/api/integration/v1/**) and INTEGRATION_ADMIN
-            // (/api/admin/integrations/api-clients, ws25 egress rules).
-            Permission.INTEGRATION_RUN,                                 // ws25
-            Permission.AGENT_CONNECT);                                  // ws26
+            // (/api/integration/v1/**), INTEGRATION_ADMIN
+            // (/api/admin/integrations/api-clients and /agents, ws25 egress
+            // rules) and AGENT_CONNECT (/api/agent/v1/**).
+            Permission.INTEGRATION_RUN);                                // ws25
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

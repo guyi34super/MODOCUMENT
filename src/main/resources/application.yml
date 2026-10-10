@@ -545,6 +545,25 @@ modocument:
       idempotency-ttl: 24h
       events-default-limit: 100
       events-max-limit: 500
+  agent:
+    # ws26 on-prem Connector Agent (docs/integration/agent.md). The URL the
+    # agent is told to call (docker command, token URL); empty = the
+    # request's own base URL (nginx pins the forwarded host).
+    public-url: ${MODOCUMENT_AGENT_PUBLIC_URL:}
+    # Image in the dashboard's docker command; tagged with the running version.
+    image: ${MODOCUMENT_AGENT_IMAGE:ghcr.io/guyi34super/modocument-agent}
+    # One-time enrolment token lifetime (1s-60m).
+    enrolment-ttl: 15m
+    enrol-rate-limit:
+      per-ip-max: 10
+      window-millis: 900000
+    # GET /api/agent/v1/tasks: no request thread waits; one scheduler thread
+    # re-tries the claim of every waiting agent every interval.
+    long-poll:
+      interval-millis: 2000
+      max-waiters: 500
+      max-tasks: 10
+    max-records-per-post: 1000
   siem:
     # ws18 SIEM export (SEC-031, gate E6). Schema + transports:
     # docs/security/siem-event-schema.md.

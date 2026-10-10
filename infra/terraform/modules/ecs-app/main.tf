@@ -8,7 +8,8 @@
 #                 cap, so a traffic spike (or an LLM-cost attack) scales out
 #                 bounded, never unbounded.
 #   SEC-018       Secrets ONLY from SSM Parameter Store / Secrets Manager:
-#                 MODOCUMENT_JWT_SECRET, MODOCUMENT_MFA_KEY, DB credentials,
+#                 MODOCUMENT_JWT_SECRET, MODOCUMENT_MFA_KEY,
+#                 MODOCUMENT_CONNECTOR_KEY (ws26), DB credentials,
 #                 and — until the first admin exists — the bootstrap-admin
 #                 pair. Nothing secret in the task definition JSON, tfvars or
 #                 state.
@@ -249,6 +250,7 @@ resource "aws_iam_role_policy" "execution_secrets" {
       Resource = concat([
         var.jwt_secret_arn,
         var.mfa_key_secret_arn,
+        var.connector_key_secret_arn,
         var.db_app_credentials_secret_arn,
         var.db_master_secret_arn,
       ], local.bootstrap_admin_secret_arns)
@@ -301,9 +303,13 @@ resource "aws_ecs_task_definition" "this" {
       essential = true
       # nginx-unprivileged: master + workers as uid 101 on 8080 (ws16).
       user = "101"
-      portMappings = [
+      # ws26: the nginx mTLS server is mapped only when the mTLS listener
+      # exists (mtls.tf).
+      portMappings = concat([
         { containerPort = var.frontend_port, protocol = "tcp" }
-      ]
+        ], var.api_mtls_enabled ? [
+        { containerPort = var.frontend_mtls_port, protocol = "tcp" }
+      ] : [])
       environment = [
         # Shared awsvpc namespace: the app is on loopback, not `app:8080`.
         { name = "MODOCUMENT_API_UPSTREAM", value = "127.0.0.1:${var.app_port}" },
@@ -366,6 +372,12 @@ resource "aws_ecs_task_definition" "this" {
         { name = "SPRING_PROFILES_ACTIVE", value = var.spring_profiles },
         # ws24: reported by GET /api/system/version ("environment").
         { name = "MODOCUMENT_DEPLOY_ENVIRONMENT", value = var.deploy_environment },
+        # ws26: who may vouch for a client certificate (the ALB subnets) —
+        # empty unless the mTLS listener exists (mtls.tf), so the headers are
+        # never trusted otherwise.
+        # The app's TCP peer is the nginx container on loopback (awsvpc); nginx
+        # itself only forwards the certificate headers from the trusted ALB.
+        { name = "MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS", value = var.api_mtls_enabled ? "127.0.0.1/32" : "" },
         # ws20 guardrails: in a deployed environment the app refuses to boot
         # when a configured default lies outside its hard limits
         # (SettingsStartupCheck). Never false outside local development.
@@ -376,6 +388,8 @@ resource "aws_ecs_task_definition" "this" {
       secrets = concat([
         { name = "MODOCUMENT_JWT_SECRET", valueFrom = var.jwt_secret_arn },
         { name = "MODOCUMENT_MFA_KEY", valueFrom = var.mfa_key_secret_arn },
+        # ws25/26: connector SecretVault key (bank integration credentials).
+        { name = "MODOCUMENT_CONNECTOR_KEY", valueFrom = var.connector_key_secret_arn },
         { name = "MODOCUMENT_DB_USERNAME", valueFrom = "${var.db_app_credentials_secret_arn}:username::" },
         { name = "MODOCUMENT_DB_PASSWORD", valueFrom = "${var.db_app_credentials_secret_arn}:password::" },
         { name = "MODOCUMENT_FLYWAY_USERNAME", valueFrom = "${var.db_master_secret_arn}:username::" },
@@ -496,6 +510,16 @@ resource "aws_ecs_service" "this" {
     target_group_arn = aws_lb_target_group.this.arn
     container_name   = "frontend"
     container_port   = var.frontend_port
+  }
+
+  # ws26: the mTLS API listener's target group (mtls.tf), when enabled.
+  dynamic "load_balancer" {
+    for_each = aws_lb_target_group.api_mtls
+    content {
+      target_group_arn = load_balancer.value.arn
+      container_name   = "frontend"
+      container_port   = var.frontend_mtls_port
+    }
   }
 
   health_check_grace_period_seconds = 120

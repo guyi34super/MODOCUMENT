@@ -68,6 +68,8 @@ services:
       SPRING_PROFILES_ACTIVE: ""
       MODOCUMENT_DB_URL: jdbc:postgresql://postgres:5432/modocument?sslmode=disable
       MODOCUMENT_DB_USERNAME: ${E2E_APP_DB_USER:-modocument_app}
+      # ws26: no ALB here, so client-certificate headers are never trusted.
+      MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS: ""
       MODOCUMENT_DB_PASSWORD: ${E2E_APP_DB_USER_PASSWORD:?Set E2E_APP_DB_USER_PASSWORD (= E2E_APP_DB_PASSWORD for the RLS role)}
       MODOCUMENT_FLYWAY_USERNAME: modocument
       MODOCUMENT_FLYWAY_PASSWORD: ${E2E_POSTGRES_PASSWORD}
