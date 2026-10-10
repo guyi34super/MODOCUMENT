@@ -203,6 +203,35 @@ class BankLifecyclePgIT extends PgSpringItSupport {
             assertThat(auditCount(owner, "BANK_REACTIVATED", platformBankId, bankId))
                     .isEqualTo(1);
         }
+
+        // ---- wave 4: integration health counts across RLS ------------------------
+        try (Connection owner = ownerDataSource().getConnection();
+             PreparedStatement insert = owner.prepareStatement("INSERT INTO "
+                     + "IntegrationConnection (BankId, Name, Type, Mode, Status, CreatedBy) "
+                     + "VALUES (?, ?, 'REST_API', 'DIRECT', ?, ?)")) {
+            int creator = queryInt(owner, "SELECT min(AppUserId) FROM AppUsers WHERE BankId = ?",
+                    bankId);
+            for (String connectionStatus : new String[] {"OK", "FAILED"}) {
+                insert.setInt(1, bankId);
+                insert.setString(2, "pgit-" + connectionStatus.toLowerCase(Locale.ROOT));
+                insert.setString(3, connectionStatus);
+                insert.setInt(4, creator);
+                insert.executeUpdate();
+            }
+        }
+        try {
+            // The platform admin's tenant cannot see these rows; the
+            // registered SYSTEM read counts them, and returns counts only.
+            JsonNode detail = getAs(ADMIN_A, "/api/platform/banks/" + bankId);
+            assertThat(detail.at("/integrations/connections").asLong()).isEqualTo(2);
+            assertThat(detail.at("/integrations/connectionsFailing").asLong()).isEqualTo(1);
+            assertThat(detail.toString()).doesNotContain("pgit-ok");
+        } finally {
+            try (Connection owner = ownerDataSource().getConnection();
+                 Statement statement = owner.createStatement()) {
+                statement.execute("DELETE FROM IntegrationConnection WHERE BankId = " + bankId);
+            }
+        }
     }
 
     // ------------------------------------------------------------ helpers

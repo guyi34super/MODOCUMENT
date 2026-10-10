@@ -71,7 +71,11 @@ import java.util.concurrent.Callable;
  *       {@code #listBanks}; PLATFORM_READ, platform bank only):
  *       {@code runAsSystem} in its own read-only transaction for a
  *       cross-bank COUNTS-ONLY read (Bank identifying columns +
- *       COUNT/MAX/SUM aggregates; no row content).</li>
+ *       COUNT/MAX/SUM aggregates; no row content). Wave 4: {@code #getBank}
+ *       also counts that one bank's IntegrationConnection (all / FAILED),
+ *       enabled IntegrationFlow, IntegrationRun finished in 24 h by
+ *       outcome, DEAD OutboundDelivery and offline IntegrationAgent rows in
+ *       the same transaction — aggregates only.</li>
  *   <li>{@code SettingsCache#reload} / {@code SettingsCache#refreshIfChanged}
  *       — phase 2 (ws20) settings snapshot: {@code runAsSystem} in its own
  *       read-only REQUIRES_NEW transaction to read the tenant-less
