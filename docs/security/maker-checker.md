@@ -24,6 +24,7 @@ undecided request (`CANCELLED`).
 | `BANK_CREATE`      | Onboard a customer bank with ≥ 2 first users (≥ 1 ADMIN, ≥ 2 ADMIN/APPROVER), each with MustChangePassword (ws21) | `platform:banks` | `POST /api/platform/banks` → 202 | `change:approve` (a second platform admin) |
 | `BANK_SUSPEND`     | Suspend a customer bank: every user's TokenVersion bumped, refresh tokens revoked, sign-in refused (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/suspend` → 202 | `change:approve` (a second platform admin) |
 | `BANK_ADMIN_ADD`   | Break-glass: a new ADMIN (MustChangePassword) in a customer bank (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/admins` → 202 | `change:approve` (a second platform admin) |
+| `AGENT_REGISTER`   | Register an on-prem Connector Agent (ws26); payload `{name}`. Applying creates the agent `PENDING_ENROLMENT` with a one-time enrolment token (15 min; only its SHA-256 is kept, the token is sealed for the **maker**, who reads it once via `GET /api/admin/integrations/agents/{id}/enrolment`); audited `AGENT_REGISTERED`, then `AGENT_ENROLLED` when the agent enrols. Revoking (`POST …/agents/{id}/revoke`, audit `AGENT_REVOKED`) is direct | `integration:admin` | `POST /api/admin/integrations/agents` → 202 | `change:approve` (same bank) |
 
 Everything can also be submitted through the generic
 `POST /api/admin/changes` (`{changeType, payload, comment}`); the use case

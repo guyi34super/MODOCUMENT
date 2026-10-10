@@ -54,6 +54,10 @@ class RoutePermissionCoverageTest {
             // ws18 (SUP-S11): synthetic probe for external uptime monitors —
             // GET only, rate-limited per ip, version + db boolean only.
             "/api/probe/synthetic",
+            // ws26: Connector Agent enrolment — its credential is the
+            // one-time enrolment token in the body (single use, 15 min,
+            // constant-time hash compare), rate-limited per ip.
+            "/api/agent/v1/enroll",
             "/error");
 
     private static final List<String> PUBLIC_PREFIXES = List.of(
@@ -84,11 +88,12 @@ class RoutePermissionCoverageTest {
             // ws20 landed SETTINGS_READ/SETTINGS_WRITE, PLATFORM_SETTINGS and
             // PLATFORM_READ; ws21 landed PLATFORM_BANKS; ws22 landed
             // TEMPLATE_PUBLISH (PUT /Templates/{id}/Visibility); ws24 landed
-            // PLATFORM_ANNOUNCE.
-            Permission.INTEGRATION_ADMIN, Permission.INTEGRATION_RUN,   // ws25
+            // PLATFORM_ANNOUNCE; ws26 (SE5) landed INTEGRATION_ADMIN
+            // (/api/admin/integrations/agents) and AGENT_CONNECT
+            // (/api/agent/v1/**).
+            Permission.INTEGRATION_RUN,                                 // ws25
             Permission.INTEGRATION_INGEST, Permission.INTEGRATION_RESULTS,
-            Permission.INTEGRATION_DOCS, Permission.INTEGRATION_EVENTS, // ws26
-            Permission.AGENT_CONNECT);                                  // ws26
+            Permission.INTEGRATION_DOCS, Permission.INTEGRATION_EVENTS); // ws26
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

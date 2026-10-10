@@ -62,7 +62,9 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     // every other bank out of them).
                     "banksetting",
                     // V241 (ws24): banners, owned by the platform bank.
-                    "announcement");
+                    "announcement",
+                    // V261 (ws26): a bank's on-prem Connector Agents.
+                    "integrationagent");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))
