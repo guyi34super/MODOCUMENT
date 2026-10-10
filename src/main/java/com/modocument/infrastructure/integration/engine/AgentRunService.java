@@ -66,6 +66,7 @@ public class AgentRunService implements AgentRunPort {
     private final OutboundDispatcher dispatcher;
     private final FlowRunner runner;
     private final TransactionTemplate tx;
+    private final long maxFileBytes;
     private final Clock clock = Clock.systemUTC();
 
     public AgentRunService(IntegrationRunJpaRepository runRepository, IntegrationRuns runs,
@@ -73,7 +74,10 @@ public class AgentRunService implements AgentRunPort {
                            IntegrationConnectionJpaRepository connections,
                            OutboundDeliveryJpaRepository deliveries, RecordsIngestion recordsIngestion,
                            PayloadBuilder payloads, OutboundDispatcher dispatcher, FlowRunner runner,
-                           PlatformTransactionManager transactionManager) {
+                           PlatformTransactionManager transactionManager,
+                           com.modocument.infrastructure.integration.connector.IntegrationConnectorProperties
+                                   connectorProperties) {
+        this.maxFileBytes = connectorProperties.limits().maxFileBytes();
         this.runRepository = runRepository;
         this.runs = runs;
         this.flows = flows;
@@ -139,6 +143,10 @@ public class AgentRunService implements AgentRunPort {
                               String nextCursor, boolean last) {
         IntegrationRun run = requireRun(bankId, agentId, runId, IntegrationRun.OP_READ);
         IntegrationFlow flow = requireFlow(bankId, run);
+        if (connectionType(bankId, run) == ConnectionType.SFTP) {
+            acceptFiles(bankId, run, flow, records);
+            return;
+        }
         int cap = runner.cap(flow);
         List<Map<String, Object>> staged = new ArrayList<>(staged(run));
         if (records != null) {
@@ -157,6 +165,49 @@ public class AgentRunService implements AgentRunPort {
         });
         if (last) {
             ingestStaged(bankId, runId, flow);
+        }
+    }
+
+    /**
+     * SFTP via the agent (SE5): each record is ONE pulled file
+     * {@code {fileName, remotePath, size, contentBase64}}; it is decoded,
+     * size-capped and sent through the normal file pipeline right away (the
+     * same path as a DIRECT SFTP pull). The run counts files.
+     */
+    private void acceptFiles(int bankId, IntegrationRun run, IntegrationFlow flow,
+                             List<Map<String, Object>> records) {
+        long runId = run.getId();
+        String origin = "flow:" + flow.getId() + "/run:" + runId;
+        for (Map<String, Object> record : records == null ? List.<Map<String, Object>>of() : records) {
+            Object name = record.get("fileName");
+            Object content = record.get("contentBase64");
+            if (!(name instanceof String fileName) || fileName.isBlank() || fileName.contains("/")
+                    || fileName.contains("\\") || !(content instanceof String base64)) {
+                throw new IllegalArgumentException("An SFTP record needs 'fileName' and 'contentBase64'.");
+            }
+            if ((long) base64.length() * 3 / 4 > maxFileBytes + 3) {
+                throw new IllegalArgumentException("'" + fileName + "' is larger than the "
+                        + maxFileBytes + "-byte cap.");
+            }
+            byte[] bytes;
+            try {
+                bytes = java.util.Base64.getDecoder().decode(base64);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("'contentBase64' of '" + fileName + "' is not base64.");
+            }
+            if (bytes.length > maxFileBytes) {
+                throw new IllegalArgumentException("'" + fileName + "' is larger than the "
+                        + maxFileBytes + "-byte cap.");
+            }
+            Object remote = record.get("remotePath");
+            var job = runner.ingestFile(flow, new com.modocument.application.port.integration.ReadBatch.InboundFile(
+                    remote == null ? fileName : String.valueOf(remote), fileName, bytes), origin);
+            runs.update(bankId, runId, current -> {
+                current.setIngestionJobId(job.getIngestionJobId());
+                current.setRecordsIn(current.getRecordsIn() + 1);
+            });
+            runs.log(bankId, runId, "INFO", "File " + fileName + " → ingestion job "
+                    + job.getIngestionJobId() + " (" + job.getCurrentStep() + ", " + job.getStatus() + ").");
         }
     }
 

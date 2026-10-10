@@ -55,6 +55,7 @@ public class UploadStorage {
         }
     }
 
+    /** A fresh, collision-free stored name in uploads/ (timestamp suffix, length-capped). */
     private Path newTarget(String original) throws IOException {
         {
             Files.createDirectories(uploadsDir);

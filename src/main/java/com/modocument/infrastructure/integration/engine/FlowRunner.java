@@ -237,7 +237,8 @@ public class FlowRunner {
         }
     }
 
-    private IngestionJob ingestFile(IntegrationFlow flow, ReadBatch.InboundFile file, String origin) {
+    /** Stores a delivered file like an upload and runs the normal file pipeline. */
+    IngestionJob ingestFile(IntegrationFlow flow, ReadBatch.InboundFile file, String origin) {
         if (!supportedTypes.isSupported(file.fileName())) {
             throw new IllegalArgumentException("'" + file.fileName() + "' is not a supported document "
                     + "type: " + supportedTypes.describeSupported() + ".");

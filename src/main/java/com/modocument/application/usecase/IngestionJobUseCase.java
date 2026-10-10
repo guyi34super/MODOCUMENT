@@ -143,6 +143,15 @@ public class IngestionJobUseCase {
     }
 
     public IngestionJob create(String fileName, int templateId) {
+        return create(fileName, templateId, null);
+    }
+
+    /**
+     * ws25: {@link #create(String, int)} for a machine caller acting as its
+     * owner (the integration API's {@code POST /files}): {@code origin}, e.g.
+     * {@code api-client:<id>}, is stamped on the job (null = a person).
+     */
+    public IngestionJob create(String fileName, int templateId, String origin) {
         int owner = currentUser.requireUserId();
         int bankId = currentUser.requireBankId();
         // The template must exist AND be usable by the caller — their own, or
@@ -167,6 +176,7 @@ public class IngestionJobUseCase {
         job.setImportHistoryId(savedHistory.getImportHistoryId());
         job.setCurrentStep(JobStep.UPLOADED);
         job.setStatus(JobStatus.PENDING);
+        job.setOrigin(origin == null ? null : abbreviateTo(origin, 100));
         return jobs.save(job);
     }
 

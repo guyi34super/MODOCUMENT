@@ -71,6 +71,11 @@ public final class SettingKeys {
             "alerts.parseFallbackSurge.threshold";
     public static final String ALERT_PARSE_FALLBACK_SURGE_WINDOW =
             "alerts.parseFallbackSurge.window";
+    /** ws25 (SE4): the integration-failures windowed alert rule. */
+    public static final String ALERT_INTEGRATION_FAILURES_THRESHOLD =
+            "alerts.integrationFailures.threshold";
+    public static final String ALERT_INTEGRATION_FAILURES_WINDOW =
+            "alerts.integrationFailures.window";
     public static final String ALERT_WEBHOOK_MIN_SEVERITY = "alerts.webhook.minSeverity";
     public static final String ALERT_EMAIL_MIN_SEVERITY = "alerts.email.minSeverity";
 

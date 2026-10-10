@@ -125,7 +125,7 @@ public class OutboundDispatcher {
         settleRun(bankId, runId);
     }
 
-    List<Long> claim(int bankId) {
+    public List<Long> claim(int bankId) {
         Instant now = clock.instant();
         Instant leaseUntil = now.plus(properties.getDispatchLease());
         int limit = Math.max(1, properties.getDispatchBatchSize());

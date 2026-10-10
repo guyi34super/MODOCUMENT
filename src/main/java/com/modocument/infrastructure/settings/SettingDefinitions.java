@@ -264,6 +264,10 @@ public final class SettingDefinitions {
                     "Code-extraction fallback surge", "20", "80"),
             alertWindow(ALERT_PARSE_FALLBACK_SURGE_WINDOW, "parse-fallback-surge",
                     "Code-extraction fallback surge: window", "60m"),
+            alertThreshold(ALERT_INTEGRATION_FAILURES_THRESHOLD, "integration-failures",
+                    "Integration run failures", "5", "20"),
+            alertWindow(ALERT_INTEGRATION_FAILURES_WINDOW, "integration-failures",
+                    "Integration run failures: window", "60m"),
             builder(ALERT_WEBHOOK_MIN_SEVERITY, ENUM).platform().security()
                     .group(SettingGroup.SECURITY_ALERTS)
                     .label("Webhook: minimum severity")

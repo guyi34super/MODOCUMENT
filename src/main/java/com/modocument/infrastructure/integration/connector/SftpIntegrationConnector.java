@@ -423,11 +423,14 @@ public class SftpIntegrationConnector implements IntegrationConnector {
         egress.checkDestination(connection.bankId(), host, port);
 
         SshClient client = SshClient.setUpDefaultClient();
+        java.util.concurrent.atomic.AtomicBoolean keyRefused = new java.util.concurrent.atomic.AtomicBoolean();
         client.setServerKeyVerifier((session, address, key) -> {
             String actual = KeyUtils.getFingerPrint(BuiltinDigests.sha256, key);
-            return expected != null && actual != null && MessageDigest.isEqual(
+            boolean match = expected != null && actual != null && MessageDigest.isEqual(
                     expected.replaceAll("=+$", "").getBytes(StandardCharsets.US_ASCII),
                     actual.replaceAll("=+$", "").getBytes(StandardCharsets.US_ASCII));
+            keyRefused.set(!match);
+            return match;
         });
         CoreModuleProperties.IDLE_TIMEOUT.set(client, limits.readTimeout().multipliedBy(2));
         CoreModuleProperties.NIO2_READ_TIMEOUT.set(client, limits.readTimeout());
@@ -458,8 +461,7 @@ public class SftpIntegrationConnector implements IntegrationConnector {
             try {
                 session.auth().verify(limits.connectTimeout());
             } catch (Exception e) {
-                if (!session.isOpen() && e.getMessage() != null
-                        && e.getMessage().toLowerCase(Locale.ROOT).contains("server key")) {
+                if (keyRefused.get()) {
                     throw new SecurityException("The server's host key does not match the pinned "
                             + "fingerprint; refused.");
                 }
@@ -475,7 +477,7 @@ public class SftpIntegrationConnector implements IntegrationConnector {
             if (e instanceof SecurityException || e instanceof IllegalArgumentException) {
                 throw e;
             }
-            if (e.getMessage() != null && e.getMessage().toLowerCase(Locale.ROOT).contains("server key")) {
+            if (keyRefused.get()) {
                 throw new SecurityException("The server's host key does not match the pinned "
                         + "fingerprint; refused.");
             }

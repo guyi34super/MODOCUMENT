@@ -142,6 +142,16 @@ import java.util.concurrent.Callable;
  *       announcements (RLS hides them from every customer tenant); served
  *       to each bank from memory, filtered by its bank code. Never
  *       {@code runAsSystem}: it reads the platform's rows only.</li>
+ *   <li>{@code IntegrationScheduler#tick} — ws25 integration flow engine,
+ *       every 30 s: {@code runAsSystem} in its own read-only transaction
+ *       for the cross-bank scan that lists ONLY the ids of banks with
+ *       integration work (an enabled flow, a PENDING outbox delivery, an
+ *       unfinished run); then {@code runAs(bank)} per bank for that bank's
+ *       due cron slots, run timeouts and outbox dispatch. No row content
+ *       is read as SYSTEM.</li>
+ *   <li>{@code IntegrationRunExecutor#submit} — ws25: executes one run on
+ *       the integration worker pool under {@code runAs(run's bank)} (from
+ *       the scheduler, "Run now" and retry).</li>
  * </ul>
  */
 public final class TenantContext {

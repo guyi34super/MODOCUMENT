@@ -24,6 +24,8 @@ undecided request (`CANCELLED`).
 | `BANK_CREATE`      | Onboard a customer bank with ≥ 2 first users (≥ 1 ADMIN, ≥ 2 ADMIN/APPROVER), each with MustChangePassword (ws21) | `platform:banks` | `POST /api/platform/banks` → 202 | `change:approve` (a second platform admin) |
 | `BANK_SUSPEND`     | Suspend a customer bank: every user's TokenVersion bumped, refresh tokens revoked, sign-in refused (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/suspend` → 202 | `change:approve` (a second platform admin) |
 | `BANK_ADMIN_ADD`   | Break-glass: a new ADMIN (MustChangePassword) in a customer bank (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/admins` → 202 | `change:approve` (a second platform admin) |
+| `INTEGRATION_CONNECTION_CHANGE` | A new integration connection, or a change of an existing one's host, settings, mode or credentials (ws25). The secret is **sealed at submit** by the SecretVault: the queue holds `{connectionId?, name, type, mode, agentId?, config, authType, secretCiphertext?, secretKeyVersion?, secretRef?, baseVersion?}` and the API strips `secretCiphertext` from every response. Apply refuses a connection changed since the request (`baseVersion`), resets it to UNTESTED and audits `INTEGRATION_CONNECTION_CHANGED` | `integration:admin` | `POST /api/admin/integrations/connections` → 202, `PUT …/{id}` (anything but a rename) → 202 | `change:approve` (a second admin) |
+| `INTEGRATION_FLOW_ENABLE` | Enable an OUTBOUND flow — data leaving the bank's tenant — or re-enable one an admin widened (masking turned off, more payload kinds or events, another connection, target, template, mapping or format: the flow is disabled at once). Payload `{flowId, flowVersion}`: a flow edited after the request is refused at apply. Audited `INTEGRATION_FLOW_ENABLED` | `integration:admin` | `POST /api/admin/integrations/flows/{id}/enable` → 202 (outbound), `PUT …/flows/{id}` that widens an enabled outbound flow → 202 | `change:approve` (a second admin) |
 
 Everything can also be submitted through the generic
 `POST /api/admin/changes` (`{changeType, payload, comment}`); the use case
@@ -54,6 +56,15 @@ and the API strips the hashes at any depth). Reactivating a suspended bank
 (`POST /api/platform/banks/{id}/reactivate`) is direct — the lower-risk
 direction.
 Both resets share the `admin-security` rate-limit bucket (10 per window).
+
+The integration hub (ws25) keeps the lower-risk directions direct:
+renaming a connection (`PUT …/connections/{id}` changing only the name,
+200), deleting a connection no flow uses, creating or editing a flow (it
+is created DISABLED), enabling an INBOUND flow (data enters the bank's own
+tenant), disabling any flow, and running an enabled flow. All of them are
+audited (`INTEGRATION_CONNECTION_CHANGED`, `INTEGRATION_FLOW_SAVED`,
+`INTEGRATION_FLOW_DELETED`, `INTEGRATION_FLOW_ENABLED`,
+`INTEGRATION_FLOW_DISABLED`).
 
 ## Flow
 
