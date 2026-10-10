@@ -133,11 +133,27 @@ const PAGINATION_FIELDS = {
   ],
   CURSOR: [
     { key: 'cursorParam', label: 'Cursor parameter', placeholder: 'cursor' },
-    { key: 'cursorPath', label: 'Next-cursor path in the response', placeholder: '$.next' },
+    {
+      key: 'cursorPath',
+      label: 'Next-cursor path in the response',
+      placeholder: 'meta.nextCursor',
+      // The server-side REST connector takes plain dot paths only (no "$.").
+      hint: 'A dot path such as next or meta.nextCursor.',
+    },
   ],
   LINK: [],
   NONE: [],
 };
+
+/**
+ * A JSONPath-style "$.meta.next" as the plain dot path "meta.next" the
+ * server-side REST connector accepts (the agent accepts both).
+ */
+export function plainDotPath(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/^\$\.?/, '');
+}
 
 /** Form spec → the §7.3 sourceSpec / targetSpec for the connection type. */
 function buildSpec(type, direction, spec) {
@@ -156,14 +172,19 @@ function buildSpec(type, direction, spec) {
         (PAGINATION_FIELDS[pagination.type] || []).forEach((f) => {
           const value = s[`pagination.${f.key}`];
           if (value !== undefined && String(value).trim() !== '') {
-            pagination[f.key] = f.key === 'pageSize' ? Number(value) : String(value).trim();
+            pagination[f.key] =
+              f.key === 'pageSize'
+                ? Number(value)
+                : f.key === 'cursorPath'
+                  ? plainDotPath(value)
+                  : String(value).trim();
           }
         });
         return {
           path: (s.path || '').trim(),
           query: textToQuery(s.queryText),
           pagination,
-          recordsPath: (s.recordsPath || '').trim() || null,
+          recordsPath: plainDotPath(s.recordsPath) || null,
         };
       }
       case 'SFTP':
@@ -866,7 +887,12 @@ function SpecForm({ type, outbound, spec, setSpec }) {
         return (
           <div className="grid gap-3 sm:grid-cols-2">
             {input('path', 'Path', { placeholder: '/accounts' })}
-            {input('recordsPath', 'Records path', { placeholder: '$.items' }, 'Where the records sit in the response.')}
+            {input(
+              'recordsPath',
+              'Records path',
+              { placeholder: 'data.items' },
+              'Where the records sit in the response, as a dot path such as data.items.'
+            )}
             <Field label="Query parameters" hint="One name=value per line.">
               <textarea
                 rows={3}
@@ -888,7 +914,7 @@ function SpecForm({ type, outbound, spec, setSpec }) {
             )}
             {(PAGINATION_FIELDS[paginationType] || []).map((f) => (
               <Fragment key={f.key}>
-                {input(`pagination.${f.key}`, f.label, { placeholder: f.placeholder })}
+                {input(`pagination.${f.key}`, f.label, { placeholder: f.placeholder }, f.hint)}
               </Fragment>
             ))}
           </div>
