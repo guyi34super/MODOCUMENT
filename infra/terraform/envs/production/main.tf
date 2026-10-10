@@ -156,6 +156,8 @@ module "ecs_app" {
   api_certificate_arn    = var.api_certificate_arn
   api_mtls_ca_bundle_pem = var.api_mtls_ca_bundle_pem
   api_mtls_client_cidrs  = var.api_mtls_client_cidrs
+  # The ALB nodes: the only peers allowed to vouch for a client certificate.
+  mtls_trusted_proxy_cidrs = module.network.public_subnet_cidrs
   bootstrap_admin_secret_arns = var.bootstrap_admin_enabled ? {
     email    = one(aws_secretsmanager_secret.bootstrap_admin_email[*].arn)
     password = one(aws_secretsmanager_secret.bootstrap_admin_password[*].arn)

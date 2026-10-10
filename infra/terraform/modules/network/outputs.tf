@@ -8,6 +8,11 @@ output "public_subnet_ids" {
   description = "Public (edge/ALB) subnet ids, one per AZ."
 }
 
+output "public_subnet_cidrs" {
+  value       = [for s in aws_subnet.public : s.cidr_block]
+  description = "Public (edge/ALB) subnet CIDRs: where the ALB nodes live (ws26 MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS)."
+}
+
 output "private_app_subnet_ids" {
   value       = [for s in aws_subnet.private_app : s.id]
   description = "Private app (ECS) subnet ids, one per AZ."

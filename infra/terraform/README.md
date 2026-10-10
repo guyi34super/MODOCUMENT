@@ -203,7 +203,9 @@ nothing but the new `MODOCUMENT_CONNECTOR_KEY` secret.
   forwarded, to a dedicated target group on the nginx mTLS server
   (`frontend_mtls_port` 8443). That is the only place that passes the
   `X-Amzn-Mtls-Clientcert-*` headers to the app, and only from the trusted
-  ALB. The browser path always strips them. Point `api_domain` at the ALB
+  ALB. The browser path always strips them. The app also gets
+  `MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS` = the ALB subnets (empty while
+  mTLS is off, so the headers are never trusted). Point `api_domain` at the ALB
   (not CloudFront, which cannot carry the client certificate).
   Requires `api_domain`, `api_certificate_arn`, the CA bundle and client
   CIDRs (a precondition fails the plan otherwise).

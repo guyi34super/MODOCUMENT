@@ -372,6 +372,10 @@ resource "aws_ecs_task_definition" "this" {
         { name = "SPRING_PROFILES_ACTIVE", value = var.spring_profiles },
         # ws24: reported by GET /api/system/version ("environment").
         { name = "MODOCUMENT_DEPLOY_ENVIRONMENT", value = var.deploy_environment },
+        # ws26: who may vouch for a client certificate (the ALB subnets) —
+        # empty unless the mTLS listener exists (mtls.tf), so the headers are
+        # never trusted otherwise.
+        { name = "MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS", value = var.api_mtls_enabled ? join(",", var.mtls_trusted_proxy_cidrs) : "" },
         # ws20 guardrails: in a deployed environment the app refuses to boot
         # when a configured default lies outside its hard limits
         # (SettingsStartupCheck). Never false outside local development.

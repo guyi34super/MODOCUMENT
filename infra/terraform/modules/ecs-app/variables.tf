@@ -110,6 +110,12 @@ variable "api_mtls_client_cidrs" {
   default     = []
 }
 
+variable "mtls_trusted_proxy_cidrs" {
+  description = "ALB subnets (the network module's public_subnet_cidrs): passed to the app as MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS, the peers whose X-Amzn-Mtls-Clientcert-* headers it accepts. Only set while api_mtls_enabled; empty = mTLS headers are never trusted."
+  type        = list(string)
+  default     = []
+}
+
 variable "frontend_mtls_port" {
   description = "Port of the frontend nginx's mTLS server (frontend/nginx.conf: the only server that passes X-Amzn-Mtls-Clientcert-* to the app, and only from the trusted ALB). The mTLS target group points at it."
   type        = number
