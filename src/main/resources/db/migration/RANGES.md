@@ -39,8 +39,8 @@ per new workstream:
 | ws22       | V220–V229 | SE3   | Template.Visibility, dashboard indexes |
 | ws23       | V230–V239 | SE4   | Extraction mode, field hints, parse provenance |
 | ws24       | V240–V249 | SE5   | DeployedVersion, Announcement |
-| ws25       | V250–V259 | SE4 (SE1: BankEgressRule) | Integration core: connections, flows, runs, outbox, egress rules |
-| ws26       | V260–V269 | SE2 (SE5: IntegrationAgent) | Machine identity: ApiClient, secrets, agents, idempotency |
+| ws25       | V250–V259 | SE4 (SE1: V251 BankEgressRule) | Integration core: V250 connections/flows/runs/outbox, V252 events + IngestionJob.Origin |
+| ws26       | V260–V269 | SE2 (SE5: V261 IntegrationAgent) | Machine identity: V260 ApiClient/secrets/idempotency, V261 agents + connection FK (NOT VALID) |
 
 Phase-2 migrations must also follow docs/release/migration-policy.md
 (expand/contract: a release only adds; drops/renames/SET NOT NULL ship one

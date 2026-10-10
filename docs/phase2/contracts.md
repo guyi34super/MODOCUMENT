@@ -169,3 +169,99 @@ New yml alert rules (owner adds them to `modocument.alerts.rules`):
 | `pom.xml` | SE5 (versioning/plugins); SE4 adds connector drivers; Supervisor resolves |
 
 Merge order inside a wave: SE2 → SE1 → SE3 → SE4 → SE5, QA last.
+
+## 7. Wave 3 — Bank Integration Hub contracts
+
+### 7.1 Java contracts (landed before Wave 3)
+
+Vocabularies: `domain/model/integration/` — `ConnectionType`, `ConnectionMode`,
+`DbVendor`, `FlowDirection`, `FlowTrigger`, `FlowEvent`, `PayloadKind`,
+`PayloadFormat`, `DbWriteMode`, `RunStatus`, `DeliveryStatus`,
+`ApiAuthMethod`, `ApiClientKind`, `OutboundAuthType`. All stored by NAME.
+
+Ports: `application/port/integration/`.
+
+| Port | Implements | Calls it |
+|---|---|---|
+| `IntegrationConnector` (SPI: `validate`, `test`, `read`, `write`) + `ConnectionContext`, `SecretMaterial`, `ReadBatch`, `OutboundBatch`, `WriteResult`, `ConnectionTestResult` | SE4 (one bean per `ConnectionType`) | SE4 flow engine; SE5 agent (same classes, local secrets) |
+| `SecretVault` (`seal`/`open`, `Sealed(ciphertext, keyVersion)`) | SE1 | SE4 (connections), SE2 if needed |
+| `EgressGuard.checkDestination(bankId, host, port)` | SE1 | SE4 connectors, right before connecting |
+| `RecordsIngestion.createFromRecords(Command)` | SE4 | SE2 `POST /api/integration/v1/records`, SE4 inbound flows |
+| `IntegrationEventLog` (`publish` in-transaction, `page`) | SE4 | producers (SE4 hooks ingestion; doc release), SE2 `GET /api/integration/v1/events` |
+| `CurrentClientProvider` + `ClientPrincipal` | SE2 | SE2 integration API, SE5 agent endpoints |
+| `ApiClientIssuer.issueAgentClient(...)` | SE2 | SE5 `POST /api/agent/v1/enroll` |
+| `AgentRunPort` (`claimTasks`, `acceptRecords`, `payload`, `complete`) | SE4 | SE5 `/api/agent/v1/**` |
+
+**Placeholders.** `infrastructure/integration/placeholder/` holds one bean per
+port so each branch boots alone. **The owner deletes its placeholder in the
+same commit that adds the real `@Component`.** Nobody else edits those files.
+Consumers unit-test against mocks of the port, never the placeholder.
+
+Jobs created by machines stay owner-scoped: the owner is the user who
+created the API client (`ClientPrincipal.createdByUserId`) or the flow
+(`IntegrationFlow.CreatedBy`). Machine-created jobs use bank-shared
+(`BANK`) templates only.
+
+### 7.2 Database sub-assignments
+
+| Migration | Owner | Content |
+|---|---|---|
+| `V250__ws25_integration_core.sql` | SE4 | `IntegrationConnection`, `IntegrationFlow`, `IntegrationRun` (unique `(FlowId, ScheduledFor)`), `IntegrationRunEvent`, `OutboundDelivery`. `AgentId` is a plain nullable int (no FK yet) |
+| `V251__ws25_egress_rules.sql` | SE1 | `BankEgressRule(BankEgressRuleId, BankId, Host, Cidr, Port, Status PENDING/APPROVED/REVOKED, RequestedBy, ApprovedBy, …)` |
+| `V252__ws25_integration_events.sql` | SE4 | `IntegrationEvent(Id bigserial, BankId, Type, EntityType, EntityId, DataJson, OccurredAt)`, `IngestionJob.Origin` (nullable) |
+| `V260__ws26_machine_identity.sql` | SE2 | `ApiClient`, `ApiClientSecret`, `IdempotencyKey` |
+| `V261__ws26_integration_agents.sql` | SE5 | `IntegrationAgent`, then `fk_integrationconnection_agent` added `NOT VALID` (validated in a later release) |
+
+Every new table has `BankId`, so RLS applies automatically. Nothing joins the
+non-tenant inventory. Each table also gets its JPA entity, so the H2 schema
+matches (`@Check`/`@ColumnDefault` parity like `Template`).
+
+### 7.3 REST shapes the UI (SE3) builds against
+
+Secrets are **write-only**. A view carries `secretSet: true|false`, never a
+value. Ids are numbers; times are ISO-8601 UTC.
+
+- `ConnectionView = {id, name, type, mode, agentId, config:{…non-secret…}, authType, secretSet, secretRef, status: "UNTESTED|OK|FAILED|DISABLED", lastTestAt, lastTestResult, version, pendingChangeId, createdBy, updatedAt}`
+- `ConnectionRequest = {name, type, mode, agentId?, config, authType, secret?: {…keys of SecretMaterial…}, secretRef?, expectedVersion?}`. POST/PUT return **202** `PendingChange` (`INTEGRATION_CONNECTION_CHANGE`). Rename-only edits return 200.
+- `POST …/connections/{id}/test` → `ConnectionTestResult {ok, message, latencyMillis}`. An AGENT connection returns 202 `{runId}` (the test runs through the agent).
+- `FlowView = {id, name, direction, connectionId, connectionName, templateId, templateName, trigger, cron, events:[FlowEvent], payloadKinds:[PayloadKind], format, sourceSpec, targetSpec, fieldMapping:[{from, to}], maskPii, rowCap, enabled, pendingChangeId, version, lastRun:{id, status, finishedAt}}`
+- `sourceSpec` by connection type:
+  - DATABASE: `{table, columns:[…], watermarkColumn?}`
+  - REST_API: `{path, query:{}, pagination:{type:"NONE|PAGE|CURSOR|LINK", …}, recordsPath}`
+  - SFTP: `{folder, glob, afterRead:"MOVE|DELETE"}`
+- `targetSpec` by connection type:
+  - DATABASE: `{table, mode:"INSERT|UPSERT", keyColumns:[…]}`
+  - REST_API: `{method:"POST|PUT", path, batchSize}`
+  - SFTP: `{folder, fileNamePattern}`
+  - WEBHOOK: `{path}`
+- `POST …/flows/{id}/preview` → `{columns:[…], rows:[{…}] (≤20), suggestedMapping:[{from, to, score}]}`. Nothing is written.
+- `RunView = {id, flowId, flowName, direction, status: RunStatus, trigger, scheduledFor, startedAt, finishedAt, attempt, recordsIn, recordsOut, ingestionJobId, error}`. Run detail adds `events:[{at, level, message}]` and `deliveries:[{id, status: DeliveryStatus, attempts, lastError, nextAttemptAt}]`. `POST …/runs/{id}/retry` replays dead deliveries or re-queues a failed run.
+- `ApiClientView = {id, name, kind, authMethod, clientId, keyPrefix, certFingerprint, certSubject, scopes:[…], allowedCidrs:[…], expiresAt, status: "ACTIVE|REVOKED|EXPIRED", lastUsedAt, createdBy, pendingChangeId}`
+- `ApiClientRequest = {name, authMethod, scopes, allowedCidrs, expiresAt, certificatePem?}` → 202 (`API_CLIENT_CREATE`).
+  - After approval, the **maker** gets the one-time `{clientId, secret}` from `GET …/api-clients/{id}/initial-secret`. It is readable once, within 24 h, then deleted.
+  - `POST …/{id}/rotate` → 200 `{clientId, secret}` (shown once; the old secret stays valid for the overlap).
+  - `POST …/{id}/revoke` → 200.
+- `AgentView = {id, name, status: "PENDING_ENROLMENT|ONLINE|OFFLINE|REVOKED", version, latestVersion, updateAvailable, lastHeartbeatAt, apiClientId, connections:[…ids]}`
+  - `POST …/agents {name}` → 202 (`AGENT_REGISTER`).
+  - After approval, the maker gets `GET …/agents/{id}/enrolment` → `{token, expiresAt, dockerCommand}` (readable once, 15 min).
+- `EgressRuleView = {id, host, cidr, port, status, requestedBy, approvedBy, createdAt}`
+
+### 7.4 Agent protocol (`/api/agent/v1`, SE5)
+
+- `POST /enroll {token, name, version, authMethod, certificatePem?}` (public; the token is the credential) → `{agentId, clientId, secret?, tokenUrl}`
+- `GET /tasks?wait=30` → `{tasks:[AgentTask]}` (`AgentRunPort.AgentTask` as JSON)
+- `POST /runs/{id}/records {records:[…], nextCursor, last}` → 204
+- `GET /runs/{id}/payload` → `OutboundBatch` as JSON (`fileContent` base64)
+- `POST /runs/{id}/result {success, recordsIn, recordsOut, error, remoteReference}` → 204
+- `POST /heartbeat {version, status, connections:[{connectionId, ok, message}]}` → `{latestVersion, pollSeconds}`
+
+### 7.5 Shared-file rules for Wave 3
+
+| File | Owner |
+|---|---|
+| `api/config/SecurityConfig.java` (client auth filter, public `/api/integration/oauth/token`, `/api/agent/v1/enroll`) | SE2. SE5 sends its public route line |
+| `frontend/nginx.conf` + entrypoint (mTLS header pass-through from the trusted ALB only) | SE5 |
+| `pom.xml` | SE4 adds the DB drivers and MINA SSHD. SE5 does **not** add a reactor module: `agent/` is a standalone Maven project with its own `pom.xml` and CI job |
+| `frontend/src/pages/PendingChangesPage.jsx` | SE3 adds labels/summaries for all five integration ChangeTypes from §2 up front |
+| `RoutePermissionCoverageTest.RESERVED` | each owner removes its own permission lines when its first route lands |
+| `application.yml` | SE1 owns the settings block. Others add their own keys under `modocument.integration.*` / `modocument.agent.*` |
