@@ -48,13 +48,21 @@ import java.util.concurrent.ConcurrentHashMap;
  *       procedure is docs/integration/secrets.md.</li>
  * </ul>
  *
- * <p><b>No key configured</b>: the application still starts (a bank without
- * DIRECT connections never needs one), but {@link #seal} and {@link #open}
- * refuse with an {@link IllegalStateException} naming the variable. Outside
- * the dev/test profiles ({@code permit-dev-paths} off) that is logged as a
- * WARN at startup. A key that IS set but malformed (not base64 of exactly 32
- * bytes, a duplicate or non-positive version) fails startup in every
- * profile — like a too-short {@code MODOCUMENT_MFA_KEY}.
+ * <p><b>No key configured</b>:
+ * <ul>
+ *   <li>staging/production ({@code modocument.settings.enforce-guardrails=true},
+ *       {@code MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS}) — the context refuses
+ *       to start, like an unset {@code MODOCUMENT_MFA_KEY}. Terraform injects
+ *       the key from Secrets Manager there;</li>
+ *   <li>otherwise the application still starts (a local stack without DIRECT
+ *       connections never needs one), but {@link #seal} and {@link #open}
+ *       refuse with an {@link IllegalStateException} naming the variable.
+ *       Outside the dev/test profiles ({@code permit-dev-paths} off) that is
+ *       logged as a WARN at startup.</li>
+ * </ul>
+ * A key that IS set but malformed (not base64 of exactly 32 bytes, a
+ * duplicate or non-positive version) fails startup in every profile — like a
+ * too-short {@code MODOCUMENT_MFA_KEY}.
  *
  * <p>Neither exceptions nor logs ever contain key material or secret values.
  */
@@ -64,6 +72,14 @@ public class ConnectorSecretVault implements SecretVault {
     private static final Logger log = LoggerFactory.getLogger(ConnectorSecretVault.class);
 
     static final String INFO_PREFIX = "modocument-connector:";
+
+    /** The startup refusal in staging/production; names the variable, never a value. */
+    static final String MISSING_KEY_REFUSAL = "Refusing to start: MODOCUMENT_CONNECTOR_KEY is "
+            + "not set (modocument.settings.enforce-guardrails=true). Bank integration "
+            + "credentials cannot be sealed without it. Generate a key with "
+            + "`openssl rand -base64 32`, store it in the secret store and set it in the "
+            + "environment (or MODOCUMENT_CONNECTOR_KEY_FILE) before starting the app; see "
+            + "docs/integration/secrets.md.";
     private static final TypeReference<Map<String, String>> MAP_TYPE = new TypeReference<>() {
     };
 
@@ -77,6 +93,7 @@ public class ConnectorSecretVault implements SecretVault {
             @Value("${modocument.integration.connector-key-version:1}") int activeVersion,
             @Value("${modocument.integration.connector-retired-keys:}") String retiredKeys,
             @Value("${modocument.security.permit-dev-paths:false}") boolean permitDevPaths,
+            @Value("${modocument.settings.enforce-guardrails:false}") boolean enforceGuardrails,
             ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
         this.activeVersion = activeVersion;
@@ -114,6 +131,9 @@ public class ConnectorSecretVault implements SecretVault {
             }
         }
         this.masterKeys = Collections.unmodifiableMap(keys);
+        if (!keys.containsKey(activeVersion) && enforceGuardrails) {
+            throw new IllegalStateException(MISSING_KEY_REFUSAL);
+        }
         if (!keys.containsKey(activeVersion) && !permitDevPaths) {
             log.warn("MODOCUMENT_CONNECTOR_KEY is not set: integration connection secrets "
                     + "can neither be stored nor used until it is (see docs/integration/secrets.md).");

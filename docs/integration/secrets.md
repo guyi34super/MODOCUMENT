@@ -43,10 +43,15 @@ modocument:
 accept the `_FILE` indirection (Docker/ECS secrets), like the other
 secrets.
 
-- **Not set:** the application starts, because a bank without DIRECT
-  connections never needs the key. Storing or opening a connection secret
-  is refused with a clear `IllegalStateException`. Outside the dev/test
-  profiles a WARN is logged at startup. The test profile ships a fixed,
+- **Not set, staging/production** (`MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS=true`,
+  set by Terraform, which also injects the key from Secrets Manager): the
+  application **refuses to start** with `Refusing to start:
+  MODOCUMENT_CONNECTOR_KEY is not set …`, like an unset
+  `MODOCUMENT_MFA_KEY` (`ProductionBootPgIT` pins this).
+- **Not set, anywhere else:** the application starts, because a local stack
+  without DIRECT connections never needs the key. Storing or opening a
+  connection secret is refused with a clear `IllegalStateException`.
+  Outside the dev/test profiles a WARN is logged at startup. The test profile ships a fixed,
   deliberately worthless key (32 zero bytes).
 - **Set but malformed** (not base64, not 32 bytes, a non-positive or
   duplicate version): startup fails in every profile.

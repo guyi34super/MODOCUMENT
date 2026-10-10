@@ -80,11 +80,12 @@ services:
       # from the JWT key (`openssl rand -base64 48`). Production mode refuses
       # to boot without it.
       MODOCUMENT_MFA_KEY: ${MODOCUMENT_MFA_KEY:?Set MODOCUMENT_MFA_KEY (openssl rand -base64 48)}
-      # OPTIONAL (ws25 Bank Integration Hub): seals DIRECT-mode connection
-      # secrets — base64 of exactly 32 bytes (`openssl rand -base64 32`),
-      # distinct from the MFA key. Unset: the app starts, but integration
-      # connections cannot store credentials. Rotation:
-      # docs/integration/secrets.md.
+      # ws25 Bank Integration Hub: seals DIRECT-mode connection secrets —
+      # base64 of exactly 32 bytes (`openssl rand -base64 32`), distinct from
+      # the MFA key. REQUIRED when MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS=true
+      # (staging/production refuse to boot without it). Otherwise optional:
+      # unset, the app starts but integration connections cannot store
+      # credentials. Rotation: docs/integration/secrets.md.
       MODOCUMENT_CONNECTOR_KEY: ${MODOCUMENT_CONNECTOR_KEY:-}
       # PRODUCTION SECRETS PATTERN (SEC-018): instead of putting secret VALUES
       # in the environment, mount Docker secrets and point the app at the

@@ -132,6 +132,7 @@ jobs:
             echo "E2E_APP_DB_USER_PASSWORD=$app_pw"
             echo "E2E_JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')"
             echo "E2E_MFA_KEY=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "E2E_CONNECTOR_KEY=$(openssl rand -base64 32 | tr -d '\n')"
             echo "E2E_BOOTSTRAP_ADMIN_EMAIL=e2e-admin-${GITHUB_RUN_ID}@e2e.modocument.test"
             echo "E2E_BOOTSTRAP_ADMIN_PASSWORD=E2e-$(openssl rand -base64 18 | tr -d '/+=\n')-7q"
             echo "E2E_AI_KEY=e2e-$(openssl rand -hex 8)"
