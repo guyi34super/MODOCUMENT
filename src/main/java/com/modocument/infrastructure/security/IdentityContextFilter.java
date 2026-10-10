@@ -1,6 +1,7 @@
 package com.modocument.infrastructure.security;
 
 import com.modocument.application.port.TenantContext;
+import com.modocument.infrastructure.security.client.ClientAuthentication;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,6 +29,9 @@ import java.util.List;
  *       an authenticated request says who, which bank and which request
  *       (E9).</li>
  * </ul>
+ * A machine caller (ws26 {@link ClientAuthentication}: client token, API key
+ * or client certificate) opens its ApiClient's bank the same way and logs as
+ * {@code userId=client:<apiClientId>}, {@code role=API_CLIENT}.
  * Added to the security chain AFTER bearer authentication (not
  * auto-registered as a servlet filter — SecurityConfig places it
  * explicitly), and everything is cleared in a finally block so pooled
@@ -44,7 +48,15 @@ public class IdentityContextFilter extends OncePerRequestFilter {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         boolean tenantOpened = false;
         boolean identityPut = false;
-        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+        if (authentication instanceof ClientAuthentication client) {
+            // ws26 machine caller (client token, API key or certificate):
+            // the client's own bank, logged as "client:<id>" — never a user.
+            TenantContext.open(client.getPrincipal().bankId());
+            tenantOpened = true;
+            MDC.put(MDC_USER_ID, "client:" + client.getPrincipal().apiClientId());
+            MDC.put(MDC_ROLE, "API_CLIENT");
+            identityPut = true;
+        } else if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
             if (jwt.getClaims().get(JwtService.CLAIM_BANK_ID) instanceof Number bankId) {
                 TenantContext.open(bankId.intValue()); // also sets MDC bankId
                 tenantOpened = true;

@@ -1,0 +1,125 @@
+{
+  "info": {
+    "name": "MoDocument Integration API v1",
+    "description": "Bank-system calls to MoDocument (docs/integration/developer-guide.md). Set baseUrl, clientId, clientSecret (OAuth2) or apiKey; run 'Get token' first when using OAuth2.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "https://modocument.example.com"},
+    {"key": "clientId", "value": "mdc_xxxxxxxxxxxxxxxxxxxxxxxx"},
+    {"key": "clientSecret", "value": ""},
+    {"key": "apiKey", "value": "mdk_xxxxxxxxxxxxxxxx.secret"},
+    {"key": "accessToken", "value": ""},
+    {"key": "templateId", "value": "1"},
+    {"key": "jobId", "value": "1"},
+    {"key": "documentId", "value": "1"},
+    {"key": "eventCursor", "value": "0"}
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{"key": "token", "value": "{{accessToken}}", "type": "string"}]
+  },
+  "item": [
+    {
+      "name": "Get token (OAuth2 client credentials)",
+      "event": [{
+        "listen": "test",
+        "script": {"type": "text/javascript", "exec": [
+          "const body = pm.response.json();",
+          "if (body.access_token) { pm.collectionVariables.set('accessToken', body.access_token); }"
+        ]}
+      }],
+      "request": {
+        "auth": {"type": "basic", "basic": [
+          {"key": "username", "value": "{{clientId}}", "type": "string"},
+          {"key": "password", "value": "{{clientSecret}}", "type": "string"}
+        ]},
+        "method": "POST",
+        "header": [{"key": "Content-Type", "value": "application/x-www-form-urlencoded"}],
+        "body": {"mode": "urlencoded", "urlencoded": [
+          {"key": "grant_type", "value": "client_credentials"}
+        ]},
+        "url": "{{baseUrl}}/api/integration/oauth/token"
+      }
+    },
+    {
+      "name": "List templates",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/integration/v1/templates"}
+    },
+    {
+      "name": "List templates (API key)",
+      "request": {
+        "auth": {"type": "noauth"},
+        "method": "GET",
+        "header": [{"key": "Authorization", "value": "ApiKey {{apiKey}}"}],
+        "url": "{{baseUrl}}/api/integration/v1/templates"
+      }
+    },
+    {
+      "name": "Send records",
+      "event": [{
+        "listen": "test",
+        "script": {"type": "text/javascript", "exec": [
+          "const body = pm.response.json();",
+          "if (body.jobId) { pm.collectionVariables.set('jobId', body.jobId); }"
+        ]}
+      }],
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"},
+          {"key": "Idempotency-Key", "value": "{{$guid}}"}
+        ],
+        "body": {"mode": "raw", "raw": "{\n  \"templateId\": {{templateId}},\n  \"externalBatchId\": \"EOD-2026-10-10\",\n  \"records\": [\n    {\"AccountNo\": \"001-7781\", \"Amount\": 1250.50},\n    {\"AccountNo\": \"001-7782\", \"Amount\": 99}\n  ]\n}"},
+        "url": "{{baseUrl}}/api/integration/v1/records"
+      }
+    },
+    {
+      "name": "Upload file",
+      "request": {
+        "method": "POST",
+        "header": [{"key": "Idempotency-Key", "value": "{{$guid}}"}],
+        "body": {"mode": "formdata", "formdata": [
+          {"key": "templateId", "value": "{{templateId}}", "type": "text"},
+          {"key": "file", "type": "file", "src": ""}
+        ]},
+        "url": "{{baseUrl}}/api/integration/v1/files"
+      }
+    },
+    {
+      "name": "Job status",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/integration/v1/jobs/{{jobId}}"}
+    },
+    {
+      "name": "Job results (JSON)",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/integration/v1/jobs/{{jobId}}/results?format=json"}
+    },
+    {
+      "name": "Job results (CSV)",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/integration/v1/jobs/{{jobId}}/results?format=csv"}
+    },
+    {
+      "name": "Job errors",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/integration/v1/jobs/{{jobId}}/errors"}
+    },
+    {
+      "name": "Released document (metadata)",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/integration/v1/documents/{{documentId}}"}
+    },
+    {
+      "name": "Released document (PDF)",
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/integration/v1/documents/{{documentId}}?format=pdf"}
+    },
+    {
+      "name": "Events",
+      "event": [{
+        "listen": "test",
+        "script": {"type": "text/javascript", "exec": [
+          "const body = pm.response.json();",
+          "if (body.next !== undefined) { pm.collectionVariables.set('eventCursor', body.next); }"
+        ]}
+      }],
+      "request": {"method": "GET", "url": "{{baseUrl}}/api/integration/v1/events?after={{eventCursor}}&limit=100"}
+    }
+  ]
+}

@@ -17,13 +17,16 @@ public class WebConfig implements WebMvcConfigurer {
     private final String[] allowedOrigins;
     private final LlmQuotaInterceptor llmQuota;
     private final ApiRateLimitInterceptor apiRateLimit;
+    private final MachineApiInterceptor machineApi;
 
     public WebConfig(@Value("${modocument.cors.allowed-origins}") String[] allowedOrigins,
                      LlmQuotaInterceptor llmQuota,
-                     ApiRateLimitInterceptor apiRateLimit) {
+                     ApiRateLimitInterceptor apiRateLimit,
+                     MachineApiInterceptor machineApi) {
         this.allowedOrigins = allowedOrigins;
         this.llmQuota = llmQuota;
         this.apiRateLimit = apiRateLimit;
+        this.machineApi = machineApi;
     }
 
     @Override
@@ -45,6 +48,10 @@ public class WebConfig implements WebMvcConfigurer {
         // casing cannot dodge it, and GET /api/ingestion/jobs stays
         // unmetered while the POST on the same path is).
         registry.addInterceptor(apiRateLimit);
+
+        // ws26: per-client limit, LastUsedAt and the per-call audit of the
+        // machine API (selected by the controller's @MachineApi).
+        registry.addInterceptor(machineApi);
     }
 
     @Override

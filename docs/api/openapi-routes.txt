@@ -5,7 +5,7 @@
 # docs/api/versioning-policy.md. Regenerate with:
 #   mvn -Dtest=OpenApiContractTest \
 #       -Dmodocument.contract.update=true test
-# 156 operations.
+# 170 operations.
 POST /ImportDetails/Create
 GET /ImportDetails/GetAll
 GET /ImportDetails/GetById/{id}
@@ -53,6 +53,11 @@ GET /api/admin/dashboard
 POST /api/admin/dsr/erase
 POST /api/admin/dsr/export
 POST /api/admin/dsr/search
+GET /api/admin/integrations/api-clients
+POST /api/admin/integrations/api-clients
+GET /api/admin/integrations/api-clients/{id}/initial-secret
+POST /api/admin/integrations/api-clients/{id}/revoke
+POST /api/admin/integrations/api-clients/{id}/rotate
 POST /api/admin/retention/run
 GET /api/admin/retention/status
 GET /api/admin/settings
@@ -144,6 +149,15 @@ POST /api/ingestion/jobs/{id}/revalidate
 PUT /api/ingestion/jobs/{id}/rows
 PUT /api/ingestion/jobs/{id}/wizard-step
 GET /api/ingestion/supported-types
+POST /api/integration/oauth/token
+GET /api/integration/v1/documents/{id}
+GET /api/integration/v1/events
+POST /api/integration/v1/files
+GET /api/integration/v1/jobs/{id}
+GET /api/integration/v1/jobs/{id}/errors
+GET /api/integration/v1/jobs/{id}/results
+POST /api/integration/v1/records
+GET /api/integration/v1/templates
 GET /api/platform/announcements
 POST /api/platform/announcements
 DELETE /api/platform/announcements/{id}

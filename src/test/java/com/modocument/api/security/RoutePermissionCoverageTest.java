@@ -54,6 +54,9 @@ class RoutePermissionCoverageTest {
             // ws18 (SUP-S11): synthetic probe for external uptime monitors —
             // GET only, rate-limited per ip, version + db boolean only.
             "/api/probe/synthetic",
+            // ws26: OAuth2 client-credentials token endpoint — the client
+            // authenticates inside (secret or certificate), per-IP limited.
+            "/api/integration/oauth/token",
             "/error");
 
     private static final List<String> PUBLIC_PREFIXES = List.of(
@@ -85,9 +88,10 @@ class RoutePermissionCoverageTest {
             // PLATFORM_READ; ws21 landed PLATFORM_BANKS; ws22 landed
             // TEMPLATE_PUBLISH (PUT /Templates/{id}/Visibility); ws24 landed
             // PLATFORM_ANNOUNCE.
-            Permission.INTEGRATION_ADMIN, Permission.INTEGRATION_RUN,   // ws25
-            Permission.INTEGRATION_INGEST, Permission.INTEGRATION_RESULTS,
-            Permission.INTEGRATION_DOCS, Permission.INTEGRATION_EVENTS, // ws26
+            // ws26 landed INTEGRATION_INGEST/RESULTS/DOCS/EVENTS
+            // (/api/integration/v1/**) and INTEGRATION_ADMIN
+            // (/api/admin/integrations/api-clients).
+            Permission.INTEGRATION_RUN,                                 // ws25
             Permission.AGENT_CONNECT);                                  // ws26
 
     @Autowired

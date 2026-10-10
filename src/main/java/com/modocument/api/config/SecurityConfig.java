@@ -3,13 +3,24 @@ package com.modocument.api.config;
 import com.modocument.infrastructure.security.IdentityContextFilter;
 import com.modocument.infrastructure.security.MfaChallengeScopeValidator;
 import com.modocument.infrastructure.security.RevocationValidator;
+import com.modocument.infrastructure.security.client.ApiClientAuthenticator;
+import com.modocument.infrastructure.security.client.ClientAuthentication;
+import com.modocument.infrastructure.security.client.ClientAuthenticationFilter;
+import com.modocument.infrastructure.security.client.ClientTokenService;
+import com.modocument.infrastructure.security.client.MtlsClientCertificates;
 import com.modocument.infrastructure.security.oidc.OidcLoginFailureHandler;
 import com.modocument.infrastructure.security.oidc.OidcLoginSuccessHandler;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -21,14 +32,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
@@ -48,6 +62,24 @@ import java.nio.charset.StandardCharsets;
  * longer public — users are admin-created (bootstrap admin + future admin
  * endpoint). Every accepted token additionally passes the
  * {@link RevocationValidator} (jti denylist + TokenVersion check).
+ *
+ * <p><b>Machine callers (ws26).</b> Bank systems and Connector Agents
+ * authenticate as API clients — an OAuth2 client token (same signing key,
+ * {@code typ=client}, converted to a {@link ClientAuthentication}), an
+ * {@code Authorization: ApiKey} header or a client certificate forwarded by
+ * the trusted proxy (both handled by {@link ClientAuthenticationFilter},
+ * placed before bearer authentication). The two worlds never mix:
+ * <ul>
+ *   <li>{@code /api/integration/v1/**} and {@code /api/agent/v1/**} admit
+ *       ONLY a client ({@code ROLE_API_CLIENT}) — a user token is a 403;</li>
+ *   <li>every other authenticated route admits ONLY a user — a client
+ *       credential is a 403;</li>
+ *   <li>public: {@code POST /api/integration/oauth/token} (the client
+ *       authenticates inside) and {@code POST /api/agent/v1/enroll} (the
+ *       one-time enrolment token is the credential, SE5).</li>
+ * </ul>
+ * The permission checks then narrow a client to its scopes
+ * ({@code PermissionChecker}).
  */
 @Configuration
 public class SecurityConfig {
@@ -88,7 +120,10 @@ public class SecurityConfig {
             // without them oauth2Login stays off and this chain is unchanged.
             ObjectProvider<ClientRegistrationRepository> oidcRegistrations,
             ObjectProvider<OidcLoginSuccessHandler> oidcSuccessHandler,
-            ObjectProvider<OidcLoginFailureHandler> oidcFailureHandler) throws Exception {
+            ObjectProvider<OidcLoginFailureHandler> oidcFailureHandler,
+            // ws26 machine identity (API keys, client certificates).
+            ApiClientAuthenticator apiClientAuthenticator,
+            MtlsClientCertificates mtlsCertificates) throws Exception {
         // A JSON API serves no markup, so the strictest CSP applies; when the
         // dev tooling (Swagger UI, H2 console) is enabled, relax it just enough
         // for those pages to load their own assets.
@@ -135,7 +170,17 @@ public class SecurityConfig {
                             // ws18 (SUP-S11): the synthetic probe for external
                             // uptime monitors — GET only, rate-limited per ip,
                             // answers a version + one db boolean, nothing else.
-                            .requestMatchers(HttpMethod.GET, "/api/probe/synthetic").permitAll();
+                            .requestMatchers(HttpMethod.GET, "/api/probe/synthetic").permitAll()
+                            // ws26: the OAuth2 token endpoint authenticates
+                            // the CLIENT itself (secret or certificate), and
+                            // agent enrolment's credential is the one-time
+                            // enrolment token in the body (SE5).
+                            .requestMatchers(HttpMethod.POST, "/api/integration/oauth/token")
+                            .permitAll()
+                            .requestMatchers(HttpMethod.POST, "/api/agent/v1/enroll").permitAll()
+                            // ws26: machine routes admit machine callers only.
+                            .requestMatchers("/api/integration/v1/**", "/api/agent/v1/**")
+                            .hasAuthority(ClientAuthentication.AUTHORITY);
                     if (permitDevPaths) {
                         // Outside dev these fall through to authenticated():
                         // the generated spec is served to any valid token
@@ -143,9 +188,14 @@ public class SecurityConfig {
                         a.requestMatchers("/swagger/**", "/swagger-ui/**", "/swagger-ui.html",
                                 "/v3/api-docs/**", "/h2-console/**").permitAll();
                     }
-                    a.anyRequest().authenticated();
+                    // Everything else: an authenticated USER — never a client.
+                    a.anyRequest().access(USER_ONLY);
                 })
-                .oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()))
+                .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(
+                        SecurityConfig::convertJwt)))
+                // ws26: API key / client certificate, before bearer tokens.
+                .addFilterBefore(new ClientAuthenticationFilter(apiClientAuthenticator,
+                        mtlsCertificates), BearerTokenAuthenticationFilter.class)
                 // After bearer auth so the validated JWT's claims are in the
                 // security context: opens TenantContext (bank_id) and the
                 // userId/bankId/role logging MDC in one place; cleared in the
@@ -170,6 +220,28 @@ public class SecurityConfig {
                             e.authenticationEntryPoint(new BearerTokenAuthenticationEntryPoint()));
         }
         return http.build();
+    }
+
+    /** Authenticated, and not a machine client (ws26). */
+    private static final AuthorizationManager<RequestAuthorizationContext> USER_ONLY =
+            AuthorizationManagers.allOf(AuthenticatedAuthorizationManager.authenticated(),
+                    AuthorizationManagers.not(
+                            AuthorityAuthorizationManager.hasAuthority(
+                                    ClientAuthentication.AUTHORITY)));
+
+    private static final Converter<Jwt, AbstractAuthenticationToken> USER_JWT_CONVERTER =
+            new JwtAuthenticationConverter();
+
+    /**
+     * A validated JWT becomes a user's JwtAuthenticationToken (as before) or,
+     * for a {@code typ=client} token, a {@link ClientAuthentication} — never
+     * a Jwt principal, so no user code path can treat a machine as a user.
+     */
+    static AbstractAuthenticationToken convertJwt(Jwt jwt) {
+        if (ClientTokenService.isClientToken(jwt)) {
+            return new ClientAuthentication(ClientTokenService.principalOf(jwt), jwt.getId());
+        }
+        return USER_JWT_CONVERTER.convert(jwt);
     }
 
     /**
@@ -202,12 +274,19 @@ public class SecurityConfig {
                                  MfaChallengeScopeValidator mfaChallengeScopeValidator) {
         NimbusJwtDecoder decoder =
                 NimbusJwtDecoder.withSecretKey(secretKey).macAlgorithm(MacAlgorithm.HS256).build();
-        // Signature/exp checks first (createDefault), then the server-side
-        // revocation checks (jti denylist, TokenVersion, user existence),
-        // then the MFA-challenge scope check (a challenge token is not an
-        // access token — B3).
+        // Signature (the decoder), then exp/nbf, then the server-side
+        // revocation checks (jti denylist, TokenVersion, user existence; the
+        // ws26 client branch), then the MFA-challenge scope check (a
+        // challenge token is not an access token — B3).
+        // ws26: JwtValidators.createDefault() also adds Spring's RFC 8705
+        // X509CertificateThumbprintValidator, which reads the certificate of
+        // a TLS connection the app itself terminated — it never does (the
+        // ALB does), so a certificate-bound client token could never pass.
+        // The cnf binding is checked instead by RevocationValidator's client
+        // branch against the certificate the trusted proxy forwarded; user
+        // tokens carry no cnf, so for them nothing changes.
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                JwtValidators.createDefault(), revocationValidator, mfaChallengeScopeValidator));
+                new JwtTimestampValidator(), revocationValidator, mfaChallengeScopeValidator));
         return decoder;
     }
 }

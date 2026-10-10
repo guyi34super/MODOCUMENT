@@ -251,6 +251,9 @@ modocument:
     caps:
       READ_WRITE: ${MODOCUMENT_EXPORT_CAP_READ_WRITE:5000}
       ADMIN: ${MODOCUMENT_EXPORT_CAP_ADMIN:50000}
+      # ws26: GET /api/integration/v1/jobs/{id}/results (no reason path for
+      # machines: above the cap the read is refused, 403 EXPORT_CAP_EXCEEDED).
+      API_CLIENT: ${MODOCUMENT_EXPORT_CAP_API_CLIENT:50000}
     reason-max-length: 500
   alerts:
     # ws18 alert framework (gate D1, SEC-032). The audit trail is the single
@@ -487,6 +490,36 @@ modocument:
     # bank-cache-ttl (the test profile uses 0s).
     bank-code: ${MODOCUMENT_PLATFORM_BANK_CODE:MOI-PLATFORM}
     bank-cache-ttl: 30s
+  integration:
+    # ws26 machine identity + Integration API v1 (docs/integration/
+    # developer-guide.md). The per-bank security values (client token
+    # lifetime, allowed auth methods) are SETTINGS (integration.*); these
+    # are deployment-level.
+    clients:
+      # TCP peers whose X-Amzn-Mtls-Clientcert-* headers are trusted: the
+      # proxy hop in front of the app (frontend nginx, which forwards them
+      # only from the trusted ALB). Empty = mutual TLS is never accepted.
+      # Comma-separated CIDRs (e.g. 127.0.0.1/32 on ECS, the compose network).
+      mtls-trusted-proxy-cidrs: ${MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS:}
+      api-key-cache-ttl: 60s
+      # Argon2id verifications (token endpoint + API-key cache misses) per IP.
+      verify-per-ip-max: ${MODOCUMENT_INTEGRATION_VERIFY_PER_IP:60}
+      verify-window: 15m
+      secret-overlap: 24h
+      initial-secret-ttl: 24h
+      default-expiry: 365d
+      max-expiry: 1095d
+    api:
+      # Requests per API client per window on /api/integration/v1/**.
+      per-client-max: ${MODOCUMENT_INTEGRATION_PER_CLIENT_MAX:600}
+      window: 1m
+      token-per-ip-max: ${MODOCUMENT_INTEGRATION_TOKEN_PER_IP:120}
+      max-body-bytes: 10485760
+      max-records: 10000
+      max-file-bytes: 26214400
+      idempotency-ttl: 24h
+      events-default-limit: 100
+      events-max-limit: 500
   siem:
     # ws18 SIEM export (SEC-031, gate E6). Schema + transports:
     # docs/security/siem-event-schema.md.

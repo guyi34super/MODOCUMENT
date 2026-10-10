@@ -62,7 +62,11 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     // every other bank out of them).
                     "banksetting",
                     // V241 (ws24): banners, owned by the platform bank.
-                    "announcement");
+                    "announcement",
+                    // V260 (ws26): machine identity — looked up before any
+                    // tenant only through ApiClientAuthenticator (SYSTEM).
+                    "apiclient", "apiclientsecret", "apiclientinitialsecret",
+                    "idempotencykey");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

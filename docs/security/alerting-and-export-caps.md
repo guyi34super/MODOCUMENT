@@ -154,7 +154,11 @@ Plain HTTP to a non-loopback host is allowed but logged as a warning.
 default **5,000**, `MODOCUMENT_EXPORT_CAP_ADMIN` default **50,000**; a role
 without an entry gets 0 — fail closed). Applied by `ExportGuard` to **both**
 export paths (file download and database push) after the rows are counted
-and **before** anything is produced:
+and **before** anything is produced. ws26: machine reads of validated rows
+(`GET /api/integration/v1/jobs/{id}/results`) pass the same guard with role
+`API_CLIENT` (`MODOCUMENT_EXPORT_CAP_API_CLIENT`, default **50,000**) and
+never carry a reason, so above the cap they are refused (403
+`EXPORT_CAP_EXCEEDED`, `EXPORT_BLOCKED`); each read is an `EXPORT_RUN`:
 
 | Rows vs. cap | Reason | Result | Audit | Alert |
 |---|---|---|---|---|
