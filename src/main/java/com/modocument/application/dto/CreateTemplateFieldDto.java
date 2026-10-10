@@ -1,16 +1,35 @@
 package com.modocument.application.dto;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 import java.util.List;
 
 /** One field of a custom template: name, data type and its validation rules. */
 public class CreateTemplateFieldDto {
 
+    /** TemplateFields.FieldName is varchar(255). */
+    @NotBlank
+    @Size(max = 255)
     private String fieldName;
 
     /** TemplateDataType name ("Text"/"Number"/"Date") or its numeric id as a string. */
+    @NotBlank
+    @Size(max = 100)
     private String dataType;
 
+    @Size(max = 100)
+    @Valid
     private List<CreateTemplateRuleDto> rules;
+
+    /**
+     * Optional explicit PII tag (ws12, PRIV-004): a {@code PiiKind} name
+     * ("NIC"/"ACCOUNT_NUMBER"/"EMAIL"/"PHONE"/"NAME"/"NONE", case-insensitive).
+     * Null/blank means "classify automatically on first use".
+     */
+    @Size(max = 20)
+    private String piiKind;
 
     public CreateTemplateFieldDto() {
     }
@@ -19,6 +38,12 @@ public class CreateTemplateFieldDto {
         this.fieldName = fieldName;
         this.dataType = dataType;
         this.rules = rules;
+    }
+
+    public CreateTemplateFieldDto(String fieldName, String dataType,
+                                  List<CreateTemplateRuleDto> rules, String piiKind) {
+        this(fieldName, dataType, rules);
+        this.piiKind = piiKind;
     }
 
     public String getFieldName() {
@@ -43,5 +68,13 @@ public class CreateTemplateFieldDto {
 
     public void setRules(List<CreateTemplateRuleDto> rules) {
         this.rules = rules;
+    }
+
+    public String getPiiKind() {
+        return piiKind;
+    }
+
+    public void setPiiKind(String piiKind) {
+        this.piiKind = piiKind;
     }
 }

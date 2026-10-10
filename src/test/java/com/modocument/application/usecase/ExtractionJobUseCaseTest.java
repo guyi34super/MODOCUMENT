@@ -1,5 +1,6 @@
 package com.modocument.application.usecase;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.application.port.Connector;
 import com.modocument.application.port.TaskEventBus;
 import com.modocument.application.port.TemplateFieldsRepository;
@@ -54,7 +55,7 @@ class ExtractionJobUseCaseTest {
         when(connector.type()).thenReturn(SourceType.WEBSITE);
         useCase = new ExtractionJobUseCase(sources, jobs, queue, eventBus,
                 new InMemoryConnectorStateStore(), secrets, List.of(connector),
-                templates, templateFields, () -> USER);
+                templates, templateFields, FixedUser.provider(USER));
 
         source = new ExtractionSource();
         source.setOwnerUserId(USER);

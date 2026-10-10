@@ -8,6 +8,11 @@ const backend = process.env.VITE_BACKEND_URL || 'http://localhost:8080';
 // legacy PascalCase endpoints at the root. Proxy both to Spring Boot.
 const proxiedPaths = [
   '/api',
+  // OIDC handshake endpoints (ws07): Spring Security's authorization
+  // redirect + provider callback. '/login' itself stays a SPA route — only
+  // the '/login/oauth2' prefix is proxied.
+  '/oauth2',
+  '/login/oauth2',
   '/Templates',
   '/TemplateFields',
   '/TemplateDataTypes',

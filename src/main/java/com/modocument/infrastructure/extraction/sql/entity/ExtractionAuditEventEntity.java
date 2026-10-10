@@ -32,6 +32,10 @@ public class ExtractionAuditEventEntity {
     @Column(name = "JobId", length = 64, nullable = false)
     private String jobId;
 
+    /** Tenant bank (V11), stamped on every insert; RLS substrate. */
+    @Column(name = "BankId", nullable = false)
+    private int bankId;
+
     @Column(name = "SourceId", length = 64)
     private String sourceId;
 
@@ -52,6 +56,14 @@ public class ExtractionAuditEventEntity {
 
     @Column(name = "EventTimestamp")
     private Instant timestamp;
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
+    }
 
     public Long getId() {
         return id;

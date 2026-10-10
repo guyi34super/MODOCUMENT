@@ -54,6 +54,33 @@ class PiiTokenizerTest {
         assertThat(session.tokenizeValue("Code", "4111 1111 1111 1111")).isEqualTo("[ID_2]");
     }
 
+    /** ws12: the tokenizer knows NIC field names and shapes (shared PiiPatterns). */
+    @Test
+    void nicFieldNamesAndLetterPrefixedShapesAreTokenized() {
+        PiiTokenizer.Session session = defaultTokenizer.newSession();
+
+        // Field-name signal: "nic" and "national id" spellings.
+        assertThat(session.tokenizeValue("NIC", "whatever")).isEqualTo("[ID_1]");
+        assertThat(session.tokenizeValue("customer_nic", "anything")).isEqualTo("[ID_2]");
+        assertThat(session.tokenizeValue("NationalIdNumber", "x")).isEqualTo("[ID_3]");
+
+        // Value-shape signal in innocuously named fields: the modern
+        // Mauritius NIC (letter + 12 digits + check letter), the
+        // letter+13-digit form, and shorter letter-prefixed 10-12 char ids.
+        assertThat(session.tokenizeValue("Ref", "M090976290148E")).isEqualTo("[ID_4]");
+        assertThat(session.tokenizeValue("Ref2", "A1234567890123")).isEqualTo("[ID_5]");
+        assertThat(session.tokenizeValue("Ref3", "B123456789")).isEqualTo("[ID_6]");
+
+        // Bare 9-12 digit account runs used to fall through (too short for
+        // CARD, unseparated for the 9-digit grouping).
+        assertThat(session.tokenizeValue("Misc", "12345678901")).isEqualTo("[ID_7]");
+
+        // Embedded in free text, and restored exactly.
+        String tokenized = session.tokenizeText("NIC M090976290148E on file");
+        assertThat(tokenized).isEqualTo("NIC [ID_4] on file");
+        assertThat(session.detokenize(tokenized)).isEqualTo("NIC M090976290148E on file");
+    }
+
     @Test
     void plainNumbersDatesAndCodesStayRawInNonSensitiveFields() {
         PiiTokenizer.Session session = defaultTokenizer.newSession();

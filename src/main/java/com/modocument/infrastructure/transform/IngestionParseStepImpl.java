@@ -12,9 +12,12 @@ import com.modocument.application.dto.TableRowBatch;
 import com.modocument.application.dto.TableRowsResult;
 import com.modocument.application.dto.TableSchemaResult;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
 import com.modocument.application.port.DocumentParser;
 import com.modocument.application.port.IngestionParseStep;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.application.port.TenantContext;
 import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.domain.entity.TemplateFields;
 import com.modocument.infrastructure.ai.LlmStructuredJsonParser;
@@ -265,6 +268,11 @@ public class IngestionParseStepImpl implements IngestionParseStep {
             tokenizedBatchTexts.add(session.tokenizeText(batch.rowText()));
         }
 
+        // The AI gateway refuses any prompt whose thread has no bound tenant
+        // (C9's one-bank rule), so the submitting thread's context travels
+        // onto the plain pool explicitly.
+        TenantContext.Snapshot tenant = TenantContext.snapshot();
+
         @SuppressWarnings("unchecked")
         List<Map<String, String>>[] ordered = new List[batches.size()];
         try (ExecutorService executor = Executors.newFixedThreadPool(
@@ -274,11 +282,12 @@ public class IngestionParseStepImpl implements IngestionParseStep {
                 TableRowBatch batch = batches.get(i);
                 String tokenizedBatch = tokenizedBatchTexts.get(i);
                 int slot = i;
-                futures.add(CompletableFuture.runAsync(() -> {
-                    List<Map<String, String>> batchRows = extractRowBatchWithRetry(
-                            strategy, tokenizedBatch, batch, columns, hints, file, extension);
-                    ordered[slot] = batchRows;
-                }, executor));
+                futures.add(CompletableFuture.runAsync(
+                        () -> TenantContext.runWith(tenant, () -> {
+                            List<Map<String, String>> batchRows = extractRowBatchWithRetry(
+                                    strategy, tokenizedBatch, batch, columns, hints, file, extension);
+                            ordered[slot] = batchRows;
+                        }), executor));
             }
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         }
@@ -498,23 +507,24 @@ public class IngestionParseStepImpl implements IngestionParseStep {
 
     private TableData callLlmForTable(String prompt) {
         return aiFilesService.sendForObject(
-                prompt, new ParameterizedTypeReference<TableData>() {
+                PromptEnvelope.of(AiPurpose.TABLE_EXTRACTION, prompt),
+                new ParameterizedTypeReference<TableData>() {
                 });
     }
 
     private TableSchemaResult callLlmForSchema(String prompt) {
-        String raw = aiFilesService.sendPrompt(prompt);
+        String raw = aiFilesService.sendPrompt(PromptEnvelope.of(AiPurpose.TABLE_EXTRACTION, prompt));
         return LlmStructuredJsonParser.parseSchema(raw);
     }
 
     private TableRowsResult callLlmForRows(String prompt, List<String> columns) {
-        String raw = aiFilesService.sendPrompt(prompt);
+        String raw = aiFilesService.sendPrompt(PromptEnvelope.of(AiPurpose.TABLE_EXTRACTION, prompt));
         return LlmStructuredJsonParser.parseRows(raw, columns);
     }
 
     private TableExtractAndMapResult callLlmForExtractAndMap(String prompt,
                                                              List<String> templateFieldNames) {
-        String raw = aiFilesService.sendPrompt(prompt);
+        String raw = aiFilesService.sendPrompt(PromptEnvelope.of(AiPurpose.TABLE_EXTRACTION, prompt));
         return LlmStructuredJsonParser.parseExtractAndMap(raw, templateFieldNames);
     }
 

@@ -1,0 +1,67 @@
+name: Weekly image rebuild
+
+# SEC-026: container images are rebuilt at least weekly from the CURRENT base
+# image tags (`docker build --pull` re-resolves maven:3.9-eclipse-temurin-21,
+# eclipse-temurin:21-jre, node:22-alpine and nginxinc/nginx-unprivileged:alpine
+# — the non-root runtime bases of ws16/SUP-S04), so OS/base-layer patches
+# land without waiting for an application change. Trivy (gate E3) then scans
+# both images and FAILS the run on CRITICAL vulnerabilities — a red run here
+# is the signal that a patched rebuild must ship.
+
+on:
+  schedule:
+    # Weekly, Monday 04:41 UTC (off the hour to dodge scheduler congestion).
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-rebuild-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rebuild-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Rebuild backend image from current base tags
+        run: docker build --pull -t modocument-app:weekly .
+
+      - name: Rebuild frontend image from current base tags
+        run: docker build --pull -t modocument-frontend:weekly frontend
+
+      - name: Trivy scan backend image
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: modocument-app:weekly
+          format: table
+          exit-code: '1'
+          severity: CRITICAL
+          ignore-unfixed: true
+
+      - name: Trivy scan frontend image
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: modocument-frontend:weekly
+          format: table
+          exit-code: '1'
+          severity: CRITICAL
+          ignore-unfixed: true
+
+      # TODO(SEC-026): push the freshly rebuilt images once a registry
+      # exists. No registry is provisioned yet, so this is a documented stub —
+      # uncomment and fill in when one is (use a least-privilege robot
+      # credential stored as repo secrets, and add `packages: write` /
+      # registry-specific permissions to THIS job only, not the workflow).
+      #
+      # - name: Log in to registry
+      #   run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "$REGISTRY" -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+      # - name: Tag and push
+      #   run: |
+      #     docker tag modocument-app:weekly "$REGISTRY/modocument-app:$(date +%Y%m%d)"
+      #     docker tag modocument-frontend:weekly "$REGISTRY/modocument-frontend:$(date +%Y%m%d)"
+      #     docker push "$REGISTRY/modocument-app:$(date +%Y%m%d)"
+      #     docker push "$REGISTRY/modocument-frontend:$(date +%Y%m%d)"

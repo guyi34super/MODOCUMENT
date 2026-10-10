@@ -122,7 +122,7 @@ class ExtractionEndToEndTest {
     @BeforeEach
     void authenticate() {
         Jwt jwt = Jwt.withTokenValue("test-token").header("alg", "none").subject("1")
-                .claim("email", "e2e@example.com").build();
+                .claim("bank_id", 1).claim("roles", java.util.List.of("ADMIN")).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
     }
 

@@ -30,11 +30,12 @@ the test suite.
   endpoint is configured, `pdf`, `doc`, `docx`, `pptx`, `html`, and images/scans
   (`png`, `jpg`, `tiff`, `bmp`, `webp`) are converted to markdown with OCR.
 - **Automatic fallback readers** when docling is absent or fails: PDFBox for PDFs,
-  POI for `.docx`/`.doc`, plus a two-tier OCR chain for standalone images and scanned
-  PDF pages — **LLM vision OCR** (the configured OpenAI model, `gpt-4o` by default,
-  reading rasterized pages/images) first, then per-page **Tesseract** as the offline
-  fallback. Each tier degrades gracefully: no OpenAI key disables vision OCR, no
-  native Tesseract library disables local OCR — parsing never fails because of OCR.
+  POI for `.docx`/`.doc`, plus an OCR chain for standalone images and scanned PDF
+  pages — per-page **Tesseract** by default, with optional **LLM vision OCR**
+  (rasterized pages/images sent to a vision-capable model) ahead of it. Vision OCR
+  is **off by default** (`OCR_VISION_ENABLED=false`): page images cannot be
+  pseudonymised the way text prompts are, so sending them to a model is an explicit
+  opt-in. Each tier degrades gracefully — parsing never fails because of OCR.
 - **LLM table extraction** (Spring AI structured output) turns the extracted text of
   unstructured documents into the same table shape.
 
@@ -64,7 +65,9 @@ the test suite.
   (`mapping.confidence-threshold`): each template field is used at most once, and
   low-confidence columns stay unmapped for review instead of being guessed.
 - Only the columns code cannot resolve go to the **LLM automapper** (column/field
-  names only, never data; disable entirely with `mapping.llm-fallback-enabled=false`);
+  names plus **pseudonymised sample values** — identifiers are replaced with
+  `[ID_1]`-style tokens before the prompt, so the shape signal survives but no raw
+  value leaves the backend; disable entirely with `mapping.llm-fallback-enabled=false`);
   invented targets are discarded, and an LLM outage degrades to "left unmapped"
   instead of failing the mapping stage.
 - **Review and override** the mapping: `PUT /api/ingestion/jobs/{id}/mapping`
@@ -97,6 +100,11 @@ the test suite.
   in batches. Table/column identifiers are strictly validated **and** quoted; row values
   only ever travel as bound parameters (no SQL injection); credentials are used for the
   one export and never persisted or logged.
+- **Per-role export row caps** (ws18, gate D2): above the cap (READ_WRITE 5,000,
+  ADMIN 50,000 rows — `MODOCUMENT_EXPORT_CAP_*`) an export is refused with
+  403 `EXPORT_CAP_EXCEEDED` unless the user states a reason; every export,
+  refusal and override is audited and alerted. Details:
+  [docs/security/alerting-and-export-caps.md](docs/security/alerting-and-export-caps.md).
 
 ### Data extraction from external sources
 - Collect structured data from **authorized external sources** — websites, REST APIs
@@ -149,31 +157,74 @@ the test suite.
   renders JS-heavy pages when `extraction.web.render-js-enabled=true` and its browsers
   are installed, degrading to HTTP otherwise.
 
-### AI integration (Spring AI)
-- All LLM access goes through **Spring AI's `ChatClient`** (OpenAI chat model) behind a
-  single application port, with structured output for extraction, mapping, and chat
-  edits.
-- The same `ChatClient` and key also power **multimodal vision OCR** of images and
-  scanned PDF pages (`ocr.vision.*` settings); it switches itself off when no key is
-  configured.
-- Legacy config keys are bridged, so `AIFILES_OPENAI_APIKEY` / `AIFILES_OPENAI_MODELID`
-  keep working. The app **boots without an API key** — only LLM-dependent endpoints
-  return an error until one is set.
-- Legacy AI endpoints preserved: `POST /api/aifiles/send` (raw prompt),
-  `POST /api/transform/transform` (classify + extract to JSON),
-  `POST /api/automapper/generate` (column mapping).
+### AI integration (Spring AI) — local by default, gated and audited
+- **Local models are the default** (gate C8): out of the box the app talks to a
+  local [Ollama](https://ollama.com) endpoint (`http://localhost:11434`, models
+  `qwen2.5` + `mistral`) — **no document content leaves the machine unless an
+  operator explicitly configures an external endpoint** via
+  `MODOCUMENT_AI_BASE_URL` / `MODOCUMENT_AI_API_KEY` / `MODOCUMENT_AI_MODEL`
+  (the legacy `AIFILES_OPENAI_*` names keep working). The app boots and passes
+  its suite with **no AI endpoint reachable at all** — every AI feature degrades
+  to its non-AI path.
+- **One gateway, no raw paths** (gate C9): every LLM call goes through the single
+  `AiGateway` (`infrastructure/ai`) — a guard test fails the build on any other
+  class touching the Spring AI chat types. Call sites pseudonymise identifiers
+  (NIC/account/email/phone shapes → reversible `[ID_1]`-style tokens) before the
+  prompt; the gateway re-scans the assembled prompt and refuses anything still
+  carrying a raw identifier shape, anything whose bound tenant is missing or
+  mismatched, and any prompt that would mix two banks' data.
+- **Output scanning** (gate C10): every completion is scanned before it is
+  returned — identifier shapes that were never in the request and
+  instruction-injection echoes are rejected (strict purposes fall back to their
+  non-AI path) or scrubbed and flagged (lenient purposes), with audit events
+  either way.
+- **Prompts and completions are not stored and never logged**: logs and
+  `AI_CALL` audit evidence carry purposes, models and lengths only.
+- **Vision OCR is off by default** (`OCR_VISION_ENABLED=false`): page images
+  cannot be pseudonymised, so sending them to a vision model is an explicit
+  opt-in; local Tesseract OCR remains the default.
+- Legacy AI endpoints preserved (all through the gateway, tokenized):
+  `POST /api/aifiles/send` (diagnostics prompt — pseudonymised before sending,
+  detokenized in the reply), `POST /api/transform/transform` (classify + extract
+  to JSON), `POST /api/automapper/generate` (column mapping).
+- Full control description: [docs/security/ai-controls.md](docs/security/ai-controls.md).
 
 ### Platform
 - Legacy CRUD APIs: `/Templates/*`, `/TemplateFields/*`, `/TemplateDataTypes/*`,
   `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*`.
 - File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`).
-- **Swagger UI** at `/swagger-ui` (static contract at `/swagger/spec.yaml`).
+- **OpenAPI** generated from code at `/v3/api-docs` (all profiles); Swagger UI at `/swagger-ui` (`local` only).
 - `local` profile: same PostgreSQL + Flyway as production, plus dev conveniences
   (Swagger, in-memory extraction). The JWT signing key is **not** committed —
   supply `MODOCUMENT_JWT_SECRET` or a gitignored `application-local-secrets.yml`.
-- **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (app + PostgreSQL +
-  docling-serve), non-root runtime image with a healthcheck.
-- CI: GitHub Actions runs `mvn -B verify` on every push/PR to `main`.
+- **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (nginx frontend +
+  app + PostgreSQL, optional Ollama/docling/Keycloak/Mongo+Kafka profiles); every
+  image runs non-root (app uid 10001, nginx-unprivileged uid 101) with all
+  capabilities dropped, required secrets have no defaults, and the SPA/API carry a
+  full security-header set ([docs/security/web-hardening.md](docs/security/web-hardening.md)).
+- **Infrastructure as code**: the AWS af-south-1 go-live topology as Terraform under
+  [`infra/terraform/`](infra/terraform/README.md) — written, not yet applied (see the
+  deployment checklist and "Implement later" below).
+- **CI/CD supply chain** (ws19, gates A7/A8/E3/E8): `ci.yml` runs `mvn -B verify`
+  (with a JaCoCo coverage summary), the real-PostgreSQL suite, the frontend tests/build
+  and the nginx security-header check on every push/PR to `main`; `security.yml` adds
+  gitleaks (full history), Semgrep (registry packs + [`.semgrep/modocument.yml`](.semgrep/modocument.yml)),
+  dependency review and `npm audit --audit-level=high`; `sbom.yml` publishes CycloneDX
+  SBOMs (`mvn -Psbom`, `npm sbom`); weekly Trivy-scanned image rebuilds and a ZAP
+  baseline against the compose stack; Dependabot for Maven, npm, Actions, Docker and Terraform.
+  Every action is pinned by commit SHA with least-privilege `permissions`. Required
+  checks and the seeded-PR drill: [docs/security/branch-protection.md](docs/security/branch-protection.md).
+- **Security alerting** (ws18, gate D1): data-driven rules over the audit trail
+  (immediate + per-minute windowed) raise alerts to the log, a webhook (the
+  phone path: Slack/WhatsApp bridge/PagerDuty — `MODOCUMENT_ALERTS_WEBHOOK_URL`)
+  and e-mail, with delivery evidence under Administration → Security alerts.
+  [docs/security/alerting-and-export-caps.md](docs/security/alerting-and-export-caps.md).
+- **SIEM feed** (ws18, gate E6): `GET /api/siem/events` streams the caller's
+  bank's audit events as NDJSON in an ECS-mapped schema, with an optional
+  single-bank webhook push —
+  [docs/security/siem-event-schema.md](docs/security/siem-event-schema.md).
+- **Synthetic probe**: `GET /api/probe/synthetic` (public, rate-limited) for
+  uptime monitors — build version + database round trip only.
 
 ### Document creation (blueprint → sections → fill → generate)
 - **Upload your company's report (.docx) as a blueprint** — the engine breaks it
@@ -215,16 +266,27 @@ the test suite.
 
 ## Quick start
 
-### Run locally (no OpenAI key needed)
+### Run locally (no API key, no AI endpoint needed)
 
 ```bash
+# once: generate local secrets into the gitignored .env — docker compose reads
+# it automatically and refuses to start without them (no insecure defaults,
+# even for local dev). Keep the file: the DB passwords are fixed at first boot.
+cat > .env <<EOF
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+MODOCUMENT_APP_DB_PASSWORD=$(openssl rand -hex 24)
+MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
+MODOCUMENT_MFA_KEY=$(openssl rand -base64 48)
+EOF
+set -a; . ./.env; set +a          # ...and load them into this shell
+
 # start a database once (or point MODOCUMENT_DB_* at your own PostgreSQL)
 docker compose up -d postgres
 
-# provide a JWT signing key — no secret is committed, even for local dev.
-# (Alternatively, copy application-local-secrets.yml.example to
-# application-local-secrets.yml and put the key there; it is gitignored.)
-export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
+# no secret is committed, even for local dev (the JWT key can also live in a
+# gitignored application-local-secrets.yml — see the .example file). Outside
+# Docker the app connects as the schema owner:
+export MODOCUMENT_DB_PASSWORD="$POSTGRES_PASSWORD"
 
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
@@ -232,26 +294,59 @@ SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 Runs against PostgreSQL exactly like production: Flyway creates and updates the
 schema on startup (`src/main/resources/db/migration`), lookup data is seeded by
 the migrations, and your data survives restarts. Users, templates, fields and
-validation rules are created through the app — register your first account via
-the UI or `POST /api/auth/register`. All CRUD, template, validation, job, and
-export endpoints work immediately; only LLM-dependent paths (unstructured
-extraction, automap leftovers, chat edit) need an API key:
+validation rules are created through the app — accounts are admin-created, and
+the first administrator is seeded at startup from
+`MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD` when
+the user table is empty. All CRUD, template, validation, job, and
+export endpoints work immediately. The LLM-dependent paths (unstructured
+extraction, automap leftovers, chat edit) expect a **local Ollama** at
+`http://localhost:11434` by default — no account, no key, nothing leaves your
+machine:
 
 ```bash
-AIFILES_OPENAI_APIKEY=<your-openai-key> SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
+# once: install Ollama and pull the default models
+ollama pull qwen2.5 && ollama pull mistral && ollama pull deepseek-r1:8b
+SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
+```
+
+Without Ollama running, those paths simply degrade (heuristics / "left
+unmapped" / an error on the explicitly-AI endpoints) — nothing else breaks.
+An **external** OpenAI-compatible endpoint is an explicit opt-in:
+
+```bash
+MODOCUMENT_AI_BASE_URL=https://openrouter.ai/api \
+MODOCUMENT_AI_API_KEY=<your-key> \
+MODOCUMENT_AI_MODEL=<model-id> \
+SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
 
 ### Run with Docker
 
 ```bash
 # production-style stack: app + PostgreSQL (Flyway-managed schema).
-# The JWT signing secret is required — the app refuses to boot without one.
+# These secrets are required — compose refuses to start without them (or
+# reuse the .env from "Run locally"; in production prefer Docker secrets via
+# the *_FILE variables, see docs/security/web-hardening.md).
 export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
+export MODOCUMENT_MFA_KEY=$(openssl rand -base64 48)
+export POSTGRES_PASSWORD=$(openssl rand -hex 24)
+export MODOCUMENT_APP_DB_PASSWORD=$(openssl rand -hex 24)
+# First-run administrator (self-registration is disabled):
+export MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+export MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD=<a-strong-password>
 docker compose up --build
 
-# with an API key for the LLM features (OpenRouter by default; any
-# OpenAI-compatible endpoint works via AIFILES_OPENAI_BASEURL)
-AIFILES_OPENAI_APIKEY=<your-key> docker compose up --build
+# with LOCAL AI (the default endpoint): add the ollama service, then pull
+# the models once — prompts never leave the compose network
+docker compose --profile ai-local up --build
+docker compose exec ollama ollama pull qwen2.5
+docker compose exec ollama ollama pull mistral
+docker compose exec ollama ollama pull deepseek-r1:8b
+
+# EXTERNAL endpoint (explicit opt-in; any OpenAI-compatible API)
+MODOCUMENT_AI_BASE_URL=https://openrouter.ai/api \
+MODOCUMENT_AI_API_KEY=<your-key> \
+MODOCUMENT_AI_MODEL=<model-id> docker compose up --build
 
 # dev mode against the same PostgreSQL (dev JWT secret, Swagger enabled)
 APP_PROFILES=local docker compose up --build
@@ -260,8 +355,14 @@ APP_PROFILES=local docker compose up --build
 APP_PROFILES=scale docker compose --profile extraction up --build
 ```
 
-The API is on <http://localhost:8080> (Swagger UI: <http://localhost:8080/swagger-ui>)
-and the web frontend on <http://localhost:3000>.
+The web frontend — and the API through its nginx proxy — is on
+<http://localhost:3000>. The app's own port 8080 is intentionally NOT
+published: nginx is the single entry point and overwrites the
+`X-Forwarded-*` headers the app trusts for per-IP rate limiting, audit IPs
+and HSTS (trusted-proxy model — a directly reachable app port would make
+them spoofable). For direct-to-app tooling (raw `curl` on `:8080`, Swagger
+UI at <http://localhost:8080/swagger-ui> in dev mode), uncomment the
+loopback-only `ports` mapping on the `app` service in `docker-compose.yml`.
 
 ### Web frontend (React)
 
@@ -280,15 +381,16 @@ npm test             # unit tests (Vitest + React Testing Library)
 
 ### Authentication
 
-All API endpoints (except `/api/auth/login`, `/api/auth/register`, and
-`/actuator/health`) require a JWT Bearer token. No accounts are seeded — register
-the first user, then log in:
+All API endpoints (except the login entry points `/api/auth/login`,
+`/api/auth/refresh`, `/api/auth/mfa/verify`, `/api/auth/providers`, the
+health check `/actuator/health` and the public synthetic probe
+`/api/probe/synthetic`) require a JWT Bearer token. Public self-registration is
+disabled: the first administrator is created at startup from
+`MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD`
+(required when the user table is empty), and further accounts are
+admin-created. Log in with that account:
 
 ```bash
-curl -X POST http://localhost:8080/api/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"<your-password>","displayName":"You"}'
-
 curl -X POST http://localhost:8080/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"<your-password>"}'
@@ -297,14 +399,29 @@ curl -X POST http://localhost:8080/api/auth/login \
 curl http://localhost:8080/Templates/GetAll -H "Authorization: Bearer <token>"
 ```
 
-Endpoints: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`,
-`PUT /api/auth/profile`, `PUT /api/auth/password`. Logout is client-side (discard
-the token; it expires after `modocument.security.jwt.ttl-hours`, default 24h).
+Endpoints: `POST /api/auth/login`, `POST /api/auth/refresh`,
+`POST /api/auth/logout`, `GET /api/auth/me`, `PUT /api/auth/profile`,
+`PUT /api/auth/password`. Access tokens are short-lived
+(`modocument.security.jwt.ttl-minutes`, default 15); login also sets a rotating
+7-day refresh token in an httpOnly `modoc_refresh` cookie scoped to
+`/api/auth/refresh`. Logout revokes the access token's jti and every refresh
+token server-side, and a password change invalidates every outstanding token
+(sign in again).
 `MODOCUMENT_JWT_SECRET` (≥32 bytes, e.g. `openssl rand -base64 48`) is **required**
 in production and on `local` — the app fails fast at startup if it is missing, too
 short, or (in production) set to the old dev default. No secret is committed for
 `local`; set the env var or the gitignored `application-local-secrets.yml`. Only
 the `test` profile ships a fixed dev-only key, so the suite is deterministic.
+
+**Single sign-on (OIDC, optional)**: bank users are expected to sign in
+through an external identity provider — Entra ID for Microsoft banks,
+Keycloak (shipped behind the `keycloak` compose profile) for everyone else —
+with MFA enforced at the provider. The IdP only authenticates; the app then
+issues its own tokens exactly as above (the same refresh cookie; the SPA
+lands on `/login/complete` — no token ever travels in a URL). Password login
+stays as the break-glass path. Nothing is active until
+`modocument.oidc.providers.*` is configured: see
+`application-oidc.yml.example` and `docs/security/identity-providers.md`.
 
 Both open auth endpoints are rate-limited per IP and per email
 (`modocument.security.rate-limit.auth.*`), and the LLM-backed endpoints
@@ -321,16 +438,16 @@ mvn -B verify
 
 | Setting | Key / env var | Default |
 |---|---|---|
-| OpenAI API key | `aifiles.openai.api-key` / `AIFILES_OPENAI_APIKEY` | empty (LLM endpoints error until set) |
-| OpenAI model | `aifiles.openai.model-id` / `AIFILES_OPENAI_MODELID` | `gpt-4o` |
-| OpenAI base URL | `aifiles.openai.base-url` / `AIFILES_OPENAI_BASEURL` | `https://api.openai.com` (host root, no `/v1`) |
+| AI API key | `aifiles.openai.api-key` / `MODOCUMENT_AI_API_KEY` (legacy `AIFILES_OPENAI_APIKEY`) | `ollama` (local endpoint needs no real key; set empty to disable the LLM endpoints) |
+| AI model | `aifiles.openai.model-id` / `MODOCUMENT_AI_MODEL` (legacy `AIFILES_OPENAI_MODELID`) | `qwen2.5` (local Ollama) |
+| AI base URL | `aifiles.openai.base-url` / `MODOCUMENT_AI_BASE_URL` (legacy `AIFILES_OPENAI_BASEURL`) | `http://localhost:11434` — **local by default**; an external endpoint is an explicit opt-in (host root, no `/v1`) |
 | PII tokenization | `aifiles.privacy.tokenize-pii` / `AIFILES_PRIVACY_TOKENIZEPII` | `true` (fail closed) |
 | Mapping LLM fallback | `mapping.llm-fallback-enabled` / `MAPPING_LLMFALLBACK_ENABLED` | `true` (code tiers always run first) |
 | Mapping confidence | `mapping.confidence-threshold` (+ `sample-size`, `history-jobs`, `aliases`) | `0.7`, 20 samples, 25 jobs |
 | Extra sensitive fields | `aifiles.privacy.extra-sensitive-fields` | empty (substring match, case/punct-insensitive) |
 | docling-serve URL | `docling.base-url` / `DOCLING_BASEURL` | empty (built-in readers only) |
-| Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | `true` (active only when an OpenAI key is set) |
-| Vision OCR model | `ocr.vision.model` / `OCR_VISION_MODEL` | `gpt-4o` |
+| Vision OCR | `ocr.vision.enabled` / `OCR_VISION_ENABLED` | **`false`** (page images cannot be pseudonymised — explicit opt-in; Tesseract remains the offline default) |
+| Vision OCR model | `ocr.vision.model` / `OCR_VISION_MODEL` | `qwen2.5vl` (must be vision-capable on the configured endpoint) |
 | Vision OCR page budget | `ocr.vision.max-pages` / `OCR_VISION_MAXPAGES` (+ `dpi`, `max-dimension`) | 20 pages/PDF, 200 DPI, 2048px longest edge |
 | JWT signing secret | `modocument.security.jwt.secret` / `MODOCUMENT_JWT_SECRET` | **required** in production and `local` (≥32 bytes; not committed); fixed dev secret on `test` only |
 | Auth rate limit | `modocument.security.rate-limit.auth.*` (`per-ip-max`, `per-email-max`, `window-millis`) | 30/IP, 10/email per 15 min → `429` |
@@ -340,7 +457,7 @@ mvn -B verify
 | Storage root | `modocument.storage.root` / `MODOCUMENT_STORAGE_ROOT` | `wwwroot` (uploads + export copies; mount a volume) |
 | Profile | `SPRING_PROFILES_ACTIVE` | default (PostgreSQL); `local` adds dev conveniences, `scale` adds Mongo+Kafka extraction |
 | Extraction store | `extraction.store` / `EXTRACTION_STORE` | `memory`; set `mongo` (or the `scale` profile) for multi-instance runs |
-| MongoDB URI | `spring.data.mongodb.uri` / `EXTRACTION_MONGO_URI` | `mongodb://localhost:27017/modocument` |
+| MongoDB URI | `spring.data.mongodb.uri` / `EXTRACTION_MONGO_URI` | `mongodb://localhost:27017/modocument`; **required** (authenticated URI) on the `scale` profile |
 | Kafka distribution | `extraction.kafka.enabled` / `EXTRACTION_KAFKA_ENABLED` | `false` (workers poll the store queue) |
 | Kafka brokers | `spring.kafka.bootstrap-servers` / `EXTRACTION_KAFKA_SERVERS` | `localhost:9092` |
 | Worker pool | `extraction.worker.threads` (+ `lease-seconds`, `max-attempts`, `backoff-millis`) | 4 threads, 60s lease, 4 attempts |
@@ -379,8 +496,11 @@ with no recognizable shape passes through.
 
 ## API overview
 
-Interactive documentation: **Swagger UI at `/swagger-ui`**, rendering the static
-contract at `/swagger/spec.yaml`. Summary:
+Interactive documentation: **Swagger UI at `/swagger-ui`** (`local` profile), rendering the
+contract generated from the code at `/v3/api-docs` — the authoritative spec; its route inventory is
+pinned in CI ([docs/api/openapi-routes.txt](docs/api/openapi-routes.txt)), versioning and deprecation
+follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the hand-written
+`/swagger/spec.yaml` is deprecated. Summary:
 
 ### Templates & validation rules
 
@@ -409,7 +529,8 @@ contract at `/swagger/spec.yaml`. Summary:
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/ingestion/jobs/{id}/export/file?format=csv\|json\|xlsx\|tsv\|xml` | Download validated rows (copy archived in `wwwroot/exports/`) |
-| `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied PostgreSQL/H2 database |
+| `POST /api/ingestion/jobs/{id}/export/file` | Same download with `{format, reason}` in the body (over-cap reason, ws18) |
+| `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied PostgreSQL/H2 database (`reason` above the role cap) |
 
 ### Data extraction
 
@@ -621,15 +742,21 @@ service (the bundled `postgres` service is then unnecessary).
 - `Dockerfile` — multi-stage: Maven + Temurin 21 build, slim JRE 21 runtime image
   that runs as a non-root user and healthchecks `/actuator/health`.
 - `docker-compose.yml` —
-  - `app`: this API on port 8080, wired to the `postgres` service by default.
-    Requires `MODOCUMENT_JWT_SECRET` in your environment; pass
-    `AIFILES_OPENAI_APIKEY` through for the LLM features. Uploads/exports are kept
-    in a named volume. `APP_PROFILES=local` runs the dev profile against the
-    same database.
+  - `frontend`: the React build served by unprivileged nginx (uid 101, container
+    port 8080, published as host **3000**) — the single entry point, proxying the
+    API to the app and setting the security headers (`frontend/nginx.conf`,
+    `frontend/security-headers.conf`).
+  - `app`: this API on container port 8080 (not published — trusted-proxy model),
+    running as uid 10001 with all capabilities dropped, wired to the `postgres`
+    service by default. Requires `MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`,
+    `POSTGRES_PASSWORD` and `MODOCUMENT_APP_DB_PASSWORD` (see "Run with Docker");
+    the external-AI and ws18 alert/SIEM variables pass through when set.
+    Uploads/exports are kept in a named volume. `APP_PROFILES=local` runs the dev
+    profile against the same database.
   - `postgres`: PostgreSQL 17 with a named volume and a `pg_isready` healthcheck;
     the app waits for it to be healthy and Flyway migrates the schema on boot.
-    Override `POSTGRES_USER`/`POSTGRES_PASSWORD` (the compose default is for local
-    use only).
+    `POSTGRES_PASSWORD` and `MODOCUMENT_APP_DB_PASSWORD` are required (no
+    defaults); the host port is bound to `127.0.0.1` only.
   - `docling` (optional, `--profile docling` + `DOCLING_BASEURL=http://docling:5001`):
     [docling-serve](https://github.com/docling-project/docling-serve) on port 5001 for
     rich layout-aware conversion — not needed for the standard flow. Note
@@ -647,17 +774,109 @@ service (the bundled `postgres` service is then unnecessary).
 
 ## Production deployment checklist
 
-- **`MODOCUMENT_JWT_SECRET`** — required; generate with `openssl rand -base64 48`.
-  The app refuses to start with a missing, short, or known-default secret.
+The target production topology is written as Terraform under
+[`infra/terraform/`](infra/terraform/) (AWS af-south-1: CloudFront + WAF →
+ALB TLS 1.2+ → ECS on EC2 → Multi-AZ RDS with forced TLS; locked backups,
+GuardDuty/CloudTrail, GitHub-OIDC deploys — see its README for layout and
+apply order; `terraform validate` is pending a machine with terraform
+installed). Whatever hosting you use, the application-level checklist is:
+
+- **Secrets** (`MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`) — required,
+  ≥ 32 bytes each (`openssl rand -base64 48`); the app refuses to start with
+  a missing, short, or known-default secret. Prefer files over environment
+  values: every sensitive variable accepts `<NAME>_FILE` (Docker/Kubernetes
+  secrets, SEC-018 — [details](docs/security/web-hardening.md)). In the IaC
+  they are Secrets Manager values injected into the task — never in images
+  or tfvars. Inventory every key in
+  [`docs/security/key-certificate-register.md`](docs/security/key-certificate-register.md).
 - **Database** — set `MODOCUMENT_DB_URL` / `MODOCUMENT_DB_USERNAME` /
-  `MODOCUMENT_DB_PASSWORD` to a PostgreSQL instance with a strong password;
-  Flyway migrates the schema on startup.
+  `MODOCUMENT_DB_PASSWORD`; Flyway migrates on startup. Use the two-role
+  model: the app connects as `modocument_app` (NOBYPASSRLS — create it per
+  [`docker/postgres-init/01-app-role.sh`](docker/postgres-init/01-app-role.sh)),
+  Flyway as the schema owner (`MODOCUMENT_FLYWAY_USERNAME`/`_PASSWORD`).
+- **Database TLS** — `MODOCUMENT_DB_SSLMODE=require` (or `verify-full` with the
+  server CA; in your own `MODOCUMENT_DB_URL`: `?sslmode=verify-full&sslrootcert=…`
+  — the app image ships the AWS RDS CA bundle at
+  `/app/certs/rds-global-bundle.pem`, which the Terraform envs use) and a
+  server that refuses plaintext — on RDS `rds.force_ssl=1`, set by
+  [`infra/terraform/modules/rds`](infra/terraform/modules/rds). The default
+  `prefer` only exists for TLS-less local PostgreSQL
+  ([details](docs/security/web-hardening.md#5d-database-tls-c4--sec-028-application-side)).
+- **Bootstrap admin** — `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL`/`_PASSWORD`
+  (self-registration is disabled); enrol MFA at first login (mandatory for
+  ADMIN). On AWS they are Secrets Manager secrets injected into the task
+  until the first admin exists, then removed with `bootstrap_admin_enabled =
+  false` ([infra/terraform/README.md](infra/terraform/README.md) "Apply
+  order").
 - **CORS** — set `MODOCUMENT_CORS_ALLOWED_ORIGINS` to your frontend origin(s).
-- **TLS** — terminate HTTPS at your reverse proxy / load balancer in front of the
-  frontend (nginx, port 80) and the API; nothing in the stack serves TLS itself.
-- **Health** — probe `GET /actuator/health` (unauthenticated); the Docker image and
-  compose file already use it.
+- **TLS + trusted proxy** — terminate HTTPS in front of the frontend nginx
+  (non-root, container port 8080; nothing in the stack serves TLS itself) and
+  keep the app port unpublished: nginx overwrites `X-Forwarded-*`, which the
+  app trusts for rate limiting, audit IPs and HSTS. Behind your own load
+  balancer set `MODOCUMENT_TRUSTED_PROXY_CIDRS` on the frontend so nginx
+  takes the client address and scheme from that balancer only
+  ([web-hardening.md §5e](docs/security/web-hardening.md#5e-proxy-chain-behind-alb--cloudfront-trusted-proxy-mode)).
+  In the IaC: ALB policy `ELBSecurityPolicy-TLS13-1-2-2021-06`, origin
+  locked to CloudFront, trusted-proxy mode with `CloudFront-Viewer-Address`.
+- **Health** — probe `GET /actuator/health` (unauthenticated); the Docker
+  image, compose file and ECS task definition already use it. External uptime
+  monitors use the public, per-IP rate-limited synthetic probe
+  `GET /api/probe/synthetic` (build version + one database round trip through
+  the whole proxy → app → DB path). SLA and probe/status-page plan:
+  [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md).
 - **Files** — mount a volume at the storage root (`MODOCUMENT_STORAGE_ROOT`,
   default `wwwroot/`) so uploads and export copies survive restarts.
-- **API docs** — Swagger/OpenAPI endpoints are disabled outside the `local`/`test`
-  profiles; the H2 console permit is likewise dev-only.
+- **Backups** — nightly snapshots with 90-day retention and a cross-region
+  copy into a **locked** vault (`infra/terraform/modules/backups`); flip the
+  irreversible locks only after the restore drill passes (gate D6).
+- **Monitoring** — GuardDuty + CloudTrail (log-file validation) + CloudWatch
+  alarms → one SNS topic (`infra/terraform/modules/security-monitoring`);
+  logs archive to the 7-year WORM bucket (SEC-033).
+- **Security alerts & SIEM** — wire the application alert channels:
+  `MODOCUMENT_ALERTS_WEBHOOK_URL` (+ `_SECRET`; the phone path) and/or
+  `MODOCUMENT_ALERTS_EMAIL_TO` with `SPRING_MAIL_HOST`; give each bank's SIEM
+  a dedicated ADMIN account for `GET /api/siem/events`, or push one bank via
+  `MODOCUMENT_SIEM_WEBHOOK_URL` / `_BANK_CODE`
+  ([alerting-and-export-caps.md](docs/security/alerting-and-export-caps.md),
+  [siem-event-schema.md](docs/security/siem-event-schema.md)).
+- **Export caps** — review the per-role row caps (`MODOCUMENT_EXPORT_CAP_READ_WRITE`,
+  default 5,000; `MODOCUMENT_EXPORT_CAP_ADMIN`, default 50,000); above them an
+  export needs a stated reason and is audited and alerted.
+- **API docs** — the generated spec (`/v3/api-docs`) is served in every profile but needs a
+  bearer token outside `local`/`test` (`MODOCUMENT_API_DOCS_ENABLED=false` removes it); the
+  Swagger UI and the H2 console permit are dev-only.
+- **Rate limits** — per-user hourly buckets on the expensive endpoints (`MODOCUMENT_RATELIMIT_*`;
+  table in [docs/security/owasp-api-top10.md](docs/security/owasp-api-top10.md)); counters are
+  in-memory per instance, so N replicas allow up to N × the configured numbers.
+- **Vulnerability reports** — `SECURITY.md` + `/.well-known/security.txt`
+  ship the contact; the mailbox itself is gate E5 (table below).
+
+## Implement later (cloud & organisational) — Go-Live Gate items not executable from this repository
+
+These gate items need a cloud account, a vendor, or an organisational
+decision — code cannot close them. The repo **prepares** each one (last
+column); the owner executes and files the evidence. Status detail and dates:
+[`docs/security/security-roadmap.md`](docs/security/security-roadmap.md).
+
+| Gate item | What it is | Owner | Evidence needed | Repo artifact that prepares it |
+|---|---|---|---|---|
+| A1 | AWS production account build-out (af-south-1) | Bhavish Nobeen | `terraform apply` outputs + account inventory | [`infra/terraform/envs/production`](infra/terraform/envs/production) |
+| A2 | Console/root MFA for every cloud operator | Bhavish Nobeen | IAM credential report | — (console-only; policy in [`docs/security/identity-providers.md`](docs/security/identity-providers.md) spirit) |
+| A3–A5 | VPC/network/edge build-out, WAF in blocking mode | Bhavish Nobeen | applied plan + WAF metrics | [`modules/network`](infra/terraform/modules/network), [`modules/edge`](infra/terraform/modules/edge) |
+| A6 | CloudTrail into a **separate lock account** | Bhavish Nobeen | trail ARN + lock-account bucket policy | [`modules/security-monitoring`](infra/terraform/modules/security-monitoring) + two-account model in [`infra/terraform/README.md`](infra/terraform/README.md) |
+| A1/SUP-S07 | Separate **staging account** | Bhavish Nobeen | staging apply in its own account | [`infra/terraform/envs/staging`](infra/terraform/envs/staging) |
+| A8/SUP-S05 | CI deploys with **no static cloud keys** | Bhavish Nobeen | GitHub Actions run assuming the OIDC role | [`modules/ci-oidc`](infra/terraform/modules/ci-oidc) |
+| SEC-018 | Secrets in a managed secret store | Bhavish Nobeen | Secrets Manager entries (values set out-of-band) | secret shells in `envs/*/main.tf`; [`docs/security/key-certificate-register.md`](docs/security/key-certificate-register.md) |
+| D3 | Egress allow-list **enforced** | Bhavish Nobeen (define), Reezvi Pydiah (sign off) | signed list + applied SG/NACL | `app_egress_https_cidrs` + `enforce_egress_nacl` seams in [`modules/network`](infra/terraform/modules/network)/[`edge`](infra/terraform/modules/edge) |
+| D4–D5 | Real backups: 90d, cross-region, **locked vault** | Rushal Seeruthun | vault lock config + recovery-point listing | [`modules/backups`](infra/terraform/modules/backups) |
+| D6 | **Restore drill** (timed, documented) | Rushal Seeruthun | drill log with RTO/RPO achieved | staging env + [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md) targets |
+| D7 | DR/BCDR sign-off | Reezvi Pydiah | signed BCDR statement | drill evidence + [`docs/security/cia-controls-table.md`](docs/security/cia-controls-table.md) |
+| E4 | External **penetration test** (budget 31 Oct 2026) | Reezvi Pydiah (procure), Bhavish Nobeen (remediate) | report + retest closure | staging env (open `ingress_cidrs` for the window); scope = [`docs/security/security-feature-catalogue.md`](docs/security/security-feature-catalogue.md) |
+| E5 | **security@** mailbox live | Taj Aundoo | test mail round-trip | [`SECURITY.md`](SECURITY.md) + `frontend/public/.well-known/security.txt` |
+| E7 | **Load test executed** (k6 scenarios written in ws17, not yet run) | Rushal Seeruthun | k6 report vs SLA targets | [`loadtest/`](loadtest/README.md) scenarios + staging ALB output; [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md) |
+| C11 | **Written acceptance of residual AI risks** | **Reezvi Pydiah** | signed acceptance note | risk list in [`docs/security/ai-controls.md`](docs/security/ai-controls.md) "Residual risks" (ws15 AI gateway): shape-driven pseudonymisation with no NER-grade field extraction, no input cleaning against prompt injection, model-written figures (validated structurally, not factually), no model version pinning. Context: README "Privacy: PII tokenization" + [`docs/security/threat-control-matrix.md`](docs/security/threat-control-matrix.md) AI row |
+| SUP-S10 | DMARC/SPF/DKIM on the sending domain | Taj Aundoo | DNS records + DMARC report | — (DNS-level; no repo artifact) |
+| SUP-S09 | MDM on staff devices | Taj Aundoo | MDM enrolment report | — (organisational) |
+| SEC-031 | SIEM reference test (one detection end-to-end with a bank's real SIEM) | Rushal Seeruthun | alert received from a staged `ACCOUNT_LOCKED` burst | **App side done (ws18):** bank-scoped feed `GET /api/siem/events` + signed single-bank push ([`docs/security/siem-event-schema.md`](docs/security/siem-event-schema.md), `SiemFeedE6Test`) and the alert channels (`AlertingGateD1Test`); infra side: metric filter + alarm in [`modules/security-monitoring`](infra/terraform/modules/security-monitoring) |
+| A8 | **Branch protection switched on** + seeded-vulnerable-PR drill | Bhavish Nobeen | ruleset screenshot/export + the blocked drill PR | settings and drill runbook in [`docs/security/branch-protection.md`](docs/security/branch-protection.md); the CI gauntlet and CODEOWNERS already exist (ws19) |
+| SEC-038 | Certification path decision (ISO 27001 / SOC 2) | Reezvi Pydiah | decision memo | evidence pack under [`docs/security/`](docs/security/) is structured to serve either |

@@ -8,19 +8,51 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(getStoredUser);
 
+  /**
+   * Phase one. When the account has (or must enrol) a second factor the
+   * backend answers with a short-lived challenge instead of tokens; the
+   * caller then drives the second step ({@link completeMfaLogin}, or the
+   * enrolment flow when `enrollmentRequired`).
+   *
+   * @returns {{mfaRequired: boolean, enrollmentRequired?: boolean, challenge?: string}}
+   */
   const login = useCallback(async (email, password) => {
-    const { token, user: loggedIn } = await authApi.login(email, password);
+    const data = await authApi.login(email, password);
+    if (data?.mfaRequired) {
+      return {
+        mfaRequired: true,
+        enrollmentRequired: Boolean(data.enrollmentRequired),
+        challenge: data.challenge,
+      };
+    }
+    setSession(data.token, data.user);
+    setUser(data.user);
+    return { mfaRequired: false };
+  }, []);
+
+  /** Phase two: challenge + TOTP/recovery code → the normal session. */
+  const completeMfaLogin = useCallback(async (challenge, code) => {
+    const { token, user: verified } = await authApi.verifyMfa(challenge, code);
+    setSession(token, verified);
+    setUser(verified);
+  }, []);
+
+  // OIDC landing (/login/complete): the session was opened by the backend's
+  // redirect (refresh cookie); the page hands the exchanged token + profile
+  // here so the SPA state matches a password login's.
+  const completeLogin = useCallback((token, loggedIn) => {
     setSession(token, loggedIn);
     setUser(loggedIn);
   }, []);
 
-  const register = useCallback(async (email, password, displayName) => {
-    const { token, user: created } = await authApi.register(email, password, displayName);
-    setSession(token, created);
-    setUser(created);
-  }, []);
-
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try {
+      // Best-effort server-side revocation (access-token jti + refresh
+      // family); the local session is cleared regardless.
+      await authApi.logout();
+    } catch {
+      /* already signed out server-side, or offline */
+    }
     clearSession();
     clearCaches();
     setUser(null);
@@ -32,8 +64,16 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: Boolean(getToken()), login, register, logout, updateUser }),
-    [user, login, register, logout, updateUser]
+    () => ({
+      user,
+      isAuthenticated: Boolean(getToken()),
+      login,
+      completeMfaLogin,
+      completeLogin,
+      logout,
+      updateUser,
+    }),
+    [user, login, completeMfaLogin, completeLogin, logout, updateUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

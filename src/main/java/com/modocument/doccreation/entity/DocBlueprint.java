@@ -28,6 +28,10 @@ public class DocBlueprint {
     @Column(name = "OwnerUserId")
     private int ownerUserId;
 
+    /** The owner's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     /**
      * Free-form company key with no Company table behind it yet; null means
      * the owner acts as their own company. Selects the DocumentCreationFlow.
@@ -56,6 +60,15 @@ public class DocBlueprint {
     private LocalDateTime updatedDate;
 
     public DocBlueprint() {
+    }
+
+    @JsonIgnore
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public int getDocBlueprintId() {

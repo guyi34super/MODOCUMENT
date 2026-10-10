@@ -9,6 +9,11 @@ export async function createWithFields(payload) {
   return created;
 }
 
+// ws10 (SEC-023): in production, update/delete answer 202 with a pending
+// change that a second user must approve (callers detect it with
+// isPendingChange from ./changes); with the maker/checker template gate
+// configured off they apply directly, as before.
+
 export async function updateTemplate(template) {
   const updated = await api.put('/Templates/Update', template);
   invalidateTemplates();
@@ -16,8 +21,9 @@ export async function updateTemplate(template) {
 }
 
 export async function deleteTemplate(id) {
-  await api.del(`/Templates/${id}`);
+  const result = await api.del(`/Templates/${id}`);
   invalidateTemplates();
+  return result;
 }
 
 /** Without a templateId the server returns every template's fields; pass one. */

@@ -2,7 +2,15 @@ package com.modocument.application.port;
 
 import org.springframework.core.ParameterizedTypeReference;
 
-/** Sends prompts to the LLM (OpenAI chat completion) and returns the raw reply. */
+/**
+ * Sends prompts to the LLM and returns the reply. The only implementation is
+ * the AI gateway (infrastructure/ai/AiGateway, SUP-S13), which is the single
+ * component allowed to touch the Spring AI chat client: every call carries a
+ * {@link PromptEnvelope} naming its purpose and tenant, is refused when the
+ * bound tenant is missing/mismatched or when the assembled prompt still
+ * contains a raw identifier shape (call sites tokenize first), and has its
+ * completion scanned before it is returned (gate C10).
+ */
 public interface AiFilesService {
 
     /**
@@ -12,23 +20,13 @@ public interface AiFilesService {
      */
     boolean isConfigured();
 
-    String sendPrompt(String prompt);
+    /** Sends the envelope's prompt and returns the model's raw reply text. */
+    String sendPrompt(PromptEnvelope envelope);
 
     /**
-     * Sends a prompt using {@code modelId} for this call (e.g. a task-specific
-     * local model). When blank, the global default from configuration is used.
+     * Sends the envelope's prompt and converts the reply into {@code type}
+     * via the model's structured-output support (JSON-schema format
+     * instructions + lenient parsing).
      */
-    String sendPrompt(String prompt, String modelId);
-
-    /**
-     * Sends a prompt and converts the reply into {@code type} via the model's
-     * structured-output support (JSON-schema format instructions + parsing).
-     */
-    <T> T sendForObject(String prompt, ParameterizedTypeReference<T> type);
-
-    /**
-     * Same as {@link #sendForObject(String, ParameterizedTypeReference)} but
-     * uses {@code modelId} for this call (e.g. a chat-specific local model).
-     */
-    <T> T sendForObject(String prompt, ParameterizedTypeReference<T> type, String modelId);
+    <T> T sendForObject(PromptEnvelope envelope, ParameterizedTypeReference<T> type);
 }

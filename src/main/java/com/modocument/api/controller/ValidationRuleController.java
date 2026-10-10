@@ -1,13 +1,17 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.UpsertValidationRuleRequest;
 import com.modocument.application.port.ValidationRuleRepository;
 import com.modocument.application.usecase.CreateTemplateWithFieldsUseCase;
 import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.application.validation.RegexPatternChecker;
 import com.modocument.domain.entity.ValidationRule;
+import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.RuleType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -23,6 +27,7 @@ import java.util.Optional;
 
 /** CRUD for per-field validation rules, so the UI can manage custom regex rules. */
 @RestController
+@Tag(name = "Validation Rules")
 public class ValidationRuleController {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -35,14 +40,16 @@ public class ValidationRuleController {
         this.ownership = ownership;
     }
 
+    @RequiresPermission(Permission.VALIDATION_READ)
     @GetMapping("/ValidationRules/GetByTemplate/{templateId}")
     public ResponseEntity<?> getByTemplate(@PathVariable int templateId) {
         ownership.require(templateId);
         return ResponseEntity.ok(repo.getRulesByTemplate(templateId));
     }
 
+    @RequiresPermission(Permission.VALIDATION_WRITE)
     @PutMapping("/ValidationRules/Upsert")
-    public ResponseEntity<?> upsert(@RequestBody UpsertValidationRuleRequest request) {
+    public ResponseEntity<?> upsert(@Valid @RequestBody UpsertValidationRuleRequest request) {
         if (request.getFieldName() == null || request.getFieldName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "fieldName is required."));
         }
@@ -68,8 +75,10 @@ public class ValidationRuleController {
             return ResponseEntity.badRequest().body(Map.of("error", "config cannot be serialized."));
         }
 
-        ValidationRule saved = repo.save(new ValidationRule(
-                request.getTemplateId(), request.getFieldName().trim(), ruleType.get(), configJson));
+        ValidationRule rule = new ValidationRule(
+                request.getTemplateId(), request.getFieldName().trim(), ruleType.get(), configJson);
+        rule.setBankId(ownership.requireBankId());
+        ValidationRule saved = repo.save(rule);
         return ResponseEntity.ok(saved);
     }
 
@@ -78,6 +87,7 @@ public class ValidationRuleController {
      * cannot be expressed as a path segment (Spring's firewall rejects the
      * encoded slash), which made the rule undeletable through the UI.
      */
+    @RequiresPermission(Permission.VALIDATION_WRITE)
     @DeleteMapping("/ValidationRules")
     public ResponseEntity<?> delete(@RequestParam int templateId,
                                     @RequestParam String fieldName,
@@ -86,6 +96,7 @@ public class ValidationRuleController {
     }
 
     /** Original path form, kept for callers that already use it. */
+    @RequiresPermission(Permission.VALIDATION_WRITE)
     @DeleteMapping("/ValidationRules/{templateId}/{fieldName}/{ruleType}")
     public ResponseEntity<?> deleteByPath(@PathVariable int templateId,
                                           @PathVariable String fieldName,

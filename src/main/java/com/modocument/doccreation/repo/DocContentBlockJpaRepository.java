@@ -15,4 +15,7 @@ public interface DocContentBlockJpaRepository extends JpaRepository<DocContentBl
     Optional<DocContentBlock> findByAssetId(int assetId);
 
     void deleteByInstanceId(int instanceId);
+
+    /** DSR scan (ws14): every content block of one bank. RLS backs this on PostgreSQL. */
+    List<DocContentBlock> findByBankId(int bankId);
 }

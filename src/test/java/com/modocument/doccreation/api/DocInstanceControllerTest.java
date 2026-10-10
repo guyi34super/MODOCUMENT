@@ -37,7 +37,8 @@ class DocInstanceControllerTest {
         request.setBlueprintId(1);
         request.setTitle("Survey");
         when(useCase.create(1, "Survey"))
-                .thenReturn(new InstanceSummaryDto(8, "Survey", 1, "PV", "DRAFT", null, null));
+                .thenReturn(new InstanceSummaryDto(8, "Survey", 1, "PV", "DRAFT", null, null,
+                        false, null, null, null));
 
         ResponseEntity<?> result = controller.create(request);
 

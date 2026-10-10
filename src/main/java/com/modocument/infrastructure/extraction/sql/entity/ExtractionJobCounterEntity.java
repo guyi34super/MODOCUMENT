@@ -31,13 +31,18 @@ public class ExtractionJobCounterEntity {
     @Column(name = "CounterValue", nullable = false)
     private long value;
 
+    /** Tenant bank (V11), stamped on every insert; RLS substrate. */
+    @Column(name = "BankId", nullable = false)
+    private int bankId;
+
     public ExtractionJobCounterEntity() {
     }
 
-    public ExtractionJobCounterEntity(long jobId, String name, long value) {
+    public ExtractionJobCounterEntity(long jobId, String name, long value, int bankId) {
         this.jobId = jobId;
         this.name = name;
         this.value = value;
+        this.bankId = bankId;
     }
 
     public long getJobId() {
@@ -62,6 +67,14 @@ public class ExtractionJobCounterEntity {
 
     public void setValue(long value) {
         this.value = value;
+    }
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public static class Key implements Serializable {

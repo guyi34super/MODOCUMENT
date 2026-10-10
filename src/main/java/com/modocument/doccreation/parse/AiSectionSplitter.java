@@ -1,7 +1,10 @@
 package com.modocument.doccreation.parse;
 
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.application.port.PromptEnvelope;
+import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.infrastructure.ratelimit.LlmRateLimiter;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -83,17 +86,20 @@ public class AiSectionSplitter {
     private final AiFilesService ai;
     private final LlmRateLimiter llmQuota;
     private final CurrentUserProvider currentUser;
+    private final PiiTokenizer tokenizer;
     private final boolean enabled;
     private final String modelId;
 
     public AiSectionSplitter(AiFilesService ai,
                              LlmRateLimiter llmQuota,
                              CurrentUserProvider currentUser,
+                             PiiTokenizer tokenizer,
                              @Value("${modocument.doccreation.section-ai-enabled:true}") boolean enabled,
                              @Value("${modocument.doccreation.section-model-id:}") String modelId) {
         this.ai = ai;
         this.llmQuota = llmQuota;
         this.currentUser = currentUser;
+        this.tokenizer = tokenizer;
         this.enabled = enabled;
         this.modelId = modelId;
     }
@@ -133,15 +139,28 @@ public class AiSectionSplitter {
             return Optional.empty();
         }
 
+        // C9: one-way masking of identifier shapes in the listing. Masking
+        // changes text LENGTHS but not the "[index]" element numbering the
+        // model anchors to (anchors are body-element indexes, not character
+        // offsets), so re-validation against the real document is unaffected
+        // and nothing needs unmasking — titles/anchor text come from the
+        // document itself.
+        String maskedDigest = tokenizer.maskText(digest);
+
         List<AiSection> reply;
         try {
             // Meters the same per-user LLM quota as the other AI endpoints;
             // an exhausted quota degrades to the heuristic instead of failing
             // the upload.
             llmQuota.check(currentUser.requireUserId());
-            reply = ai.sendForObject(PROMPT + digest,
+            reply = ai.sendForObject(
+                    PromptEnvelope.builder(AiPurpose.DOC_SECTION_SPLIT)
+                            .user(currentUser.requireUserId())
+                            .part(PROMPT + maskedDigest)
+                            .model(modelId)
+                            .build(),
                     new ParameterizedTypeReference<List<AiSection>>() {
-                    }, modelId);
+                    });
         } catch (RuntimeException e) {
             // No key, provider down, model nonsense — all mean "use the heuristic".
             log.warn("AI section breakdown unavailable, falling back to heuristics: {}", e.getMessage());

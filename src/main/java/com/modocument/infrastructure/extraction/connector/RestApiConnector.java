@@ -22,6 +22,8 @@ import com.modocument.domain.model.Hashing;
 import com.modocument.domain.model.UrlNormalizer;
 import com.modocument.infrastructure.extraction.worker.ExtractionMetrics;
 import com.modocument.infrastructure.net.OutboundHostPolicy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -51,8 +53,21 @@ import java.util.regex.Pattern;
 @Component
 public class RestApiConnector implements Connector {
 
+    private static final Logger log = LoggerFactory.getLogger(RestApiConnector.class);
+
     static final String PAYLOAD_URL = "url";
     static final String PAYLOAD_PAGE = "page";
+
+    /**
+     * Only environment variables with this prefix may be referenced by a
+     * source's {@code authEnvVar}. Without the allowlist, a user who can save
+     * a source could name ANY server env var (MODOCUMENT_JWT_SECRET,
+     * MODOCUMENT_DB_PASSWORD, AWS keys...) and have its value sent as an
+     * Authorization header to a server they control — a one-request secret
+     * exfiltration. Enforced at source create/update (ExtractionSourceUseCase)
+     * and again here as defense in depth.
+     */
+    public static final String ALLOWED_AUTH_ENV_PREFIX = "MODOCUMENT_CONNECTOR_";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Pattern LINK_NEXT =
@@ -79,6 +94,12 @@ public class RestApiConnector implements Connector {
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(properties.getWeb().getRequestTimeoutSeconds()))
                 .build();
+        // Documents the operational contract once at startup: connector
+        // secrets live in MODOCUMENT_CONNECTOR_*-prefixed variables, nothing
+        // else is readable from a source configuration.
+        log.info("REST API connector env-var allowlist active: a source's authEnvVar must start "
+                + "with '{}' (e.g. {}GITHUB_TOKEN); any other variable is refused.",
+                ALLOWED_AUTH_ENV_PREFIX, ALLOWED_AUTH_ENV_PREFIX);
     }
 
     @Override
@@ -243,9 +264,26 @@ public class RestApiConnector implements Connector {
             return fromRun;
         }
         if (config.getAuthEnvVar() != null && !config.getAuthEnvVar().isBlank()) {
-            return System.getenv(config.getAuthEnvVar());
+            // Defense in depth: source validation already rejects names
+            // outside the allowlist, but a row written before the rule (or
+            // through another path) must still never read an arbitrary
+            // server secret.
+            String envVar = config.getAuthEnvVar().trim();
+            if (!isAllowedAuthEnvVar(envVar)) {
+                throw new IllegalStateException("Refusing to read environment variable '" + envVar
+                        + "': connector secrets must use the '" + ALLOWED_AUTH_ENV_PREFIX
+                        + "' prefix.");
+            }
+            return System.getenv(envVar);
         }
         return null;
+    }
+
+    /** True only for env-var names on the connector-secret allowlist. */
+    public static boolean isAllowedAuthEnvVar(String name) {
+        return name != null
+                && name.startsWith(ALLOWED_AUTH_ENV_PREFIX)
+                && name.length() > ALLOWED_AUTH_ENV_PREFIX.length();
     }
 
     private static void requireSecret(String secret, ApiSourceConfig config) {

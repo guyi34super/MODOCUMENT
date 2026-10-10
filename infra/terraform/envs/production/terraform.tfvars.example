@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and fill in. NO SECRETS here — secret VALUES are
+# set directly in Secrets Manager (see envs/production/main.tf header);
+# certificates are referenced by ARN and registered in
+# docs/security/key-certificate-register.md.
+
+app_domain                 = "app.modocument.example"
+alb_certificate_arn        = "arn:aws:acm:af-south-1:111111111111:certificate/REPLACE"
+cloudfront_certificate_arn = "arn:aws:acm:us-east-1:111111111111:certificate/REPLACE"
+
+app_image      = "111111111111.dkr.ecr.af-south-1.amazonaws.com/modocument-prod/app:v1.0.0"
+frontend_image = "111111111111.dkr.ecr.af-south-1.amazonaws.com/modocument-prod/frontend:v1.0.0"
+
+alert_email = "security@modocument.example" # gate E5 mailbox
+
+# Gate D3 — tighten once the egress allow-list is signed off:
+# app_egress_https_cidrs = ["<llm-endpoint-cidr>", "<idp-cidr>"]
+# enforce_egress_nacl    = true
+# egress_allowlist_cidrs = ["<llm-endpoint-cidr>", "<idp-cidr>"]
+
+# Gate D5/D6 — flip ONLY after the restore drill passes (irreversible):
+# enforce_backup_locks = true

@@ -6,6 +6,7 @@ import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
 import com.modocument.application.usecase.ChatEditTableUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
+import com.modocument.application.usecase.UploadOwnership;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
@@ -37,9 +38,19 @@ class IngestionJobControllerTest {
     private final SupportedDocumentTypes supportedTypes = mock(SupportedDocumentTypes.class);
     private final IngestionJobRunner jobRunner = mock(IngestionJobRunner.class);
     private final JobWaitService jobWaitService = mock(JobWaitService.class);
+    private final UploadOwnership uploadOwnership = mock(UploadOwnership.class);
+    private final com.modocument.infrastructure.file.UploadContentChecker contentChecker =
+            mock(com.modocument.infrastructure.file.UploadContentChecker.class);
+    private final com.modocument.application.usecase.IngestionJobDeletionUseCase deletion =
+            mock(com.modocument.application.usecase.IngestionJobDeletionUseCase.class);
+    // Pass-through masking: the matrix itself is covered by PiiMaskingService's
+    // own suite and the C2 gate test; here it must not get in the way.
+    private final com.modocument.application.privacy.PiiMaskingService masking =
+            mock(com.modocument.application.privacy.PiiMaskingService.class,
+                    org.mockito.AdditionalAnswers.returnsFirstArg());
     private final IngestionJobController controller =
             new IngestionJobController(useCase, chatEdit, uploadStorage, supportedTypes, jobRunner,
-                    jobWaitService);
+                    jobWaitService, uploadOwnership, contentChecker, deletion, masking);
 
     private static IngestionJob validatedJob(WizardStep wizardStep) {
         IngestionJob job = new IngestionJob();

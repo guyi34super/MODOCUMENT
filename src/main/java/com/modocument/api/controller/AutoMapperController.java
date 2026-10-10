@@ -1,8 +1,13 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.AutoMappingPromptInput;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
 import com.modocument.application.port.ImportHistoryRepository;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.PromptStrategy;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.domain.entity.ImportHistory;
@@ -17,6 +22,8 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
+@Tag(name = "AI Auto-Mapping", description = "LLM-assisted column mapping suggestions")
+@RequiresPermission(Permission.AI_USE)
 public class AutoMapperController {
 
     /** Upper bound on the column list a caller may hand to the prompt. */
@@ -84,7 +91,9 @@ public class AutoMapperController {
         PromptStrategy strategy = promptFactory.getPrompt("AutoMapping");
         String prompt = strategy.buildPrompt(input);
 
-        String llmResponse = aiFilesService.sendPrompt(prompt);
+        // Column and field NAMES only — never data values (see mapping.* docs).
+        String llmResponse = aiFilesService.sendPrompt(
+                PromptEnvelope.of(AiPurpose.AUTO_MAP, prompt));
 
         return ResponseEntity.ok(Map.of("prompt", llmResponse));
     }

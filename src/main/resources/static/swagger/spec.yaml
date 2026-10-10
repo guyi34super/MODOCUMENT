@@ -1,4 +1,10 @@
-﻿openapi: 3.0.1
+﻿# DEPRECATED (ws17, SEC-006): this hand-written spec is NOT maintained and has
+# drifted from the code. The authoritative, machine-readable contract is
+# generated from the code at GET /v3/api-docs (springdoc; bearer token
+# required outside dev) and its route inventory is pinned in CI by
+# OpenApiContractTest against docs/api/openapi-routes.txt. Do not edit or
+# rely on this file; it will be removed per docs/api/versioning-policy.md.
+openapi: 3.0.1
 info:
   title: MoDocument Service
   version: "1.0"
@@ -155,7 +161,11 @@ paths:
       - Templates
   /Templates/Update:
     put:
-      description: Update a Template
+      description: Update a Template. With maker/checker gating on templates
+        (modocument.security.maker-checker.template-changes, the production
+        default) this SUBMITS a pending change (202) that a different user
+        must approve via /api/admin/changes/{id}/approve; with the gate off
+        it applies directly.
       operationId: putTemplate
       requestBody:
         content:
@@ -169,6 +179,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/TemplateUpdate'
           description: success
+        "202":
+          description: Submitted for approval (pending change)
       summary: Update a Template
       tags:
       - Templates
@@ -200,6 +212,9 @@ paths:
                 format: int32
                 type: integer
           description: success
+        "202":
+          description: Submitted for approval (maker/checker gate on, the
+            production default)
       summary: Delete a Template by Id
       tags:
       - Templates
@@ -973,13 +988,63 @@ paths:
           schema:
             type: string
             enum: [csv, json, xlsx, tsv, xml]
+        - name: reason
+          in: query
+          required: false
+          description: ws18 (gate D2) — why more rows than the role's cap are
+            needed (max 500 chars; recorded in the audit trail). Prefer the
+            POST form, which keeps the text out of URLs.
+          schema:
+            type: string
+            maxLength: 500
       responses:
         "200":
           description: File download
+        "400":
+          description: Unknown format, or reason longer than 500 characters
+        "403":
+          description: EXPORT_CAP_EXCEEDED — more rows than the caller's role
+            cap and no reason given; body {code, cap, rows, reasonMaxLength,
+            error}. Audited EXPORT_BLOCKED and alerted.
         "409":
           description: Job is not finished — cancelled, a template field still
             unmapped, or rows still failing validation (the body says which)
       summary: Export to a file
+      tags:
+      - IngestionJobs
+    post:
+      description: The same file export with the over-cap reason in the body
+        (ws18, gate D2) so free text never sits in a URL
+      operationId: exportIngestionJobFileWithReason
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            format: int32
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                format:
+                  type: string
+                  enum: [csv, json, xlsx, tsv, xml]
+                reason:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: File download
+        "400":
+          description: Unknown format, or reason longer than 500 characters
+        "403":
+          description: EXPORT_CAP_EXCEEDED (no reason given)
+        "409":
+          description: Job is not finished
+      summary: Export to a file, with a stated reason
       tags:
       - IngestionJobs
   /api/ingestion/jobs/{id}/export/database:
@@ -1011,11 +1076,18 @@ paths:
                   type: string
                 createTableIfMissing:
                   type: boolean
+                reason:
+                  type: string
+                  maxLength: 500
+                  description: ws18 (gate D2) — required above the role's row cap
       responses:
         "200":
           description: Updated job
         "400":
           description: Rejected jdbcUrl, identifier, or target-database error
+        "403":
+          description: EXPORT_CAP_EXCEEDED — more rows than the caller's role
+            cap and no reason given (audited EXPORT_BLOCKED, alerted)
         "409":
           description: Job is not finished — cancelled, a template field still
             unmapped, or rows still failing validation (the body says which)
@@ -1024,30 +1096,62 @@ paths:
       summary: Export to a custom database
       tags:
       - IngestionJobs
-  /api/auth/register:
-    post:
-      description: Create an account and return a bearer token
-      operationId: register
-      security: []
-      responses:
-        "200":
-          description: Token and user profile
-        "400":
-          description: Email already registered or password too weak
-      summary: Register
-      tags:
-      - Auth
   /api/auth/login:
     post:
-      description: Exchange credentials for a bearer token
+      description: Exchange credentials for a short-lived bearer token; also
+        sets the httpOnly rotating refresh cookie (modoc_refresh, path
+        /api/auth/refresh). Accounts are admin-created — there is no public
+        registration endpoint.
       operationId: login
       security: []
       responses:
         "200":
-          description: Token and user profile
+          description: Token and user profile (incl. role and bankId)
         "401":
           description: Invalid credentials
       summary: Log in
+      tags:
+      - Auth
+  /api/auth/refresh:
+    post:
+      description: Rotate the refresh cookie and return a fresh access token.
+        Presenting an already-rotated or revoked cookie revokes the whole
+        token family.
+      operationId: refresh
+      security: []
+      responses:
+        "200":
+          description: New token and user profile; new refresh cookie
+        "401":
+          description: Missing, expired, revoked, or reused refresh token
+      summary: Refresh tokens
+      tags:
+      - Auth
+  /api/auth/providers:
+    get:
+      description: Configured OIDC single sign-on providers for the login
+        page's buttons — registration ids plus display names, nothing secret.
+        Empty list when no provider is configured. The browser starts an SSO
+        login by navigating to /oauth2/authorization/{id}; after the external
+        IdP authenticates, the app issues its OWN tokens (refresh cookie +
+        /api/auth/refresh) — no external token is ever an API credential.
+      operationId: authProviders
+      security: []
+      responses:
+        "200":
+          description: 'Array of { id, name }; empty when OIDC is not configured'
+      summary: OIDC providers
+      tags:
+      - Auth
+  /api/auth/logout:
+    post:
+      description: Revoke the current access token (jti denylist) and every
+        refresh token of the user; clears the refresh cookie
+      operationId: logout
+      responses:
+        "204":
+          description: Session revoked
+      summary: Log out
       tags:
       - Auth
   /api/auth/me:
@@ -1082,6 +1186,270 @@ paths:
       summary: Change password
       tags:
       - Auth
+  /api/admin/users:
+    get:
+      description: Users of the calling admin's own bank (ADMIN only)
+      operationId: listBankUsers
+      responses:
+        "200":
+          description: Users with role, state, last login and MFA state
+      summary: List users
+      tags:
+      - UserAdmin
+    post:
+      description: Request creating a user in the calling admin's bank with a
+        temporary password that must be changed on first login. Maker/checker
+        (ws10) — a DIFFERENT admin must approve the pending change before the
+        account exists; the payload stores only the password's hash.
+      operationId: createBankUser
+      responses:
+        "202":
+          description: Pending change submitted for approval
+        "400":
+          description: Invalid role, or temporary password rejected by the policy
+        "409":
+          description: Email already in use
+      summary: Request user creation
+      tags:
+      - UserAdmin
+  /api/admin/users/{id}/role:
+    put:
+      description: Request changing a user's role (maker/checker, ws10). On a
+        different admin's approval the change applies and every outstanding
+        session of the user ends immediately.
+      operationId: changeUserRole
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "202":
+          description: Pending change submitted for approval
+        "404":
+          description: Unknown id, or a user of another bank
+        "409":
+          description: Own role (self-targeting refused at submit)
+      summary: Request role change
+      tags:
+      - UserAdmin
+  /api/admin/users/{id}/disabled:
+    put:
+      description: Enable or disable a user (the leaver switch). Disabling is
+        maker/checker-gated (202) and makes the account inert the moment a
+        DIFFERENT admin approves; re-enabling applies directly (200) — the
+        lower-risk direction.
+      operationId: setUserDisabled
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          description: Updated user (enable only)
+        "202":
+          description: Pending disable submitted for approval
+        "404":
+          description: Unknown id, or a user of another bank
+        "409":
+          description: Own account (self-targeting refused at submit)
+      summary: Enable user, or request disable
+      tags:
+      - UserAdmin
+  /api/admin/users/export:
+    get:
+      description: CSV of the bank's users with last-login dates
+        (users-{bankCode}-{date}.csv)
+      operationId: exportBankUsers
+      responses:
+        "200":
+          description: text/csv download
+      summary: Export user list
+      tags:
+      - UserAdmin
+  /api/admin/users/access-review:
+    get:
+      description: Quarterly recertification worksheet (role, last login,
+        90-day inactivity flags)
+      operationId: accessReviewWorksheet
+      responses:
+        "200":
+          description: Per-user review rows
+      summary: Access review
+      tags:
+      - UserAdmin
+  /api/admin/alerts:
+    get:
+      description: ws18 (gate D1) — the security alerts raised for the calling
+        admin's bank, newest first, with delivery evidence (channels, status,
+        created/delivered times). user:admin.
+      operationId: listSecurityAlerts
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      responses:
+        "200":
+          description: Alerts (alertId, rule, severity, summary, eventCount,
+            auditEventId, createdAt, deliveredAt, channels, status)
+      summary: List security alerts
+      tags:
+      - UserAdmin
+  /api/siem/events:
+    get:
+      description: ws18 (SEC-031, gate E6) — the caller's own bank's audit
+        events as newline-delimited JSON in the documented SIEM schema
+        (docs/security/siem-event-schema.md), oldest first, keyset-paged on
+        event.id. siem:read (ADMIN only).
+      operationId: siemEventFeed
+      parameters:
+      - name: since
+        in: query
+        required: false
+        description: The last event.id processed (exclusive)
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 500
+      responses:
+        "200":
+          description: application/x-ndjson; headers X-Next-Cursor and X-Has-More
+        "400":
+          description: Malformed cursor or limit out of range
+      summary: SIEM event feed
+      tags:
+      - Siem
+  /api/probe/synthetic:
+    get:
+      description: ws18 (SUP-S11) — public synthetic probe for uptime monitors,
+        rate-limited per client ip; version and a database round-trip boolean
+        only (503 when the database does not answer)
+      operationId: syntheticProbe
+      security: []
+      responses:
+        "200":
+          description: '{"status":"UP","version":"...","db":true,"checkedAt":"..."}'
+        "429":
+          description: Rate limit exceeded (Retry-After)
+        "503":
+          description: Database round trip failed
+      summary: Synthetic probe
+      tags:
+      - Probe
+  /api/admin/changes:
+    get:
+      description: The caller's bank's maker/checker queue (ws10). Holders of
+        change:approve (ADMIN, APPROVER) see everything; a maker without it
+        sees only their own submissions. Payloads are sanitized — credential
+        material never leaves the backend.
+      operationId: listPendingChanges
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [REQUESTED, APPROVED, REJECTED, CANCELLED, APPLIED, FAILED]
+      responses:
+        "200":
+          description: Pending changes, newest first
+      summary: List pending changes
+      tags:
+      - Changes
+    post:
+      description: Submit a change for approval ({changeType, payload,
+        comment}). The maker needs the SAME permission the direct operation
+        required (user ops user:admin, template ops template:write).
+      operationId: submitPendingChange
+      responses:
+        "202":
+          description: Pending change submitted
+        "400":
+          description: Unknown change type or invalid payload
+        "403":
+          description: Missing the change type's maker permission
+      summary: Submit change
+      tags:
+      - Changes
+  /api/admin/changes/{id}/approve:
+    post:
+      description: Approve AND apply a pending change (gate B7). The maker
+        approving their own change is a hard 409, audited
+        SELF_APPROVAL_BLOCKED; the appliers re-run every invariant at apply
+        time.
+      operationId: approvePendingChange
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          description: Applied change
+        "404":
+          description: Unknown id, or a change of another bank
+        "409":
+          description: Self-approval, already decided, or an apply-time
+            invariant refused (the change is then FAILED)
+      summary: Approve change
+      tags:
+      - Changes
+  /api/admin/changes/{id}/reject:
+    post:
+      description: Refuse a pending change; nothing is applied
+      operationId: rejectPendingChange
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          description: Rejected change
+        "404":
+          description: Unknown id, or a change of another bank
+        "409":
+          description: Already decided
+      summary: Reject change
+      tags:
+      - Changes
+  /api/admin/changes/{id}/cancel:
+    post:
+      description: Withdraw an undecided request — only its maker can
+      operationId: cancelPendingChange
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        "200":
+          description: Cancelled change
+        "404":
+          description: Unknown id, or a change of another bank
+        "409":
+          description: Not the maker, or already decided
+      summary: Cancel change
+      tags:
+      - Changes
   /api/ingestion/supported-types:
     get:
       description: Extensions this build can parse, plus a ready-made accept list
@@ -1935,7 +2303,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT issued by /api/auth/login or /api/auth/register
+      description: JWT issued by /api/auth/login or /api/auth/refresh
   schemas:
     TemplateDataTypesCreate:
       description: TemplateDataTypesCreate object

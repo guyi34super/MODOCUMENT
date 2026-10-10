@@ -29,6 +29,8 @@ public class ExtractionJob {
     private String id;
     /** The AppUser who owns this job — every read/write is scoped to it. */
     private int ownerUserId;
+    /** The owner's bank, stamped on create; RLS substrate. */
+    private int bankId;
     private String sourceId;
     /** Template the results are meant for (optional until bridging). */
     private Integer templateId;
@@ -56,6 +58,15 @@ public class ExtractionJob {
 
     public void setOwnerUserId(int ownerUserId) {
         this.ownerUserId = ownerUserId;
+    }
+
+    @JsonIgnore
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public String getSourceId() {

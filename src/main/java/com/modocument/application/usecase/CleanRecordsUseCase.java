@@ -3,6 +3,8 @@ package com.modocument.application.usecase;
 import com.modocument.application.dto.DataCleaningPromptInput;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.PromptStrategy;
 import com.modocument.application.privacy.PiiTokenizer;
 import org.slf4j.Logger;
@@ -66,9 +68,11 @@ public class CleanRecordsUseCase {
                         IngestionJobUseCase.toJson(
                                 new TableData(columns, session.tokenizeRows(batch))),
                         dataSpec));
-                TableData result = aiFilesService.sendForObject(prompt,
+                TableData result = aiFilesService.sendForObject(
+                        PromptEnvelope.of(AiPurpose.DATA_CLEANING, prompt,
+                                extractionLlm.getModelId()),
                         new ParameterizedTypeReference<TableData>() {
-                        }, extractionLlm.getModelId());
+                        });
                 if (result != null && result.getRows() != null
                         && result.getRows().size() == batch.size()) {
                     cleaned.addAll(session.detokenizeRows(result.getRows()));

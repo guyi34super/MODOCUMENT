@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
+import LoginCompletePage from './pages/LoginCompletePage';
 import DashboardPage from './pages/DashboardPage';
 import TemplatesPage from './pages/TemplatesPage';
 import TemplateEditorPage from './pages/TemplateEditorPage';
@@ -17,12 +17,29 @@ import ExtractionSourcesPage from './pages/ExtractionSourcesPage';
 import ExtractionJobsPage from './pages/ExtractionJobsPage';
 import ExtractionJobDetailPage from './pages/ExtractionJobDetailPage';
 import ProfilePage from './pages/ProfilePage';
+import AdminUsersPage from './pages/AdminUsersPage';
+import PendingChangesPage from './pages/PendingChangesPage';
+import PendingReleasesPage from './pages/PendingReleasesPage';
+import AdminRetentionPage from './pages/AdminRetentionPage';
+import AdminAlertsPage from './pages/AdminAlertsPage';
+import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
+      {/* OIDC landing: exchanges the refresh cookie for the access token. */}
+      <Route path="/login/complete" element={<LoginCompletePage />} />
+      {/* ws09: standalone (no app chrome) — the only page a temporary
+          password can use; ProtectedRoute routes flagged users here. */}
+      <Route
+        path="/force-password-change"
+        element={
+          <ProtectedRoute>
+            <ForceChangePasswordPage />
+          </ProtectedRoute>
+        }
+      />
       <Route
         element={
           <ProtectedRoute>
@@ -45,6 +62,15 @@ export default function App() {
         <Route path="/extraction/jobs" element={<ExtractionJobsPage />} />
         <Route path="/extraction/jobs/:id" element={<ExtractionJobDetailPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        {/* Rendered for ADMINs; the server enforces user:admin regardless. */}
+        <Route path="/admin/users" element={<AdminUsersPage />} />
+        {/* ws10 approval queue for ADMIN + APPROVER (server: change:approve). */}
+        <Route path="/admin/changes" element={<PendingChangesPage />} />
+        {/* ws11 release queue for ADMIN + APPROVER (server: doc:release). */}
+        <Route path="/approvals/releases" element={<PendingReleasesPage />} />
+        <Route path="/admin/retention" element={<AdminRetentionPage />} />
+        {/* ws18 security alerts for ADMINs (server: user:admin, bank-scoped). */}
+        <Route path="/admin/alerts" element={<AdminAlertsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -2,6 +2,7 @@ package com.modocument.application.usecase;
 
 import com.modocument.application.dto.InferredSchema;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.ExtractionAuditLog;
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ProcessedRecordStore;
@@ -48,18 +49,17 @@ class InferSchemaUseCaseTest {
         when(record.getFields()).thenReturn(Map.of("Email", "ada@acme.com", "Age", "36"));
         when(records.findBatch(anyString(), any(), anyInt())).thenReturn(List.of(record));
 
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class), anyString()))
+        when(ai.sendForObject(any(PromptEnvelope.class), any(ParameterizedTypeReference.class)))
                 .thenReturn(new InferredSchema(List.of(
                         new InferredSchema.InferredField("Email", "string", "[EMAIL_1]"),
                         new InferredSchema.InferredField("Age", "int", "36"))));
 
         InferredSchema schema = useCase.infer("j1");
 
-        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class),
-                org.mockito.ArgumentMatchers.eq("mistral:latest"));
-        assertThat(prompt.getValue()).contains("[EMAIL_1]");
-        assertThat(prompt.getValue()).doesNotContain("ada@acme.com");
+        ArgumentCaptor<PromptEnvelope> prompt = ArgumentCaptor.forClass(PromptEnvelope.class);
+        verify(ai).sendForObject(prompt.capture(), any(ParameterizedTypeReference.class));
+        assertThat(prompt.getValue().text()).contains("[EMAIL_1]");
+        assertThat(prompt.getValue().text()).doesNotContain("ada@acme.com");
 
         assertThat(schema.fields()).extracting(InferredSchema.InferredField::example)
                 .containsExactly("ada@acme.com", "36");

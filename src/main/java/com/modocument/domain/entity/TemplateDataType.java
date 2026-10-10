@@ -1,5 +1,6 @@
 package com.modocument.domain.entity;
 
+import jakarta.validation.constraints.Size;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -17,6 +18,7 @@ public class TemplateDataType {
     private int templateDataTypeId;
 
     @Column(name = "DataType")
+    @Size(max = 255)
     private String dataType;
 
     public TemplateDataType() {

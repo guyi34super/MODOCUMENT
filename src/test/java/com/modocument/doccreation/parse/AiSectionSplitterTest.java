@@ -1,6 +1,9 @@
 package com.modocument.doccreation.parse;
 
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.PromptEnvelope;
+import com.modocument.application.privacy.PiiTokenizer;
+import com.modocument.application.privacy.PrivacyProperties;
 import com.modocument.infrastructure.ai.AiNotConfiguredException;
 import com.modocument.infrastructure.ratelimit.LlmRateLimiter;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
@@ -34,7 +37,7 @@ class AiSectionSplitterTest {
     private final AiFilesService ai = mock(AiFilesService.class);
     // Real limiter with a generous window: quota behavior is covered separately.
     private final LlmRateLimiter quota = new LlmRateLimiter(1000, 3_600_000, 100);
-    private final AiSectionSplitter splitter = new AiSectionSplitter(ai, quota, () -> USER, true, "");
+    private final AiSectionSplitter splitter = new AiSectionSplitter(ai, quota, () -> USER, new PiiTokenizer(new PrivacyProperties()), true, "");
 
     private Path docx;
 
@@ -55,7 +58,7 @@ class AiSectionSplitterTest {
     }
 
     private void aiReturns(List<AiSectionSplitter.AiSection> sections) {
-        when(ai.sendForObject(anyString(), any(), anyString())).thenReturn(sections);
+        when(ai.sendForObject(any(PromptEnvelope.class), any())).thenReturn(sections);
     }
 
     @org.junit.jupiter.api.BeforeEach
@@ -112,11 +115,11 @@ class AiSectionSplitterTest {
     void anUnconfiguredOrFailingModelMeansFallBackNotFailTheUpload() {
         // doThrow keeps the re-stub from invoking the throwing stub itself.
         doThrow(new AiNotConfiguredException("no key"))
-                .when(ai).sendForObject(anyString(), any(), anyString());
+                .when(ai).sendForObject(any(PromptEnvelope.class), any());
         assertThat(splitter.split(docx)).isEmpty();
 
         doThrow(new IllegalStateException("provider down"))
-                .when(ai).sendForObject(anyString(), any(), anyString());
+                .when(ai).sendForObject(any(PromptEnvelope.class), any());
         assertThat(splitter.split(docx)).isEmpty();
     }
 
@@ -130,7 +133,7 @@ class AiSectionSplitterTest {
     void anUnconfiguredDeploymentSpendsNoQuotaSlot() {
         when(ai.isConfigured()).thenReturn(false);
         LlmRateLimiter oneSlot = new LlmRateLimiter(1, 3_600_000, 100);
-        AiSectionSplitter unconfigured = new AiSectionSplitter(ai, oneSlot, () -> USER, true, "");
+        AiSectionSplitter unconfigured = new AiSectionSplitter(ai, oneSlot, () -> USER, new PiiTokenizer(new PrivacyProperties()), true, "");
 
         assertThat(unconfigured.split(docx)).isEmpty();
         oneSlot.check(USER); // the slot was NOT consumed by the skipped AI call
@@ -138,20 +141,20 @@ class AiSectionSplitterTest {
 
     @Test
     void disabledSplitterNeverCallsTheModel() {
-        AiSectionSplitter disabled = new AiSectionSplitter(ai, quota, () -> USER, false, "");
+        AiSectionSplitter disabled = new AiSectionSplitter(ai, quota, () -> USER, new PiiTokenizer(new PrivacyProperties()), false, "");
 
         assertThat(disabled.split(docx)).isEmpty();
-        verify(ai, never()).sendForObject(anyString(), any(), anyString());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test
     void anExhaustedQuotaDegradesToTheHeuristicInsteadOfFailing() {
         LlmRateLimiter exhausted = new LlmRateLimiter(1, 3_600_000, 100);
         exhausted.check(USER); // spend the only permit
-        AiSectionSplitter limited = new AiSectionSplitter(ai, exhausted, () -> USER, true, "");
+        AiSectionSplitter limited = new AiSectionSplitter(ai, exhausted, () -> USER, new PiiTokenizer(new PrivacyProperties()), true, "");
 
         assertThat(limited.split(docx)).isEmpty();
-        verify(ai, never()).sendForObject(anyString(), any(), anyString());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test

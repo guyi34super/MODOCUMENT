@@ -78,6 +78,7 @@ public class SqlExtractionSourceStore implements ExtractionSourceStore {
         ExtractionSourceEntity entity = new ExtractionSourceEntity();
         entity.setId(JsonColumns.parseId(source.getId()));
         entity.setOwnerUserId(source.getOwnerUserId());
+        entity.setBankId(BankStamp.effective(source.getBankId()));
         entity.setName(source.getName());
         entity.setType(source.getType());
         entity.setTermsAcknowledged(source.isTermsAcknowledged());
@@ -95,6 +96,7 @@ public class SqlExtractionSourceStore implements ExtractionSourceStore {
         ExtractionSource source = new ExtractionSource();
         source.setId(String.valueOf(entity.getId()));
         source.setOwnerUserId(entity.getOwnerUserId());
+        source.setBankId(entity.getBankId());
         source.setName(entity.getName());
         source.setType(entity.getType());
         source.setTermsAcknowledged(entity.isTermsAcknowledged());

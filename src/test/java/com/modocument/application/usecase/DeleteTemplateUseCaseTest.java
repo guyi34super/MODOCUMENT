@@ -1,5 +1,6 @@
 package com.modocument.application.usecase;
 
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.application.port.TemplateFieldsRepository;
@@ -28,8 +29,9 @@ class DeleteTemplateUseCaseTest {
     private final ValidationRuleRepository rules = mock(ValidationRuleRepository.class);
     private final IngestionJobRepository jobs = mock(IngestionJobRepository.class);
     private final ImportHistoryRepository imports = mock(ImportHistoryRepository.class);
+    private final AuditRecorder audit = mock(AuditRecorder.class);
     private final DeleteTemplateUseCase useCase =
-            new DeleteTemplateUseCase(templates, fields, rules, jobs, imports);
+            new DeleteTemplateUseCase(templates, fields, rules, jobs, imports, audit);
 
     private static final int USER = 5;
 
@@ -54,6 +56,14 @@ class DeleteTemplateUseCaseTest {
         verify(rules).delete(3, "Email", RuleType.REQUIRED);
         verify(fields).delete(11);
         verify(templates).delete(3);
+        // The C7 exemplar: the deletion records old values (name + fields).
+        verify(audit).success(
+                org.mockito.ArgumentMatchers.eq("TEMPLATE_DELETED"),
+                org.mockito.ArgumentMatchers.eq("Template"),
+                org.mockito.ArgumentMatchers.eq("3"),
+                org.mockito.ArgumentMatchers.argThat(old ->
+                        old.toString().contains("People") && old.toString().contains("Email")),
+                org.mockito.ArgumentMatchers.isNull());
     }
 
     @Test
@@ -66,6 +76,10 @@ class DeleteTemplateUseCaseTest {
                 .hasMessageContaining("2 upload jobs");
         verify(templates, never()).delete(3);
         verify(fields, never()).delete(org.mockito.ArgumentMatchers.anyInt());
+        // Nothing was deleted, so nothing may claim it was (C7).
+        verify(audit, never()).success(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test

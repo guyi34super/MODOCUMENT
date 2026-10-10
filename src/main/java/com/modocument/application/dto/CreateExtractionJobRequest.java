@@ -1,5 +1,8 @@
 package com.modocument.application.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 import java.util.Map;
 
 /**
@@ -9,11 +12,18 @@ import java.util.Map;
  */
 public class CreateExtractionJobRequest {
 
+    /** ExtractionJob.SourceId is varchar(64). */
+    @NotBlank
+    @Size(max = 64)
     private String sourceId;
+
     private Integer templateId;
+    @Size(max = 20_000)
     private String dataSpec;
+
     private boolean incremental;
     private Boolean autoStart;
+    @Size(max = 50)
     private Map<String, String> credentials;
 
     public String getSourceId() {

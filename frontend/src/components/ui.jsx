@@ -56,6 +56,11 @@ export function Badge({ status }) {
     MAPPED: 'bg-pill text-accent',
     VALIDATED: 'bg-success-bg text-success-ink',
     EXPORTED: 'bg-success-bg text-success-ink',
+    // ws11 document release workflow.
+    DRAFT: 'bg-neutral-100 text-muted',
+    GENERATED: 'bg-pill text-accent',
+    SUBMITTED: 'bg-amber-100 text-amber-800',
+    RELEASED: 'bg-success-bg text-success-ink',
   };
   return (
     <span

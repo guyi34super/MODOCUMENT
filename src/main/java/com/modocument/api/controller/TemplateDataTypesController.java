@@ -1,5 +1,9 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.port.TemplateDataTypeRepository;
 import com.modocument.domain.entity.TemplateDataType;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +19,7 @@ import java.net.URI;
 import java.util.Optional;
 
 @RestController
+@Tag(name = "Template Data Types")
 public class TemplateDataTypesController {
 
     private final TemplateDataTypeRepository repo;
@@ -23,11 +28,13 @@ public class TemplateDataTypesController {
         this.repo = repo;
     }
 
+    @RequiresPermission(Permission.LOOKUP_READ)
     @GetMapping("/TemplateDataTypes/GetAll")
     public ResponseEntity<?> getAllTemplateDataTypes() {
         return ResponseEntity.ok(repo.list());
     }
 
+    @RequiresPermission(Permission.LOOKUP_READ)
     @GetMapping("/TemplateDataTypes/GetById/{id}")
     public ResponseEntity<?> getTemplateDataTypeById(@PathVariable int id) {
         Optional<TemplateDataType> item = repo.getById(id);
@@ -39,8 +46,9 @@ public class TemplateDataTypesController {
         return ResponseEntity.ok(dto);
     }
 
+    @RequiresPermission(Permission.LOOKUP_ADMIN)
     @PostMapping("/TemplateDataTypes/Create")
-    public ResponseEntity<?> createTemplateDataType(@RequestBody TemplateDataType dto) {
+    public ResponseEntity<?> createTemplateDataType(@Valid @RequestBody TemplateDataType dto) {
         TemplateDataType entity = new TemplateDataType(0, dto.getDataType());
         repo.add(entity);
         return ResponseEntity
@@ -48,8 +56,9 @@ public class TemplateDataTypesController {
                 .body(entity);
     }
 
+    @RequiresPermission(Permission.LOOKUP_ADMIN)
     @PutMapping("/TemplateDataTypes/Update")
-    public ResponseEntity<?> updateTemplateDataType(@RequestBody TemplateDataType dto) {
+    public ResponseEntity<?> updateTemplateDataType(@Valid @RequestBody TemplateDataType dto) {
         Optional<TemplateDataType> existingOpt = repo.getById(dto.getTemplateDataTypeId());
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -66,6 +75,7 @@ public class TemplateDataTypesController {
                 .body(updated);
     }
 
+    @RequiresPermission(Permission.LOOKUP_ADMIN)
     @DeleteMapping("/TemplateDataTypes/{id}")
     public ResponseEntity<?> deleteTemplateDataType(@PathVariable int id) {
         Optional<TemplateDataType> existing = repo.getById(id);

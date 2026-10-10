@@ -17,6 +17,7 @@ import com.modocument.domain.entity.Template;
 import com.modocument.domain.entity.TemplateDataType;
 import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.entity.ValidationRule;
+import com.modocument.domain.model.PiiKind;
 import com.modocument.domain.model.RuleType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,6 +69,8 @@ public class CreateTemplateWithFieldsUseCase {
 
         Template template = new Template(0, request.getName().trim(), request.getDescription());
         template.setOwnerUserId(currentUser.requireUserId());
+        int bankId = currentUser.requireBankId();
+        template.setBankId(bankId);
         templateRepository.add(template);
 
         List<CreateTemplateResponse.CreatedField> createdFields = new ArrayList<>();
@@ -76,22 +79,30 @@ public class CreateTemplateWithFieldsUseCase {
 
             TemplateFields field = new TemplateFields();
             field.setTemplateId(template.getTemplateId());
+            field.setBankId(bankId);
             field.setFieldName(fieldDto.getFieldName().trim());
             field.setTemplateDataTypeId(dataType.getTemplateDataTypeId());
+            // Explicit PII tag (ws12, PRIV-004): validated above; null means
+            // "auto-classify on first use" (PiiClassifier persists its result).
+            field.setPiiKind(parsePiiKind(fieldDto.getPiiKind()).orElse(null));
             templateFieldsRepository.add(field);
 
             List<CreateTemplateResponse.CreatedRule> createdRules = new ArrayList<>();
             for (CreateTemplateRuleDto ruleDto : rulesOf(fieldDto)) {
                 RuleType ruleType = parseRuleType(ruleDto.getRuleType()).orElseThrow();
                 String configJson = toConfigJson(ruleDto.getConfig());
-                validationRuleRepository.save(new ValidationRule(
-                        template.getTemplateId(), field.getFieldName(), ruleType, configJson));
+                ValidationRule rule = new ValidationRule(
+                        template.getTemplateId(), field.getFieldName(), ruleType, configJson);
+                rule.setBankId(bankId);
+                validationRuleRepository.save(rule);
                 createdRules.add(new CreateTemplateResponse.CreatedRule(ruleType.name(), configJson));
             }
 
             createdFields.add(new CreateTemplateResponse.CreatedField(
                     field.getTemplateFieldsId(), field.getFieldName(),
-                    dataType.getTemplateDataTypeId(), dataType.getDataType(), createdRules));
+                    dataType.getTemplateDataTypeId(), dataType.getDataType(),
+                    field.getPiiKind() == null ? null : field.getPiiKind().name(),
+                    createdRules));
         }
 
         return new CreateTemplateResponse(
@@ -124,6 +135,12 @@ public class CreateTemplateWithFieldsUseCase {
             if (resolveDataType(field.getDataType(), dataTypes).isEmpty()) {
                 errors.add(new TemplateValidationError(fieldName, null,
                         "Unknown data type '" + field.getDataType() + "'."));
+            }
+            if (field.getPiiKind() != null && !field.getPiiKind().isBlank()
+                    && parsePiiKind(field.getPiiKind()).isEmpty()) {
+                errors.add(new TemplateValidationError(fieldName, null,
+                        "Unknown PII kind '" + field.getPiiKind()
+                                + "'; use NIC, ACCOUNT_NUMBER, EMAIL, PHONE, NAME, or NONE."));
             }
 
             for (CreateTemplateRuleDto rule : rulesOf(field)) {
@@ -160,6 +177,18 @@ public class CreateTemplateWithFieldsUseCase {
                 .filter(dt -> wanted.equalsIgnoreCase(dt.getDataType())
                         || wanted.equals(String.valueOf(dt.getTemplateDataTypeId())))
                 .findFirst();
+    }
+
+    /** PII kinds travel by enum name, case-insensitively; null/blank = untagged. */
+    public static Optional<PiiKind> parsePiiKind(String name) {
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(PiiKind.valueOf(name.trim().toUpperCase(Locale.ROOT)));
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
     }
 
     /** Rule types travel by enum name only; ordinals are a persistence detail. */

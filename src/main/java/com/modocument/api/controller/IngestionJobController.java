@@ -1,17 +1,25 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ChatEditRequest;
 import com.modocument.application.dto.CreateIngestionJobRequest;
 import com.modocument.application.dto.UpdateMappingRequest;
 import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
+import com.modocument.application.privacy.PiiMaskingService;
 import com.modocument.application.usecase.ChatEditTableUseCase;
+import com.modocument.application.usecase.IngestionJobDeletionUseCase;
 import com.modocument.application.usecase.IngestionJobUseCase;
+import com.modocument.application.usecase.UploadOwnership;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
+import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
 import com.modocument.infrastructure.file.SupportedDocumentTypes;
+import com.modocument.infrastructure.file.UploadContentChecker;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.ingestion.IngestionJobRunner;
 import com.modocument.infrastructure.job.JobWaitService;
@@ -37,6 +45,7 @@ import java.util.NoSuchElementException;
  * the mapping, and resume after failures.
  */
 @RestController
+@Tag(name = "Ingestion Jobs", description = "Parse / map / validate pipeline")
 public class IngestionJobController {
 
     private final IngestionJobUseCase useCase;
@@ -45,22 +54,35 @@ public class IngestionJobController {
     private final SupportedDocumentTypes supportedTypes;
     private final IngestionJobRunner jobRunner;
     private final JobWaitService jobWaitService;
+    private final UploadOwnership uploadOwnership;
+    private final UploadContentChecker contentChecker;
+    private final IngestionJobDeletionUseCase deletion;
+    private final PiiMaskingService masking;
 
     public IngestionJobController(IngestionJobUseCase useCase,
                                   ChatEditTableUseCase chatEdit,
                                   UploadStorage uploadStorage,
                                   SupportedDocumentTypes supportedTypes,
                                   IngestionJobRunner jobRunner,
-                                  JobWaitService jobWaitService) {
+                                  JobWaitService jobWaitService,
+                                  UploadOwnership uploadOwnership,
+                                  UploadContentChecker contentChecker,
+                                  IngestionJobDeletionUseCase deletion,
+                                  PiiMaskingService masking) {
         this.useCase = useCase;
         this.chatEdit = chatEdit;
         this.uploadStorage = uploadStorage;
         this.supportedTypes = supportedTypes;
         this.jobRunner = jobRunner;
         this.jobWaitService = jobWaitService;
+        this.uploadOwnership = uploadOwnership;
+        this.contentChecker = contentChecker;
+        this.deletion = deletion;
+        this.masking = masking;
     }
 
     /** Multipart creation: uploads the file and (by default) runs the pipeline. */
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping(value = "/api/ingestion/jobs", consumes = "multipart/form-data")
     public ResponseEntity<?> createFromUpload(@RequestParam("file") MultipartFile file,
                                               @RequestParam("templateId") int templateId,
@@ -77,13 +99,25 @@ public class IngestionJobController {
             return ResponseEntity.badRequest().body(Map.of("error",
                     "Unsupported file type. Supported types: " + supportedTypes.describeSupported() + "."));
         }
+        // The content must look like what the extension claims (SEC-030): a
+        // renamed executable must not enter the pipeline as a ".csv"/".xlsx".
+        contentChecker.requireContentMatchesExtension(file.getOriginalFilename(), file);
+        // Duplicate gate (C6): same owner + same bytes + same original name is
+        // a re-upload, refused with 409 before anything lands on disk.
+        String sha256Hex = FileUploadController.sha256(file);
+        uploadOwnership.rejectDuplicate(file.getOriginalFilename(), sha256Hex);
+
         String storedName = uploadStorage.store(file);
+        // Ownership row (V20): the uploader owns the stored file, so the JSON
+        // create path can later reference it by name.
+        uploadOwnership.record(storedName, file.getOriginalFilename(), file.getSize(), sha256Hex);
         return created(storedName, templateId, autoRun, parseUntil(runUntil), wait);
     }
 
     /** JSON creation for a file already stored via /api/fileupload/upload. */
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping(value = "/api/ingestion/jobs", consumes = "application/json")
-    public ResponseEntity<?> createFromExisting(@RequestBody CreateIngestionJobRequest request) {
+    public ResponseEntity<?> createFromExisting(@Valid @RequestBody CreateIngestionJobRequest request) {
         if (request.getFileName() == null || request.getFileName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "fileName is required."));
         }
@@ -91,6 +125,10 @@ public class IngestionJobController {
             return ResponseEntity.badRequest().body(Map.of("error",
                     "Unsupported file type. Supported types: " + supportedTypes.describeSupported() + "."));
         }
+        // The referenced upload must belong to the caller — another user's (or
+        // an unknown/pre-V20) stored name is a 404, so the pipeline never reads
+        // a file the caller does not own.
+        uploadOwnership.require(request.getFileName());
         boolean autoRun = request.getAutoRun() == null || request.getAutoRun();
         JobStep until = request.getRunUntil() == null || request.getRunUntil().isBlank()
                 ? JobStep.MAPPED
@@ -99,6 +137,7 @@ public class IngestionJobController {
         return created(request.getFileName(), request.getTemplateId(), autoRun, until, wait);
     }
 
+    @RequiresPermission(Permission.INGESTION_READ)
     @GetMapping("/api/ingestion/supported-types")
     public ResponseEntity<?> supportedTypes() {
         return ResponseEntity.ok(Map.of(
@@ -107,21 +146,47 @@ public class IngestionJobController {
                 "description", supportedTypes.describeSupported()));
     }
 
+    /**
+     * The two read routes are the SCREEN channels (gate C2, PRIV-005): a
+     * READ_ONLY caller (an owner whose role was downgraded — cross-user
+     * reads 404 on ownership anyway) gets SCREEN_READONLY with every
+     * PII-classified column masked; a writing role gets its SCREEN_WORKING
+     * raw view, because cell editing needs the true values. The write
+     * routes below all require {@code ingestion:write}, so a READ_ONLY
+     * caller can never reach an unmasked echo through them.
+     */
+    @RequiresPermission(Permission.INGESTION_READ)
     @GetMapping("/api/ingestion/jobs")
     public ResponseEntity<?> list() {
-        return ResponseEntity.ok(useCase.views(useCase.list()));
+        return ResponseEntity.ok(masking.maskJobViews(useCase.views(useCase.list())));
     }
 
+    @RequiresPermission(Permission.INGESTION_READ)
     @GetMapping("/api/ingestion/jobs/{id}")
     public ResponseEntity<?> get(@PathVariable int id,
                                  @RequestParam(defaultValue = "false") boolean wait,
                                  @RequestParam(defaultValue = "MAPPED") String until) {
         if (wait) {
-            return ResponseEntity.ok(jobWaitService.waitForIngestionView(id, parseUntil(until)));
+            return ResponseEntity.ok(masking.maskJobView(
+                    jobWaitService.waitForIngestionView(id, parseUntil(until))));
         }
-        return ResponseEntity.ok(useCase.view(useCase.get(id)));
+        return ResponseEntity.ok(masking.maskJobView(useCase.view(useCase.get(id))));
     }
 
+    /**
+     * Deletes the job, its export archive copies and (when no other job of
+     * the owner references it) its uploaded file — the user's own early
+     * exercise of the ws14 retention policy. Owner-scoped: someone else's
+     * job 404s like a non-existent id.
+     */
+    @RequiresPermission(Permission.INGESTION_WRITE)
+    @org.springframework.web.bind.annotation.DeleteMapping("/api/ingestion/jobs/{id}")
+    public ResponseEntity<?> delete(@PathVariable int id) {
+        deletion.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping("/api/ingestion/jobs/{id}/resume")
     public ResponseEntity<?> resume(@PathVariable int id,
                                     @RequestParam(value = "until", defaultValue = "VALIDATED")
@@ -134,23 +199,27 @@ public class IngestionJobController {
         return ResponseEntity.ok(jobWaitService.waitForIngestionView(id, target));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping("/api/ingestion/jobs/{id}/remap")
     public ResponseEntity<?> remap(@PathVariable int id) {
         return ResponseEntity.ok(useCase.view(useCase.remap(id)));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping("/api/ingestion/jobs/{id}/revalidate")
     public ResponseEntity<?> revalidate(@PathVariable int id) {
         return ResponseEntity.ok(useCase.view(useCase.revalidate(id)));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PostMapping("/api/ingestion/jobs/{id}/cancel")
     public ResponseEntity<?> cancel(@PathVariable int id) {
         return ResponseEntity.ok(useCase.view(useCase.cancel(id)));
     }
 
+    @RequiresPermission(Permission.AI_USE)
     @PostMapping("/api/ingestion/jobs/{id}/chat-edit")
-    public ResponseEntity<?> chatEdit(@PathVariable int id, @RequestBody ChatEditRequest request) {
+    public ResponseEntity<?> chatEdit(@PathVariable int id, @Valid @RequestBody ChatEditRequest request) {
         return ResponseEntity.ok(useCase.view(
                 chatEdit.handle(
                         id,
@@ -159,27 +228,30 @@ public class IngestionJobController {
                         request == null ? null : request.getColumn())));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PutMapping("/api/ingestion/jobs/{id}/mapping")
     public ResponseEntity<?> updateMapping(@PathVariable int id,
-                                           @RequestBody UpdateMappingRequest request) {
+                                           @Valid @RequestBody UpdateMappingRequest request) {
         if (request.getMapping() == null || request.getMapping().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "mapping is required."));
         }
         return ResponseEntity.ok(useCase.view(useCase.updateMapping(id, request.getMapping())));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PutMapping("/api/ingestion/jobs/{id}/rows")
     public ResponseEntity<?> updateRows(@PathVariable int id,
-                                        @RequestBody UpdateRowsRequest request) {
+                                        @Valid @RequestBody UpdateRowsRequest request) {
         if (request == null || request.getRows() == null || request.getRows().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "rows is required."));
         }
         return ResponseEntity.ok(useCase.view(useCase.updateRows(id, request.getRows())));
     }
 
+    @RequiresPermission(Permission.INGESTION_WRITE)
     @PutMapping("/api/ingestion/jobs/{id}/wizard-step")
     public ResponseEntity<?> updateWizardStep(@PathVariable int id,
-                                              @RequestBody UpdateWizardStepRequest request) {
+                                              @Valid @RequestBody UpdateWizardStepRequest request) {
         if (request == null || request.getWizardStep() == null || request.getWizardStep().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "wizardStep is required."));
         }

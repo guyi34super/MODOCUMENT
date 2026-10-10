@@ -1,6 +1,7 @@
 package com.modocument.infrastructure.extraction.worker;
 
 import com.modocument.application.port.ExtractionTaskQueue;
+import com.modocument.application.port.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -30,10 +31,15 @@ public class RetrySweeper {
 
     @Scheduled(fixedDelayString = "${extraction.worker.sweep-millis:15000}")
     public void sweep() {
-        int requeued = queue.requeueExpired(Instant.now());
-        if (requeued > 0) {
-            metrics.expiredLeasesRequeued(requeued);
-            log.info("Requeued {} extraction task(s) with expired leases", requeued);
-        }
+        // runAsSystem: scheduled maintenance crosses tenants by design — it
+        // must requeue EVERY tenant's expired leases, so it runs with the
+        // RLS wildcard (see the call-site registry in TenantContext).
+        TenantContext.runAsSystem(() -> {
+            int requeued = queue.requeueExpired(Instant.now());
+            if (requeued > 0) {
+                metrics.expiredLeasesRequeued(requeued);
+                log.info("Requeued {} extraction task(s) with expired leases", requeued);
+            }
+        });
     }
 }

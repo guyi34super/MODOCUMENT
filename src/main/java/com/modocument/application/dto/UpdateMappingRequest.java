@@ -1,10 +1,15 @@
 package com.modocument.application.dto;
 
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
+
 import java.util.Map;
 
 /** Body of PUT /api/ingestion/jobs/{id}/mapping: source column -> template field (or null). */
 public class UpdateMappingRequest {
 
+    @NotEmpty
+    @Size(max = 500)
     private Map<String, String> mapping;
 
     public UpdateMappingRequest() {

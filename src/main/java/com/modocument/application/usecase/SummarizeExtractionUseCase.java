@@ -2,6 +2,8 @@ package com.modocument.application.usecase;
 
 import com.modocument.application.dto.ExtractionSummaryPromptInput;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.AiPurpose;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.ExtractionAuditLog;
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ExtractionTaskQueue;
@@ -80,8 +82,12 @@ public class SummarizeExtractionUseCase {
         String prompt = strategy.buildPrompt(new ExtractionSummaryPromptInput(
                 IngestionJobUseCase.toJson(stats), IngestionJobUseCase.toJson(sample),
                 job.getDataSpec()));
-        String summary = session.detokenize(
-                aiFilesService.sendPrompt(prompt, extractionLlm.getModelId()));
+        String summary = session.detokenize(aiFilesService.sendPrompt(
+                PromptEnvelope.builder(AiPurpose.EXTRACTION_SUMMARY)
+                        .bank(job.getBankId())
+                        .part(prompt, job.getBankId())
+                        .model(extractionLlm.getModelId())
+                        .build()));
         audit.add(ExtractionAuditEvent.of(jobId, job.getSourceId(), AuditAction.LLM_CALL, null,
                 "run summary generated", null));
         return summary;

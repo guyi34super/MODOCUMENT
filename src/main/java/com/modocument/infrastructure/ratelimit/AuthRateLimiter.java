@@ -40,12 +40,14 @@ public class AuthRateLimiter {
         long now = System.currentTimeMillis();
         if (ip != null && !ip.isBlank() && !perIp.tryAcquire("ip:" + ip, now)) {
             throw new TooManyRequestsException(
-                    "Too many attempts from this network. Please wait a few minutes and try again.");
+                    "Too many attempts from this network. Please wait a few minutes and try again.",
+                    perIp.retryAfterSeconds("ip:" + ip, now));
         }
-        if (email != null && !email.isBlank()
-                && !perEmail.tryAcquire("email:" + email.toLowerCase(Locale.ROOT), now)) {
+        String emailKey = email == null ? null : "email:" + email.toLowerCase(Locale.ROOT);
+        if (emailKey != null && !email.isBlank() && !perEmail.tryAcquire(emailKey, now)) {
             throw new TooManyRequestsException(
-                    "Too many attempts for this account. Please wait a few minutes and try again.");
+                    "Too many attempts for this account. Please wait a few minutes and try again.",
+                    perEmail.retryAfterSeconds(emailKey, now));
         }
     }
 }

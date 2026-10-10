@@ -1,0 +1,60 @@
+# OIDC single sign-on configuration (ws07, gate B2/B3) — EXAMPLE.
+#
+# Copy the block you need into your environment-specific configuration (or
+# the gitignored application-local-secrets.yml, which the local profile
+# imports) and fill in the real values. Never commit client secrets.
+#
+# Everything is OPTIONAL: with no modocument.oidc.providers entry the app
+# boots exactly as before — no OIDC endpoints, no provider buttons on the
+# login page. Configure one provider or both.
+#
+# BRIDGE PATTERN: the provider only authenticates the browser. MoDocument
+# then issues its OWN access token and rotating refresh cookie, exactly like
+# a password login — the API's resource-server side never changes, and no
+# external token is ever accepted as an API credential.
+#
+# MFA (gate B3) is enforced AT THE PROVIDER:
+#   * Entra ID   — a Conditional Access policy requiring MFA for the app;
+#   * Keycloak   — the modocument realm ships with the 'Configure OTP'
+#                  required action as a default (docker/keycloak/
+#                  modocument-realm.json): every user must enroll TOTP.
+#
+# Full setup walk-through: docs/security/identity-providers.md
+
+modocument:
+  oidc:
+    # Where the browser lands after a successful OIDC login. The SPA route
+    # exchanges the httpOnly refresh cookie for an access token there — the
+    # token itself never appears in a URL.
+    post-login-redirect: /login/complete
+    providers:
+      # ---- Microsoft banks: Entra ID (Azure AD) ---------------------------
+      entra:
+        # From the app registration's overview page: Directory (tenant) ID.
+        issuer-uri: https://login.microsoftonline.com/<tenant-id>/v2.0
+        client-id: ${MODOCUMENT_OIDC_ENTRA_CLIENT_ID}
+        client-secret: ${MODOCUMENT_OIDC_ENTRA_CLIENT_SECRET}
+        # Users signing in through this provider are JIT-provisioned into
+        # this Bank (Bank.Code). Must exist; validated at startup.
+        bank-code: CONTOSO
+        # Role a JIT-created user starts with when no role claim maps.
+        default-role: READ_ONLY
+        # Optional: an ID-token claim carrying ADMIN/APPROVER/READ_WRITE/
+        # READ_ONLY (e.g. app roles exposed in the 'roles' claim). Absent or
+        # unknown values keep the existing/default role.
+        # role-claim: roles
+        # Optional button label; defaults to "Microsoft".
+        # display-name: Microsoft
+
+      # ---- Everyone else: Keycloak (open source) --------------------------
+      keycloak:
+        # The realm imported from docker/keycloak/modocument-realm.json
+        # (docker compose --profile keycloak up; Keycloak listens on :8081).
+        issuer-uri: http://localhost:8081/realms/modocument
+        client-id: modocument-app
+        client-secret: ${MODOCUMENT_OIDC_KEYCLOAK_CLIENT_SECRET}
+        bank-code: DEFAULT
+        default-role: READ_ONLY
+        # The realm's protocol mapper exposes realm roles in this claim.
+        role-claim: modocument_roles
+        # display-name: Keycloak

@@ -1,8 +1,12 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ExtractionSourceDto;
 import com.modocument.application.dto.SaveExtractionSourceRequest;
 import com.modocument.application.usecase.ExtractionSourceUseCase;
+import com.modocument.domain.model.Permission;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,6 +28,7 @@ import java.util.NoSuchElementException;
  * must allow-list their domains; no source configuration ever stores secrets.
  */
 @RestController
+@Tag(name = "Extraction Sources")
 public class ExtractionSourceController {
 
     private final ExtractionSourceUseCase useCase;
@@ -32,28 +37,33 @@ public class ExtractionSourceController {
         this.useCase = useCase;
     }
 
+    @RequiresPermission(Permission.EXTRACTION_WRITE)
     @PostMapping("/api/extraction/sources")
-    public ResponseEntity<?> create(@RequestBody SaveExtractionSourceRequest request) {
+    public ResponseEntity<?> create(@Valid @RequestBody SaveExtractionSourceRequest request) {
         ExtractionSourceDto dto = ExtractionSourceDto.from(useCase.create(request));
         return ResponseEntity.created(URI.create("/api/extraction/sources/" + dto.id())).body(dto);
     }
 
+    @RequiresPermission(Permission.EXTRACTION_READ)
     @GetMapping("/api/extraction/sources")
     public ResponseEntity<?> list() {
         return ResponseEntity.ok(useCase.list().stream().map(ExtractionSourceDto::from).toList());
     }
 
+    @RequiresPermission(Permission.EXTRACTION_READ)
     @GetMapping("/api/extraction/sources/{id}")
     public ResponseEntity<?> get(@PathVariable String id) {
         return ResponseEntity.ok(ExtractionSourceDto.from(useCase.get(id)));
     }
 
+    @RequiresPermission(Permission.EXTRACTION_WRITE)
     @PutMapping("/api/extraction/sources/{id}")
     public ResponseEntity<?> update(@PathVariable String id,
-                                    @RequestBody SaveExtractionSourceRequest request) {
+                                    @Valid @RequestBody SaveExtractionSourceRequest request) {
         return ResponseEntity.ok(ExtractionSourceDto.from(useCase.update(id, request)));
     }
 
+    @RequiresPermission(Permission.EXTRACTION_WRITE)
     @DeleteMapping("/api/extraction/sources/{id}")
     public ResponseEntity<?> delete(@PathVariable String id) {
         useCase.delete(id);

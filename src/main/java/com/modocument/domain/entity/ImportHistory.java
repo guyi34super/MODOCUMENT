@@ -1,5 +1,6 @@
 package com.modocument.domain.entity;
 
+import jakarta.validation.constraints.Size;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -26,10 +27,15 @@ public class ImportHistory {
     @Column(name = "OwnerUserId")
     private int ownerUserId;
 
+    /** The owner's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     @Column(name = "ImportDate")
     private LocalDateTime importDate;
 
     @Column(name = "FileName")
+    @Size(max = 255)
     private String fileName;
 
     @Column(name = "CompanyId")
@@ -60,6 +66,15 @@ public class ImportHistory {
 
     public void setOwnerUserId(int ownerUserId) {
         this.ownerUserId = ownerUserId;
+    }
+
+    @JsonIgnore
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public LocalDateTime getImportDate() {

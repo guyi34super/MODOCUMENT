@@ -1,15 +1,11 @@
 package com.modocument.infrastructure.file;
 
-import com.modocument.infrastructure.ai.AiFilesProperties;
-import com.modocument.infrastructure.ai.AiFilesServiceImpl;
+import com.modocument.application.port.AiPurpose;
+import com.modocument.application.port.PromptEnvelope;
+import com.modocument.infrastructure.ai.AiGateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.content.Media;
-import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.stereotype.Component;
-import org.springframework.util.MimeTypeUtils;
 
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
@@ -20,11 +16,14 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 
 /**
- * OCR via the configured OpenAI vision model. Highest-quality tier of the
- * built-in OCR chain: tried first for standalone images and scanned PDF
- * pages, with the Tesseract {@link OcrService} as offline fallback. Enabled
- * only when a real OpenAI api-key is configured, and degrades to returning no
- * text on any failure instead of failing the whole transform.
+ * OCR via the configured vision model, routed through the {@link AiGateway}
+ * like every other LLM call (tenancy check, no content logging, AI_CALL
+ * evidence). A page image cannot be tokenized, so this tier is OFF BY
+ * DEFAULT (gate C8 local-first posture) and requires the explicit
+ * {@code MODOCUMENT_AI_VISION_OCR_ENABLED=true} opt-in plus a real API key;
+ * the Tesseract {@link OcrService} remains the offline default, and any
+ * failure here degrades to returning no text instead of failing the
+ * transform.
  */
 @Component
 public class VisionOcrService {
@@ -37,25 +36,17 @@ public class VisionOcrService {
 
     private static final Logger log = LoggerFactory.getLogger(VisionOcrService.class);
 
-    private final ChatClient chatClient;
+    private final AiGateway aiGateway;
     private final VisionOcrProperties properties;
-    private final AiFilesProperties aiProperties;
 
-    public VisionOcrService(ChatClient chatClient,
-                            VisionOcrProperties properties,
-                            AiFilesProperties aiProperties) {
-        this.chatClient = chatClient;
+    public VisionOcrService(AiGateway aiGateway, VisionOcrProperties properties) {
+        this.aiGateway = aiGateway;
         this.properties = properties;
-        this.aiProperties = aiProperties;
     }
 
-    /** True when vision OCR is switched on AND a real (non-sentinel) OpenAI key is configured. */
+    /** True when vision OCR is explicitly opted in AND a real API key is configured. */
     public boolean isEnabled() {
-        String apiKey = aiProperties.getApiKey();
-        return properties.isEnabled()
-                && apiKey != null
-                && !apiKey.isBlank()
-                && !AiFilesServiceImpl.UNSET_API_KEY.equals(apiKey);
+        return properties.isEnabled() && aiGateway.isConfigured();
     }
 
     public int maxPagesPerDocument() {
@@ -75,16 +66,9 @@ public class VisionOcrService {
             // OpenAI vision accepts png/jpeg/gif/webp; inputs are already
             // decoded BufferedImages, so always re-encode to PNG.
             byte[] png = toPng(downscale(image, properties.getMaxDimension()));
-            var prompt = chatClient.prompt();
-            String model = properties.getModel();
-            if (model != null && !model.isBlank()) {
-                prompt = prompt.options(OpenAiChatOptions.builder().model(model).build());
-            }
-            String text = prompt
-                    .user(u -> u.text(OCR_PROMPT)
-                            .media(new Media(MimeTypeUtils.IMAGE_PNG, new ByteArrayResource(png))))
-                    .call()
-                    .content();
+            String text = aiGateway.ocrImage(
+                    PromptEnvelope.of(AiPurpose.VISION_OCR, OCR_PROMPT, properties.getModel()),
+                    png);
             return text == null ? "" : text.strip();
         } catch (Exception e) {
             log.warn("Vision OCR failed, falling back to local OCR: {}", e.getMessage());

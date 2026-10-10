@@ -25,6 +25,10 @@ public class DocBlueprintSection {
     @Column(name = "BlueprintId")
     private int blueprintId;
 
+    /** The owning root's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     @Column(name = "OrderIndex")
     private int orderIndex;
 
@@ -47,6 +51,14 @@ public class DocBlueprintSection {
     private String keywords;
 
     public DocBlueprintSection() {
+    }
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public int getDocBlueprintSectionId() {

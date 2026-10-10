@@ -27,6 +27,10 @@ public class DocImageAsset {
     @Column(name = "InstanceId")
     private int instanceId;
 
+    /** The owning root's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
     /** Stored (timestamped) file name under the uploads directory. */
     @Column(name = "FileName")
     private String fileName;
@@ -44,6 +48,14 @@ public class DocImageAsset {
     private LocalDateTime uploadedDate;
 
     public DocImageAsset() {
+    }
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public int getDocImageAssetId() {

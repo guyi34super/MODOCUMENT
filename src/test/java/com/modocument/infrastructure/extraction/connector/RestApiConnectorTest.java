@@ -92,4 +92,74 @@ class RestApiConnectorTest {
         assertThat(RestApiConnector.replaceParam("https://x/api?size=5", "cursor", "a b"))
                 .isEqualTo("https://x/api?size=5&cursor=a+b");
     }
+
+    @Test
+    void authEnvVarAllowlistOnlyAcceptsTheConnectorNamespace() {
+        assertThat(RestApiConnector.isAllowedAuthEnvVar("MODOCUMENT_CONNECTOR_GITHUB_TOKEN")).isTrue();
+        assertThat(RestApiConnector.isAllowedAuthEnvVar("MODOCUMENT_CONNECTOR_")).isFalse();
+        assertThat(RestApiConnector.isAllowedAuthEnvVar("MODOCUMENT_JWT_SECRET")).isFalse();
+        assertThat(RestApiConnector.isAllowedAuthEnvVar("AWS_SECRET_ACCESS_KEY")).isFalse();
+        assertThat(RestApiConnector.isAllowedAuthEnvVar("PATH")).isFalse();
+        assertThat(RestApiConnector.isAllowedAuthEnvVar(null)).isFalse();
+    }
+
+    /**
+     * Defense in depth for the secret-exfiltration hole: even if a source
+     * document with a disallowed env-var reference reaches the connector
+     * (written before the validation rule, or through another path), the
+     * connector refuses to read it — before any request leaves the process.
+     */
+    @Test
+    void executeRefusesEnvVarsOutsideTheAllowlistBeforeAnyRequest() throws Exception {
+        JobSecrets noRunSecrets = mock(JobSecrets.class);
+        org.mockito.Mockito.when(noRunSecrets.get("j1")).thenReturn(java.util.Optional.empty());
+        RestApiConnector guarded = new RestApiConnector(
+                new ExtractionProperties(), noRunSecrets, mock(HostRateLimiter.class),
+                mock(ExtractionAuditLog.class), new ExtractionMetrics(),
+                com.modocument.infrastructure.net.OutboundHostPolicy.disabled());
+
+        ApiSourceConfig config = new ApiSourceConfig();
+        config.setBaseUrl("https://api.example.com");
+        config.setAuthType(ApiSourceConfig.AuthType.BEARER);
+        config.setAuthEnvVar("PATH"); // present on every OS — would leak if read
+
+        ExtractionTask task = new ExtractionTask();
+        task.setJobId("j1");
+        task.setSourceId("s1");
+        task.setPayload(new java.util.LinkedHashMap<>(
+                Map.of("url", "https://api.example.com/items", "page", "1")));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        guarded.execute(task, job(false), source(config), null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MODOCUMENT_CONNECTOR_")
+                .hasMessageContaining("PATH");
+    }
+
+    /** An allowlisted-but-unset variable fails with "unavailable", not "refused". */
+    @Test
+    void executeStillRequiresTheAllowlistedSecretToExist() {
+        JobSecrets noRunSecrets = mock(JobSecrets.class);
+        org.mockito.Mockito.when(noRunSecrets.get("j1")).thenReturn(java.util.Optional.empty());
+        RestApiConnector guarded = new RestApiConnector(
+                new ExtractionProperties(), noRunSecrets, mock(HostRateLimiter.class),
+                mock(ExtractionAuditLog.class), new ExtractionMetrics(),
+                com.modocument.infrastructure.net.OutboundHostPolicy.disabled());
+
+        ApiSourceConfig config = new ApiSourceConfig();
+        config.setBaseUrl("https://api.example.com");
+        config.setAuthType(ApiSourceConfig.AuthType.BEARER);
+        config.setAuthEnvVar("MODOCUMENT_CONNECTOR_SURELY_UNSET_IN_TESTS");
+
+        ExtractionTask task = new ExtractionTask();
+        task.setJobId("j1");
+        task.setSourceId("s1");
+        task.setPayload(new java.util.LinkedHashMap<>(
+                Map.of("url", "https://api.example.com/items", "page", "1")));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                        guarded.execute(task, job(false), source(config), null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not available");
+    }
 }

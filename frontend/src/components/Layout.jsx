@@ -31,6 +31,21 @@ const sections = [
     ],
   },
   {
+    // ws09/ws10: links rendered per role (the server enforces user:admin /
+    // change:approve regardless — hiding links is UX, not security).
+    label: 'Administration',
+    links: [
+      { to: '/admin/users', label: 'Users', roles: ['ADMIN'] },
+      { to: '/admin/changes', label: 'Approvals', roles: ['ADMIN', 'APPROVER'] },
+      // ws11: the document release queue sits beside the changes queue.
+      { to: '/approvals/releases', label: 'Releases', roles: ['ADMIN', 'APPROVER'] },
+      // ws14: retention purge evidence + data-subject requests.
+      { to: '/admin/retention', label: 'Privacy & retention', roles: ['ADMIN'] },
+      // ws18: security alerts raised for the bank + their delivery evidence.
+      { to: '/admin/alerts', label: 'Security alerts', roles: ['ADMIN'] },
+    ],
+  },
+  {
     label: 'Account',
     links: [{ to: '/profile', label: 'Profile' }],
   },
@@ -79,8 +94,8 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [drawer]);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
@@ -144,7 +159,15 @@ export default function Layout() {
           drawer ? 'z-[45] shadow-xl' : 'z-10'
         } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        {sections.map((section, i) => (
+        {sections
+          .map((section) => ({
+            ...section,
+            links: section.links.filter(
+              (link) => !link.roles || link.roles.includes(user?.role)
+            ),
+          }))
+          .filter((section) => section.links.length > 0)
+          .map((section, i) => (
           <div key={section.label || i} className="mb-5">
             {section.label && (
               <p className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted">

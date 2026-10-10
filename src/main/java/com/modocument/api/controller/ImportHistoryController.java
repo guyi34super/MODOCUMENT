@@ -1,8 +1,12 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.domain.entity.ImportHistory;
+import com.modocument.domain.model.Permission;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +20,7 @@ import java.net.URI;
 import java.util.Optional;
 
 @RestController
+@Tag(name = "Import History")
 public class ImportHistoryController {
 
     private final ImportHistoryRepository repo;
@@ -26,11 +31,13 @@ public class ImportHistoryController {
         this.currentUser = currentUser;
     }
 
+    @RequiresPermission(Permission.IMPORT_READ)
     @GetMapping("/ImportHistory/GetAll")
     public ResponseEntity<?> getAll() {
         return ResponseEntity.ok(repo.listByOwner(currentUser.requireUserId()));
     }
 
+    @RequiresPermission(Permission.IMPORT_READ)
     @GetMapping("/ImportHistory/GetById/{id}")
     public ResponseEntity<?> getImportHistoryById(@PathVariable int id) {
         Optional<ImportHistory> itemOpt = repo.getByIdAndOwner(id, currentUser.requireUserId());
@@ -48,10 +55,12 @@ public class ImportHistoryController {
         return ResponseEntity.ok(dto);
     }
 
+    @RequiresPermission(Permission.IMPORT_WRITE)
     @PostMapping("/ImportHistory/Create")
-    public ResponseEntity<?> create(@RequestBody ImportHistory dto) {
+    public ResponseEntity<?> create(@Valid @RequestBody ImportHistory dto) {
         ImportHistory entity = new ImportHistory();
         entity.setOwnerUserId(currentUser.requireUserId());
+        entity.setBankId(currentUser.requireBankId());
         entity.setImportDate(dto.getImportDate());
         entity.setFileName(dto.getFileName());
         entity.setTemplateId(dto.getTemplateId());
@@ -62,8 +71,9 @@ public class ImportHistoryController {
                 .body(entity);
     }
 
+    @RequiresPermission(Permission.IMPORT_WRITE)
     @PutMapping("/ImportHistory/Update/{id}")
-    public ResponseEntity<?> update(@PathVariable int id, @RequestBody ImportHistory dto) {
+    public ResponseEntity<?> update(@PathVariable int id, @Valid @RequestBody ImportHistory dto) {
         Optional<ImportHistory> existingOpt =
                 repo.getByIdAndOwner(dto.getImportHistoryId(), currentUser.requireUserId());
         if (existingOpt.isEmpty()) {
@@ -89,6 +99,7 @@ public class ImportHistoryController {
                 .body(updated);
     }
 
+    @RequiresPermission(Permission.IMPORT_WRITE)
     @DeleteMapping("/ImportHistory/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         Optional<ImportHistory> existing = repo.getByIdAndOwner(id, currentUser.requireUserId());

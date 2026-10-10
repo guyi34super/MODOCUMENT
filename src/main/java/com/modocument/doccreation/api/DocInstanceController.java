@@ -1,5 +1,9 @@
 package com.modocument.doccreation.api;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.doccreation.dto.AddBlockRequest;
 import com.modocument.doccreation.dto.AssignAssetRequest;
 import com.modocument.doccreation.dto.CreateDocInstanceRequest;
@@ -37,6 +41,7 @@ import java.util.NoSuchElementException;
  * image previews, and generation/download of the reproduced document.
  */
 @RestController
+@Tag(name = "Doc Creation: Instances", description = "Document authoring, assets and generation")
 public class DocInstanceController {
 
     private static final String DOCX_CONTENT_TYPE =
@@ -50,29 +55,34 @@ public class DocInstanceController {
 
     // ------------------------------------------------------------- instances
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @PostMapping("/api/doccreation/instances")
-    public ResponseEntity<?> create(@RequestBody CreateDocInstanceRequest request) {
+    public ResponseEntity<?> create(@Valid @RequestBody CreateDocInstanceRequest request) {
         InstanceSummaryDto created = useCase.create(request.getBlueprintId(), request.getTitle());
         return ResponseEntity
                 .created(URI.create("/api/doccreation/instances/" + created.instanceId()))
                 .body(created);
     }
 
+    @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/instances")
     public ResponseEntity<?> list(@RequestParam(value = "blueprintId", required = false) Integer blueprintId) {
         return ResponseEntity.ok(useCase.list(blueprintId));
     }
 
+    @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/instances/{id}")
     public ResponseEntity<?> get(@PathVariable int id) {
         return ResponseEntity.ok(useCase.getBuilder(id));
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @PutMapping("/api/doccreation/instances/{id}")
-    public ResponseEntity<?> rename(@PathVariable int id, @RequestBody UpdateDocInstanceRequest request) {
+    public ResponseEntity<?> rename(@PathVariable int id, @Valid @RequestBody UpdateDocInstanceRequest request) {
         return ResponseEntity.ok(useCase.rename(id, request.getTitle()));
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @DeleteMapping("/api/doccreation/instances/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         useCase.delete(id);
@@ -81,26 +91,30 @@ public class DocInstanceController {
 
     // ---------------------------------------------------------------- blocks
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @PostMapping("/api/doccreation/instances/{id}/sections/{sectionId}/blocks")
     public ResponseEntity<?> addBlock(@PathVariable int id,
                                       @PathVariable int sectionId,
-                                      @RequestBody AddBlockRequest request) {
+                                      @Valid @RequestBody AddBlockRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(useCase.addBlock(id, sectionId, request));
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @PutMapping("/api/doccreation/blocks/{blockId}")
-    public ResponseEntity<?> updateBlock(@PathVariable int blockId, @RequestBody UpdateBlockRequest request) {
+    public ResponseEntity<?> updateBlock(@PathVariable int blockId, @Valid @RequestBody UpdateBlockRequest request) {
         return ResponseEntity.ok(useCase.updateBlock(blockId, request.getText(), request.getCaption()));
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @PutMapping("/api/doccreation/instances/{id}/sections/{sectionId}/blocks/order")
     public ResponseEntity<?> reorderBlocks(@PathVariable int id,
                                            @PathVariable int sectionId,
-                                           @RequestBody ReorderBlocksRequest request) {
+                                           @Valid @RequestBody ReorderBlocksRequest request) {
         useCase.reorderBlocks(id, sectionId, request.getBlockIds());
         return ResponseEntity.ok().build();
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @DeleteMapping("/api/doccreation/blocks/{blockId}")
     public ResponseEntity<?> deleteBlock(@PathVariable int blockId) {
         useCase.deleteBlock(blockId);
@@ -109,6 +123,7 @@ public class DocInstanceController {
 
     // ---------------------------------------------------------------- assets
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @PostMapping(value = "/api/doccreation/instances/{id}/assets", consumes = "multipart/form-data")
     public ResponseEntity<?> uploadAssets(@PathVariable int id,
                                           @RequestParam("files") List<MultipartFile> files,
@@ -120,6 +135,7 @@ public class DocInstanceController {
         return ResponseEntity.status(HttpStatus.CREATED).body(useCase.uploadAssets(id, files, autoAssign));
     }
 
+    @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/assets/{assetId}/content")
     public ResponseEntity<?> assetContent(@PathVariable int assetId) {
         DocInstanceUseCase.StoredAsset asset = useCase.getAssetContent(assetId);
@@ -133,12 +149,14 @@ public class DocInstanceController {
         }
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @PutMapping("/api/doccreation/assets/{assetId}/assignment")
-    public ResponseEntity<?> assignAsset(@PathVariable int assetId, @RequestBody AssignAssetRequest request) {
+    public ResponseEntity<?> assignAsset(@PathVariable int assetId, @Valid @RequestBody AssignAssetRequest request) {
         useCase.assignAsset(assetId, request.getSectionId());
         return ResponseEntity.ok().build();
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @DeleteMapping("/api/doccreation/assets/{assetId}")
     public ResponseEntity<?> deleteAsset(@PathVariable int assetId) {
         useCase.deleteAsset(assetId);
@@ -147,11 +165,13 @@ public class DocInstanceController {
 
     // ------------------------------------------------------------ generation
 
+    @RequiresPermission(Permission.DOC_GENERATE)
     @PostMapping("/api/doccreation/instances/{id}/generate")
     public ResponseEntity<?> generate(@PathVariable int id) {
         return ResponseEntity.ok(useCase.generate(id));
     }
 
+    @RequiresPermission(Permission.DOC_GENERATE)
     @GetMapping("/api/doccreation/instances/{id}/download")
     public ResponseEntity<?> download(@PathVariable int id,
                                       @RequestParam(value = "format", defaultValue = "docx") String format) {

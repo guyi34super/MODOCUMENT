@@ -26,6 +26,11 @@ modocument:
       # See application-local-secrets.yml.example for the shape.
       secret: ${MODOCUMENT_JWT_SECRET:}
     permit-dev-paths: true
+    maker-checker:
+      # Single-developer convenience: template update/delete apply directly
+      # instead of waiting for a second user's approval. User-security
+      # changes stay maker/checker-gated even here (ws10, never exempt).
+      template-changes: false
 
 springdoc:
   api-docs:

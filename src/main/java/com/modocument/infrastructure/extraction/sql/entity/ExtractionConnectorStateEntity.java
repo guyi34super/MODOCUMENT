@@ -22,6 +22,10 @@ public class ExtractionConnectorStateEntity {
     @Column(name = "SourceId", length = 64)
     private String sourceId;
 
+    /** Tenant bank (V11), stamped on every insert; RLS substrate. */
+    @Column(name = "BankId", nullable = false)
+    private int bankId;
+
     @JdbcTypeCode(SqlTypes.LONGVARCHAR)
     @Column(name = "EtagsJson")
     private String etagsJson;
@@ -40,6 +44,14 @@ public class ExtractionConnectorStateEntity {
 
     @Column(name = "UpdatedDate")
     private Instant updatedDate;
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
+    }
 
     public String getSourceId() {
         return sourceId;

@@ -1,6 +1,9 @@
 package com.modocument.doccreation.generate;
 
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.PromptEnvelope;
+import com.modocument.application.privacy.PiiTokenizer;
+import com.modocument.application.privacy.PrivacyProperties;
 import com.modocument.doccreation.entity.DocBlueprintSection;
 import com.modocument.doccreation.entity.DocContentBlock;
 import com.modocument.doccreation.entity.DocImageAsset;
@@ -51,7 +54,7 @@ class AiDocumentComposerTest {
     private final LlmRateLimiter quota = new LlmRateLimiter(1000, 3_600_000, 100);
     private final DocumentAssembler assembler = new DocumentAssembler();
     private final AiDocumentComposer composer =
-            new AiDocumentComposer(ai, quota, () -> USER, assembler, true, "");
+            new AiDocumentComposer(ai, quota, () -> USER, assembler, new PiiTokenizer(new PrivacyProperties()), true, "");
 
     private Path blueprint;
     private DocBlueprintSection roof;
@@ -132,7 +135,7 @@ class AiDocumentComposerTest {
     }
 
     private void aiReturns(List<AiDocumentComposer.AiOp> ops) {
-        when(ai.sendForObject(anyString(), any(), anyString())).thenReturn(ops);
+        when(ai.sendForObject(any(PromptEnvelope.class), any())).thenReturn(ops);
     }
 
     private static AiDocumentComposer.AiOp keep(int from, int to) {
@@ -243,17 +246,17 @@ class AiDocumentComposerTest {
     @Test
     void unavailableAiMeansTheDeterministicEngineTakesOver() {
         doThrow(new AiNotConfiguredException("no key"))
-                .when(ai).sendForObject(anyString(), any(), anyString());
+                .when(ai).sendForObject(any(PromptEnvelope.class), any());
 
         assertThat(compose(composer)).isEmpty();
     }
 
     @Test
     void disabledComposerNeverCallsTheModel() {
-        AiDocumentComposer disabled = new AiDocumentComposer(ai, quota, () -> USER, assembler, false, "");
+        AiDocumentComposer disabled = new AiDocumentComposer(ai, quota, () -> USER, assembler, new PiiTokenizer(new PrivacyProperties()), false, "");
 
         assertThat(compose(disabled)).isEmpty();
-        verify(ai, never()).sendForObject(anyString(), any(), anyString());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test
@@ -262,7 +265,7 @@ class AiDocumentComposerTest {
                 Map.of(), Map.of(), id -> png);
 
         assertThat(result).isEmpty();
-        verify(ai, never()).sendForObject(anyString(), any(), anyString());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test
@@ -300,9 +303,9 @@ class AiDocumentComposerTest {
     void exhaustedQuotaDegradesToTheEngine() {
         LlmRateLimiter exhausted = new LlmRateLimiter(1, 3_600_000, 100);
         exhausted.check(USER);
-        AiDocumentComposer limited = new AiDocumentComposer(ai, exhausted, () -> USER, assembler, true, "");
+        AiDocumentComposer limited = new AiDocumentComposer(ai, exhausted, () -> USER, assembler, new PiiTokenizer(new PrivacyProperties()), true, "");
 
         assertThat(compose(limited)).isEmpty();
-        verify(ai, never()).sendForObject(anyString(), any(), anyString());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 }

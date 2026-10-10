@@ -4,8 +4,11 @@ import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.mapping.MappingProperties;
 import com.modocument.application.mapping.ValueShapeScorer;
 import com.modocument.application.port.AiFilesService;
+import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.application.port.ValidationRuleRepository;
+import com.modocument.application.privacy.PiiTokenizer;
+import com.modocument.application.privacy.PrivacyProperties;
 import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.entity.ValidationRule;
 import com.modocument.domain.model.RuleType;
@@ -38,7 +41,7 @@ class AutoMapUseCaseTest {
     private final AutoMapUseCase useCase = new AutoMapUseCase(
             List.of(new AutoMappingPrompt()), ai,
             new ValueShapeScorer(ruleRepository, List.of(new RegexRule())),
-            jobs, properties);
+            jobs, properties, new PiiTokenizer(new PrivacyProperties()));
 
     private static final List<TemplateFields> TEMPLATE_FIELDS =
             fields("FirstName", "LastName", "HireDate");
@@ -73,7 +76,7 @@ class AutoMapUseCaseTest {
         assertThat(mapping).containsEntry("FirstName", "FirstName")
                 .containsEntry("last_name", "LastName")
                 .containsEntry("HIRE DATE", "HireDate");
-        verify(ai, never()).sendForObject(anyString(), any());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test
@@ -83,7 +86,7 @@ class AutoMapUseCaseTest {
 
         assertThat(mapping).containsEntry("fname", "FirstName")
                 .containsEntry("Surname", "LastName");
-        verify(ai, never()).sendForObject(anyString(), any());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test
@@ -100,7 +103,7 @@ class AutoMapUseCaseTest {
                 new MappingContext(List.of("Column3"), fields, rows, 1, 1));
 
         assertThat(mapping).containsEntry("Column3", "Email");
-        verify(ai, never()).sendForObject(anyString(), any());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test
@@ -111,7 +114,7 @@ class AutoMapUseCaseTest {
         Map<String, String> mapping = useCase.map(context(List.of("Nom"), TEMPLATE_FIELDS));
 
         assertThat(mapping).containsEntry("Nom", "FirstName");
-        verify(ai, never()).sendForObject(anyString(), any());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test
@@ -135,20 +138,20 @@ class AutoMapUseCaseTest {
                 context(List.of("Zebra_Quotient"), TEMPLATE_FIELDS));
 
         assertThat(mapping.get("Zebra_Quotient")).isNull();
-        verify(ai, never()).sendForObject(anyString(), any());
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
     }
 
     @Test
     void llmSeesOnlyUnresolvedColumnsAndUnassignedFields() {
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(any(PromptEnvelope.class), any(ParameterizedTypeReference.class)))
                 .thenReturn(Map.of("Start", "HireDate", "Nickname", "SomethingElse"));
 
         Map<String, String> mapping = useCase.map(
                 context(List.of("FirstName", "Start", "Nickname"), TEMPLATE_FIELDS));
 
-        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<PromptEnvelope> promptCaptor = ArgumentCaptor.forClass(PromptEnvelope.class);
         verify(ai).sendForObject(promptCaptor.capture(), any(ParameterizedTypeReference.class));
-        String prompt = promptCaptor.getValue();
+        String prompt = promptCaptor.getValue().text();
         // Resolved column stays out of "Columns to map"; field shown as TAKEN.
         assertThat(prompt).doesNotContain("Columns to map (source header | sample values from the file):\n- \"FirstName\"");
         assertThat(prompt).contains("Start").contains("Nickname")
@@ -164,7 +167,7 @@ class AutoMapUseCaseTest {
     @Test
     void fullLlmScopeMapsAllColumnsWithAllFields() {
         properties.setLlmScope("all");
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(any(PromptEnvelope.class), any(ParameterizedTypeReference.class)))
                 .thenReturn(Map.of(
                         "FirstName", "FirstName",
                         "Start", "HireDate",
@@ -173,9 +176,9 @@ class AutoMapUseCaseTest {
         Map<String, String> mapping = useCase.map(
                 context(List.of("FirstName", "Start", "Nickname"), TEMPLATE_FIELDS));
 
-        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<PromptEnvelope> promptCaptor = ArgumentCaptor.forClass(PromptEnvelope.class);
         verify(ai).sendForObject(promptCaptor.capture(), any(ParameterizedTypeReference.class));
-        assertThat(promptCaptor.getValue()).contains("FirstName")
+        assertThat(promptCaptor.getValue().text()).contains("FirstName")
                 .contains("Start")
                 .contains("Nickname");
 
@@ -186,7 +189,7 @@ class AutoMapUseCaseTest {
 
     @Test
     void llmFailureLeavesColumnsUnmappedInsteadOfFailingTheStage() {
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(any(PromptEnvelope.class), any(ParameterizedTypeReference.class)))
                 .thenThrow(new IllegalStateException("aifiles.openai.api-key must be configured."));
 
         assertThatCode(() -> {
@@ -199,7 +202,7 @@ class AutoMapUseCaseTest {
     @Test
     void extractionSuggestionsAppearInLlmPrompt() {
         properties.setLlmScope("all");
-        when(ai.sendForObject(anyString(), any(ParameterizedTypeReference.class)))
+        when(ai.sendForObject(any(PromptEnvelope.class), any(ParameterizedTypeReference.class)))
                 .thenReturn(Map.of("Start", "HireDate"));
 
         useCase.map(context(
@@ -207,9 +210,9 @@ class AutoMapUseCaseTest {
                 TEMPLATE_FIELDS,
                 Map.of("Start", "HireDate", "Nickname", "LastName")));
 
-        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<PromptEnvelope> promptCaptor = ArgumentCaptor.forClass(PromptEnvelope.class);
         verify(ai).sendForObject(promptCaptor.capture(), any(ParameterizedTypeReference.class));
-        assertThat(promptCaptor.getValue())
+        assertThat(promptCaptor.getValue().text())
                 .contains("Extraction-time suggestions")
                 .contains("Start")
                 .contains("HireDate");

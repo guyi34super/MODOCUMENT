@@ -1,5 +1,6 @@
 package com.modocument.application.usecase;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.application.dto.SaveExtractionSourceRequest;
 import com.modocument.application.port.Connector;
 import com.modocument.application.port.CurrentUserProvider;
@@ -44,12 +45,12 @@ class ExtractionCrossUserAccessTest {
     private final TemplateRepository templates = mock(TemplateRepository.class);
 
     private ExtractionSourceUseCase sourcesFor(int user) {
-        return new ExtractionSourceUseCase(sources, templates, () -> user);
+        return new ExtractionSourceUseCase(sources, templates, FixedUser.provider(user));
     }
 
     private ExtractionJobUseCase jobsFor(int user) {
         Connector connector = mock(Connector.class);
-        CurrentUserProvider provider = () -> user;
+        CurrentUserProvider provider = FixedUser.provider(user);
         return new ExtractionJobUseCase(sources, jobs, queue, mock(TaskEventBus.class),
                 new InMemoryConnectorStateStore(), secrets, List.of(connector),
                 templates, mock(TemplateFieldsRepository.class), provider);

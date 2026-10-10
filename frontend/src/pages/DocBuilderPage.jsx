@@ -10,12 +10,13 @@ import {
   generateInstance,
   getInstance,
   reorderBlocks,
+  submitInstance,
   updateBlock,
   uploadAssets,
 } from '../api/doccreation';
 import PageHeader from '../components/PageHeader';
 import AuthedImage from '../components/AuthedImage';
-import { Button, Callout, Card, ErrorBanner, Spinner, inputClass } from '../components/ui';
+import { Badge, Button, Callout, Card, ErrorBanner, Spinner, inputClass } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 
 /** A paragraph block: click to edit in place, save/cancel while dirty. */
@@ -272,6 +273,7 @@ export default function DocBuilderPage() {
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -329,6 +331,24 @@ export default function DocBuilderPage() {
     }
   };
 
+  // ws11: hand the generated document to a doc:release approver — the
+  // server enforces that someone ELSE releases it (B8).
+  const submitForRelease = async () => {
+    setSubmitting(true);
+    try {
+      await toast.promise(() => submitInstance(id), {
+        loading: 'Submitting for release…',
+        success: 'Submitted — an approver (not you) can now release it',
+        error: (err) => err.message,
+      });
+      load();
+    } catch {
+      // The error toast is already shown.
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const download = async (format) => {
     try {
       await toast.promise(
@@ -380,6 +400,11 @@ export default function DocBuilderPage() {
               <Button onClick={generate} disabled={generating}>
                 {generating ? 'Generating…' : 'Generate'}
               </Button>
+              {doc.status === 'GENERATED' && (
+                <Button variant="secondary" onClick={submitForRelease} disabled={submitting}>
+                  {submitting ? 'Submitting…' : 'Submit for release'}
+                </Button>
+              )}
               <Button variant="secondary" onClick={() => download('docx')}>
                 Download .docx
               </Button>
@@ -401,6 +426,32 @@ export default function DocBuilderPage() {
         <Spinner />
       ) : (
         <>
+          {/* ws11 release state: status chip, AI-composed marker (C10 — the
+              approver reviews what the model wrote) and reviewer feedback. */}
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
+            <Badge status={doc.status} />
+            {doc.aiComposed && (
+              <span className="inline-block rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-800">
+                AI-composed
+              </span>
+            )}
+            {doc.status === 'SUBMITTED' && doc.submittedAt && (
+              <span>Submitted {new Date(doc.submittedAt).toLocaleString()} — awaiting release by an approver</span>
+            )}
+            {doc.status === 'RELEASED' && doc.releasedAt && (
+              <span>Released {new Date(doc.releasedAt).toLocaleString()}</span>
+            )}
+          </div>
+          {doc.reviewComment && doc.status !== 'SUBMITTED' && (
+            <div className="mb-4">
+              <Callout
+                variant={doc.status === 'RELEASED' ? 'info' : 'error'}
+                title={doc.status === 'RELEASED' ? 'Reviewer comment' : 'Returned for rework'}
+              >
+                <p className="mt-1 text-sm">{doc.reviewComment}</p>
+              </Callout>
+            </div>
+          )}
           <Card className="mb-4">
             <div className="flex flex-wrap items-center gap-3">
               <input

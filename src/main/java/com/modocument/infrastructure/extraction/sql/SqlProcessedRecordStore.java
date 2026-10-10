@@ -56,6 +56,7 @@ public class SqlProcessedRecordStore implements ProcessedRecordStore {
     private static ExtractionProcessedRecordEntity toEntity(ProcessedRecord record) {
         ExtractionProcessedRecordEntity entity = new ExtractionProcessedRecordEntity();
         entity.setId(JsonColumns.parseId(record.getId()));
+        entity.setBankId(BankStamp.current());
         entity.setJobId(record.getJobId());
         entity.setRawRecordId(record.getRawRecordId());
         entity.setFieldsJson(JsonColumns.toJson(record.getFields()));

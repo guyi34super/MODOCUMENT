@@ -1,5 +1,9 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.port.ProcessStepRepository;
 import com.modocument.domain.entity.ProcessStep;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +19,7 @@ import java.net.URI;
 import java.util.Optional;
 
 @RestController
+@Tag(name = "Process Steps")
 public class ProcessStepController {
 
     private final ProcessStepRepository repo;
@@ -23,11 +28,13 @@ public class ProcessStepController {
         this.repo = repo;
     }
 
+    @RequiresPermission(Permission.LOOKUP_READ)
     @GetMapping("/ProcessStep/GetAll")
     public ResponseEntity<?> getAll() {
         return ResponseEntity.ok(repo.list());
     }
 
+    @RequiresPermission(Permission.LOOKUP_READ)
     @GetMapping("/ProcessStep/GetById/{id}")
     public ResponseEntity<?> getProcessStepById(@PathVariable int id) {
         Optional<ProcessStep> item = repo.getById(id);
@@ -39,8 +46,9 @@ public class ProcessStepController {
         return ResponseEntity.ok(dto);
     }
 
+    @RequiresPermission(Permission.LOOKUP_ADMIN)
     @PostMapping("/ProcessStep/Create")
-    public ResponseEntity<?> create(@RequestBody ProcessStep dto) {
+    public ResponseEntity<?> create(@Valid @RequestBody ProcessStep dto) {
         ProcessStep entity = new ProcessStep(0, dto.getName(), dto.getDescription());
         repo.add(entity);
         return ResponseEntity
@@ -48,8 +56,9 @@ public class ProcessStepController {
                 .body(entity);
     }
 
+    @RequiresPermission(Permission.LOOKUP_ADMIN)
     @PutMapping("/ProcessStep/Update")
-    public ResponseEntity<?> update(@RequestBody ProcessStep dto) {
+    public ResponseEntity<?> update(@Valid @RequestBody ProcessStep dto) {
         Optional<ProcessStep> existingOpt = repo.getById(dto.getProcessStepId());
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -67,6 +76,7 @@ public class ProcessStepController {
                 .body(updated);
     }
 
+    @RequiresPermission(Permission.LOOKUP_ADMIN)
     @DeleteMapping("/ProcessStep/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         Optional<ProcessStep> existing = repo.getById(id);

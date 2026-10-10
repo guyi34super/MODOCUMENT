@@ -1,5 +1,6 @@
 package com.modocument.domain.entity;
 
+import jakarta.validation.constraints.Size;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -17,9 +18,11 @@ public class ProcessStep {
     private int processStepId;
 
     @Column(name = "Name")
+    @Size(max = 255)
     private String name;
 
     @Column(name = "Description")
+    @Size(max = 255)
     private String description;
 
     public ProcessStep() {

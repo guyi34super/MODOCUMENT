@@ -7,9 +7,14 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import jakarta.validation.constraints.Size;
 
 @Entity
-@Table(name = "Template")
+// SCHEMA PARITY with V30 (uq_template_owneruserid_name): one template name
+// per owner, enforced on H2 (ddl-auto: create) exactly like on PostgreSQL.
+@Table(name = "Template", uniqueConstraints = @UniqueConstraint(
+        name = "uq_template_owneruserid_name", columnNames = {"OwnerUserId", "Name"}))
 public class Template {
 
     @Id
@@ -21,9 +26,16 @@ public class Template {
     @Column(name = "OwnerUserId")
     private int ownerUserId;
 
+    /** The owner's bank (V11), stamped on create; RLS substrate. */
+    @Column(name = "BankId")
+    private int bankId;
+
+    /** Doubles as the request schema cap when the entity arrives as a body. */
+    @Size(max = 255)
     @Column(name = "Name")
     private String name;
 
+    @Size(max = 255)
     @Column(name = "Description")
     private String description;
 
@@ -51,6 +63,15 @@ public class Template {
 
     public void setOwnerUserId(int ownerUserId) {
         this.ownerUserId = ownerUserId;
+    }
+
+    @JsonIgnore
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
     }
 
     public String getName() {

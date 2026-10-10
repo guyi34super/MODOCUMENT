@@ -1,5 +1,9 @@
 package com.modocument.doccreation.api;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.doccreation.dto.BlueprintDto;
 import com.modocument.doccreation.dto.UpdateKeywordsRequest;
 import com.modocument.doccreation.usecase.DocBlueprintUseCase;
@@ -31,6 +35,7 @@ import java.util.NoSuchElementException;
  * keywords, download the original, and delete when nothing builds on it.
  */
 @RestController
+@Tag(name = "Doc Creation: Blueprints")
 public class DocBlueprintController {
 
     private static final String DOCX_CONTENT_TYPE =
@@ -42,6 +47,7 @@ public class DocBlueprintController {
         this.useCase = useCase;
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @PostMapping(value = "/api/doccreation/blueprints", consumes = "multipart/form-data")
     public ResponseEntity<?> create(@RequestParam("file") MultipartFile file,
                                     @RequestParam(value = "name", required = false) String name,
@@ -52,16 +58,19 @@ public class DocBlueprintController {
                 .body(created);
     }
 
+    @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/blueprints")
     public ResponseEntity<?> list() {
         return ResponseEntity.ok(useCase.list());
     }
 
+    @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/blueprints/{id}")
     public ResponseEntity<?> get(@PathVariable int id) {
         return ResponseEntity.ok(useCase.get(id));
     }
 
+    @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/blueprints/{id}/file")
     public ResponseEntity<?> downloadOriginal(@PathVariable int id) {
         DocBlueprintUseCase.StoredFile stored = useCase.getFile(id);
@@ -76,13 +85,15 @@ public class DocBlueprintController {
         }
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @PutMapping("/api/doccreation/blueprints/{id}/sections/{sectionId}/keywords")
     public ResponseEntity<?> updateKeywords(@PathVariable int id,
                                             @PathVariable int sectionId,
-                                            @RequestBody UpdateKeywordsRequest request) {
+                                            @Valid @RequestBody UpdateKeywordsRequest request) {
         return ResponseEntity.ok(useCase.updateKeywords(id, sectionId, request.getKeywords()));
     }
 
+    @RequiresPermission(Permission.DOC_WRITE)
     @DeleteMapping("/api/doccreation/blueprints/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         useCase.delete(id);

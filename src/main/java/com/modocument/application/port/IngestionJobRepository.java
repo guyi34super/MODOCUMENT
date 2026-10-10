@@ -27,4 +27,13 @@ public interface IngestionJobRepository {
 
     /** Jobs referencing a template — used before deleting the template. */
     int countByTemplateId(int templateId);
+
+    /** Removes the job row entirely (ws14 job deletion, gate C5). */
+    void delete(IngestionJob job);
+
+    /**
+     * Jobs of one owner referencing the same stored upload — deleting a job
+     * only removes the shared file when no other job still needs it.
+     */
+    int countByFileNameAndOwner(String fileName, int ownerUserId);
 }

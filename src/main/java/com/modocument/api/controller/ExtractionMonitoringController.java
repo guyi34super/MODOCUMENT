@@ -1,5 +1,8 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.port.ExtractionTaskQueue;
 import com.modocument.infrastructure.extraction.worker.ExtractionMetrics;
 import com.modocument.infrastructure.extraction.worker.ExtractionWorkerPool;
@@ -13,6 +16,8 @@ import java.util.Map;
 
 /** Operational view of the extraction machinery on this instance. */
 @RestController
+@Tag(name = "Extraction Monitoring")
+@RequiresPermission(Permission.METRICS_READ)
 public class ExtractionMonitoringController {
 
     private final ExtractionTaskQueue queue;

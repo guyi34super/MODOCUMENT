@@ -1,5 +1,9 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.domain.entity.TemplateFields;
@@ -19,6 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
+@Tag(name = "Template Fields")
 public class TemplateFieldsController {
 
     private final TemplateFieldsRepository repo;
@@ -34,6 +39,7 @@ public class TemplateFieldsController {
      * every user's field definitions, so {@code templateId} is required and
      * ownership is enforced.
      */
+    @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/TemplateFields/GetAll")
     public ResponseEntity<?> getAll(
             @RequestParam(value = "templateId", required = false) Integer templateId) {
@@ -44,6 +50,7 @@ public class TemplateFieldsController {
         return ResponseEntity.ok(repo.listByTemplateId(templateId));
     }
 
+    @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/TemplateFields/GetById/{id}")
     public ResponseEntity<?> getTemplateFieldsById(@PathVariable int id) {
         Optional<TemplateFields> itemOpt = repo.getById(id);
@@ -59,23 +66,30 @@ public class TemplateFieldsController {
         dto.setFieldName(item.getFieldName());
         dto.setTemplate(item.getTemplate());
         dto.setTemplateDataTypeId(item.getTemplateDataTypeId());
+        dto.setPiiKind(item.getPiiKind());
         return ResponseEntity.ok(dto);
     }
 
+    @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PostMapping("/TemplateFields/Create")
-    public ResponseEntity<?> create(@RequestBody TemplateFields dto) {
+    public ResponseEntity<?> create(@Valid @RequestBody TemplateFields dto) {
         ownership.require(dto.getTemplateId());
         TemplateFields entity = new TemplateFields();
         entity.setTemplateId(dto.getTemplateId());
+        entity.setBankId(ownership.requireBankId());
         entity.setFieldName(dto.getFieldName());
+        // Explicit PII tag (ws12, PRIV-004); left null, the classifier tags
+        // it on first use and the result shows up here for correction.
+        entity.setPiiKind(dto.getPiiKind());
         repo.add(entity);
         return ResponseEntity
                 .created(URI.create("/TemplateFields/GetById/" + entity.getTemplateFieldsId()))
                 .body(entity);
     }
 
+    @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PutMapping("/TemplateFields/Update/{id}")
-    public ResponseEntity<?> update(@PathVariable int id, @RequestBody TemplateFields dto) {
+    public ResponseEntity<?> update(@PathVariable int id, @Valid @RequestBody TemplateFields dto) {
         Optional<TemplateFields> existingOpt = repo.getById(dto.getTemplateFieldsId());
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -86,6 +100,7 @@ public class TemplateFieldsController {
         TemplateFields existing = existingOpt.get();
         existing.setFieldName(dto.getFieldName());
         existing.setTemplateId(dto.getTemplateId());
+        existing.setPiiKind(dto.getPiiKind());
 
         TemplateFields response = repo.update(existing);
         TemplateFields updated = new TemplateFields();
@@ -94,12 +109,14 @@ public class TemplateFieldsController {
         updated.setFieldName(response.getFieldName());
         updated.setTemplate(response.getTemplate());
         updated.setTemplateDataTypeId(response.getTemplateDataTypeId());
+        updated.setPiiKind(response.getPiiKind());
 
         return ResponseEntity
                 .created(URI.create("/TemplateFields/GetById/" + updated.getTemplateFieldsId()))
                 .body(updated);
     }
 
+    @RequiresPermission(Permission.TEMPLATE_WRITE)
     @DeleteMapping("/TemplateFields/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         Optional<TemplateFields> existing = repo.getById(id);

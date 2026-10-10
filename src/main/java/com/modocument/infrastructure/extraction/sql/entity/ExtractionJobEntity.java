@@ -35,7 +35,16 @@ public class ExtractionJobEntity {
     @Column(name = "OwnerUserId", nullable = false)
     private int ownerUserId;
 
-    @Column(name = "SourceId", length = 64)
+    /** Tenant bank (V11), stamped on every insert; RLS substrate. */
+    @Column(name = "BankId", nullable = false)
+    private int bankId;
+
+    /**
+     * Always populated (ExtractionJobUseCase.create requires a source); made
+     * NOT NULL in V30. Still no FK on purpose — V8 design: deleting a source
+     * keeps its historical jobs.
+     */
+    @Column(name = "SourceId", length = 64, nullable = false)
     private String sourceId;
 
     @Column(name = "TemplateId")
@@ -61,6 +70,14 @@ public class ExtractionJobEntity {
 
     @Column(name = "UpdatedDate")
     private Instant updatedDate;
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
+    }
 
     public Long getId() {
         return id;

@@ -1,5 +1,6 @@
 package com.modocument.application.usecase;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.application.dto.CreateTemplateFieldDto;
 import com.modocument.application.dto.CreateTemplateRequest;
 import com.modocument.application.dto.CreateTemplateResponse;
@@ -34,7 +35,7 @@ class CreateTemplateWithFieldsUseCaseTest {
     private final ValidationRuleRepository rules = mock(ValidationRuleRepository.class);
 
     private final CreateTemplateWithFieldsUseCase useCase =
-            new CreateTemplateWithFieldsUseCase(templates, fields, dataTypes, rules, () -> 1);
+            new CreateTemplateWithFieldsUseCase(templates, fields, dataTypes, rules, FixedUser.provider(1));
 
     private void seedDataTypes() {
         when(dataTypes.list()).thenReturn(List.of(

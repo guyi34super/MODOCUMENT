@@ -21,6 +21,7 @@ import com.modocument.doccreation.repo.DocBlueprintRepository;
 import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
 import com.modocument.doccreation.repo.DocContentBlockRepository;
 import com.modocument.doccreation.repo.DocImageAssetRepository;
+import com.modocument.application.privacy.PiiMaskingService;
 import com.modocument.doccreation.repo.DocInstanceRepository;
 import com.modocument.infrastructure.file.StorageProperties;
 import com.modocument.infrastructure.file.UploadStorage;
@@ -82,6 +83,7 @@ public class DocInstanceUseCase {
     private final PdfConverter pdfConverter;
     private final UploadStorage uploadStorage;
     private final StorageProperties storage;
+    private final PiiMaskingService masking;
 
     public DocInstanceUseCase(DocInstanceRepository instances,
                               DocBlueprintRepository blueprints,
@@ -94,7 +96,8 @@ public class DocInstanceUseCase {
                               AiDocumentComposer aiComposer,
                               PdfConverter pdfConverter,
                               UploadStorage uploadStorage,
-                              StorageProperties storage) {
+                              StorageProperties storage,
+                              PiiMaskingService masking) {
         this.instances = instances;
         this.blueprints = blueprints;
         this.sections = sections;
@@ -107,6 +110,7 @@ public class DocInstanceUseCase {
         this.pdfConverter = pdfConverter;
         this.uploadStorage = uploadStorage;
         this.storage = storage;
+        this.masking = masking;
     }
 
     // ------------------------------------------------------------------ CRUD
@@ -117,6 +121,7 @@ public class DocInstanceUseCase {
         requireTitle(title);
         DocInstance instance = new DocInstance();
         instance.setOwnerUserId(ownership.requireUserId());
+        instance.setBankId(ownership.requireBankId());
         instance.setBlueprintId(blueprintId);
         instance.setTitle(title.strip());
         instance.setStatus(DocInstance.STATUS_DRAFT);
@@ -166,7 +171,9 @@ public class DocInstanceUseCase {
                 .toList();
         return new InstanceBuilderDto(instance.getDocInstanceId(), instance.getTitle(),
                 blueprint.getDocBlueprintId(), blueprint.getName(), instance.getStatus(),
-                instance.getLastGeneratedDate(), pdfConverter.isAvailable(), sectionDtos, unsorted);
+                instance.getLastGeneratedDate(), pdfConverter.isAvailable(),
+                instance.isAiComposed(), instance.getSubmittedAt(), instance.getReleasedAt(),
+                instance.getReviewComment(), sectionDtos, unsorted);
     }
 
     @Transactional
@@ -206,6 +213,7 @@ public class DocInstanceUseCase {
 
         DocContentBlock block = new DocContentBlock();
         block.setInstanceId(instanceId);
+        block.setBankId(instance.getBankId());
         block.setSectionId(section.getDocBlueprintSectionId());
         block.setOrderIndex(nextOrderIndex(instanceId, sectionId));
 
@@ -331,6 +339,7 @@ public class DocInstanceUseCase {
 
             DocImageAsset asset = new DocImageAsset();
             asset.setInstanceId(instanceId);
+            asset.setBankId(instance.getBankId());
             asset.setFileName(uploadStorage.store(file));
             // A rollback of this bulk upload must not orphan the stored bytes.
             StoredFileCleanup.deleteOnRollback(uploadStorage.resolve(asset.getFileName()));
@@ -344,6 +353,7 @@ public class DocInstanceUseCase {
             if (sectionId.isPresent()) {
                 DocContentBlock block = new DocContentBlock();
                 block.setInstanceId(instanceId);
+                block.setBankId(instance.getBankId());
                 block.setSectionId(sectionId.get());
                 block.setBlockType(DocContentBlock.TYPE_IMAGE);
                 block.setOrderIndex(nextOrderIndex(instanceId, sectionId.get()));
@@ -392,6 +402,7 @@ public class DocInstanceUseCase {
         } else {
             DocContentBlock block = new DocContentBlock();
             block.setInstanceId(asset.getInstanceId());
+            block.setBankId(instance.getBankId());
             block.setSectionId(sectionId);
             block.setBlockType(DocContentBlock.TYPE_IMAGE);
             block.setOrderIndex(nextOrderIndex(asset.getInstanceId(), sectionId));
@@ -428,7 +439,16 @@ public class DocInstanceUseCase {
         DocInstance instance = ownership.requireInstance(instanceId);
         DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
         List<DocBlueprintSection> sectionList = sections.listByBlueprint(blueprint.getDocBlueprintId());
+        // REPORT channel (gate C2, PRIV-005): a generated document carries
+        // only user-typed content blocks (no job data is injected into this
+        // path), so PII value SHAPES in their text and captions — NIC,
+        // account digit runs, emails — are masked before composition; the
+        // masked text is also what the AI composer's prompt sees. The STORED
+        // blocks stay raw: masking is a render-time transform on detached
+        // copies (the builder screen and DSR search/erase still see the
+        // user's own text).
         Map<Integer, List<DocContentBlock>> blocksBySection = blocks.listByInstance(instanceId).stream()
+                .map(this::maskedForReport)
                 .collect(Collectors.groupingBy(DocContentBlock::getSectionId));
         Map<Integer, DocImageAsset> assetsById = assets.listByInstance(instanceId).stream()
                 .collect(Collectors.toMap(DocImageAsset::getDocImageAssetId, Function.identity()));
@@ -466,7 +486,17 @@ public class DocInstanceUseCase {
             }
 
             LocalDateTime now = LocalDateTime.now();
-            instance.setStatus(DocInstance.STATUS_GENERATED);
+            // The release workflow states (ws11) survive a working-copy
+            // regeneration: only a DRAFT moves to GENERATED here. A SUBMITTED
+            // instance stays in the approver queue (the queue reads the live
+            // content anyway) and a RELEASED one keeps its release record.
+            if (DocInstance.STATUS_DRAFT.equals(instance.getStatus())) {
+                instance.setStatus(DocInstance.STATUS_GENERATED);
+            }
+            // C10: record whether the content the approver will review was
+            // written by the model — per generation, so the flag always
+            // describes the CURRENT exports.
+            instance.setAiComposed("AI".equals(composedBy));
             instance.setLastGeneratedDocx(docxName);
             instance.setLastGeneratedPdf(pdfName);
             instance.setLastGeneratedDate(now);
@@ -475,6 +505,33 @@ public class DocInstanceUseCase {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write the generated document.", e);
         }
+    }
+
+    /**
+     * REPORT-channel masking of one block: paragraph text and image caption
+     * go through the PII shape masker. When nothing changes (no PII shapes,
+     * or the policy says raw) the block passes through untouched; otherwise
+     * a DETACHED copy carries the masked text so the entity is never
+     * accidentally persisted with masked content.
+     */
+    private DocContentBlock maskedForReport(DocContentBlock block) {
+        String maskedText = masking.maskReportText(block.getTextContent());
+        String maskedCaption = masking.maskReportText(block.getCaption());
+        if (java.util.Objects.equals(maskedText, block.getTextContent())
+                && java.util.Objects.equals(maskedCaption, block.getCaption())) {
+            return block;
+        }
+        DocContentBlock copy = new DocContentBlock();
+        copy.setDocContentBlockId(block.getDocContentBlockId());
+        copy.setInstanceId(block.getInstanceId());
+        copy.setBankId(block.getBankId());
+        copy.setSectionId(block.getSectionId());
+        copy.setBlockType(block.getBlockType());
+        copy.setOrderIndex(block.getOrderIndex());
+        copy.setAssetId(block.getAssetId());
+        copy.setTextContent(maskedText);
+        copy.setCaption(maskedCaption);
+        return copy;
     }
 
     /**

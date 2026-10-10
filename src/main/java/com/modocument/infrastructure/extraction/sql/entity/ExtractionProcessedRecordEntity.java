@@ -33,6 +33,10 @@ public class ExtractionProcessedRecordEntity {
     @Column(name = "JobId", length = 64, nullable = false)
     private String jobId;
 
+    /** Tenant bank (V11), stamped on every insert; RLS substrate. */
+    @Column(name = "BankId", nullable = false)
+    private int bankId;
+
     @Column(name = "RawRecordId", length = 64)
     private String rawRecordId;
 
@@ -45,6 +49,14 @@ public class ExtractionProcessedRecordEntity {
 
     @Column(name = "ProcessedAt")
     private Instant processedAt;
+
+    public int getBankId() {
+        return bankId;
+    }
+
+    public void setBankId(int bankId) {
+        this.bankId = bankId;
+    }
 
     public Long getId() {
         return id;

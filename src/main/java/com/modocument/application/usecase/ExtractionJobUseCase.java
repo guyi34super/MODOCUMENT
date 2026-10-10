@@ -89,6 +89,7 @@ public class ExtractionJobUseCase {
         }
         ExtractionJob job = new ExtractionJob();
         job.setOwnerUserId(currentUser.requireUserId());
+        job.setBankId(currentUser.requireBankId());
         job.setSourceId(sourceId);
         job.setTemplateId(effectiveTemplateId);
         job.setDataSpec(effectiveDataSpec(dataSpec, source, effectiveTemplateId));

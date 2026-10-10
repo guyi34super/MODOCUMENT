@@ -1,3 +1,19 @@
+server:
+  # Trusted-proxy model (SEC-022): Spring's ForwardedHeaderFilter rewrites
+  # remoteAddr/scheme/host from X-Forwarded-For/-Proto/-Host, so rate-limit
+  # keys, audit IPs and HSTS (needs a "secure" request behind TLS
+  # termination) see the real client. ONLY the fronting proxy may set these
+  # headers: frontend/nginx.conf OVERWRITES them with its own values
+  # ($remote_addr/$scheme) on every proxied request, discarding whatever the
+  # client sent — or, behind the AWS ALB (trusted-proxy mode,
+  # MODOCUMENT_TRUSTED_PROXY_CIDRS), with the client address and scheme it
+  # accepted from that ALB only (docs/security/web-hardening.md §5e). That
+  # trust holds only while the app port is NOT reachable
+  # directly — production must keep the app behind the proxy (docker-compose
+  # no longer publishes 8080; a direct caller could spoof every X-Forwarded-*
+  # header wholesale).
+  forward-headers-strategy: framework
+
 spring:
   application:
     name: MoDocument
@@ -13,14 +29,41 @@ spring:
     # Production database: PostgreSQL. Override via MODOCUMENT_DB_* (or the
     # standard SPRING_DATASOURCE_* variables, which take precedence over any
     # profile). MODOCUMENT_DB_* is ignored by the H2 local/test profiles.
-    url: ${MODOCUMENT_DB_URL:jdbc:postgresql://localhost:5432/modocument}
+    #
+    # TWO-ROLE MODEL (row-level security): at runtime the app should connect
+    # as the RLS-subject role `modocument_app` (created by V12, policies in
+    # V13), while Flyway connects as the schema OWNER below. Table owners
+    # bypass the (non-FORCE) policies; modocument_app cannot. Single-user
+    # setups keep working — the owner just isn't tenant-filtered, and the
+    # TenantAwareJpaTransactionManager still stamps app.tenant either way.
+    #
+    # DB TLS (ws16, C4/SEC-028 app side): sslmode rides on the URL, so the
+    # runtime pool and Flyway (spring.flyway.url below reuses this one)
+    # always negotiate the same way. Default `prefer` = TLS whenever the server
+    # offers it (local/compose PostgreSQL offers none, so dev keeps working).
+    # PRODUCTION: MODOCUMENT_DB_SSLMODE=require (refuse plaintext) or
+    # verify-full (+ sslrootcert); a custom MODOCUMENT_DB_URL replaces this
+    # whole default, so it must carry its own ?sslmode=… (see README).
+    url: ${MODOCUMENT_DB_URL:jdbc:postgresql://localhost:5432/modocument?sslmode=${MODOCUMENT_DB_SSLMODE:prefer}}
     username: ${MODOCUMENT_DB_USERNAME:modocument}
     password: ${MODOCUMENT_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
   flyway:
     # Flyway owns the schema in production (src/main/resources/db/migration);
     # the H2 local/test profiles disable it and use ddl-auto: create instead.
+    # Migrations run as the schema owner: set MODOCUMENT_FLYWAY_USERNAME /
+    # MODOCUMENT_FLYWAY_PASSWORD when the datasource user is the restricted
+    # `modocument_app` role (docker-compose does); unset, Flyway falls back
+    # to the datasource credentials so plain dev setups keep working.
     enabled: true
+    # Explicitly the datasource URL — sslmode included, so migrations and the
+    # runtime pool negotiate TLS identically (ws16). Explicit, not derived:
+    # Boot would otherwise read the URL back from the datasource bean, which
+    # the TenantAwareDataSource wrapper hides ("Unable to find suitable
+    # method for url" at startup whenever Flyway has its own user).
+    url: ${spring.datasource.url}
+    user: ${MODOCUMENT_FLYWAY_USERNAME:${spring.datasource.username}}
+    password: ${MODOCUMENT_FLYWAY_PASSWORD:${spring.datasource.password}}
   jpa:
     open-in-view: false
     hibernate:
@@ -36,15 +79,18 @@ spring:
       max-request-size: 200MB
   ai:
     openai:
-      # Bridged from the legacy aifiles.openai.* keys so AIFILES_OPENAI_* env
-      # vars keep working. The "unset" sentinel lets the auto-configuration
-      # boot without a key; AiFilesServiceImpl rejects LLM calls until a real
-      # key is provided.
+      # Bridged from the aifiles.openai.* keys below so the AIFILES_OPENAI_*
+      # and MODOCUMENT_AI_* env vars keep working. LOCAL-FIRST (gate C8): the
+      # defaults point at a local Ollama endpoint — no document content leaves
+      # the machine unless an operator explicitly opts into an external
+      # endpoint via MODOCUMENT_AI_BASE_URL/_API_KEY/_MODEL. The "unset"
+      # sentinel lets the auto-configuration boot keyless; the AI gateway
+      # rejects LLM calls while it is in place.
       api-key: ${aifiles.openai.api-key:unset}
-      base-url: ${aifiles.openai.base-url:https://api.openai.com}
+      base-url: ${aifiles.openai.base-url:http://localhost:11434}
       chat:
         options:
-          model: ${aifiles.openai.model-id:moonshotai/kimi-k3}
+          model: ${aifiles.openai.model-id:qwen2.5}
           max-tokens: ${aifiles.openai.max-tokens:8192}
 
 modocument:
@@ -54,18 +100,332 @@ modocument:
       # refuses to start without it (generate one: openssl rand -base64 48).
       # The local/test profiles set their own dev-only secret.
       secret: ${MODOCUMENT_JWT_SECRET:}
-      ttl-hours: 24
+      # Access tokens are short-lived; the refresh-cookie rotation flow
+      # (/api/auth/refresh) keeps sessions alive. (The legacy ttl-hours key is
+      # still honored when set explicitly.)
+      ttl-minutes: ${MODOCUMENT_JWT_TTL_MINUTES:15}
     # Permits /swagger/**, /v3/api-docs/** and /h2-console/** without auth.
     # Off in production; the local/test profiles turn it on.
     permit-dev-paths: false
+    password:
+      # Minimum password length (SEC-021). Length over composition rules; no
+      # upper cap beyond the request DTOs' 200-char schema bound, so long
+      # passphrases are first-class. The breached-list and email-local-part
+      # checks in PasswordPolicy are always on.
+      min-length: ${MODOCUMENT_PASSWORD_MIN_LENGTH:12}
+    lockout:
+      # Wrong-password attempts allowed before the NEXT one locks the account
+      # (default 5 → the 6th consecutive failure locks). Lock duration starts
+      # at base-minutes and doubles per additional lockout, capped.
+      allowed-attempts: ${MODOCUMENT_LOCKOUT_ALLOWED_ATTEMPTS:5}
+      base-minutes: ${MODOCUMENT_LOCKOUT_BASE_MINUTES:1}
+      cap-minutes: ${MODOCUMENT_LOCKOUT_CAP_MINUTES:30}
+    mfa:
+      # Encrypts TOTP secrets at rest (AES-256-GCM, key derived via SHA-256).
+      # REQUIRED in production (>= 32 bytes, e.g. `openssl rand -base64 48`);
+      # the dev/test profiles fall back to a JWT-secret derivation with a
+      # logged warning.
+      key: ${MODOCUMENT_MFA_KEY:}
+      # An ADMIN without activated MFA gets enrollmentRequired at login and
+      # cannot obtain an access token until a second factor verifies (B3).
+      require-for-admin: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:true}
+      # MFA challenge token lifetime (password-to-second-factor window).
+      challenge-ttl-minutes: ${MODOCUMENT_MFA_CHALLENGE_TTL_MINUTES:5}
+    maker-checker:
+      # Dual control on template update/delete (ws10, SEC-023): when true
+      # (the default), PUT /Templates/Update and DELETE /Templates/{id}
+      # submit a pending change (202) that a DIFFERENT user holding
+      # change:approve must approve. A single-user dev setup can turn THIS
+      # gate off and apply template changes directly. User-security changes
+      # (user creation / role change / disable) are NEVER exempt — they go
+      # through maker/checker unconditionally, and self-approval is always
+      # a hard 409 (gate B7).
+      template-changes: ${MODOCUMENT_MAKER_CHECKER_TEMPLATE_CHANGES:true}
+    session:
+      # Refresh-session bounds (SUP-S02). Idle: a refresh token UNUSED for
+      # this long is refused even when its family is younger than the
+      # absolute limit — the newest rotation's IssuedAt is the moment of last
+      # use. Absolute: the family's ExpiresAt is fixed at login (7 days) and
+      # inherited by every rotation, so refreshing can never extend a session
+      # past 7 days from the original sign-in. Duration format: 12h, 30m, 7d.
+      idle-timeout: ${MODOCUMENT_SESSION_IDLE_TIMEOUT:12h}
+  # OIDC single sign-on (ws07, OPTIONAL — nothing below is active until a
+  # provider is configured; the app boots unchanged without any of it).
+  # External IdPs only AUTHENTICATE: Entra ID for Microsoft banks, Keycloak
+  # for everyone else. MoDocument then issues its own access token + refresh
+  # cookie (bridge pattern), so API authentication is unchanged. MFA is
+  # enforced AT THE PROVIDER (Entra Conditional Access / the Keycloak realm's
+  # TOTP required action). Full shape + setup guide:
+  # application-oidc.yml.example and docs/security/identity-providers.md.
+  # oidc:
+  #   post-login-redirect: /login/complete
+  #   providers:
+  #     entra:
+  #       issuer-uri: https://login.microsoftonline.com/<tenant-id>/v2.0
+  #       client-id: ${MODOCUMENT_OIDC_ENTRA_CLIENT_ID}
+  #       client-secret: ${MODOCUMENT_OIDC_ENTRA_CLIENT_SECRET}
+  #       bank-code: CONTOSO          # Bank.Code users are provisioned into
+  #       default-role: READ_ONLY
+  #     keycloak:
+  #       issuer-uri: http://localhost:8081/realms/modocument
+  #       client-id: modocument-app
+  #       client-secret: ${MODOCUMENT_OIDC_KEYCLOAK_CLIENT_SECRET}
+  #       bank-code: DEFAULT
+  #       default-role: READ_ONLY
+  #       role-claim: modocument_roles
   cors:
     # Comma-separated list of origins allowed to call the API with credentials.
     # Set to the deployed frontend origin(s) in production.
     allowed-origins: ${MODOCUMENT_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8004,http://localhost:8080,https://localhost:3000,https://localhost:8004,https://localhost:8080}
+  api:
+    # The servers entry of the generated OpenAPI contract (/v3/api-docs):
+    # "/" = same origin as the spec. Set the public API base URL per
+    # deployment so generated clients point at the right host.
+    server-url: ${MODOCUMENT_API_SERVER_URL:/}
+    server-description: ${MODOCUMENT_API_SERVER_DESCRIPTION:This deployment}
+  ratelimit:
+    # Per-USER fixed-window limits on the expensive endpoints (ws17,
+    # SEC-007/gate E2) — one window (default 1h) and a permit count per
+    # bucket, enforced by ApiRateLimitInterceptor; over-limit calls answer
+    # 429 with Retry-After. ADMINs are NOT exempt: an admin token is exactly
+    # as abusable (or stealable) as any other, so abuse containment applies
+    # to everyone — ops raise a bucket via its env var instead. Bucket →
+    # routes mapping lives in ApiRateLimitInterceptor (table in
+    # docs/security/owasp-api-top10.md). Counters are in-memory per
+    # instance: N replicas allow up to N x these numbers until the counters
+    # move to a shared store.
+    enabled: ${MODOCUMENT_RATELIMIT_ENABLED:true}
+    window-millis: ${MODOCUMENT_RATELIMIT_WINDOW_MILLIS:3600000}
+    max-keys: ${MODOCUMENT_RATELIMIT_MAX_KEYS:100000}
+    uploads: ${MODOCUMENT_RATELIMIT_UPLOADS:20}
+    ingestion: ${MODOCUMENT_RATELIMIT_INGESTION:60}
+    transform: ${MODOCUMENT_RATELIMIT_TRANSFORM:30}
+    exports: ${MODOCUMENT_RATELIMIT_EXPORTS:60}
+    doc-generate: ${MODOCUMENT_RATELIMIT_DOC_GENERATE:30}
+    extraction: ${MODOCUMENT_RATELIMIT_EXTRACTION:30}
+    dsr: ${MODOCUMENT_RATELIMIT_DSR:10}
+    password-change: ${MODOCUMENT_RATELIMIT_PASSWORD_CHANGE:5}
+    mfa-code: ${MODOCUMENT_RATELIMIT_MFA_CODE:10}
+    admin-jobs: ${MODOCUMENT_RATELIMIT_ADMIN_JOBS:10}
   storage:
     # Root directory for uploaded files (<root>/uploads) and export copies
     # (<root>/exports). Mount a volume here in containers.
     root: ${MODOCUMENT_STORAGE_ROOT:wwwroot}
+  privacy:
+    masking:
+      # ws12 (gate C2, PRIV-005): PII-classified values are ALWAYS masked on
+      # exports, generated reports and read-only screens — that is fixed in
+      # MaskingPolicy, not configurable. This switch additionally force-masks
+      # the owner's own editing wizard (SCREEN_WORKING), which is raw by
+      # default because fixing cell values requires seeing them. Matrix and
+      # rationale: docs/security/masking-matrix.md.
+      screen-working: ${MODOCUMENT_MASK_SCREEN_WORKING:false}
+  retention:
+    # 30-day automatic deletion of uploaded customer data (ws14, gate C5,
+    # PRIV-013). The daily RetentionPurgeJob deletes/anonymizes per bank:
+    # uploaded files + rows, ingestion-job row data (job skeleton stays),
+    # export archive copies, import raw payloads, extraction bodies and
+    # doc-creation content. Full schedule: docs/security/retention-and-dsr.md.
+    enabled: ${MODOCUMENT_RETENTION_ENABLED:true}
+    customer-data-days: ${MODOCUMENT_RETENTION_DAYS:30}
+    # Daily, off-peak; six-field Spring cron (seconds first).
+    cron: ${MODOCUMENT_RETENTION_CRON:0 41 2 * * *}
+  sod:
+    # Nightly separation-of-duties scan (ws11, SEC-024 layer 3): re-verifies
+    # per bank that no APPLIED change was approved by its own maker and no
+    # RELEASED document was released by its author or submitter, writing
+    # SOD_SCAN_COMPLETED / SOD_VIOLATION_FOUND audit evidence. The flag
+    # gates only the schedule; POST /api/admin/sod/scan always runs.
+    enabled: ${MODOCUMENT_SOD_SCAN_ENABLED:true}
+    # Daily, off-peak, after the retention purge; six-field Spring cron.
+    cron: ${MODOCUMENT_SOD_SCAN_CRON:0 23 3 * * *}
+  export:
+    # ws18 (gate D2, PRIV-002): per-role export row caps. Above the cap a
+    # file/database export is REFUSED (403 EXPORT_CAP_EXCEEDED, audited
+    # EXPORT_BLOCKED, alerted immediately) unless the user states a reason
+    # (<= 500 chars) - then it proceeds, audited EXPORT_OVER_CAP_WITH_REASON
+    # (reason verbatim) and alerted as informational. A role without an
+    # entry has cap 0 (fail closed). Details:
+    # docs/security/alerting-and-export-caps.md.
+    caps:
+      READ_WRITE: ${MODOCUMENT_EXPORT_CAP_READ_WRITE:5000}
+      ADMIN: ${MODOCUMENT_EXPORT_CAP_ADMIN:50000}
+    reason-max-length: 500
+  alerts:
+    # ws18 alert framework (gate D1, SEC-032). The audit trail is the single
+    # event source: IMMEDIATE rules fire post-commit on one audit row,
+    # WINDOWED rules are aggregates evaluated by a sweep every minute. A
+    # burst raises ONE alert per rule window (dedupe per rule/bank/group).
+    # Every alert is recorded in AlertLog (admin panel: Administration >
+    # Security alerts) and delivered to: the log (always - WARN on logger
+    # modocument.security.alert, tag SECURITY_ALERT, visible to a SIEM via
+    # structured logs), the webhook (the phone path: Slack/Teams/WhatsApp
+    # bridge/PagerDuty) and e-mail, when configured. Catalogue rationale:
+    # docs/security/alerting-and-export-caps.md.
+    enabled: ${MODOCUMENT_ALERTS_ENABLED:true}
+    sweep:
+      # Gates the SCHEDULE only (the sweep can always be run directly).
+      enabled: ${MODOCUMENT_ALERTS_SWEEP_ENABLED:true}
+      interval-ms: ${MODOCUMENT_ALERTS_SWEEP_INTERVAL_MS:60000}
+    delivery:
+      attempts: 2
+      # The sweep retries a failing channel this long, then marks FAILED.
+      retry-window: ${MODOCUMENT_ALERTS_RETRY_WINDOW:30m}
+    webhook:
+      # Operator configuration (never user input), so it deliberately
+      # bypasses the user-URL SSRF policy - see WebhookAlertChannel.
+      url: ${MODOCUMENT_ALERTS_WEBHOOK_URL:}
+      # Optional: signs each body (X-MoDocument-Signature: sha256=<hmac>).
+      secret: ${MODOCUMENT_ALERTS_WEBHOOK_SECRET:}
+      min-severity: ${MODOCUMENT_ALERTS_WEBHOOK_MIN_SEVERITY:INFO}
+    email:
+      # Comma-separated recipients; needs spring.mail.host as well
+      # (SPRING_MAIL_HOST/PORT/USERNAME/PASSWORD). Off when either is unset.
+      to: ${MODOCUMENT_ALERTS_EMAIL_TO:}
+      from: ${MODOCUMENT_ALERTS_EMAIL_FROM:modocument-alerts@localhost}
+      min-severity: ${MODOCUMENT_ALERTS_EMAIL_MIN_SEVERITY:INFO}
+    # THE RULE CATALOGUE (SEC-032 configurable thresholds). Replacing this
+    # list replaces the catalogue; to tune a default, use its env variable.
+    # trigger: IMMEDIATE | WINDOWED; group-by: ACTOR | IP | ENTITY | BANK;
+    # window: aggregation window (WINDOWED) and dedupe window (both), 1m-24h;
+    # actions: audit actions ("*" = any); outcomes / actor-roles: optional.
+    rules:
+      - name: account-locked
+        description: Account locked after repeated wrong passwords
+        trigger: IMMEDIATE
+        actions: [ACCOUNT_LOCKED]
+        group-by: ACTOR
+        window: 5m
+        severity: HIGH
+      - name: refresh-token-reuse
+        description: Rotated refresh token replayed - session family revoked (possible token theft)
+        trigger: IMMEDIATE
+        actions: [TOKEN_REFRESH_REUSE_DETECTED]
+        group-by: ACTOR
+        window: 5m
+        severity: CRITICAL
+      - name: export-blocked
+        description: Export above the role row cap refused (no reason stated)
+        trigger: IMMEDIATE
+        actions: [EXPORT_BLOCKED]
+        group-by: ACTOR
+        window: 5m
+        severity: HIGH
+      - name: export-over-cap
+        description: Large export above the role row cap, allowed with a stated reason
+        trigger: IMMEDIATE
+        actions: [EXPORT_OVER_CAP_WITH_REASON]
+        group-by: ENTITY
+        window: 5m
+        severity: INFO
+      - name: sod-violation
+        description: Segregation-of-duties violation found by the nightly scan
+        trigger: IMMEDIATE
+        actions: [SOD_VIOLATION_FOUND]
+        group-by: ENTITY
+        window: 5m
+        severity: CRITICAL
+      - name: sod-attempt-blocked
+        description: Self-approval / self-release attempt blocked
+        trigger: IMMEDIATE
+        actions: [SELF_APPROVAL_BLOCKED, DOC_SELF_RELEASE_BLOCKED]
+        group-by: ACTOR
+        window: 15m
+        severity: MEDIUM
+      - name: ai-prompt-refused
+        description: AI gateway refused a cross-bank prompt (one-bank rule)
+        trigger: IMMEDIATE
+        actions: [AI_PROMPT_REFUSED]
+        group-by: ACTOR
+        window: 5m
+        severity: HIGH
+      - name: ai-output-blocked
+        description: AI reply withheld by the output policy
+        trigger: IMMEDIATE
+        actions: [AI_OUTPUT_BLOCKED]
+        group-by: ACTOR
+        window: 15m
+        severity: MEDIUM
+      - name: privileged-change
+        description: Privileged (admin/root) action
+        trigger: IMMEDIATE
+        actions: [BOOTSTRAP_ADMIN_CREATED, USER_ROLE_CHANGED, MFA_DISABLED, USER_LIST_EXPORTED, DSR_EXPORTED, DSR_ERASED]
+        group-by: ACTOR
+        window: 5m
+        severity: MEDIUM
+      - name: admin-login
+        description: Administrator signed in (privileged account in use)
+        trigger: IMMEDIATE
+        actions: [LOGIN_SUCCESS]
+        actor-roles: [ADMIN]
+        group-by: ACTOR
+        window: ${MODOCUMENT_ALERT_ADMIN_LOGIN_WINDOW:60m}
+        severity: LOW
+      - name: login-failures-per-user
+        description: Repeated failed logins against one account
+        trigger: WINDOWED
+        actions: [LOGIN_FAILED]
+        group-by: ACTOR
+        threshold: ${MODOCUMENT_ALERT_LOGIN_FAILURES_PER_USER:5}
+        window: ${MODOCUMENT_ALERT_LOGIN_FAILURES_WINDOW:5m}
+        severity: HIGH
+      - name: login-failures-per-ip
+        description: Repeated failed logins from one network address
+        trigger: WINDOWED
+        actions: [LOGIN_FAILED]
+        group-by: IP
+        threshold: ${MODOCUMENT_ALERT_LOGIN_FAILURES_PER_IP:5}
+        window: ${MODOCUMENT_ALERT_LOGIN_FAILURES_WINDOW:5m}
+        severity: HIGH
+      - name: authorization-denied-burst
+        description: Repeated access-denied responses for one user
+        trigger: WINDOWED
+        actions: [AUTHORIZATION_DENIED]
+        group-by: ACTOR
+        threshold: ${MODOCUMENT_ALERT_AUTHZ_DENIED_THRESHOLD:10}
+        window: 5m
+        severity: MEDIUM
+      - name: admin-action-burst
+        description: Burst of administrator actions
+        trigger: WINDOWED
+        actions: ["*"]
+        actor-roles: [ADMIN]
+        outcomes: [SUCCESS]
+        group-by: ACTOR
+        threshold: ${MODOCUMENT_ALERT_ADMIN_BURST_THRESHOLD:30}
+        window: 10m
+        severity: MEDIUM
+      - name: export-burst
+        description: Many exports by one user (cap evasion by splitting)
+        trigger: WINDOWED
+        actions: [EXPORT_RUN]
+        group-by: ACTOR
+        threshold: ${MODOCUMENT_ALERT_EXPORT_BURST_THRESHOLD:5}
+        window: 10m
+        severity: MEDIUM
+  siem:
+    # ws18 SIEM export (SEC-031, gate E6). Schema + transports:
+    # docs/security/siem-event-schema.md.
+    feed:
+      # GET /api/siem/events (siem:read, ADMIN): the caller's bank only.
+      # Events younger than `settle` wait one poll (in-flight transactions).
+      settle: ${MODOCUMENT_SIEM_FEED_SETTLE:5s}
+      default-limit: 500
+      max-limit: 1000
+    webhook:
+      # Optional push (NDJSON batches). SINGLE-BANK deployments only: set
+      # bank-code to the one bank whose events are pushed; multi-bank
+      # deployments use the pull feed per bank.
+      url: ${MODOCUMENT_SIEM_WEBHOOK_URL:}
+      bank-code: ${MODOCUMENT_SIEM_WEBHOOK_BANK_CODE:}
+      secret: ${MODOCUMENT_SIEM_WEBHOOK_SECRET:}
+      batch-size: 100
+      queue-capacity: 10000
+  probe:
+    # ws18 (SUP-S11): public synthetic probe GET /api/probe/synthetic.
+    rate-limit:
+      per-ip-max: ${MODOCUMENT_PROBE_RATE_LIMIT:60}
+      window-millis: 60000
   parsing:
     llm-batch-size: ${PARSING_LLM_BATCH_SIZE:50}
     llm-single-pass-max-rows: ${PARSING_LLM_SINGLE_PASS_MAX_ROWS:150}
@@ -123,13 +483,26 @@ management:
       # The default extraction store is SQL, so an absent Mongo must not
       # drag /actuator/health DOWN. The scale profile re-enables this check.
       enabled: false
+    mail:
+      # ws18: the SMTP server only carries alert e-mails; its outage must
+      # not mark the application DOWN (the alert log + retries cover it).
+      enabled: false
 
 aifiles:
   openai:
-    # Set via AIFILES_OPENAI_APIKEY env var or an application-local.yml
-    # (gitignored). Intentionally not defaulted here so the spring.ai bridge
-    # above falls back to its "unset" sentinel when no key is configured.
-    model-id: moonshotai/kimi-k3
+    # LOCAL AI BY DEFAULT (gate C8): a local Ollama endpoint needs no real
+    # key, so 'ollama' here means "the local default is usable as-is". An
+    # EXTERNAL endpoint is an explicit opt-in: set MODOCUMENT_AI_BASE_URL +
+    # MODOCUMENT_AI_API_KEY + MODOCUMENT_AI_MODEL (the legacy AIFILES_OPENAI_*
+    # names keep working), or put the values in an application-local.yml
+    # (gitignored). Setting the key to an empty string disables the LLM
+    # endpoints entirely (the spring.ai bridge falls back to its "unset"
+    # sentinel and the AI gateway refuses calls).
+    api-key: ${MODOCUMENT_AI_API_KEY:${AIFILES_OPENAI_APIKEY:ollama}}
+    base-url: ${MODOCUMENT_AI_BASE_URL:${AIFILES_OPENAI_BASEURL:http://localhost:11434}}
+    # Default chat model (qwen2.5 on Ollama); extraction agents default to
+    # mistral and chat edits to deepseek-r1:8b (modocument.* keys below).
+    model-id: ${MODOCUMENT_AI_MODEL:${AIFILES_OPENAI_MODELID:qwen2.5}}
   privacy:
     # PII tokenization for the LLM chat/analysis features (chat table edits,
     # schema inference, extraction summaries, LLM record cleaning, template
@@ -172,11 +545,13 @@ docling:
 
 ocr:
   vision:
-    # LLM vision OCR for standalone images and scanned PDF pages, tried before
-    # the Tesseract fallback. Active only when an OpenAI key is configured
-    # (see aifiles.openai above); without one it disables itself silently.
-    enabled: ${OCR_VISION_ENABLED:true}
-    model: ${OCR_VISION_MODEL:moonshotai/kimi-k3}
+    # LLM vision OCR for standalone images and scanned PDF pages. OFF BY
+    # DEFAULT (gate C8): page images cannot be pseudonymised the way text
+    # prompts are, so sending them to a vision model is an explicit opt-in
+    # (OCR_VISION_ENABLED=true plus a vision-capable model/endpoint). The
+    # local Tesseract OCR tier remains the default for scanned content.
+    enabled: ${OCR_VISION_ENABLED:false}
+    model: ${OCR_VISION_MODEL:qwen2.5vl}
     # Vision-OCR page budget per PDF; pages beyond it fall back to Tesseract.
     max-pages: ${OCR_VISION_MAXPAGES:20}
     # Rasterization DPI for scanned pages and the longest image edge uploaded;
@@ -220,15 +595,51 @@ extraction:
     max-depth-default: 2
 
 springdoc:
-  # API docs are a development tool — disabled in production, enabled by the
-  # local profile.
+  # Spec GENERATION is on in every profile (SEC-006): /v3/api-docs is the
+  # authoritative machine-readable contract, derived from the code, and
+  # OpenApiContractTest pins its route inventory (docs/api/openapi-routes.txt)
+  # in CI. Exposure decision (docs/api/versioning-policy.md): outside dev
+  # (permit-dev-paths off) the endpoint requires a valid bearer token like
+  # every non-login route — no anonymous reconnaissance; any authenticated
+  # role may read it, because the route list is no secret from a signed-in
+  # user (the SPA bundle carries it) and every route enforces its own
+  # permission. A deployment that wants no spec endpoint at all sets
+  # MODOCUMENT_API_DOCS_ENABLED=false (CI still validates the contract).
+  # The Swagger UI stays a development tool — enabled only by the local
+  # profile.
   api-docs:
-    enabled: false
+    enabled: ${MODOCUMENT_API_DOCS_ENABLED:true}
+  # Deterministic key order, so two spec downloads diff cleanly.
+  writer-with-order-by-keys: true
   swagger-ui:
     enabled: false
-    # Render the static, hand-maintained spec instead of a generated one.
-    url: /swagger/spec.yaml
 
 logging:
   level:
     root: info
+
+---
+# Structured logging (E9/SEC-015): activate the `structured-logs` profile
+# (e.g. SPRING_PROFILES_ACTIVE=structured-logs) to switch the console
+# appender in logback-spring.xml from the human-readable pattern (the
+# default, extended with [requestId] [u:userId b:bankId] from the MDC) to
+# Spring Boot's native structured output for log aggregation. The document
+# format defaults to Elastic Common Schema and can be overridden with
+# MODOCUMENT_LOG_FORMAT (ecs | logstash | gelf). MDC keys — requestId, ip
+# (RequestIdFilter), userId, role (IdentityContextFilter), bankId
+# (TenantContext; '*' for system work) — become fields of every document.
+spring:
+  config:
+    activate:
+      on-profile: structured-logs
+logging:
+  structured:
+    format:
+      console: ${MODOCUMENT_LOG_FORMAT:ecs}
+    json:
+      # ws13 (PRIV-005 log part, SEC-019): the structured encoder bypasses
+      # the logback pattern converters, so PII/credential masking is applied
+      # to every string member of each JSON document (message, error.message,
+      # error.stack_trace, …) through this customizer instead. Same pattern
+      # set as the %mask/%maskEx conversion words in logback-spring.xml.
+      customizer: com.modocument.infrastructure.logging.RedactingJsonMembersCustomizer

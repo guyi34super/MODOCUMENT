@@ -54,6 +54,21 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
+        <!-- Argon2id password hashing (SEC-018): spring-security-crypto's
+             Argon2PasswordEncoder delegates to BouncyCastle's Argon2 impl -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.78.1</version>
+        </dependency>
+        <!-- OIDC front door (ws07): Entra ID / Keycloak authenticate the
+             browser, then MoDocument issues its OWN tokens (bridge pattern).
+             Purely additive: with no modocument.oidc.providers configured, no
+             ClientRegistrationRepository bean exists and oauth2Login stays off. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
 
         <!-- Database drivers: PostgreSQL for production, H2 for local/test profiles -->
         <dependency>
@@ -82,6 +97,23 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- ws18 alert e-mail channel (EmailAlertChannel). Inert unless
+             spring.mail.host AND modocument.alerts.email.to are configured:
+             Boot only creates the JavaMailSender when spring.mail.host is
+             set, and the channel is a no-op without one. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- Bean Validation (C6): declarative request-schema checks (@Valid +
+             constraint annotations on request DTOs) as the outer layer in
+             front of the hand-written use-case validation -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
         <!-- LLM access via Spring AI (OpenAI chat model + structured output) -->
@@ -151,7 +183,9 @@
             </exclusions>
         </dependency>
 
-        <!-- Swagger UI rendering the static spec at /swagger/spec.yaml -->
+        <!-- OpenAPI contract generated from code at /v3/api-docs (all
+             profiles, OpenApiConfig); the bundled Swagger UI is enabled only
+             by the local profile. -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
@@ -168,6 +202,20 @@
             <artifactId>awaitility</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- PostgreSQL integration suite (-Ppostgres-it, **/*PgIT.java):
+             starts a disposable postgres:17 when MODOCUMENT_IT_JDBC_URL does
+             not point at an external server (see PgItSupport). -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -175,7 +223,120 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <executions>
+                    <!-- META-INF/build-info.properties → BuildProperties bean:
+                         the generated OpenAPI contract (OpenApiConfig) takes
+                         its title/version from the pom instead of hardcoding
+                         them, and the public synthetic probe (ws18) reports
+                         the same version. -->
+                    <execution>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- The PostgreSQL integration classes (*PgIT) belong to
+                         failsafe in the postgres-it profile, never to the
+                         default H2 unit run. -->
+                    <excludes>
+                        <exclude>**/*PgIT.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <!-- Code coverage (ws19): the agent instruments the unit run and
+                 `report` renders target/site/jacoco/ at verify. Deliberately
+                 NO <check> threshold gate yet — the baseline must be
+                 established and agreed first (see
+                 docs/security/branch-protection.md); CI prints the summary
+                 from jacoco.csv so the number is visible on every run. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.13</version>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- mvn -B verify -Ppostgres-it — runs the real-PostgreSQL suite
+             (Flyway/RLS/tenant-isolation gate) via failsafe, on an external
+             server when MODOCUMENT_IT_JDBC_URL (+ MODOCUMENT_IT_SUPERUSER /
+             MODOCUMENT_IT_SUPERUSER_PASSWORD) is set, otherwise on a
+             Testcontainers postgres:17 (requires Docker, as on CI). -->
+        <profile>
+            <id>postgres-it</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/*PgIT.java</include>
+                            </includes>
+                            <groups>postgres</groups>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- mvn -B -DskipTests package -Psbom — CycloneDX SBOM (gate E8,
+             SUP-S05). CI-only by design (.github/workflows/sbom.yml) so the
+             everyday local `mvn verify` pays nothing for it; the BOM lands in
+             target/bom.json / target/bom.xml. -->
+        <profile>
+            <id>sbom</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.cyclonedx</groupId>
+                        <artifactId>cyclonedx-maven-plugin</artifactId>
+                        <version>2.9.1</version>
+                        <configuration>
+                            <projectType>application</projectType>
+                            <outputFormat>all</outputFormat>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>cyclonedx-sbom</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>makeBom</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

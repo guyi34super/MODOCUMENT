@@ -1,0 +1,25 @@
+# Fingerprint allowlist for gitleaks (gate A7). Each line pins ONE historical
+# finding (commit:file:rule:line) that is deliberate test material, documented
+# in .gitleaks.toml. History is immutable, so these fingerprints never drift;
+# the same string re-added in a new commit produces a NEW fingerprint and
+# still fails the scan.
+#
+# Canary JWT used by the ws13 log-redaction tests (fake token, payload
+# {"sub":"canary"}, signature is the literal word "signature"):
+e59f71461c3de62a8e8e289f0bf7a9d82563beb9:src/test/java/com/modocument/infrastructure/logging/StructuredLogRedactionTest.java:jwt:46
+e59f71461c3de62a8e8e289f0bf7a9d82563beb9:src/test/java/com/modocument/infrastructure/logging/RedactingConverterTest.java:jwt:70
+e59f71461c3de62a8e8e289f0bf7a9d82563beb9:src/test/java/com/modocument/infrastructure/logging/LogRedactionCanaryTest.java:jwt:70
+# Fixed 32-byte dummy AES test vector in MfaSecretCipherTest:
+b427e6ef797867e9e388f99247fb65c8199ec2c0:src/test/java/com/modocument/infrastructure/security/MfaSecretCipherTest.java:generic-api-key:10
+# ws17 ApiDocsExposureTest: production-SHAPED but test-only JWT signing key
+# and MFA key, passed as @SpringBootTest properties so the context boots with
+# permit-dev-paths=false (the production exposure of /v3/api-docs). They only
+# ever sign/encrypt inside that in-memory H2 test context; no deployment uses
+# them (production requires its own MODOCUMENT_JWT_SECRET / MODOCUMENT_MFA_KEY).
+60e55703877515abebccfdce4d0b1acc8ccbcac3:src/test/java/com/modocument/api/contract/ApiDocsExposureTest.java:generic-api-key:37
+60e55703877515abebccfdce4d0b1acc8ccbcac3:src/test/java/com/modocument/api/contract/ApiDocsExposureTest.java:generic-api-key:38
+# ws16 SecretFileEnvironmentPostProcessorTest: the dummy MFA key
+# "same-mfa-key-0123456789abcdefghijklmnop" proving that an env value and a
+# _FILE value that agree are tolerated. Readable placeholder, never used as a
+# key outside that unit test; flagged by gitleaks >= 8.24 (generic-api-key).
+fdc6f3bdcb7dd933ffb00c487341b8773c87beb3:src/test/java/com/modocument/infrastructure/security/SecretFileEnvironmentPostProcessorTest.java:generic-api-key:115

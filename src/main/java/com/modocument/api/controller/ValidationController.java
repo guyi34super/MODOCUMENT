@@ -1,5 +1,10 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.ValidationRequest;
 import com.modocument.application.usecase.TemplateOwnership;
@@ -16,6 +21,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 @RestController
+@Tag(name = "Validation")
 public class ValidationController {
 
     private final ValidateRowsUseCase useCase;
@@ -26,8 +32,10 @@ public class ValidationController {
         this.ownership = ownership;
     }
 
+    @RequiresPermission(Permission.VALIDATION_READ)
+    @Operation(summary = "Run rows through a template's validation rules")
     @PostMapping("/Validation/validate")
-    public ResponseEntity<?> validate(@RequestBody ValidationRequest request) {
+    public ResponseEntity<?> validate(@Valid @RequestBody ValidationRequest request) {
         // The template whose rules are being applied must belong to the caller —
         // otherwise a user could probe another template's rules through the
         // validation results.

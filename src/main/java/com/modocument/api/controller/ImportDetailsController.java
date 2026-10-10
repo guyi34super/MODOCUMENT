@@ -1,9 +1,12 @@
 package com.modocument.api.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
+import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.domain.entity.ImportDetails;
+import com.modocument.domain.model.Permission;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,6 +29,7 @@ import java.util.stream.Collectors;
  * the parent's owner — there is no per-detail owner column.
  */
 @RestController
+@Tag(name = "Import Details")
 public class ImportDetailsController {
 
     private final ImportDetailsRepository repo;
@@ -46,6 +50,7 @@ public class ImportDetailsController {
                 () -> new NoSuchElementException("Import " + importHistoryId + " not found."));
     }
 
+    @RequiresPermission(Permission.IMPORT_READ)
     @GetMapping("/ImportDetails/GetAll")
     public ResponseEntity<?> getAll() {
         // Only details whose parent import the caller owns.
@@ -57,6 +62,7 @@ public class ImportDetailsController {
                 .collect(Collectors.toList()));
     }
 
+    @RequiresPermission(Permission.IMPORT_READ)
     @GetMapping("/ImportDetails/GetById/{id}")
     public ResponseEntity<?> getImportDetailsById(@PathVariable int id) {
         Optional<ImportDetails> itemOpt = repo.getById(id);
@@ -75,11 +81,13 @@ public class ImportDetailsController {
         return ResponseEntity.ok(dto);
     }
 
+    @RequiresPermission(Permission.IMPORT_WRITE)
     @PostMapping("/ImportDetails/Create")
     public ResponseEntity<?> create(@RequestBody ImportDetails dto) {
         requireOwnedImport(dto.getImportHistoryId());
         ImportDetails entity = new ImportDetails();
         entity.setImportHistoryId(dto.getImportHistoryId());
+        entity.setBankId(currentUser.requireBankId());
         entity.setProcessStepId(dto.getProcessStepId());
         entity.setRawJson(dto.getRawJson());
         entity.setImportHistory(dto.getImportHistory());
@@ -90,6 +98,7 @@ public class ImportDetailsController {
                 .body(entity);
     }
 
+    @RequiresPermission(Permission.IMPORT_WRITE)
     @PutMapping("/ImportDetails/Update/{id}")
     public ResponseEntity<?> update(@PathVariable int id, @RequestBody ImportDetails dto) {
         Optional<ImportDetails> existingOpt = repo.getById(dto.getImportDetailsId());
@@ -119,6 +128,7 @@ public class ImportDetailsController {
                 .body(updated);
     }
 
+    @RequiresPermission(Permission.IMPORT_WRITE)
     @DeleteMapping("/ImportDetails/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         Optional<ImportDetails> existing = repo.getById(id);

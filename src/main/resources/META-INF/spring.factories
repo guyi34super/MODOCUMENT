@@ -1,0 +1,4 @@
+# File-based secret indirection (<NAME>_FILE, SEC-018). Spring Boot 3.5 loads
+# EnvironmentPostProcessors from spring.factories (not from an .imports file).
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.modocument.infrastructure.security.SecretFileEnvironmentPostProcessor

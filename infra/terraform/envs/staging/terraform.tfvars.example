@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars and fill in. Staging lives in its OWN AWS account
+# (SUP-S07) with its own secrets — never reuse production values.
+
+app_domain          = "staging.modocument.example"
+alb_certificate_arn = "arn:aws:acm:af-south-1:222222222222:certificate/REPLACE"
+
+app_image      = "222222222222.dkr.ecr.af-south-1.amazonaws.com/modocument-staging/app:latest-build"
+frontend_image = "222222222222.dkr.ecr.af-south-1.amazonaws.com/modocument-staging/frontend:latest-build"
+
+# Office/VPN ranges; widen to 0.0.0.0/0 only for the external pen test (E4).
+ingress_cidrs = ["203.0.113.0/24"]
+
+alert_email = "security@modocument.example"

@@ -76,6 +76,46 @@ describe('Layout sidebar', () => {
     expect(screen.getByLabelText('Main navigation')).toHaveAttribute('inert');
   });
 
+  /** ws09/ws10: admin links render per role (UX, not security). */
+  it('shows Users and Approvals to ADMINs', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 1, role: 'ADMIN' }));
+    renderLayout();
+
+    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/admin/users');
+    expect(screen.getByRole('link', { name: 'Approvals' })).toHaveAttribute(
+      'href',
+      '/admin/changes'
+    );
+    // ws18: the bank's security alerts.
+    expect(screen.getByRole('link', { name: 'Security alerts' })).toHaveAttribute(
+      'href',
+      '/admin/alerts'
+    );
+    expect(screen.getByText('Administration')).toBeInTheDocument();
+  });
+
+  it('shows Approvals but not Users to APPROVERs', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 3, role: 'APPROVER' }));
+    renderLayout();
+
+    expect(screen.getByRole('link', { name: 'Approvals' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Security alerts' })).not.toBeInTheDocument();
+    expect(screen.getByText('Administration')).toBeInTheDocument();
+  });
+
+  it('hides the Administration section from everyone else', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 2, role: 'READ_WRITE' }));
+    renderLayout();
+
+    expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Approvals' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Administration')).not.toBeInTheDocument();
+  });
+
   it('closes the drawer on Escape and on a backdrop click', async () => {
     stubViewport(false);
     renderLayout();

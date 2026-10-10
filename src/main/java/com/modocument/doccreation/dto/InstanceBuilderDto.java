@@ -11,6 +11,10 @@ public record InstanceBuilderDto(int instanceId,
                                  String status,
                                  LocalDateTime lastGeneratedDate,
                                  boolean pdfAvailable,
+                                 boolean aiComposed,
+                                 LocalDateTime submittedAt,
+                                 LocalDateTime releasedAt,
+                                 String reviewComment,
                                  List<BuilderSectionDto> sections,
                                  List<UnsortedAssetDto> unsortedAssets) {
 

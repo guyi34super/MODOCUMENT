@@ -21,6 +21,11 @@ public class DocBlueprintRepositoryImpl implements DocBlueprintRepository {
     }
 
     @Override
+    public Optional<DocBlueprint> getById(int id) {
+        return jpa.findById(id);
+    }
+
+    @Override
     public List<DocBlueprint> listByOwner(int ownerUserId) {
         return jpa.findByOwnerUserIdOrderByDocBlueprintIdDesc(ownerUserId);
     }

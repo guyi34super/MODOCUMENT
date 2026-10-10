@@ -1,5 +1,6 @@
 package com.modocument.api.controller;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.domain.entity.ImportDetails;
@@ -22,7 +23,7 @@ class ImportDetailsControllerTest {
     private final ImportDetailsRepository repo = mock(ImportDetailsRepository.class);
     private final ImportHistoryRepository imports = mock(ImportHistoryRepository.class);
     private final ImportDetailsController controller =
-            new ImportDetailsController(repo, imports, () -> USER);
+            new ImportDetailsController(repo, imports, FixedUser.provider(USER));
 
     {
         // Parent import #1 belongs to the caller in every scenario below.

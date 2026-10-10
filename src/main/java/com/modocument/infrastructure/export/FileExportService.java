@@ -96,9 +96,10 @@ public class FileExportService {
     /**
      * Excel and Sheets execute a cell that starts with = + - or @, so an
      * ingested value like {@code =HYPERLINK(...)} would run when the exported
-     * file is opened. A leading apostrophe makes it text again.
+     * file is opened. A leading apostrophe makes it text again. Public: the
+     * ws09 user-list export reuses the same neutralization for CSV cells.
      */
-    static String neutralizeFormula(String value) {
+    public static String neutralizeFormula(String value) {
         if (value == null || value.isEmpty()) {
             return value == null ? "" : value;
         }

@@ -1,9 +1,14 @@
 package com.modocument.application.dto;
 
+import jakarta.validation.constraints.Positive;
+
 /** Body for bridging an extraction job into the document pipeline. */
 public class BridgeRequest {
 
+    @Positive
     private int templateId;
+
+    @Positive
     private Integer maxRows;
     private boolean llmClean;
 

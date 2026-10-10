@@ -10,6 +10,7 @@ import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
 import com.modocument.application.mapping.MappingContext;
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.application.privacy.LogSafe;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.IngestionParseStep;
 import com.modocument.application.port.ImportHistoryRepository;
@@ -89,8 +90,10 @@ public class IngestionJobUseCase {
         templates.getByIdAndOwner(templateId, owner).orElseThrow(
                 () -> new NoSuchElementException("Template " + templateId + " not found."));
 
+        int bankId = currentUser.requireBankId();
         ImportHistory history = new ImportHistory();
         history.setOwnerUserId(owner);
+        history.setBankId(bankId);
         history.setFileName(fileName);
         history.setTemplateId(templateId);
         history.setImportDate(LocalDateTime.now(ZoneOffset.UTC));
@@ -98,6 +101,7 @@ public class IngestionJobUseCase {
 
         IngestionJob job = new IngestionJob();
         job.setOwnerUserId(owner);
+        job.setBankId(bankId);
         job.setFileName(fileName);
         job.setTemplateId(templateId);
         job.setImportHistoryId(savedHistory.getImportHistoryId());
@@ -335,7 +339,10 @@ public class IngestionJobUseCase {
             log.warn("Ingestion job {} failed during {} stage: {}",
                     job.getIngestionJobId(), target, message);
             job.setStatus(JobStatus.FAILED);
-            job.setErrorMessage(abbreviate(message));
+            // ErrorMessage is persisted and later shown/exported, so it gets
+            // the same PII/credential scrub as a log line (PRIV-005): a
+            // parser or driver message can quote the very values that failed.
+            job.setErrorMessage(LogSafe.scrub(abbreviate(message)));
             return jobs.save(job);
         }
     }
@@ -615,6 +622,7 @@ public class IngestionJobUseCase {
         }
         ImportDetails details = new ImportDetails();
         details.setImportHistoryId(job.getImportHistoryId());
+        details.setBankId(job.getBankId());
         details.setProcessStepId(processStepId);
         details.setRawJson(rawJson);
         importDetails.add(details);

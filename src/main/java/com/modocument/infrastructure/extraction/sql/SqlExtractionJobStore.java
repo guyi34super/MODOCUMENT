@@ -4,6 +4,8 @@ import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.domain.document.ExtractionJob;
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionJobCounterEntity;
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionJobEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
@@ -23,6 +25,10 @@ import java.util.stream.Collectors;
 @Component
 @ConditionalOnProperty(name = "extraction.store", havingValue = "sql")
 public class SqlExtractionJobStore implements ExtractionJobStore {
+
+    private static final Logger log = LoggerFactory.getLogger(SqlExtractionJobStore.class);
+    /** Bounded wait (1+2+…+20 ms) for a racing insert to become visible. */
+    private static final int INSERT_RACE_RETRIES = 20;
 
     private final ExtractionJobJpaRepository jobs;
     private final ExtractionJobCounterJpaRepository counters;
@@ -84,12 +90,39 @@ public class SqlExtractionJobStore implements ExtractionJobStore {
         if (counters.increment(entityId, counter, delta) > 0) {
             return;
         }
+        // First increment of this counter: the row inherits the job's bank
+        // (one extra read, only ever on this rare insert path).
+        int bankId = jobs.findById(entityId)
+                .map(ExtractionJobEntity::getBankId)
+                .filter(bank -> bank > 0)
+                .orElseGet(BankStamp::current);
         try {
-            counters.saveAndFlush(new ExtractionJobCounterEntity(entityId, counter, delta));
+            counters.insert(entityId, counter, delta, bankId);
         } catch (DataIntegrityViolationException raced) {
             // Another worker inserted the row between our UPDATE and INSERT.
-            counters.increment(entityId, counter, delta);
+            addAfterInsertRace(entityId, counter, delta);
         }
+    }
+
+    /**
+     * Retries the UPDATE briefly in case the racing winner's row is not yet
+     * visible to a fresh transaction. A job deleted meanwhile (the INSERT
+     * failed on its foreign key) never lands and is only logged.
+     */
+    private void addAfterInsertRace(long jobId, String counter, long delta) {
+        for (int attempt = 1; attempt <= INSERT_RACE_RETRIES; attempt++) {
+            if (counters.increment(jobId, counter, delta) > 0) {
+                return;
+            }
+            try {
+                Thread.sleep(attempt);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        log.warn("Extraction job {} counter {} not incremented by {}: its row never became visible "
+                + "(job deleted?)", jobId, counter, delta);
     }
 
     private List<ExtractionJob> toDomainList(List<ExtractionJobEntity> entities) {
@@ -120,6 +153,7 @@ public class SqlExtractionJobStore implements ExtractionJobStore {
         ExtractionJob job = new ExtractionJob();
         job.setId(String.valueOf(entity.getId()));
         job.setOwnerUserId(entity.getOwnerUserId());
+        job.setBankId(entity.getBankId());
         job.setSourceId(entity.getSourceId());
         job.setTemplateId(entity.getTemplateId());
         job.setDataSpec(entity.getDataSpec());
@@ -136,6 +170,7 @@ public class SqlExtractionJobStore implements ExtractionJobStore {
         ExtractionJobEntity entity = new ExtractionJobEntity();
         entity.setId(JsonColumns.parseId(job.getId()));
         entity.setOwnerUserId(job.getOwnerUserId());
+        entity.setBankId(BankStamp.effective(job.getBankId()));
         entity.setSourceId(job.getSourceId());
         entity.setTemplateId(job.getTemplateId());
         entity.setDataSpec(job.getDataSpec());

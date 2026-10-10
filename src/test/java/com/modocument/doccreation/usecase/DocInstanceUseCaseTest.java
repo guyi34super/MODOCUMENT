@@ -1,5 +1,6 @@
 package com.modocument.doccreation.usecase;
 
+import com.modocument.testsupport.FixedUser;
 import com.modocument.doccreation.dto.AddBlockRequest;
 import com.modocument.doccreation.dto.BlockDto;
 import com.modocument.doccreation.dto.BulkUploadResultDto;
@@ -79,7 +80,11 @@ class DocInstanceUseCaseTest {
     void setUp() throws IOException {
         storage = new StorageProperties(tempDir.toString());
         UploadStorage uploadStorage = new UploadStorage(storage);
-        DocCreationOwnership ownership = new DocCreationOwnership(blueprints, instances, () -> USER);
+        // No doc:release in these tests — they cover the owner paths; the
+        // ws11 review extension is exercised in DocReleaseSodIntegrationTest.
+        DocCreationOwnership ownership = new DocCreationOwnership(blueprints, instances,
+                FixedUser.provider(USER),
+                org.mockito.Mockito.mock(com.modocument.api.security.PermissionChecker.class));
         DocumentCreationFlowRegistry flows = new DocumentCreationFlowRegistry(
                 List.of(new DefaultDocumentCreationFlow(new KeywordSectionMatcher())));
         DocumentAssembler assembler = new DocumentAssembler();
@@ -87,9 +92,23 @@ class DocInstanceUseCaseTest {
         // engine; the AI path has its own suite (AiDocumentComposerTest).
         AiDocumentComposer disabledComposer = new AiDocumentComposer(
                 org.mockito.Mockito.mock(AiFilesService.class),
-                new LlmRateLimiter(1000, 3_600_000, 100), () -> USER, assembler, false, "");
+                new LlmRateLimiter(1000, 3_600_000, 100), () -> USER, assembler,
+                new com.modocument.application.privacy.PiiTokenizer(
+                        new com.modocument.application.privacy.PrivacyProperties()), false, "");
+        // Real masking stack (REPORT masks PII shapes; these fixtures carry
+        // none, so the assembled text is byte-identical to the user's).
+        com.modocument.application.privacy.PiiMaskingService masking =
+                new com.modocument.application.privacy.PiiMaskingService(
+                        new com.modocument.application.privacy.MaskingPolicy(
+                                new com.modocument.application.privacy.MaskingProperties()),
+                        new com.modocument.application.privacy.PiiClassifier(),
+                        org.mockito.Mockito.mock(
+                                com.modocument.application.port.TemplateFieldsRepository.class),
+                        org.mockito.Mockito.mock(
+                                com.modocument.application.port.ValidationRuleRepository.class),
+                        FixedUser.provider(USER));
         useCase = new DocInstanceUseCase(instances, blueprints, sections, blocks, assets,
-                ownership, flows, assembler, disabledComposer, pdf, uploadStorage, storage);
+                ownership, flows, assembler, disabledComposer, pdf, uploadStorage, storage, masking);
 
         // A real blueprint file, so generate() runs the real assembler.
         Files.createDirectories(storage.uploadsDir());
@@ -304,6 +323,11 @@ class DocInstanceUseCaseTest {
         }
 
         @Override
+        public Optional<DocBlueprint> getById(int id) {
+            return Optional.ofNullable(rows.get(id));
+        }
+
+        @Override
         public List<DocBlueprint> listByOwner(int ownerUserId) {
             return rows.values().stream().filter(b -> b.getOwnerUserId() == ownerUserId).toList();
         }
@@ -362,6 +386,29 @@ class DocInstanceUseCaseTest {
         @Override
         public Optional<DocInstance> getByIdAndOwner(int id, int ownerUserId) {
             return Optional.ofNullable(rows.get(id)).filter(i -> i.getOwnerUserId() == ownerUserId);
+        }
+
+        @Override
+        public Optional<DocInstance> getByIdAndBank(int id, int bankId) {
+            return Optional.ofNullable(rows.get(id)).filter(i -> i.getBankId() == bankId);
+        }
+
+        @Override
+        public List<DocInstance> listByBankAndStatus(int bankId, String status) {
+            return rows.values().stream()
+                    .filter(i -> i.getBankId() == bankId && status.equals(i.getStatus()))
+                    .toList();
+        }
+
+        @Override
+        public List<DocInstance> listReleasedSodViolations(int bankId) {
+            return rows.values().stream()
+                    .filter(i -> i.getBankId() == bankId
+                            && DocInstance.STATUS_RELEASED.equals(i.getStatus())
+                            && i.getReleasedByUserId() != null
+                            && (i.getReleasedByUserId() == i.getOwnerUserId()
+                                    || i.getReleasedByUserId().equals(i.getSubmittedByUserId())))
+                    .toList();
         }
 
         @Override

@@ -88,6 +88,7 @@ public class DocBlueprintUseCase {
 
         DocBlueprint blueprint = new DocBlueprint();
         blueprint.setOwnerUserId(ownership.requireUserId());
+        blueprint.setBankId(ownership.requireBankId());
         blueprint.setCompanyId(normalizedCompanyId);
         blueprint.setName(blueprintName);
         blueprint.setFileName(storedName);
@@ -113,6 +114,7 @@ public class DocBlueprintUseCase {
         for (ParsedSection section : parsed) {
             DocBlueprintSection entity = new DocBlueprintSection();
             entity.setBlueprintId(blueprint.getDocBlueprintId());
+            entity.setBankId(blueprint.getBankId());
             entity.setOrderIndex(section.orderIndex());
             entity.setTitle(section.title());
             entity.setHeadingLevel(section.headingLevel());

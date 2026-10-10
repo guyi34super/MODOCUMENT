@@ -4,14 +4,24 @@ import com.modocument.domain.document.ApiSourceConfig;
 import com.modocument.domain.document.DbSourceConfig;
 import com.modocument.domain.document.WebSourceConfig;
 import com.modocument.domain.model.SourceType;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 /** Create/update body for an extraction source. Carries no secrets. */
 public class SaveExtractionSourceRequest {
 
+    /** ExtractionSource.Name is varchar(255). */
+    @NotBlank
+    @Size(max = 255)
     private String name;
+
+    @NotNull
     private SourceType type;
     private boolean termsAcknowledged;
+    @Size(max = 20_000)
     private String dataSpec;
+
     private Integer templateId;
     private WebSourceConfig web;
     private ApiSourceConfig api;

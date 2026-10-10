@@ -12,6 +12,8 @@ import com.modocument.application.port.JobSecrets;
 import com.modocument.application.port.ProcessedRecordStore;
 import com.modocument.application.port.RawRecordStore;
 import com.modocument.application.port.TaskEventBus;
+import com.modocument.application.port.TenantContext;
+import com.modocument.application.privacy.LogSafe;
 import com.modocument.domain.document.ConnectorState;
 import com.modocument.domain.document.ExtractionAuditEvent;
 import com.modocument.domain.document.ExtractionJob;
@@ -93,6 +95,15 @@ public class ExecuteExtractionTaskUseCase implements ExtractionTaskRunner {
 
     @Override
     public void run(ExtractionTask task, String workerId) {
+        // runAsSystem: a queued task carries no tenant, so resolving WHOSE
+        // job it is — and the skip/release bookkeeping on it — is a
+        // deliberate cross-tenant read; without it row-level security would
+        // hide every job from the worker (see the call-site registry in
+        // TenantContext). The actual work adopts the job's own bank below.
+        TenantContext.runAsSystem(() -> dispatch(task, workerId));
+    }
+
+    private void dispatch(ExtractionTask task, String workerId) {
         ExtractionJob job = jobs.getById(task.getJobId()).orElse(null);
         ExtractionSource source = job == null ? null
                 : sources.getById(task.getSourceId()).orElse(null);
@@ -108,7 +119,15 @@ public class ExecuteExtractionTaskUseCase implements ExtractionTaskRunner {
             queue.release(task.getId(), workerId);
             return;
         }
+        // Worker threads carry no request context, so adopt the job's bank:
+        // every row this task writes (raw/processed records, audit events,
+        // counters, connector state) is stamped with it, and row-level
+        // security scopes every read to it.
+        TenantContext.runAs(job.getBankId(), () -> execute(task, workerId, job, source));
+    }
 
+    private void execute(ExtractionTask task, String workerId, ExtractionJob job,
+                         ExtractionSource source) {
         ConnectorResult result;
         try {
             ConnectorState state = states.get(source.getId()).orElse(null);
@@ -169,7 +188,11 @@ public class ExecuteExtractionTaskUseCase implements ExtractionTaskRunner {
     }
 
     private void handleFailure(ExtractionTask task, String workerId, ExtractionJob job, Exception e) {
-        String error = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        // Scrubbed once, up front: this text is PERSISTED — as the task's
+        // LastError (queue.fail) and as the audit events' Detail — and a
+        // connector/driver message can quote fetched PII (PRIV-005).
+        String error = LogSafe.scrub(
+                e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
         boolean retry = queue.fail(task.getId(), workerId, abbreviate(error),
                 Duration.ofMillis(backoffMillis));
         if (retry) {
