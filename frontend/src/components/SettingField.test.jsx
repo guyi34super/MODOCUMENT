@@ -171,7 +171,7 @@ describe('SettingField', () => {
     expect(within(row).getByText('Set by platform')).toBeInTheDocument();
     expect(within(row).getByRole('switch', { name: 'Allow API keys' })).toBeDisabled();
     expect(within(row).queryByText('Requires approval')).not.toBeInTheDocument();
-    expect(within(row).queryByRole('button', { name: 'Reset to inherited' })).toBeNull();
+    expect(within(row).queryByRole('button', { name: /^Reset to inherited/ })).toBeNull();
 
     // The platform's per-bank screen edits the same view.
     rerender(
@@ -182,7 +182,7 @@ describe('SettingField', () => {
     row = screen.getByTestId('setting-integration.auth.allowApiKeys');
     expect(within(row).queryByText('Set by platform')).toBeNull();
     expect(within(row).getByText('Requires approval')).toBeInTheDocument();
-    await userEvent.click(within(row).getByRole('button', { name: 'Reset to inherited' }));
+    await userEvent.click(within(row).getByRole('button', { name: /^Reset to inherited/ }));
     expect(onDraft).toHaveBeenCalledWith({ reset: true });
   });
 
