@@ -1,0 +1,8 @@
+node_modules/
+test-results/
+e2e-report/
+playwright-report/
+blob-report/
+# Per-run logs, throwaway credentials and uploads (run-local.sh)
+.run/
+.state/

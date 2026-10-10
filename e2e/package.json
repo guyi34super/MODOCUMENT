@@ -1,0 +1,21 @@
+{
+  "name": "modocument-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Playwright end-to-end suite for MoDocument (phase 2). See e2e/README.md.",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:list": "playwright test --list",
+    "report": "playwright show-report e2e-report",
+    "stub": "node stubs/fake-llm.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "pg": "8.16.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
