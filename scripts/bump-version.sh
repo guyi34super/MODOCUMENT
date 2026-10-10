@@ -17,6 +17,11 @@
 # RELEASE_DATE=YYYY-MM-DD overrides today's UTC date. Nothing is committed or
 # tagged: review the diff, commit "Release X.Y.Z", then tag vX.Y.Z-rc.1
 # (docs/release/runbook.md).
+#
+# A release candidate may be named too: `scripts/bump-version.sh 1.1.0-rc.1`
+# bumps the files to 1.1.0 (they never carry "-rc"; the tag does) and names
+# the tag to push. For a later candidate of the same release (files already
+# at X.Y.Z) it changes nothing and only checks the tree is in sync.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,13 +29,20 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$root/scripts/version-lib.sh"
 
 usage() {
-  echo "usage: $0 X.Y.Z   (RELEASE_DATE=YYYY-MM-DD to override the date)" >&2
+  echo "usage: $0 X.Y.Z | X.Y.Z-rc.N   (RELEASE_DATE=YYYY-MM-DD to override the date)" >&2
   exit 2
 }
 
 [ "$#" -eq 1 ] || usage
 new="$1"
-[[ "$new" =~ $SEMVER_RE ]] || { echo "bump-version: '$new' is not X.Y.Z" >&2; exit 2; }
+rc=""
+if [[ "$new" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.[1-9][0-9]*$ ]]; then
+  # The files carry X.Y.Z; "-rc.N" lives only in the tag.
+  rc="$new"
+  new="${BASH_REMATCH[1]}"
+fi
+[[ "$new" =~ $SEMVER_RE ]] || { echo "bump-version: '$1' is not X.Y.Z or X.Y.Z-rc.N" >&2; exit 2; }
+tag="v${rc:-$new-rc.1}"
 
 date="${RELEASE_DATE:-$(date -u +%Y-%m-%d)}"
 [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
@@ -49,6 +61,12 @@ bash "$root/scripts/check-version-sync.sh" >/dev/null || {
 }
 
 old="$(pom_version "$pom")"
+if [ -n "$rc" ] && [ "$new" = "$old" ]; then
+  # A further candidate of the same release: the files already say X.Y.Z.
+  bash "$root/scripts/check-version-sync.sh" "$tag"
+  echo "bump-version: the tree is already at $new; nothing to change. Next: tag $tag on the release commit."
+  exit 0
+fi
 if ! semver_gt "$new" "$old"; then
   echo "bump-version: $new must be greater than the current version $old" >&2
   exit 1
@@ -120,4 +138,4 @@ cp "$tmpdir/package-lock.json" "$lock"
 cp "$tmpdir/CHANGELOG.md" "$changelog"
 
 bash "$root/scripts/check-version-sync.sh"
-echo "bump-version: $old -> $new ($date). Next: review 'git diff', commit \"Release $new\", tag v$new-rc.1."
+echo "bump-version: $old -> $new ($date). Next: review 'git diff', commit \"Release $new\", tag $tag."

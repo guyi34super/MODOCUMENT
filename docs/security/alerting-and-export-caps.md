@@ -84,6 +84,7 @@ HIGH < CRITICAL), `enabled`.
 | `ai-circuit-opened` (ws23) | immediate | `AI_CIRCUIT_OPENED` | bank | – / 15m | HIGH | |
 | `integration-failures` (ws25) | windowed | `INTEGRATION_RUN_FAILED` | bank | ≥ 5 / 1h | MEDIUM | `MODOCUMENT_ALERT_INTEGRATION_FAILURES_THRESHOLD` |
 | `integration-dead-letter` (ws25) | immediate | `INTEGRATION_DELIVERY_DEAD` | bank | – / 15m | HIGH | |
+| `agent-offline` (ws26) | immediate | `AGENT_OFFLINE` (written once per ONLINE → OFFLINE transition by the agent offline sweep, after the bank's `integration.agentHeartbeatTimeout`) | entity (the agent) | – / 30m | MEDIUM | |
 
 **Platform tuning (ws20).** Every windowed rule's threshold and window is
 also a platform setting (`alerts.<rule>.threshold` / `.window`, Security

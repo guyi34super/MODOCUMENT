@@ -42,6 +42,11 @@ modocument:
     connectors:
       # The connector tests talk to loopback JDK HTTP stubs.
       allow-plain-http: true
+  agent:
+    offline-sweep:
+      # No scheduled agent offline sweep racing deterministic tests;
+      # AgentOfflineSweepTest drives sweep() directly.
+      enabled: false
   platform:
     # ws21 BankDirectory: no caching in tests. Test contexts with different
     # configurations recreate the shared H2 schema (ddl-auto: create), so a

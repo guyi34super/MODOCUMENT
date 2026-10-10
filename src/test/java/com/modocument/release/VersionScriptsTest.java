@@ -153,6 +153,30 @@ class VersionScriptsTest {
     }
 
     @Test
+    void bumpAcceptsAReleaseCandidateButTheFilesCarryOnlyXyz() throws IOException {
+        String next = nextMinor(current);
+        Result rc1 = run(tree, Map.of("RELEASE_DATE", "2031-02-03"),
+                "bash", "scripts/bump-version.sh", next + "-rc.1");
+        assertThat(rc1.exitCode()).as(rc1.output()).isZero();
+        assertThat(rc1.output()).contains("tag v" + next + "-rc.1");
+        assertThat(pomVersion(Files.readString(tree.resolve("pom.xml")))).isEqualTo(next);
+        assertThat(Files.readString(tree.resolve("CHANGELOG.md"))).contains("## [" + next + "] - 2031-02-03\n");
+
+        // A later candidate of the same release changes nothing.
+        String changelog = Files.readString(tree.resolve("CHANGELOG.md"));
+        Result rc2 = run(tree, Map.of(), "bash", "scripts/bump-version.sh", next + "-rc.2");
+        assertThat(rc2.exitCode()).as(rc2.output()).isZero();
+        assertThat(rc2.output()).contains("nothing to change", "tag v" + next + "-rc.2");
+        assertThat(Files.readString(tree.resolve("CHANGELOG.md"))).isEqualTo(changelog);
+        assertThat(check("v" + next + "-rc.2").exitCode()).isZero();
+
+        assertThat(run(tree, Map.of(), "bash", "scripts/bump-version.sh", next + "-rc.0").exitCode())
+                .isEqualTo(2);
+        assertThat(run(tree, Map.of(), "bash", "scripts/bump-version.sh", next + "-beta.1").exitCode())
+                .isEqualTo(2);
+    }
+
+    @Test
     void bumpRejectsMalformedInput() {
         assertThat(run(tree, Map.of(), "bash", "scripts/bump-version.sh", "v1.2.3").exitCode()).isEqualTo(2);
         assertThat(run(tree, Map.of(), "bash", "scripts/bump-version.sh").exitCode()).isEqualTo(2);

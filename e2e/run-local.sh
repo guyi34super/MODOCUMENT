@@ -130,6 +130,7 @@ JAR="$(ls -1 "$REPO_ROOT"/target/modocument-*.jar 2>/dev/null | grep -v -- '-pla
 # to a tracked file.
 JWT_SECRET="$(openssl rand -base64 48)"
 MFA_KEY="$(openssl rand -base64 48)"
+# Connector SecretVault key (ws25): base64 of exactly 32 bytes, throwaway.
 CONNECTOR_KEY="$(openssl rand -base64 32)"
 OWNER_PASSWORD="$(openssl rand -hex 24)"
 APP_DB_PASSWORD="${E2E_APP_DB_PASSWORD:-$(openssl rand -hex 24)}"

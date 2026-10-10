@@ -502,6 +502,18 @@ modocument:
         group-by: BANK
         window: 15m
         severity: HIGH
+      # ws26 (SE5, wave 4): a Connector Agent missed its heartbeats for
+      # longer than the bank's integration.agentHeartbeatTimeout. The
+      # AgentOfflineSweep writes AGENT_OFFLINE once per ONLINE -> OFFLINE
+      # transition; grouped per agent, so a flapping agent alerts at most
+      # once per window.
+      - name: agent-offline
+        description: Connector Agent offline (no heartbeat within the bank's timeout)
+        trigger: IMMEDIATE
+        actions: [AGENT_OFFLINE]
+        group-by: ENTITY
+        window: 30m
+        severity: MEDIUM
   settings:
     # ws20 editable settings (docs/settings/catalogue.md). The catalogue,
     # types and hard limits are code; administrators' values live in the
@@ -583,6 +595,12 @@ modocument:
       max-waiters: 500
       max-tasks: 10
     max-records-per-post: 1000
+    # Wave 4: marks agents silent for longer than the bank's
+    # integration.agentHeartbeatTimeout OFFLINE (audit AGENT_OFFLINE, alert
+    # agent-offline). `enabled` gates only the schedule.
+    offline-sweep:
+      enabled: ${MODOCUMENT_AGENT_OFFLINE_SWEEP_ENABLED:true}
+      interval-ms: 60000
   siem:
     # ws18 SIEM export (SEC-031, gate E6). Schema + transports:
     # docs/security/siem-event-schema.md.

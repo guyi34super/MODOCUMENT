@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.Objects;
+import javax.net.ssl.SSLContext;
 
 /**
  * HTTPS client for MoDocument's agent protocol (contracts §7.4) and the
@@ -24,6 +25,12 @@ import java.util.Objects;
  * <p>Safety rails: the base URL must be https (unless explicitly allowed for
  * local tests), and the token URL MoDocument hands out at enrolment must be
  * on the SAME origin — the client secret is never sent anywhere else.
+ *
+ * <p>Client authentication at the token endpoint follows the stored
+ * credentials: {@code client_secret_basic} for OAUTH2_CLIENT_CREDENTIALS, or
+ * the TLS client certificate for MTLS ({@code tls_client_auth}, RFC 8705:
+ * only {@code client_id} in the form). MoDocument binds that token to the
+ * certificate, so the same TLS context ({@link AgentTls}) serves every call.
  */
 public class CloudClient {
 
@@ -38,12 +45,29 @@ public class CloudClient {
     private long accessTokenExpiresAtMillis;
 
     public CloudClient(String baseUrl, boolean allowInsecureHttp, ObjectMapper mapper) {
+        this(baseUrl, allowInsecureHttp, mapper, null);
+    }
+
+    /**
+     * @param sslContext the agent's TLS context ({@link AgentTls}: client
+     *                   certificate and/or private CA), or null for the JDK
+     *                   default; anything but null needs an https base URL
+     */
+    public CloudClient(String baseUrl, boolean allowInsecureHttp, ObjectMapper mapper,
+                       SSLContext sslContext) {
         this.base = requireBase(baseUrl, allowInsecureHttp);
         this.mapper = mapper;
-        this.http = HttpClient.newBuilder()
+        if (sslContext != null && !"https".equalsIgnoreCase(base.getScheme())) {
+            throw new IllegalStateException("A client certificate or trusted CA needs an https:// "
+                    + "MODOCUMENT_URL.");
+        }
+        HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(CONNECT_TIMEOUT)
-                .followRedirects(HttpClient.Redirect.NEVER)
-                .build();
+                .followRedirects(HttpClient.Redirect.NEVER);
+        if (sslContext != null) {
+            builder.sslContext(sslContext);
+        }
+        this.http = builder.build();
     }
 
     /** The validated base URL, without a trailing slash. */
@@ -141,16 +165,21 @@ public class CloudClient {
         if (current == null) {
             throw new CloudException(401, "The agent is not enrolled.");
         }
-        String basic = Base64.getEncoder().encodeToString(
-                (urlEncode(current.clientId()) + ":" + urlEncode(current.clientSecret()))
-                        .getBytes(StandardCharsets.UTF_8));
-        HttpRequest call = HttpRequest.newBuilder(URI.create(tokenUrlFor(current.tokenUrl())))
-                .header("Authorization", "Basic " + basic)
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(tokenUrlFor(current.tokenUrl())))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .header("Accept", "application/json")
-                .timeout(CALL_TIMEOUT)
-                .POST(HttpRequest.BodyPublishers.ofString("grant_type=client_credentials"))
-                .build();
+                .timeout(CALL_TIMEOUT);
+        String form = "grant_type=client_credentials";
+        if (current.mtls()) {
+            // tls_client_auth: the certificate in the TLS handshake is the credential.
+            form += "&client_id=" + urlEncode(current.clientId());
+        } else {
+            String basic = Base64.getEncoder().encodeToString(
+                    (urlEncode(current.clientId()) + ":" + urlEncode(current.clientSecret()))
+                            .getBytes(StandardCharsets.UTF_8));
+            request.header("Authorization", "Basic " + basic);
+        }
+        HttpRequest call = request.POST(HttpRequest.BodyPublishers.ofString(form)).build();
         Protocol.TokenResponse token = read(send(call), Protocol.TokenResponse.class);
         if (token.access_token() == null || token.access_token().isBlank()) {
             throw new CloudException(502, "The token endpoint returned no access token.");

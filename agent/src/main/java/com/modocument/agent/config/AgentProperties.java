@@ -24,14 +24,24 @@ import java.time.Duration;
  * @param maxBackoff       ceiling of the exponential back-off on errors
  * @param allowInsecureHttp plain http to MoDocument (local tests only)
  * @param run              false = wire everything but do not start the loop (tests)
+ * @param authMethod       OAUTH2_CLIENT_CREDENTIALS (default) or MTLS
+ *                         (MODOCUMENT_AGENT_AUTH_METHOD); chosen at enrolment
+ * @param clientCertRef    MTLS: the local secret with {@code certificatePem} +
+ *                         {@code privateKeyPem} (MODOCUMENT_AGENT_CLIENT_CERT_REF,
+ *                         default {@code agent-client-cert})
+ * @param trustedCaFile    optional PEM bundle that replaces the JDK trust store
+ *                         for calls to MoDocument (MODOCUMENT_AGENT_TRUSTED_CA_FILE)
  */
 @ConfigurationProperties("modocument.agent")
 public record AgentProperties(String url, String enrolmentToken, String name, Path stateDir,
                               Path allowList, Path secretsDir, Integer pollWaitSeconds,
                               Duration heartbeat, Duration maxBackoff, boolean allowInsecureHttp,
-                              Boolean run) {
+                              Boolean run, String authMethod, String clientCertRef,
+                              Path trustedCaFile) {
 
     public AgentProperties {
+        clientCertRef = clientCertRef == null || clientCertRef.isBlank()
+                ? "agent-client-cert" : clientCertRef.strip();
         stateDir = stateDir == null ? Path.of("/var/lib/modocument-agent") : stateDir;
         allowList = allowList == null ? Path.of("/etc/modocument-agent/allowlist.yml") : allowList;
         secretsDir = secretsDir == null ? Path.of("/etc/modocument-agent/secrets") : secretsDir;
@@ -46,6 +56,8 @@ public record AgentProperties(String url, String enrolmentToken, String name, Pa
         return "AgentProperties[url=" + url + ", name=" + name + ", stateDir=" + stateDir
                 + ", allowList=" + allowList + ", secretsDir=" + secretsDir
                 + ", enrolmentToken=" + (enrolmentToken == null || enrolmentToken.isBlank() ? "unset" : "set")
+                + ", authMethod=" + (authMethod == null || authMethod.isBlank() ? "default" : authMethod)
+                + (trustedCaFile == null ? "" : ", trustedCaFile=" + trustedCaFile)
                 + "]";
     }
 }

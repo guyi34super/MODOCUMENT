@@ -370,3 +370,80 @@ function verify(secret, ts, signature, rawBody) {
 - Every call is audited with the client as the actor
   (`INTEGRATION_API_CALL`). Repeated authentication failures from one address
   raise a security alert.
+
+## 8. Local testing
+
+### Local mTLS listener
+
+In AWS, the load balancer's `api.<domain>` listener terminates mutual TLS
+(section 2c). For development, `docker-compose.mtls-dev.yml` adds a stand-in:
+an nginx on `https://localhost:8443` with `ssl_verify_client optional`
+against a **throwaway dev CA**. It serves only `/api/integration/**` and
+`/api/agent/**`, like the real listener.
+
+1. Generate the key material. It is created at runtime in `.mtls-dev/`,
+   which git and Docker ignore; nothing is committed:
+
+   ```bash
+   scripts/dev-mtls-certs.sh                  # dev CA, server cert, client "agent"
+   scripts/dev-mtls-certs.sh client bank-erp  # one more client certificate
+   ```
+
+   Each client gets `.mtls-dev/clients/<name>/<name>.crt` and `.key`, the
+   same pair as `certificatePem` and `privateKeyPem` (the Connector Agent's
+   secret-folder layout), and the SHA-256 fingerprint that MoDocument stores.
+   Certificates are valid for 30 days (`MODOCUMENT_MTLS_DEV_DAYS`).
+   `scripts/dev-mtls-certs.sh clean` deletes everything.
+
+2. Start the stack with the overlay:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.mtls-dev.yml up -d
+   ```
+
+   The listener runs inside the app container's network namespace, as the
+   frontend sidecar does on ECS. The app trusts client-certificate headers
+   only from `127.0.0.1` (`MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS`). Browsers
+   keep using `http://localhost:3000`, where those headers are always
+   cleared.
+
+3. Create an API client with **Mutual TLS** in the dashboard and upload
+   `.mtls-dev/clients/bank-erp/bank-erp.crt`. A second admin approves it.
+   Then call the API with that certificate:
+
+   ```bash
+   C=.mtls-dev/clients/bank-erp
+   curl --cacert .mtls-dev/ca.crt --cert $C/bank-erp.crt --key $C/bank-erp.key \
+     https://localhost:8443/api/integration/v1/templates
+   curl --cacert .mtls-dev/ca.crt --cert $C/bank-erp.crt --key $C/bank-erp.key \
+     https://localhost:8443/api/integration/oauth/token -d grant_type=client_credentials
+   ```
+
+4. A Connector Agent enrols with its own certificate
+   (`agent/README.md`, "Authentication"):
+
+   ```bash
+   MODOCUMENT_URL=https://localhost:8443 \
+   MODOCUMENT_AGENT_AUTH_METHOD=MTLS \
+   MODOCUMENT_SECRETS_DIR=.mtls-dev/clients MODOCUMENT_AGENT_CLIENT_CERT_REF=agent \
+   MODOCUMENT_AGENT_TRUSTED_CA_FILE=.mtls-dev/ca.crt \
+   MODOCUMENT_ENROLMENT_TOKEN=mda1.… \
+     java -jar agent/target/modocument-agent-<version>.jar
+   ```
+
+   From a container, use `https://host.docker.internal:8443`; the server
+   certificate covers that name too.
+
+What it behaves like, and where it differs from the ALB:
+
+| Request | Result |
+|---|---|
+| Certificate signed by the dev CA | Forwarded as `X-Amzn-Mtls-Clientcert-Leaf` (URL-encoded PEM). The app maps it to the client by fingerprint. |
+| No certificate | Passed through without the header (enrolment, OAuth2 clients). The ALB in verify mode refuses such a connection instead. |
+| Certificate from another CA | 400 from nginx; the request never reaches the app. |
+| `X-Amzn-Mtls-*` headers sent by the caller | Replaced by what nginx verified, so a planted header never reaches the app. |
+| Any path outside `/api/integration/` and `/api/agent/` | 404 |
+
+The dev CA, its keys and every certificate signed by it are for one
+developer machine only. Never add the dev CA to a staging or production
+trust store.

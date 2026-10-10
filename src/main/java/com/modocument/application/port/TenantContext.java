@@ -240,6 +240,13 @@ import java.util.concurrent.Callable;
  *   <li>{@code IntegrationRunExecutor#submit} — ws25: executes one run on
  *       the integration worker pool under {@code runAs(run's bank)} (from
  *       the scheduler, "Run now" and retry).</li>
+ *   <li>{@code AgentOfflineSweep#sweep} — ws26 (Wave 4) agent offline
+ *       alert, every minute: {@code runAsSystem} in its own read-only
+ *       REQUIRES_NEW transaction for the cross-bank scan that lists ONLY the
+ *       ids of banks with an ONLINE IntegrationAgent; then
+ *       {@code runAs(bank)} per bank for that bank's silent agents, each
+ *       flipped ONLINE → OFFLINE under a row lock with its AGENT_OFFLINE
+ *       audit row in that bank. No row content is read as SYSTEM.</li>
  * </ul>
  */
 public final class TenantContext {

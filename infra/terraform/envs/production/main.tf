@@ -82,6 +82,27 @@ resource "aws_secretsmanager_secret" "bootstrap_admin_password" {
   tags = local.tags
 }
 
+# Platform owner (ws21, v1.1.0): BootstrapPlatformRunner seeds the platform
+# bank's two PLATFORM_ADMIN accounts once, while it has none. Same lifecycle
+# as the bootstrap admin: enable, set both values, deploy; once both platform
+# admins have changed their passwords and enrolled MFA, disable and re-apply
+# (docs/release/runbook.md "v1.1.0").
+resource "aws_secretsmanager_secret" "platform_admin_emails" {
+  count       = var.platform_admin_bootstrap_enabled ? 1 : 0
+  name        = "${local.name}/MODOCUMENT_PLATFORM_ADMIN_EMAILS"
+  description = "Two comma-separated e-mails of the platform owner's PLATFORM_ADMIN accounts (seeded once). Remove (platform_admin_bootstrap_enabled=false) once both have enrolled MFA."
+
+  tags = local.tags
+}
+
+resource "aws_secretsmanager_secret" "platform_admin_passwords" {
+  count       = var.platform_admin_bootstrap_enabled ? 1 : 0
+  name        = "${local.name}/MODOCUMENT_PLATFORM_ADMIN_PASSWORDS"
+  description = "The two temporary PLATFORM_ADMIN passwords, comma-separated, same order (password policy applies; changed at first login)."
+
+  tags = local.tags
+}
+
 # --- Modules ------------------------------------------------------------------
 
 module "network" {
@@ -159,6 +180,10 @@ module "ecs_app" {
   bootstrap_admin_secret_arns = var.bootstrap_admin_enabled ? {
     email    = one(aws_secretsmanager_secret.bootstrap_admin_email[*].arn)
     password = one(aws_secretsmanager_secret.bootstrap_admin_password[*].arn)
+  } : null
+  platform_admin_secret_arns = var.platform_admin_bootstrap_enabled ? {
+    emails    = one(aws_secretsmanager_secret.platform_admin_emails[*].arn)
+    passwords = one(aws_secretsmanager_secret.platform_admin_passwords[*].arn)
   } : null
 
   cors_allowed_origins = "https://${var.app_domain}"

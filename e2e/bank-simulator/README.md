@@ -86,10 +86,10 @@ docker compose -f e2e/bank-simulator/docker-compose.bank-sim.yml \
 Published on loopback only: bank DB `127.0.0.1:55433`, REST
 `http://127.0.0.1:18090`, SFTP `127.0.0.1:2222`.
 
-**Inside the E2E compose stack** (Wave 3 switch-on, SE5 owns the CI job):
-add `include: [e2e/bank-simulator/docker-compose.bank-sim.yml]` to
-`docker-compose.e2e.yml`, put the variables above in the job's env file, and
-give the `e2e` service:
+**Inside the E2E compose stack** (CI on `main`): the overlay
+`docker-compose.e2e-bank-sim.yml` at the repo root includes this compose file
+and gives the `e2e` service the values below (the variables above go in the
+run's env file; `.github/workflows/ci.yml` generates them):
 
 ```
 E2E_WAVE3=1
