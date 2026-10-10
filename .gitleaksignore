@@ -40,3 +40,12 @@ adbaf9ba400200c19fe618a62e195f7bd959e297:src/test/java/com/modocument/api/integr
 # feeds the agent to prove it never reaches logs or reported errors. A
 # made-up literal, never a credential of any system.
 f8dc6cbeb4daef58e48c6af7a08b08b9c05c0d27:agent/src/test/java/com/modocument/agent/SecretsNeverLoggedTest.java:generic-api-key:31
+# ws25 integration engine/API tests: the fixed 20-character test HMAC secret
+# "0123456789abcdef0123" of a WEBHOOK test connection (loopback stub only).
+ef559f610bbbec426bf91cd9d86fbb18c936817d:src/test/java/com/modocument/integration/IntegrationEngineTest.java:generic-api-key:138
+ef559f610bbbec426bf91cd9d86fbb18c936817d:src/test/java/com/modocument/integration/IntegrationEngineTest.java:generic-api-key:162
+ef559f610bbbec426bf91cd9d86fbb18c936817d:src/test/java/com/modocument/integration/IntegrationEngineTest.java:generic-api-key:185
+ef559f610bbbec426bf91cd9d86fbb18c936817d:src/test/java/com/modocument/integration/IntegrationApiTest.java:generic-api-key:138
+# ws25 TlsMaterial: an ERROR MESSAGE naming the PEM header the admin must
+# convert to ("-----BEGIN PRIVATE KEY-----"); there is no key material.
+9b305045592976631f7927450a073efcb664889e:src/main/java/com/modocument/infrastructure/integration/connector/TlsMaterial.java:private-key:82

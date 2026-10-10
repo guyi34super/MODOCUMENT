@@ -62,6 +62,33 @@ All notable changes to MoDocument are recorded here. The format follows
   server runs a newer version, and gives admins the release notes of a new
   version ("What's new").
 
+- Bank Integration Hub (Admin → Integrations): MoDocument plugs into a
+  bank's own systems to receive and send data.
+  - Connections to REST/JSON APIs, databases (PostgreSQL, Oracle, SQL Server,
+    MySQL/MariaDB), SFTP drops and webhooks, either directly from the cloud
+    or through the bank's on-prem Connector Agent. Credentials are
+    write-only, encrypted per bank (`MODOCUMENT_CONNECTOR_KEY`) or never
+    leave the bank (agent mode). New or changed connections need a second
+    admin's approval.
+  - Flows: inbound (pull records or files on a schedule or on demand into
+    ingestion) and outbound (push validated records, rejected rows, job
+    status, released documents or events when they happen). The admin ticks
+    what is sent; personal data is masked by default; enabling an outbound
+    flow needs a second admin. Dry-run preview, run history, retries and a
+    dead-letter queue.
+  - Private-network destinations (VPN/PrivateLink) only after the platform
+    owner approves an egress rule.
+- Integration API v1 (`/api/integration/v1`) for the bank's systems: list
+  shared templates, send records or files, read job status, results and
+  errors, released documents and an event feed. API clients authenticate
+  with OAuth2 client credentials, API keys or mutual TLS, chosen per client,
+  with IP allow-lists, expiry, rotation and instant revocation. Developer
+  guide and Postman collection in `docs/integration/`.
+- On-prem Connector Agent (`agent/`): a small outbound-only service the bank
+  runs inside its network; enrolled from the dashboard with a one-time
+  token, limited by a bank-controlled local allow-list. Released as an image
+  and a jar with each version.
+
 ### Changed
 - Bootstrap administrators must change their configured password at first
   sign-in. `MODOCUMENT_BOOTSTRAP_ADMIN_SKIP_PASSWORD_CHANGE=true` turns this
@@ -80,6 +107,11 @@ All notable changes to MoDocument are recorded here. The format follows
 - Terraform: the CI deploy roles trust GitHub `environment:staging` and
   `environment:production` subjects. Production also keeps
   `refs/heads/main` for one release, during the transition.
+
+### Fixed
+- An AI model that stopped answering could be retried and recorded as a
+  generic error; it is now recorded as a timeout, counts toward the AI
+  circuit breaker and goes straight to the code fallback.
 
 ## [1.0.0] - 2026-10-10
 
