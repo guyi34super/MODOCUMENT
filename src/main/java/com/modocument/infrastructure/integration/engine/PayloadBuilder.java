@@ -134,8 +134,30 @@ public class PayloadBuilder {
                 baseName + format.extension(), format.contentType(), content);
     }
 
+    /**
+     * What the EXPORT_RUN row of a delivered payload records: the format, the
+     * row count and — for a delivery the on-prem agent wrote — the agent id
+     * (null for DIRECT).
+     */
+    public record ExportFacts(PayloadFormat format, int rowCount, Integer agentId) {
+
+        /** A DIRECT delivery: the facts of the batch the dispatcher wrote. */
+        public static ExportFacts of(OutboundBatch batch) {
+            return new ExportFacts(batch.format(), batch.records().size(), null);
+        }
+    }
+
     /** The EXPORT_RUN row of a delivered record payload (the export log, ws18). */
     public void recordExport(IntegrationFlow flow, OutboundDelivery delivery, OutboundBatch batch) {
+        recordExport(flow, delivery, ExportFacts.of(batch));
+    }
+
+    /**
+     * The EXPORT_RUN row of a delivered record payload, DIRECT or through the
+     * agent: entity {@code IntegrationFlow:<flowId>}, with the delivery, the
+     * payload reference, the format, kind, row count, cap and masking.
+     */
+    public void recordExport(IntegrationFlow flow, OutboundDelivery delivery, ExportFacts facts) {
         if (delivery.getPayloadKind() != PayloadKind.VALIDATED_RECORDS
                 && delivery.getPayloadKind() != PayloadKind.REJECTED_ROWS) {
             return;
@@ -145,9 +167,13 @@ public class PayloadBuilder {
         values.put("deliveryId", delivery.getId());
         values.put("payloadRef", delivery.getPayloadRef());
         values.put("type", "integration");
-        values.put("format", batch.format() == null ? null : batch.format().name());
+        values.put("format", facts.format() == null ? null : facts.format().name());
         values.put("kind", delivery.getPayloadKind().name());
-        values.put("rowCount", batch.records().size());
+        values.put("rowCount", facts.rowCount());
+        values.put("mode", facts.agentId() == null ? "DIRECT" : "AGENT");
+        if (facts.agentId() != null) {
+            values.put("agentId", facts.agentId());
+        }
         values.put("cap", exportGuard.capFor(Role.ADMIN, flow.getBankId()));
         values.put("masked", flow.isMaskPii());
         audit.record(AuditEventSpec.builder(ExportGuard.EXPORT_RUN, AuditOutcome.SUCCESS)

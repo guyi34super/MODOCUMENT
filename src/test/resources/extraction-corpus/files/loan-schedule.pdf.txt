@@ -1,0 +1,20 @@
+ACME BANK LTD - LOAN AMORTISATION SCHEDULE
+Loan: HL-2024-000871   Rate: 7.00% p.a.   Term: 240 months
+
+  No  Due Date        Instalment      Interest     Principal     Outstanding
+   1  2024-02-01       15,000.00      8,750.00      6,250.00    1,493,750.00
+   2  2024-03-01       15,000.00      8,713.54      6,286.46    1,487,463.54
+   3  2024-04-01       15,000.00      8,676.87      6,323.13    1,481,140.41
+   4  2024-05-01       15,000.00      8,639.99      6,360.01    1,474,780.40
+   5  2024-06-01       15,000.00      8,602.89      6,397.11    1,468,383.29
+
+                                                   continued...
+
+ACME BANK LTD - LOAN AMORTISATION SCHEDULE
+
+  No  Due Date        Instalment      Interest     Principal     Outstanding
+   6  2024-07-01       15,000.00      8,565.57      6,434.43    1,461,948.86
+   7  2024-08-01       15,000.00      8,528.03      6,471.97    1,455,476.89
+   8  2024-09-01       15,000.00      8,490.28      6,509.72    1,448,967.17
+
+Figures in MUR. Subject to rate revisions.

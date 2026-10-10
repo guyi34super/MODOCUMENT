@@ -1,0 +1,62 @@
+{
+  "name": "cheque-clearing-regex-txt",
+  "file": "cheque-clearing.txt",
+  "strategy": "FIELD_REGEX",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "free-text clearing notes; one record per sentence via value patterns",
+  "fields": [
+    {
+      "name": "Cheque Number",
+      "type": "TEXT",
+      "valuePattern": "Cheque (\\d{6})"
+    },
+    {
+      "name": "Drawer Account",
+      "type": "TEXT",
+      "valuePattern": "ACCT (\\d{10})"
+    },
+    {
+      "name": "Amount",
+      "type": "NUMBER",
+      "valuePattern": "MUR ([\\d,]+\\.\\d{2})"
+    },
+    {
+      "name": "Presented On",
+      "type": "DATE",
+      "valuePattern": "presented (\\d{4}-\\d{2}-\\d{2})"
+    }
+  ],
+  "rows": [
+    [
+      "004512",
+      "0012345678",
+      "2500.00",
+      "2024-03-04"
+    ],
+    [
+      "004513",
+      "0012345678",
+      "18750.00",
+      "2024-03-04"
+    ],
+    [
+      "118802",
+      "0098765432",
+      "640.00",
+      "2024-03-05"
+    ],
+    [
+      "220145",
+      "0055500111",
+      "99000.00",
+      "2024-03-06"
+    ],
+    [
+      "220146",
+      "0055500111",
+      "1200.50",
+      "2024-03-06"
+    ]
+  ]
+}

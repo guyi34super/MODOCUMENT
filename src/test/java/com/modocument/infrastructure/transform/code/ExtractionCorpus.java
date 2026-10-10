@@ -54,7 +54,11 @@ import static org.mockito.Mockito.mock;
  * {@code src/test/resources/extraction-corpus/expected/} (template fields,
  * expected strategy, confidence range, golden cells), and its document is
  * generated here into a temp dir with POI / PDFBox / XWPF — no binary
- * fixtures in the repository. Text is read the way the parse stage reads it
+ * fixtures in the repository. Text documents (CSV, PSV, TSV, TXT) are
+ * committed byte-exact under {@code extraction-corpus/files/}; a PDF without
+ * a generator of its own is rendered from {@code files/<name>.pdf.txt}
+ * (Courier, a form feed line starts a new page), the way core-banking
+ * systems print reports. Text is read the way the parse stage reads it
  * ({@link FileTextReader}) and hints come from {@link TableExtractionHintsBuilder}.
  */
 public final class ExtractionCorpus {
@@ -68,7 +72,30 @@ public final class ExtractionCorpus {
             "employees-docx",
             "customer-form-pdf",
             "statement-blocks-docx",
-            "remittance-regex-pdf");
+            "remittance-regex-pdf",
+            // Wave 4: bank documents toward the 40-document corpus (AC-EXT-08).
+            "payroll-pipe-txt",
+            "payroll-tab-decimal-comma-txt",
+            "standing-orders-semicolon-csv",
+            "direct-debits-bom-csv",
+            "teller-cash-tab-txt",
+            "card-settlement-pipe-txt",
+            "core-banking-export-fixed-width-txt",
+            "loan-schedule-fixed-width-pdf",
+            "term-deposits-fixed-width-pdf",
+            "scanned-statement-ocr-txt",
+            "interest-accrual-fixed-width-txt",
+            "kyc-individual-form-txt",
+            "kyc-corporate-form-pdf",
+            "beneficial-owners-blocks-txt",
+            "account-opening-blocks-txt",
+            "loan-applications-blocks-txt",
+            "swift-mt103-regex-txt",
+            "cheque-clearing-regex-txt",
+            "fx-rates-markdown-txt",
+            "branch-limits-markdown-txt",
+            "atm-cash-xlsx",
+            "salary-advice-blocks-pdf");
 
     private static final ObjectMapper JSON = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -169,9 +196,111 @@ public final class ExtractionCorpus {
             case "customer-form.pdf" -> customerFormPdf(file);
             case "statement-blocks.docx" -> statementBlocksDocx(file);
             case "remittance.pdf" -> remittancePdf(file);
-            default -> throw new IllegalArgumentException("No generator for " + fileName);
+            case "atm-cash.xlsx" -> atmCashWorkbook(file);
+            default -> committedFixture(fileName, file);
         }
         return file;
+    }
+
+    // ---- committed text fixtures ----------------------------------------------
+
+    private static final String FILES = "/extraction-corpus/files/";
+
+    /** A byte-exact text fixture, or a PDF rendered from {@code <name>.pdf.txt}. */
+    private static void committedFixture(String fileName, Path file) throws IOException {
+        try (InputStream in = ExtractionCorpus.class.getResourceAsStream(FILES + fileName)) {
+            if (in != null) {
+                Files.copy(in, file);
+                return;
+            }
+        }
+        if (fileName.endsWith(".pdf")) {
+            try (InputStream in = ExtractionCorpus.class.getResourceAsStream(FILES + fileName + ".txt")) {
+                if (in != null) {
+                    textPdf(new String(in.readAllBytes(), StandardCharsets.UTF_8), file);
+                    return;
+                }
+            }
+        }
+        throw new IllegalArgumentException("No generator or fixture for " + fileName);
+    }
+
+    /** Courier 9 pt lines, 12 pt apart; a line holding only a form feed starts a new page. */
+    private static void textPdf(String text, Path file) throws IOException {
+        List<List<String>> pages = new ArrayList<>();
+        List<String> current = new ArrayList<>();
+        for (String line : text.replace("\r\n", "\n").split("\n", -1)) {
+            if (line.equals("\f")) {
+                pages.add(current);
+                current = new ArrayList<>();
+            } else {
+                current.add(line);
+            }
+        }
+        pages.add(current);
+        try (PDDocument document = new PDDocument()) {
+            PDType1Font courier = new PDType1Font(Standard14Fonts.FontName.COURIER);
+            for (List<String> lines : pages) {
+                PDPage page = new PDPage();
+                document.addPage(page);
+                try (PDPageContentStream content = new PDPageContentStream(document, page)) {
+                    float y = 750;
+                    for (String line : lines) {
+                        if (!line.isBlank()) {
+                            text(content, courier, 9, 36, y, line.stripTrailing());
+                        }
+                        y -= 12;
+                    }
+                }
+            }
+            document.save(file.toFile());
+        }
+    }
+
+    /** ATM cash positions: a header block, a frozen header row, typed cells and an empty spacer column. */
+    private static void atmCashWorkbook(Path file) throws IOException {
+        Object[][] atms = {
+                {"ATM-PL-001", "Port Louis Caudan", "2024-05-02", 1850000.0, 412000.0, "ONLINE"},
+                {"ATM-PL-002", "Port Louis Central", "2024-05-02", 920000.0, 1105000.0, "ONLINE"},
+                {"ATM-CU-004", "Curepipe Royal Road", "2024-05-02", 640000.0, 0.0, "CASH OUT"},
+                {"ATM-QB-007", "Quatre Bornes St Jean", "2024-05-01", 1210500.0, 230000.0, "ONLINE"},
+                {"ATM-RH-010", "Rose-Hill Plaza", "2024-05-02", 300000.0, 75500.0, "LOW CASH"},
+                {"ATM-GB-011", "Grand Baie La Croisette", "2024-05-02", 2000000.0, 1520000.0, "ONLINE"},
+                {"ATM-MB-015", "Mahebourg Waterfront", "2024-04-30", 450000.0, 98000.0, "OFFLINE"}};
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); OutputStream out = Files.newOutputStream(file)) {
+            Sheet sheet = workbook.createSheet("Cash positions");
+            CreationHelper helper = workbook.getCreationHelper();
+            CellStyle dateStyle = workbook.createCellStyle();
+            dateStyle.setDataFormat(helper.createDataFormat().getFormat("dd-mmm-yyyy"));
+            CellStyle moneyStyle = workbook.createCellStyle();
+            moneyStyle.setDataFormat(helper.createDataFormat().getFormat("#,##0.00"));
+            sheet.createRow(0).createCell(0).setCellValue("ATM network - end of day cash positions");
+            sheet.createRow(1).createCell(0).setCellValue("Currency: MUR");
+            Row header = sheet.createRow(3);
+            String[] headers = {"Terminal ID", "Location", "Last Replenished", "Loaded Amount",
+                    "Remaining Cash", "Status"};
+            for (int c = 0; c < headers.length; c++) {
+                header.createCell(c).setCellValue(headers[c]);
+            }
+            sheet.createFreezePane(0, 4);
+            int r = 4;
+            for (Object[] atm : atms) {
+                Row row = sheet.createRow(r++);
+                row.createCell(0).setCellValue((String) atm[0]);
+                row.createCell(1).setCellValue((String) atm[1]);
+                var date = row.createCell(2);
+                date.setCellValue(Date.from(LocalDate.parse((String) atm[2]).atStartOfDay().toInstant(ZoneOffset.UTC)));
+                date.setCellStyle(dateStyle);
+                var loaded = row.createCell(3);
+                loaded.setCellValue((Double) atm[3]);
+                loaded.setCellStyle(moneyStyle);
+                var remaining = row.createCell(4);
+                remaining.setCellValue((Double) atm[4]);
+                remaining.setCellStyle(moneyStyle);
+                row.createCell(5).setCellValue((String) atm[5]);
+            }
+            workbook.write(out);
+        }
     }
 
     // ---- CSV -----------------------------------------------------------------

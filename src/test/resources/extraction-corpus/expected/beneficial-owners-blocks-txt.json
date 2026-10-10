@@ -1,0 +1,59 @@
+{
+  "name": "beneficial-owners-blocks-txt",
+  "file": "beneficial-owners.txt",
+  "strategy": "KEY_VALUE",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "repeated owner blocks; the company preamble is copied into every record",
+  "fields": [
+    {
+      "name": "Company",
+      "type": "TEXT"
+    },
+    {
+      "name": "Owner Name",
+      "type": "TEXT"
+    },
+    {
+      "name": "Ownership",
+      "type": "NUMBER",
+      "aliases": [
+        "Ownership %"
+      ]
+    },
+    {
+      "name": "Date of Birth",
+      "type": "DATE",
+      "dateFormats": [
+        "dd/MM/yyyy"
+      ]
+    },
+    {
+      "name": "Nationality",
+      "type": "TEXT"
+    }
+  ],
+  "rows": [
+    [
+      "Lagoon Freight Services Ltd",
+      "Arvind Gopee",
+      "45.00",
+      "1971-02-12",
+      "Mauritian"
+    ],
+    [
+      "Lagoon Freight Services Ltd",
+      "Helene Marchal",
+      "30.00",
+      "1980-07-28",
+      "French"
+    ],
+    [
+      "Lagoon Freight Services Ltd",
+      "Tariq Hossen",
+      "25.00",
+      "1975-11-03",
+      "Mauritian"
+    ]
+  ]
+}

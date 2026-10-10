@@ -1,0 +1,63 @@
+{
+  "name": "kyc-individual-form-txt",
+  "file": "kyc-individual-form.txt",
+  "strategy": "KEY_VALUE",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "single KYC record: section headings, an abbreviated label (PEP) via alias, currency-prefixed amount, a signature line",
+  "fields": [
+    {
+      "name": "Full Name",
+      "type": "TEXT"
+    },
+    {
+      "name": "National ID",
+      "type": "TEXT",
+      "aliases": [
+        "National ID No."
+      ]
+    },
+    {
+      "name": "Date of Birth",
+      "type": "DATE",
+      "dateFormats": [
+        "dd/MM/yyyy"
+      ]
+    },
+    {
+      "name": "Nationality",
+      "type": "TEXT"
+    },
+    {
+      "name": "Occupation",
+      "type": "TEXT"
+    },
+    {
+      "name": "Source of Funds",
+      "type": "TEXT"
+    },
+    {
+      "name": "Expected Monthly Turnover",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Politically Exposed",
+      "type": "TEXT",
+      "aliases": [
+        "PEP"
+      ]
+    }
+  ],
+  "rows": [
+    [
+      "Priyanka Doolub",
+      "D1504198812345",
+      "1988-04-15",
+      "Mauritian",
+      "Pharmacist",
+      "Salary",
+      "85000.00",
+      "No"
+    ]
+  ]
+}

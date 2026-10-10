@@ -1,0 +1,64 @@
+{
+  "name": "fx-rates-markdown-txt",
+  "file": "fx-rates-email.txt",
+  "strategy": "MARKDOWN_TABLE",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "markdown pipe table with alignment markers inside an e-mail body",
+  "fields": [
+    {
+      "name": "Currency",
+      "type": "TEXT"
+    },
+    {
+      "name": "Buying Rate",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Selling Rate",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Effective Date",
+      "type": "DATE"
+    }
+  ],
+  "rows": [
+    [
+      "USD",
+      "45.10",
+      "46.35",
+      "2024-06-03"
+    ],
+    [
+      "EUR",
+      "48.95",
+      "50.40",
+      "2024-06-03"
+    ],
+    [
+      "GBP",
+      "57.20",
+      "58.90",
+      "2024-06-03"
+    ],
+    [
+      "ZAR",
+      "2.38",
+      "2.55",
+      "2024-06-03"
+    ],
+    [
+      "INR",
+      "0.53",
+      "0.57",
+      "2024-06-03"
+    ],
+    [
+      "AUD",
+      "29.80",
+      "31.10",
+      "2024-06-03"
+    ]
+  ]
+}

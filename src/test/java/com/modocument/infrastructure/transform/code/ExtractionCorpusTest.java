@@ -1,6 +1,7 @@
 package com.modocument.infrastructure.transform.code;
 
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -9,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -54,6 +56,42 @@ class ExtractionCorpusTest {
         assertThat(CodeTableExtractor.accept(best, CodeTableExtractor.DEFAULT_MIN_CONFIDENCE, false))
                 .hasValueSatisfying(accepted -> assertThat(accepted.lowConfidence()).isFalse());
         assertThat(best.toParseResult().table().getColumns()).isEqualTo(best.headers());
+    }
+
+    /**
+     * AC-EXT-08 over the whole corpus: at least 40 documents (this corpus
+     * plus QA's), at least 95 % of all golden cells exact, and at least 90 %
+     * per strategy — reported per strategy so a regression shows where.
+     */
+    @Test
+    void theCorpusMeetsTheAccuracyBarOverallAndPerStrategy() throws IOException {
+        assertThat(ExtractionCorpus.CASES.size() + QaExtractionCorpusTest.CASES.size())
+                .as("documents in the golden corpus (engineers' + QA's)").isGreaterThanOrEqualTo(40);
+
+        Map<CodeStrategy, int[]> byStrategy = new EnumMap<>(CodeStrategy.class);
+        for (String name : ExtractionCorpus.CASES) {
+            ExtractionCorpus.Case golden = ExtractionCorpus.load(name);
+            Path file = ExtractionCorpus.generate(golden.file(),
+                    java.nio.file.Files.createDirectories(tempDir.resolve(name)));
+            CodeExtraction best = extractor.extract(ExtractionCorpus.input(golden, file)).orElseThrow();
+            int cells = Math.max(golden.rows().size(), best.rows().size()) * golden.fields().size();
+            int matched = (int) Math.round(ExtractionCorpus.cellAccuracy(golden, best) * cells);
+            int[] counts = byStrategy.computeIfAbsent(golden.strategy(), s -> new int[2]);
+            counts[0] += matched;
+            counts[1] += cells;
+        }
+        int matched = 0;
+        int cells = 0;
+        for (Map.Entry<CodeStrategy, int[]> entry : byStrategy.entrySet()) {
+            int[] counts = entry.getValue();
+            double accuracy = (double) counts[0] / counts[1];
+            log.info("extraction corpus strategy {}: {}/{} cells ({}%)", entry.getKey(), counts[0], counts[1],
+                    String.format("%.1f", accuracy * 100));
+            assertThat(accuracy).as("cell accuracy of %s", entry.getKey()).isGreaterThanOrEqualTo(0.90);
+            matched += counts[0];
+            cells += counts[1];
+        }
+        assertThat((double) matched / cells).as("overall cell accuracy").isGreaterThanOrEqualTo(0.95);
     }
 
     @AfterAll

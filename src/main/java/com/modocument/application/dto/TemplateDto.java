@@ -16,16 +16,31 @@ import com.modocument.domain.entity.Template;
  *       by a colleague (null for the caller's own templates).</li>
  * </ul>
  * ws23 adds {@code extractionMode} — AI_WITH_CODE_FALLBACK, CODE_ONLY,
- * AI_ONLY, or null when the template inherits the bank default.
+ * AI_ONLY, or null when the template inherits the bank default. Wave 4 adds
+ * {@code defaultExtractionMode} — the bank's {@code extraction.defaultMode},
+ * i.e. what a null {@code extractionMode} inherits (the editor shows it).
  */
 public record TemplateDto(int templateId, String name, String description, String visibility,
                           boolean ownedByMe, boolean editable, String ownerName,
-                          String extractionMode) {
+                          String extractionMode, String defaultExtractionMode) {
+
+    /** Without the inherited default (ws23 shape). */
+    public TemplateDto(int templateId, String name, String description, String visibility,
+                       boolean ownedByMe, boolean editable, String ownerName,
+                       String extractionMode) {
+        this(templateId, name, description, visibility, ownedByMe, editable, ownerName,
+                extractionMode, null);
+    }
 
     public static TemplateDto of(Template template, boolean ownedByMe, boolean editable,
                                  String ownerName) {
+        return of(template, ownedByMe, editable, ownerName, null);
+    }
+
+    public static TemplateDto of(Template template, boolean ownedByMe, boolean editable,
+                                 String ownerName, String defaultExtractionMode) {
         return new TemplateDto(template.getTemplateId(), template.getName(),
                 template.getDescription(), template.getVisibility().name(), ownedByMe, editable,
-                ownedByMe ? null : ownerName, template.getExtractionMode());
+                ownedByMe ? null : ownerName, template.getExtractionMode(), defaultExtractionMode);
     }
 }

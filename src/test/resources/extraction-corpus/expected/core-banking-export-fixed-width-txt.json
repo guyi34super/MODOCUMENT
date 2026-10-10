@@ -1,0 +1,104 @@
+{
+  "name": "core-banking-export-fixed-width-txt",
+  "file": "core-banking-export.txt",
+  "strategy": "FIXED_WIDTH",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "fixed-width mainframe extract: run header, upper-case abbreviated headers, right-aligned signed amounts, end marker",
+  "fields": [
+    {
+      "name": "Account Number",
+      "type": "TEXT",
+      "aliases": [
+        "ACCOUNT NO"
+      ]
+    },
+    {
+      "name": "Account Type",
+      "type": "TEXT",
+      "aliases": [
+        "TYPE"
+      ]
+    },
+    {
+      "name": "Currency",
+      "type": "TEXT",
+      "aliases": [
+        "CCY"
+      ]
+    },
+    {
+      "name": "Ledger Balance",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Open Date",
+      "type": "DATE"
+    },
+    {
+      "name": "Status",
+      "type": "TEXT",
+      "aliases": [
+        "STAT"
+      ]
+    }
+  ],
+  "rows": [
+    [
+      "000123456789",
+      "SAV",
+      "MUR",
+      "125000.00",
+      "2019-03-14",
+      "A"
+    ],
+    [
+      "000123456790",
+      "CUR",
+      "MUR",
+      "8420.15",
+      "2020-07-01",
+      "A"
+    ],
+    [
+      "000223344556",
+      "FD",
+      "USD",
+      "50000.00",
+      "2023-01-09",
+      "A"
+    ],
+    [
+      "000334455667",
+      "SAV",
+      "EUR",
+      "1240.60",
+      "2015-11-23",
+      "D"
+    ],
+    [
+      "000445566778",
+      "CUR",
+      "MUR",
+      "0.00",
+      "2021-05-30",
+      "C"
+    ],
+    [
+      "000556677889",
+      "LOAN",
+      "MUR",
+      "-2450000.00",
+      "2022-08-17",
+      "A"
+    ],
+    [
+      "000667788990",
+      "SAV",
+      "MUR",
+      "73250.40",
+      "2018-02-02",
+      "A"
+    ]
+  ]
+}

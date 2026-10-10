@@ -17,6 +17,7 @@ import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.IngestionParseStep;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.IngestionJobRepository;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.port.integration.IntegrationEventLog;
@@ -30,6 +31,7 @@ import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
 import com.modocument.domain.model.integration.FlowEvent;
+import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.ai.AiErrorMessages;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,6 +66,8 @@ public class IngestionJobUseCase {
     private static final int STEP_TRANSFORMING = 1;
     private static final int STEP_MAPPING = 2;
     private static final int STEP_VALIDATING = 3;
+    /** The shipped {@code extraction.code.minConfidence} (CodeTableExtractor.DEFAULT_MIN_CONFIDENCE). */
+    static final double SHIPPED_MIN_CONFIDENCE = 0.75;
 
     private final IngestionJobRepository jobs;
     private final TemplateRepository templates;
@@ -79,6 +83,8 @@ public class IngestionJobUseCase {
     private final IntegrationEventLog eventLog;
     /** ws25: joins a job's terminal save and its event in one transaction (null = no tx). */
     private final TransactionTemplate eventTx;
+    /** Wave 4: the bank's code-confidence threshold for job views (null in unit tests = shipped default). */
+    private SettingsReader settings;
 
     /** Without an audit recorder (parse fallbacks are not audited) — unit tests. */
     public IngestionJobUseCase(IngestionJobRepository jobs,
@@ -803,7 +809,35 @@ public class IngestionJobUseCase {
         List<String> reachable = reachableSteps(job, unmapped).stream()
                 .map(WizardStep::name)
                 .toList();
-        return IngestionJobDto.from(job, unmapped, reachable);
+        IngestionJobDto view = IngestionJobDto.from(job, unmapped, reachable);
+        return job.getParseConfidence() == null ? view
+                : view.withConfidenceThreshold(minConfidence(job.getBankId()));
+    }
+
+    /** Wave 4: wired by Spring; unit tests without it judge against the shipped 0.75. */
+    @Autowired(required = false)
+    public void setSettingsReader(SettingsReader settings) {
+        this.settings = settings;
+    }
+
+    /**
+     * The bank's {@code extraction.code.minConfidence} (in-memory snapshot
+     * read). An unreadable setting never breaks a job view: the shipped
+     * default stands in.
+     */
+    private double minConfidence(int bankId) {
+        if (settings != null) {
+            try {
+                BigDecimal value = settings.getDecimal(SettingKeys.EXTRACTION_CODE_MIN_CONFIDENCE, bankId);
+                if (value != null) {
+                    return value.doubleValue();
+                }
+            } catch (RuntimeException e) {
+                log.debug("extraction.code.minConfidence unreadable for bank {}: {}", bankId,
+                        e.getClass().getSimpleName());
+            }
+        }
+        return SHIPPED_MIN_CONFIDENCE;
     }
 
     /** Exports operate on finished work only; the message names the blocker. */

@@ -1,0 +1,11 @@
+﻿ACME BANK - DIRECT DEBIT SCHEDULE
+Run date: 2024-02-01
+
+Mandate Ref,Creditor,Debtor Account,Amount,Collection Date
+DD-2024-0001,Island Insurance Co,0001234500,"1,250.00",2024-02-05
+DD-2024-0002,Rogers Capital Leasing,0004455201,"18,400.00",2024-02-05
+DD-2024-0003,Global Gym Membership,0007788120,"1,999.00",2024-02-10
+DD-2024-0004,Port Louis Housing Fund,0002200455,"6,750.50",2024-02-15
+DD-2024-0005,Coastal Water Utilities,0003311098,412.35,2024-02-20
+DD-2024-0006,Sunrise Broadband,0009900017,"1,450.00",2024-02-25
+Total records: 6

@@ -1,0 +1,32 @@
+ACME LTD - SALARY ADVICE
+
+Employee: Kavish Doorgakant
+Employee ID: E30011
+Pay Period: January 2024
+Gross Salary: 45000.00
+Total Deductions: 6120.00
+Net Salary: 38880.00
+
+Credited to your bank account on 31/01/2024.
+
+ACME LTD - SALARY ADVICE
+
+Employee: Melanie Ah Kong
+Employee ID: E30012
+Pay Period: January 2024
+Gross Salary: 52500.00
+Total Deductions: 7360.50
+Net Salary: 45139.50
+
+Credited to your bank account on 31/01/2024.
+
+ACME LTD - SALARY ADVICE
+
+Employee: Ravi Seeparsad
+Employee ID: E30013
+Pay Period: January 2024
+Gross Salary: 39800.00
+Total Deductions: 5214.00
+Net Salary: 34586.00
+
+Credited to your bank account on 31/01/2024.
