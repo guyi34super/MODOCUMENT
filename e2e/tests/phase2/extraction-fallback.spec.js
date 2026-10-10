@@ -20,7 +20,7 @@
 // circuit-breaker test (AC-EXT-11) runs last because it leaves the breaker
 // OPEN for 120 s.
 import { test, expect, openAs } from '../../lib/fixtures.js';
-import { bankSetting, keyValueTemplate, putBankSetting, resetBankSetting, uploadAndSettle } from '../../lib/phase2.js';
+import { bankSetting, keyValueTemplate, patchyKeyValuePdf, putBankSetting, resetBankSetting, uploadAndSettle } from '../../lib/phase2.js';
 import { BOOTSTRAP, OPERATOR } from '../../lib/seed.js';
 
 const MIN_CONFIDENCE = 'extraction.code.minConfidence';
@@ -112,8 +112,9 @@ test.describe('code extraction fallback @phase2 @wave2', () => {
     expect(raised.status).toBe(200);
     try {
       const template = await keyValueTemplate(operatorApi, 'CODE_ONLY');
-      const job = await uploadAndSettle(operatorApi, template.templateId);
-      expect(job.currentStep).toBe('VALIDATED');
+      // A patchy document: the clean one scores the 0.95 maximum.
+      const job = await uploadAndSettle(operatorApi, template.templateId, { filePath: patchyKeyValuePdf() });
+      expect(job.status, job.errorMessage ?? '').not.toBe('FAILED');
       expect(job.parsedBy).toBe('CODE');
       expect(job.parseFallbackReason).toBe('MODE_CODE_ONLY');
       expect(job.parseMinConfidence).toBeCloseTo(0.95, 5);
