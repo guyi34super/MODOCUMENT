@@ -114,6 +114,27 @@ class AiFailureClassifierTest {
         assertThat(AiFailureClassifier.isReplyProblem(new AiOutputRejectedException("x"))).isFalse();
     }
 
+    /**
+     * BUG-03: a model read timeout can surface as a bare (possibly wrapped)
+     * CancellationException or an InterruptedIOException — a TIMEOUT that
+     * counts toward the breaker and is never re-prompted.
+     */
+    @Test
+    void aCancelledOrInterruptedExchangeIsATimeout() {
+        java.util.List<Throwable> hangs = java.util.List.of(
+                new java.util.concurrent.CancellationException(),
+                wrapped(new java.util.concurrent.CancellationException("cancelled")),
+                new RuntimeException("outer", new IllegalStateException("mid",
+                        new java.util.concurrent.CancellationException())),
+                wrapped(new RuntimeException("io", new java.io.InterruptedIOException("interrupted"))),
+                wrapped(new RuntimeException("http", new HttpTimeoutException("request timed out"))));
+        for (Throwable hang : hangs) {
+            assertThat(AiFailureClassifier.classify(hang)).as(hang.toString()).isEqualTo(FallbackReason.TIMEOUT);
+            assertThat(AiFailureClassifier.countsForCircuit(hang)).as(hang.toString()).isTrue();
+            assertThat(AiFailureClassifier.isReplyProblem(hang)).as(hang.toString()).isFalse();
+        }
+    }
+
     @Test
     void aCyclicCauseChainTerminates() {
         RuntimeException a = new RuntimeException("a");
