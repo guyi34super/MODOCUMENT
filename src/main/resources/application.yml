@@ -449,6 +449,25 @@ modocument:
         group-by: BANK
         window: 15m
         severity: HIGH
+      # ws24: a new release reached this installation (one VERSION_DEPLOYED
+      # row per bank; banks are told through the RELEASE announcement too).
+      - name: version-deployed
+        description: A new MoDocument version was deployed
+        trigger: IMMEDIATE
+        actions: [VERSION_DEPLOYED]
+        group-by: BANK
+        window: 1h
+        severity: INFO
+      # ws24: the platform owner published or archived an announcement
+      # (system RELEASE banners are written by the recorder, not a person).
+      - name: announcement-change
+        description: Platform announcement published or archived by a platform admin
+        trigger: IMMEDIATE
+        actions: [ANNOUNCEMENT_PUBLISHED, ANNOUNCEMENT_ARCHIVED]
+        actor-roles: [PLATFORM_ADMIN]
+        group-by: ACTOR
+        window: 5m
+        severity: MEDIUM
   settings:
     # ws20 editable settings (docs/settings/catalogue.md). The catalogue,
     # types and hard limits are code; administrators' values live in the

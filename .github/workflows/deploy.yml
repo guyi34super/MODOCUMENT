@@ -1,0 +1,111 @@
+name: Deploy
+
+# ws24 roll-forward / rollback (docs/release/runbook.md §4): redeploys an
+# image version that release.yml already pushed to the target environment's
+# ECR, by digest, through the same script and smoke test as a release. Use
+# it to roll back to the previous release, to re-apply a Terraform-only
+# task-definition change (run it with the current version), or to retry a
+# deployment. It never builds or pushes images.
+#
+# Runs in the GitHub environment named by the input, so production keeps its
+# required reviewers. Run it from `main` (or from the release tag); the
+# environment's deployment policy must allow that ref (runbook §7).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Image version already in the target ECR, e.g. 1.2.0 (production) or 1.2.0-rc.1 (staging)'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.version }} to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.smoke.outputs.url }}
+    # One deployment per environment at a time, shared with release.yml.
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE_VERSION: ${{ inputs.version }}
+      TARGET: ${{ inputs.environment }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+      ECR_APP_REPOSITORY: ${{ vars.ECR_APP_REPOSITORY }}
+      ECR_FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ECS_TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+    steps:
+      - name: Version input
+        run: |
+          if ! [[ "$IMAGE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$ ]]; then
+            echo "::error::version must be X.Y.Z or X.Y.Z-rc.N (got '$IMAGE_VERSION')"
+            exit 1
+          fi
+          if [ "$TARGET" = "production" ] && [[ "$IMAGE_VERSION" == *-rc.* ]]; then
+            echo "::error::release candidates never go to production"
+            exit 1
+          fi
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Environment configuration is complete
+        run: bash scripts/release/require-env.sh AWS_REGION AWS_DEPLOY_ROLE_ARN ECR_REGISTRY ECR_APP_REPOSITORY ECR_FRONTEND_REPOSITORY ECS_CLUSTER ECS_SERVICE ECS_TASK_FAMILY PUBLIC_BASE_URL
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: deploy-${{ inputs.environment }}-${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Resolve the version's digests in this environment's ECR
+        id: digests
+        run: |
+          resolve() {
+            local digest
+            digest="$(aws ecr describe-images --repository-name "$1" --image-ids "imageTag=$IMAGE_VERSION" \
+              --query 'imageDetails[0].imageDigest' --output text)"
+            if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::$1:$IMAGE_VERSION is not in $TARGET's ECR — release it first (release.yml)" >&2
+              exit 1
+            fi
+            echo "$digest"
+          }
+          app="$(resolve "$ECR_APP_REPOSITORY")"
+          frontend="$(resolve "$ECR_FRONTEND_REPOSITORY")"
+          {
+            echo "app=$ECR_REGISTRY/$ECR_APP_REPOSITORY@$app"
+            echo "frontend=$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY@$frontend"
+          } >> "$GITHUB_OUTPUT"
+          echo "app: $app"
+          echo "frontend: $frontend"
+      - name: Deploy (task definition pinned by digest, wait for steady state)
+        env:
+          APP_IMAGE: ${{ steps.digests.outputs.app }}
+          FRONTEND_IMAGE: ${{ steps.digests.outputs.frontend }}
+        run: |
+          bash scripts/release/ecs-deploy.sh "$ECS_CLUSTER" "$ECS_SERVICE" "$ECS_TASK_FAMILY" \
+            "$APP_IMAGE" "$FRONTEND_IMAGE"
+      - name: Smoke test
+        id: smoke
+        run: |
+          bash scripts/release/smoke-test.sh "$PUBLIC_BASE_URL" "${IMAGE_VERSION%%-rc.*}"
+          echo "url=$PUBLIC_BASE_URL" >> "$GITHUB_OUTPUT"

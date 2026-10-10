@@ -47,6 +47,20 @@ All notable changes to MoDocument are recorded here. The format follows
   (`MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_EMAIL` / `_PASSWORD`), so a fresh
   install can approve its first user change. The app warns at startup while
   the default bank has fewer than two administrators or approvers.
+- Release pipeline: pushing a `vX.Y.Z-rc.N` or `vX.Y.Z` tag runs the tests,
+  builds each image once, scans it (fixable HIGH/CRITICAL findings stop the
+  release), writes CycloneDX SBOMs, deploys staging with images pinned by
+  digest and smoke-tests it, and creates the GitHub Release. `vX.Y.Z` then
+  deploys the same images to production after two approvals. The *Deploy*
+  workflow redeploys an existing version (rollback or roll-forward).
+- Announcements: the platform owner publishes information, maintenance and
+  release banners to every bank or to chosen banks, with a display window.
+  Maintenance banners show their window in local time and cannot be
+  dismissed. Each new version announces itself once and records
+  `VERSION_DEPLOYED` in every bank's audit trail.
+- The app shows its version on the profile page, offers a reload when the
+  server runs a newer version, and gives admins the release notes of a new
+  version ("What's new").
 
 ### Changed
 - Bootstrap administrators must change their configured password at first
@@ -54,6 +68,10 @@ All notable changes to MoDocument are recorded here. The format follows
   off on dev stacks only.
 - Users of a suspended bank cannot sign in or refresh a session, and their
   live sessions end when the suspension is approved.
+- The weekly image rebuild opens (or updates) the issue "Security: base image
+  refresh" when it finds fixable HIGH or CRITICAL vulnerabilities; it never
+  pushes images.
+- `GET /api/system/version` now reports `deployedAt`.
 - Terraform (not yet applied): the ECS service rolls back a failed deployment
   automatically (deployment circuit breaker). CI now owns task-definition
   revisions, so Terraform ignores them.

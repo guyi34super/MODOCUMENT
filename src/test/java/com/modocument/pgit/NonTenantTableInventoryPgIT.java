@@ -54,10 +54,10 @@ class NonTenantTableInventoryPgIT extends PgItSupport {
             "usermfa", "recoverycode",
             // V200 (ws20): the settings change counter — one global row,
             // no bank data; the runtime role cannot delete it.
-            "configrevision"
-            // V24x (ws24, SE5): the DeployedVersion release log — one row per
-            // deployment, no bank data — is added HERE by the release
-            // workstream together with its migration (not by ws20).
+            "configrevision",
+            // V240 (ws24): one row per deployed release version (version,
+            // commit, time, environment) — the installation's, no bank data.
+            "deployedversion"
     );
 
     @Test

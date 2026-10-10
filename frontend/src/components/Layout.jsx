@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import AnnouncementBanner from './AnnouncementBanner';
 
 // Nav mirrors the product journey: Home, then the numbered document flow,
 // then the extraction toolset and account. ws21: a PLATFORM_ADMIN sees the
@@ -16,6 +17,9 @@ const sections = [
       { to: '/platform/banks', label: 'Banks', roles: PLATFORM_ONLY },
       // ws20/ws22: platform defaults and the bounds banks may choose from.
       { to: '/platform/settings', label: 'Settings', roles: PLATFORM_ONLY },
+      // ws24: announcements (maintenance / release banners) and release notes.
+      { to: '/platform/announcements', label: 'Announcements', roles: PLATFORM_ONLY },
+      { to: '/platform/releases', label: 'Releases', roles: PLATFORM_ONLY },
     ],
   },
   {
@@ -241,6 +245,8 @@ export default function Layout() {
           Sticky in-page elements use top-14 (below the app bar). */}
       <main className={`pt-14 transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-64' : ''}`}>
         <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+          {/* ws24: maintenance/release/info banners + "new version" prompt. */}
+          <AnnouncementBanner />
           <Outlet />
         </div>
       </main>

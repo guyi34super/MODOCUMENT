@@ -60,7 +60,9 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     // V200 (ws20): a bank's settings overrides; the platform
                     // layer is the platform bank's rows (WITH CHECK keeps
                     // every other bank out of them).
-                    "banksetting");
+                    "banksetting",
+                    // V241 (ws24): banners, owned by the platform bank.
+                    "announcement");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

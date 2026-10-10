@@ -29,6 +29,8 @@ import PlatformBanksPage from './pages/PlatformBanksPage';
 import PlatformBankDetailPage from './pages/PlatformBankDetailPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import SettingsPage from './pages/SettingsPage';
+import PlatformAnnouncementsPage from './pages/PlatformAnnouncementsPage';
+import PlatformReleasesPage from './pages/PlatformReleasesPage';
 
 /** ws21: the platform owner has no domain home page — its home is the console. */
 function Home() {
@@ -92,6 +94,10 @@ export default function App() {
         <Route path="/admin" element={<AdminDashboardPage />} />
         <Route path="/admin/settings" element={<SettingsPage mode="bank" />} />
         <Route path="/platform/settings" element={<SettingsPage mode="platform" />} />
+        {/* ws24 platform console (server: platform:read / platform:announce,
+            PLATFORM_ADMIN of the platform bank only). */}
+        <Route path="/platform/announcements" element={<PlatformAnnouncementsPage />} />
+        <Route path="/platform/releases" element={<PlatformReleasesPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
