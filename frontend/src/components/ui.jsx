@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 /** Small shared UI primitives carrying the docs-site look. */
 
 export function Button({ variant = 'primary', size = 'md', className = '', ...props }) {
@@ -121,5 +123,49 @@ export function StatCard({ label, value, hint }) {
       <p className="mt-1 text-3xl font-semibold text-ink">{value}</p>
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </Card>
+  );
+}
+
+const KPI_TONES = {
+  neutral: { bar: 'border-l-line', value: 'text-ink' },
+  success: { bar: 'border-l-success-ink', value: 'text-success-ink' },
+  warning: { bar: 'border-l-amber-500', value: 'text-amber-800' },
+  danger: { bar: 'border-l-danger-ink', value: 'text-danger-ink' },
+};
+
+/**
+ * A dashboard KPI: StatCard's label/value/hint plus a `tone` (neutral |
+ * success | warning | danger: a coloured left edge and value) and an
+ * optional `to` route that turns the whole tile into a link to the page
+ * behind the number. `value` null/undefined renders "—" (not loaded yet, or
+ * not tracked).
+ */
+export function KpiTile({ label, value, hint, to, tone = 'neutral' }) {
+  const colors = KPI_TONES[tone] || KPI_TONES.neutral;
+  const body = (
+    <>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
+      <p className={`mt-1 text-3xl font-semibold ${colors.value}`}>{value ?? '—'}</p>
+      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+    </>
+  );
+  const frame =
+    `block min-w-40 flex-1 rounded-lg border border-l-4 border-line ${colors.bar} ` +
+    'bg-white p-5';
+  if (to) {
+    return (
+      <Link
+        to={to}
+        data-tone={tone}
+        className={`${frame} transition-colors hover:bg-pill/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <div data-tone={tone} className={frame}>
+      {body}
+    </div>
   );
 }

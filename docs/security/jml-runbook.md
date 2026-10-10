@@ -97,6 +97,29 @@ direction); no old session survives, the person signs in afresh. For a local acc
 follow up with a role review and, if the credential is in doubt, a fresh
 temporary password via your reset procedure.
 
+## Helpdesk actions (phase 2, ws22)
+
+From *Administration → Users*, on any user of your bank except yourself:
+
+* **Unlock** (`POST /api/admin/users/{id}/unlock`, direct): ends a login
+  lockout early and resets the failure counters; the password is unchanged.
+  Evidence: `USER_UNLOCKED`.
+* **Reset password** (`POST /api/admin/users/{id}/password-reset`,
+  maker/checker `USER_PASSWORD_RESET`): the temporary password must pass
+  the password policy and only its hash is queued. On approval every
+  session of the user ends, any lockout is lifted and the user must choose
+  a new password at the next sign-in. Hand the temporary password over a
+  separate channel. Not available for SSO (IdP-managed) accounts — reset
+  those at the IdP. Evidence: `USER_PASSWORD_RESET`.
+* **Reset MFA** (`POST /api/admin/users/{id}/mfa-reset` with a reason,
+  maker/checker `USER_MFA_RESET`): for a lost or replaced authenticator.
+  On approval the enrolment and recovery codes are deleted and every
+  session ends; administrators are forced to enrol again at the next
+  sign-in. Evidence: `USER_MFA_RESET` (with the reason).
+* **Edit** (`PATCH /api/admin/users/{id}`, direct): display name only — the
+  email is the sign-in identity and cannot be changed. Evidence:
+  `USER_UPDATED` with old/new name.
+
 ## Quarterly access recertification (SEC-013)
 
 Once per quarter, each bank Admin:

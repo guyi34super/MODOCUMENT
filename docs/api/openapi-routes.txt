@@ -5,7 +5,7 @@
 # docs/api/versioning-policy.md. Regenerate with:
 #   mvn -Dtest=OpenApiContractTest \
 #       -Dmodocument.contract.update=true test
-# 132 operations.
+# 137 operations.
 POST /ImportDetails/Create
 GET /ImportDetails/GetAll
 GET /ImportDetails/GetById/{id}
@@ -48,6 +48,7 @@ POST /api/admin/changes
 POST /api/admin/changes/{id}/approve
 POST /api/admin/changes/{id}/cancel
 POST /api/admin/changes/{id}/reject
+GET /api/admin/dashboard
 POST /api/admin/dsr/erase
 POST /api/admin/dsr/export
 POST /api/admin/dsr/search
@@ -58,8 +59,12 @@ GET /api/admin/users
 POST /api/admin/users
 GET /api/admin/users/access-review
 GET /api/admin/users/export
+PATCH /api/admin/users/{id}
 PUT /api/admin/users/{id}/disabled
+POST /api/admin/users/{id}/mfa-reset
+POST /api/admin/users/{id}/password-reset
 PUT /api/admin/users/{id}/role
+POST /api/admin/users/{id}/unlock
 POST /api/aifiles/send
 POST /api/auth/login
 POST /api/auth/logout

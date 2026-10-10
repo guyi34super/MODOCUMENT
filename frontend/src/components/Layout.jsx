@@ -209,7 +209,8 @@ export default function Layout() {
 
       {/* z-order contract: sticky PageHeader z-10 < docked sidebar z-10 <
           app bar z-20 < wizard toolbar z-30 < chat drawer/FAB z-40 <
-          mobile sidebar backdrop z-40 and drawer z-[45] < toasts z-50.
+          mobile sidebar backdrop z-40 and drawer z-[45] < Modal/ConfirmDialog
+          z-[48] < toasts z-50 (a toast stays readable over an open dialog).
           Sticky in-page elements use top-14 (below the app bar). */}
       <main className={`pt-14 transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-64' : ''}`}>
         <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">

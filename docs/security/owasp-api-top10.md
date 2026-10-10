@@ -42,6 +42,7 @@ body.
 | `password-change` | 5 | `MODOCUMENT_RATELIMIT_PASSWORD_CHANGE` | `PUT /api/auth/password` |
 | `mfa-code` | 10 | `MODOCUMENT_RATELIMIT_MFA_CODE` | `POST /api/auth/mfa/activate`, `DELETE /api/auth/mfa` |
 | `admin-jobs` | 10 | `MODOCUMENT_RATELIMIT_ADMIN_JOBS` | `POST /api/admin/retention/run`, `POST /api/admin/sod/scan` |
+| `admin-security` | 10 | `MODOCUMENT_RATELIMIT_ADMIN_SECURITY` | `POST /api/admin/users/{id}/password-reset`, `.../mfa-reset` |
 
 Other switches: `MODOCUMENT_RATELIMIT_ENABLED` (master switch, default `true`) and
 `MODOCUMENT_RATELIMIT_MAX_KEYS` (memory bound).

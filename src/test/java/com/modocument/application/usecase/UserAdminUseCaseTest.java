@@ -5,6 +5,7 @@ import com.modocument.application.dto.UserDto;
 import com.modocument.application.port.AppUserRepository;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
+import com.modocument.application.port.RecoveryCodeRepository;
 import com.modocument.application.port.RefreshTokenRepository;
 import com.modocument.application.port.UserMfaRepository;
 import com.modocument.domain.entity.AppUser;
@@ -18,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -50,12 +52,14 @@ class UserAdminUseCaseTest {
 
     private final AppUserRepository users = mock(AppUserRepository.class);
     private final UserMfaRepository userMfa = mock(UserMfaRepository.class);
+    private final RecoveryCodeRepository recoveryCodes = mock(RecoveryCodeRepository.class);
     private final RefreshTokenRepository refreshTokens = mock(RefreshTokenRepository.class);
     private final BankJpaRepository banks = mock(BankJpaRepository.class);
     private final AuthUseCase auth = mock(AuthUseCase.class);
     private final AuditRecorder audit = mock(AuditRecorder.class);
     private final UserAdminUseCase useCase = new UserAdminUseCase(
-            FixedUser.admin(CALLER), users, userMfa, refreshTokens, banks, auth, audit);
+            FixedUser.admin(CALLER), users, userMfa, recoveryCodes, refreshTokens, banks, auth,
+            audit);
 
     private static AppUser user(int id, int bankId, Role role) {
         AppUser user = new AppUser();
@@ -222,6 +226,134 @@ class UserAdminUseCaseTest {
         assertThat(target.getTokenVersion()).isZero();
         verify(refreshTokens, never()).revokeAllForUser(anyInt(), any(Instant.class));
         assertThat(recordedAudit().action()).isEqualTo("USER_ENABLED");
+    }
+
+    // -------------------------------------------- phase 2 (ws22) admin actions
+
+    @Test
+    void unlockClearsTheLockAndBothCountersAndAudits() {
+        AppUser target = user(7, Bank.DEFAULT_BANK_ID, Role.READ_WRITE);
+        target.setLockedUntil(LocalDateTime.now().plusMinutes(8));
+        target.setFailedLoginCount(2);
+        target.setLockoutCount(3);
+        when(users.getById(7)).thenReturn(Optional.of(target));
+        when(users.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AdminUserDto unlocked = useCase.unlock(7);
+
+        assertThat(unlocked.locked()).isFalse();
+        assertThat(target.getLockedUntil()).isNull();
+        assertThat(target.getFailedLoginCount()).isZero();
+        assertThat(target.getLockoutCount()).isZero();
+        // Unlocking restores access; it is not a credential event.
+        assertThat(target.getTokenVersion()).isZero();
+        AuditEventSpec recorded = recordedAudit();
+        assertThat(recorded.action()).isEqualTo("USER_UNLOCKED");
+        assertThat(String.valueOf(recorded.oldValues())).contains("lockoutCount=3");
+    }
+
+    @Test
+    void unlockOfAnUnlockedUserIsANoOp() {
+        when(users.getById(7)).thenReturn(Optional.of(user(7, Bank.DEFAULT_BANK_ID,
+                Role.READ_WRITE)));
+
+        useCase.unlock(7);
+
+        verify(users, never()).save(any(AppUser.class));
+        verify(audit, never()).record(any(AuditEventSpec.class));
+    }
+
+    @Test
+    void everyAdminActionRefusesTheCallerAndForeignBanks() {
+        when(users.getById(CALLER))
+                .thenReturn(Optional.of(user(CALLER, Bank.DEFAULT_BANK_ID, Role.ADMIN)));
+        when(users.getById(7)).thenReturn(Optional.of(user(7, 2, Role.READ_ONLY)));
+
+        assertThatThrownBy(() -> useCase.unlock(CALLER))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> useCase.updateDisplayName(CALLER, "Me"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> useCase.applyPasswordReset(CALLER, "{argon2}$h"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> useCase.applyMfaReset(CALLER, "lost phone"))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThatThrownBy(() -> useCase.unlock(7)).isInstanceOf(NoSuchElementException.class);
+        assertThatThrownBy(() -> useCase.updateDisplayName(7, "X"))
+                .isInstanceOf(NoSuchElementException.class);
+        assertThatThrownBy(() -> useCase.applyPasswordReset(7, "{argon2}$h"))
+                .isInstanceOf(NoSuchElementException.class);
+        assertThatThrownBy(() -> useCase.applyMfaReset(7, "lost phone"))
+                .isInstanceOf(NoSuchElementException.class);
+        verify(users, never()).save(any(AppUser.class));
+    }
+
+    @Test
+    void updateDisplayNameTrimsValidatesAndAuditsOldAndNew() {
+        AppUser target = user(7, Bank.DEFAULT_BANK_ID, Role.READ_WRITE);
+        when(users.getById(7)).thenReturn(Optional.of(target));
+        when(users.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThatThrownBy(() -> useCase.updateDisplayName(7, "   "))
+                .isInstanceOf(IllegalArgumentException.class);
+        AdminUserDto renamed = useCase.updateDisplayName(7, "  Jane Doe ");
+
+        assertThat(renamed.displayName()).isEqualTo("Jane Doe");
+        assertThat(renamed.email()).isEqualTo("user7@example.com");
+        AuditEventSpec recorded = recordedAudit();
+        assertThat(recorded.action()).isEqualTo("USER_UPDATED");
+        assertThat(recorded.oldValues()).isEqualTo(Map.of("displayName", "User 7"));
+        assertThat(recorded.newValues()).isEqualTo(Map.of("displayName", "Jane Doe"));
+    }
+
+    @Test
+    void passwordResetSetsTheHashForcesAChangeKillsSessionsAndLiftsTheLock() {
+        AppUser target = user(7, Bank.DEFAULT_BANK_ID, Role.READ_WRITE);
+        target.setLockedUntil(LocalDateTime.now().plusMinutes(5));
+        when(users.getById(7)).thenReturn(Optional.of(target));
+        when(users.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AdminUserDto reset = useCase.applyPasswordReset(7, "{argon2}$new-hash");
+
+        assertThat(target.getPasswordHash()).isEqualTo("{argon2}$new-hash");
+        assertThat(reset.mustChangePassword()).isTrue();
+        assertThat(reset.locked()).isFalse();
+        assertThat(target.getTokenVersion()).isEqualTo(1);
+        verify(refreshTokens).revokeAllForUser(eq(7), any(Instant.class));
+        AuditEventSpec recorded = recordedAudit();
+        assertThat(recorded.action()).isEqualTo("USER_PASSWORD_RESET");
+        assertThat(String.valueOf(recorded.newValues())).doesNotContain("new-hash");
+    }
+
+    @Test
+    void passwordResetRefusesAnIdpOwnedAccount() {
+        AppUser target = user(7, Bank.DEFAULT_BANK_ID, Role.READ_WRITE);
+        target.setAuthProvider("entra");
+        when(users.getById(7)).thenReturn(Optional.of(target));
+
+        assertThatThrownBy(() -> useCase.applyPasswordReset(7, "{argon2}$h"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("identity provider");
+        verify(users, never()).save(any(AppUser.class));
+    }
+
+    @Test
+    void mfaResetDropsEnrolmentAndRecoveryCodesAndKillsSessions() {
+        AppUser target = user(7, Bank.DEFAULT_BANK_ID, Role.ADMIN);
+        when(users.getById(7)).thenReturn(Optional.of(target));
+        when(users.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(userMfa.isEnabled(7)).thenReturn(true);
+
+        AdminUserDto reset = useCase.applyMfaReset(7, "lost phone");
+
+        assertThat(reset.mfaEnabled()).isFalse();
+        verify(userMfa).deleteByUserId(7);
+        verify(recoveryCodes).deleteByUserId(7);
+        assertThat(target.getTokenVersion()).isEqualTo(1);
+        verify(refreshTokens).revokeAllForUser(eq(7), any(Instant.class));
+        AuditEventSpec recorded = recordedAudit();
+        assertThat(recorded.action()).isEqualTo("USER_MFA_RESET");
+        assertThat(String.valueOf(recorded.newValues())).contains("reason=lost phone");
     }
 
     // -------------------------------------------------------------- export

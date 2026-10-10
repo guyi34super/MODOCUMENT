@@ -207,6 +207,7 @@ modocument:
     password-change: ${MODOCUMENT_RATELIMIT_PASSWORD_CHANGE:5}
     mfa-code: ${MODOCUMENT_RATELIMIT_MFA_CODE:10}
     admin-jobs: ${MODOCUMENT_RATELIMIT_ADMIN_JOBS:10}
+    admin-security: ${MODOCUMENT_RATELIMIT_ADMIN_SECURITY:10}
   storage:
     # Root directory for uploaded files (<root>/uploads) and export copies
     # (<root>/exports). Mount a volume here in containers.

@@ -64,6 +64,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "modocument.ratelimit.password-change=1",
         "modocument.ratelimit.mfa-code=1",
         "modocument.ratelimit.admin-jobs=1",
+        "modocument.ratelimit.admin-security=1",
         "modocument.security.rate-limit.llm.per-user-max=1"
 })
 @AutoConfigureMockMvc
@@ -110,7 +111,10 @@ class ApiRateLimitIntegrationTest {
                 family("password-change", () -> put("/api/auth/password")
                         .contentType(MediaType.APPLICATION_JSON).content("{}")),
                 family("mfa-code", () -> post("/api/auth/mfa/activate")
-                        .contentType(MediaType.APPLICATION_JSON).content("{}")));
+                        .contentType(MediaType.APPLICATION_JSON).content("{}")),
+                family("admin-security", () ->
+                        post("/api/admin/users/{id}/password-reset", MISSING_ID)
+                                .contentType(MediaType.APPLICATION_JSON).content("{}")));
     }
 
     private static Arguments family(String bucket, Call request) {
@@ -242,7 +246,7 @@ class ApiRateLimitIntegrationTest {
         assertThat(handlerRoutes).containsAll(apiRateLimit.routes().keySet());
         assertThat(apiRateLimit.routes().values()).containsOnly(
                 "uploads", "ingestion", "transform", "exports", "doc-generate", "extraction",
-                "dsr", "password-change", "mfa-code", "admin-jobs");
+                "dsr", "password-change", "mfa-code", "admin-jobs", "admin-security");
     }
 
     // ------------------------------------------------------------------ helpers

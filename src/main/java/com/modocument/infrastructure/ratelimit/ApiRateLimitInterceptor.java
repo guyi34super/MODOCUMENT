@@ -88,6 +88,8 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
         Bucket mfaCode = bucket("mfa-code", "MFA code", properties.getMfaCode());
         Bucket adminJobs = bucket("admin-jobs", "background job run",
                 properties.getAdminJobs());
+        Bucket adminSecurity = bucket("admin-security", "credential reset",
+                properties.getAdminSecurity());
 
         // File uploads: standalone data files, document assets (several
         // files per call) and .docx blueprints (parsed + section-split).
@@ -132,6 +134,11 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
         // On-demand runs of the cross-bank sweeps (every bank per call).
         route("POST", "/api/admin/retention/run", adminJobs);
         route("POST", "/api/admin/sod/scan", adminJobs);
+
+        // Admin-issued credential resets of another user (each one hashes a
+        // password or queues a maker/checker request).
+        route("POST", "/api/admin/users/{id}/password-reset", adminSecurity);
+        route("POST", "/api/admin/users/{id}/mfa-reset", adminSecurity);
     }
 
     private Bucket bucket(String name, String label, int maxPermits) {
