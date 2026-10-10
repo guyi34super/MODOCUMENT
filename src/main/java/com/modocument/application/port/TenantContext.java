@@ -95,7 +95,15 @@ import java.util.concurrent.Callable;
  *       + RefreshToken revocation on suspension) and AuditEvent rows
  *       stamped explicitly with the customer bank and the platform bank;
  *       new users and their USER_CREATED rows are written under
- *       {@code runAs(newBank)}. No customer content is read.</li>
+ *       {@code runAs(newBank)} inside the same system transaction, so a
+ *       failed user insert rolls the new Bank row back too. No customer
+ *       content is read.
+ *       {@code #revertOnboarding} (wave 4) is the compensating cleanup when
+ *       the approval transaction rolls back after the onboarding committed:
+ *       {@code runAsSystem} around a REQUIRES_NEW write transaction that
+ *       deletes the new bank's first users (and any refresh token) and the
+ *       Bank row, and writes BANK_ONBOARDING_REVERTED in the platform
+ *       bank.</li>
  *   <li>{@code AiCircuitBreaker#auditOpened} — ws23: when the AI circuit
  *       opens, {@code runAs(platformBankId)} to write AI_CIRCUIT_OPENED in
  *       the platform bank (skipped when no platform bank exists). No
