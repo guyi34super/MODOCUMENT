@@ -1,0 +1,9 @@
+﻿Loan book export - Branch: Port Louis
+Loan Ref,Borrower,Disbursed On,Principal,Rate %,Notes
+LN-0001,"Ramdin, Asha",2024-02-01,"150,000.00",6.5,"Top-up approved
+second tranche pending"
+LN-0002,Kevin Li,2024-02-03,"75,250.50",7.25,"Says ""fixed"" rate"
+LN-0003,"Moreau, Élodie",2024-02-07,"1,200,000.00",5.9,Standard
+LN-0004,Sunita Bhujun,2024-02-11,"9,999.99",8,
+LN-0005,"Chan, Wai Ming",2024-02-15,"420,000.00",6.15,"Collateral: house, car"
+Total,,,"1,854,250.49",,

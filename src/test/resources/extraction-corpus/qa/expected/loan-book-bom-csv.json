@@ -1,0 +1,83 @@
+{
+  "name": "loan-book-bom-csv",
+  "file": "loan-book-bom.csv",
+  "strategies": [
+    "DELIMITED",
+    "NATIVE_SHEET"
+  ],
+  "note": "UTF-8 BOM, CRLF, comma delimiter, title line, quoted commas, a quoted newline, escaped quotes, empty trailing cell, totals footer",
+  "fields": [
+    {
+      "name": "Loan Ref",
+      "type": "TEXT"
+    },
+    {
+      "name": "Borrower",
+      "type": "TEXT"
+    },
+    {
+      "name": "Disbursed On",
+      "type": "DATE"
+    },
+    {
+      "name": "Principal",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Interest Rate",
+      "type": "NUMBER",
+      "aliases": [
+        "Rate %",
+        "Rate"
+      ]
+    },
+    {
+      "name": "Notes",
+      "type": "TEXT"
+    }
+  ],
+  "rows": [
+    [
+      "LN-0001",
+      "Ramdin, Asha",
+      "2024-02-01",
+      "150000.00",
+      "6.5",
+      "Top-up approved second tranche pending"
+    ],
+    [
+      "LN-0002",
+      "Kevin Li",
+      "2024-02-03",
+      "75250.50",
+      "7.25",
+      "Says \"fixed\" rate"
+    ],
+    [
+      "LN-0003",
+      "Moreau, Élodie",
+      "2024-02-07",
+      "1200000.00",
+      "5.9",
+      "Standard"
+    ],
+    [
+      "LN-0004",
+      "Sunita Bhujun",
+      "2024-02-11",
+      "9999.99",
+      "8",
+      ""
+    ],
+    [
+      "LN-0005",
+      "Chan, Wai Ming",
+      "2024-02-15",
+      "420000.00",
+      "6.15",
+      "Collateral: house, car"
+    ]
+  ],
+  "expectAccepted": true,
+  "minConfidence": 0.75
+}

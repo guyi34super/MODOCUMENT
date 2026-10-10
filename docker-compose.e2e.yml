@@ -11,10 +11,13 @@
 #   docker compose -f docker-compose.e2e.yml --env-file .env.e2e up --build \
 #     --abort-on-container-exit --exit-code-from e2e
 #
-# Workaround switch while BUG-01 is open (MFA verify fails under RLS): set
+# Debug switch (was the BUG-01 workaround; BUG-01 is fixed): set
 # E2E_DB_APP_ROLE=owner, E2E_APP_DB_USER=modocument and
 # E2E_APP_DB_USER_PASSWORD=<E2E_POSTGRES_PASSWORD> so the app runs as the
 # schema owner. Default is the production two-role model.
+# Wave 3: the bank simulator joins with
+#   include: [e2e/bank-simulator/docker-compose.bank-sim.yml]
+# (see e2e/bank-simulator/README.md for its variables).
 
 name: modocument-e2e
 
@@ -72,6 +75,10 @@ services:
       MODOCUMENT_MFA_KEY: ${E2E_MFA_KEY:?Set E2E_MFA_KEY (openssl rand -base64 48)}
       MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL: ${E2E_BOOTSTRAP_ADMIN_EMAIL:?Set E2E_BOOTSTRAP_ADMIN_EMAIL}
       MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD: ${E2E_BOOTSTRAP_ADMIN_PASSWORD:?Set E2E_BOOTSTRAP_ADMIN_PASSWORD}
+      # The platform owner (ws21): two PLATFORM_ADMIN accounts. Optional —
+      # without them the platform specs skip.
+      MODOCUMENT_PLATFORM_ADMIN_EMAILS: ${E2E_PLATFORM_ADMIN_1_EMAIL:-}${E2E_PLATFORM_ADMIN_2_EMAIL:+,}${E2E_PLATFORM_ADMIN_2_EMAIL:-}
+      MODOCUMENT_PLATFORM_ADMIN_PASSWORDS: ${E2E_PLATFORM_ADMIN_1_PASSWORD:-}${E2E_PLATFORM_ADMIN_2_PASSWORD:+,}${E2E_PLATFORM_ADMIN_2_PASSWORD:-}
       MODOCUMENT_CORS_ALLOWED_ORIGINS: http://frontend:8080
       # The AI endpoint is the fake LLM (no document content leaves the stack).
       MODOCUMENT_AI_BASE_URL: http://fake-llm:18089
@@ -79,9 +86,10 @@ services:
       OCR_VISION_ENABLED: "false"
       DOCLING_BASEURL: ""
       # E2E-only relaxation (config, not code): the auth/MFA throttles are per
-      # client IP and the whole suite comes from one container. Mirrors
-      # e2e/run-local.sh.
-      SPRING_APPLICATION_JSON: '{"modocument":{"security":{"rate-limit":{"auth":{"per-ip-max":1000,"per-email-max":200},"mfa":{"per-ip-max":200,"per-user-max":60}}}}}'
+      # client IP and the whole suite comes from one container; the AI read
+      # timeout is 5 s so the fake LLM's `timeout` mode reaches the code
+      # fallback inside a test. Mirrors e2e/run-local.sh.
+      SPRING_APPLICATION_JSON: '{"modocument":{"security":{"rate-limit":{"auth":{"per-ip-max":1000,"per-email-max":200},"mfa":{"per-ip-max":200,"per-user-max":60}}},"ai":{"http":{"read-timeout":"5s"}}}}'
     depends_on:
       postgres:
         condition: service_healthy
@@ -126,6 +134,10 @@ services:
       E2E_DB_URL: postgres://modocument:${E2E_POSTGRES_PASSWORD}@postgres:5432/modocument
       E2E_BOOTSTRAP_ADMIN_EMAIL: ${E2E_BOOTSTRAP_ADMIN_EMAIL}
       E2E_BOOTSTRAP_ADMIN_PASSWORD: ${E2E_BOOTSTRAP_ADMIN_PASSWORD}
+      E2E_PLATFORM_ADMIN_1_EMAIL: ${E2E_PLATFORM_ADMIN_1_EMAIL:-}
+      E2E_PLATFORM_ADMIN_1_PASSWORD: ${E2E_PLATFORM_ADMIN_1_PASSWORD:-}
+      E2E_PLATFORM_ADMIN_2_EMAIL: ${E2E_PLATFORM_ADMIN_2_EMAIL:-}
+      E2E_PLATFORM_ADMIN_2_PASSWORD: ${E2E_PLATFORM_ADMIN_2_PASSWORD:-}
       E2E_STATE_DIR: /tmp/e2e-state
       E2E_RUN_ID: ${E2E_RUN_ID:-ci}
       E2E_DB_APP_ROLE: ${E2E_DB_APP_ROLE:-rls}

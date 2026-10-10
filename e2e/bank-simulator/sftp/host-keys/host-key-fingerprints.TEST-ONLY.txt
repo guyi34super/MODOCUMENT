@@ -1,0 +1,4 @@
+# SHA-256 fingerprints of the bank simulator's TEST-ONLY SFTP host keys.
+# Pin these in the SFTP connection (ConfigJson.hostKeyFingerprint).
+ssh-ed25519 SHA256:nrH7MErvmozLJEdNSUkvzr8zxbBuHlXy47wsoArFMSk
+ssh-rsa SHA256:f3lCBffWEeURryv1oF4P5/8WfxfAbNUbMdTVF+vqEsI

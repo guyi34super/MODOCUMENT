@@ -1,0 +1,16 @@
+Beneficiary register - exported 2024-05-02
+
+Beneficiary Name: Asha Ramdin
+Account No: MU17BOMM0101101030300200000MUR
+Bank: Mauritius Commercial Bank
+Added On: 2024-04-02
+
+Beneficiary Name: Kevin Li
+Account No: MU43SBMM0203303030300100000MUR
+Bank: SBM Bank
+Added On: 2024-04-10
+
+Beneficiary Name: Elodie Moreau
+Account No: MU12ABSA0505505050500300000MUR
+Bank: Absa Bank Mauritius
+Added On: 2024-04-21

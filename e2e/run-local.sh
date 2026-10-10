@@ -12,7 +12,10 @@
 #   SKIP_BUILD=1 e2e/run-local.sh        # reuse target/*.jar and frontend/dist
 #   E2E_KEEP=1 e2e/run-local.sh          # keep the database + run dir for debugging
 #   E2E_DB_APP_ROLE=owner e2e/run-local.sh  # backend runs as the schema owner (RLS
-#                                        # bypassed) — workaround while BUG-01 is open
+#                                        # bypassed) — the old BUG-01 workaround
+#   E2E_BANK_SIM=1 e2e/run-local.sh      # also start the Wave-3 bank simulator
+#                                        # (bank DB + REST stub; no SFTP without Docker)
+#   E2E_WAVE3=1 E2E_BANK_SIM=1 e2e/run-local.sh  # ... and switch the Wave-3 specs on
 #
 # PostgreSQL: E2E_PG_HOST/E2E_PG_PORT/E2E_PG_SUPERUSER (default
 # 127.0.0.1:55432, postgres — the sandbox scratch cluster, started here if it
@@ -77,6 +80,13 @@ cleanup() {
     psql_super -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE)" >/dev/null
     psql_super -c "DROP ROLE IF EXISTS \"$DB_OWNER\"" >/dev/null
   fi
+  if [ "${E2E_KEEP:-0}" != "1" ] && [ "${BANK_DB_CREATED:-0}" = "1" ]; then
+    log "dropping bank simulator database $BANK_DB"
+    psql_super -c "DROP DATABASE IF EXISTS \"$BANK_DB\" WITH (FORCE)" >/dev/null
+    for role in "$BANK_ADMIN" "$BANK_READER" "$BANK_WRITER"; do
+      psql_super -c "DROP ROLE IF EXISTS \"$role\"" >/dev/null
+    done
+  fi
   if [ "${E2E_KEEP:-0}" != "1" ]; then
     # Throwaway credentials of a throwaway stack — still, don't leave them around.
     rm -rf "$RUN_DIR/state" "$RUN_DIR/storage" "$RUN_DIR/env"
@@ -125,6 +135,12 @@ APP_DB_PASSWORD="${E2E_APP_DB_PASSWORD:-$(openssl rand -hex 24)}"
 ADMIN_EMAIL="e2e-admin-${RUN_ID}@e2e.modocument.test"
 ADMIN_PASSWORD="E2e-$(openssl rand -base64 18 | tr -d '/+=')-7q"
 AI_KEY="e2e-$(openssl rand -hex 8)"   # the fake LLM ignores it; non-empty = "AI configured"
+# The platform owner (ws21): BootstrapPlatformRunner creates the platform bank
+# and exactly two PLATFORM_ADMIN accounts (forced password change + MFA).
+PLATFORM_ADMIN_1_EMAIL="e2e-platform1-${RUN_ID}@e2e.modocument.test"
+PLATFORM_ADMIN_2_EMAIL="e2e-platform2-${RUN_ID}@e2e.modocument.test"
+PLATFORM_ADMIN_1_PASSWORD="E2p-$(openssl rand -base64 18 | tr -d '/+=,')-7q"
+PLATFORM_ADMIN_2_PASSWORD="E2p-$(openssl rand -base64 18 | tr -d '/+=,')-8q"
 
 log "creating database $DB_NAME (owner $DB_OWNER)"
 psql_super -v owner="$DB_OWNER" -v pw="$OWNER_PASSWORD" <<'SQL'
@@ -152,12 +168,68 @@ FAKE_LLM_PORT="$LLM_PORT" FAKE_LLM_HOST=127.0.0.1 \
   setsid node "$SCRIPT_DIR/stubs/fake-llm.mjs" >"$RUN_DIR/fake-llm.log" 2>&1 &
 PIDS+=("$!")
 
+# --- 4b. Bank simulator (Wave 3; opt-in with E2E_BANK_SIM=1) -------------------
+# The bank's database (a second database on the same local PostgreSQL, with
+# its own least-privilege roles) and the REST stub. The SFTP server needs the
+# compose file (e2e/bank-simulator/docker-compose.bank-sim.yml).
+BANK_SIM_EXPORTS=()
+if [ "${E2E_BANK_SIM:-0}" = "1" ]; then
+  BANK_DB="bank_sim_${RUN_ID}"
+  BANK_ADMIN="bank_sim_admin_${RUN_ID}"
+  BANK_READER="bank_sim_reader_${RUN_ID}"
+  BANK_WRITER="bank_sim_writer_${RUN_ID}"
+  BANK_ADMIN_PASSWORD="$(openssl rand -hex 24)"
+  BANK_READER_PASSWORD="$(openssl rand -hex 24)"
+  BANK_WRITER_PASSWORD="$(openssl rand -hex 24)"
+  BANK_CLIENT_ID="bank-sim-${RUN_ID}"
+  BANK_CLIENT_SECRET="$(openssl rand -hex 24)"
+  BANK_API_KEY="$(openssl rand -hex 24)"
+  BANK_WEBHOOK_SECRET="$(openssl rand -hex 32)"
+  log "creating bank simulator database $BANK_DB"
+  psql_super -v role="$BANK_ADMIN" -v pw="$BANK_ADMIN_PASSWORD" <<'SQL'
+CREATE ROLE :"role" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD :'pw';
+SQL
+  psql_super -c "CREATE DATABASE \"$BANK_DB\" OWNER \"$BANK_ADMIN\""
+  BANK_DB_CREATED=1
+  psql -X -q -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -d "$BANK_DB" \
+    -v reader="$BANK_READER" -v reader_pw="$BANK_READER_PASSWORD" \
+    -v writer="$BANK_WRITER" -v writer_pw="$BANK_WRITER_PASSWORD" \
+    -f "$SCRIPT_DIR/bank-simulator/db/bank-sim.sql" >/dev/null
+  psql -X -q -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PG_PORT" -U "$PG_SUPERUSER" -d "$BANK_DB" \
+    -c "GRANT ALL ON SCHEMA core, integration TO \"$BANK_ADMIN\"" \
+    -c "GRANT ALL ON ALL TABLES IN SCHEMA core, integration TO \"$BANK_ADMIN\""
+  BANK_REST_PORT="${E2E_BANK_REST_PORT:-$(free_port)}"
+  log "starting bank simulator REST stub on :$BANK_REST_PORT"
+  BANK_SIM_PORT="$BANK_REST_PORT" BANK_SIM_HOST=127.0.0.1 \
+    BANK_SIM_CLIENT_ID="$BANK_CLIENT_ID" BANK_SIM_CLIENT_SECRET="$BANK_CLIENT_SECRET" \
+    BANK_SIM_API_KEY="$BANK_API_KEY" BANK_SIM_WEBHOOK_SECRET="$BANK_WEBHOOK_SECRET" \
+    setsid node "$SCRIPT_DIR/bank-simulator/rest-stub/server.mjs" >"$RUN_DIR/bank-rest.log" 2>&1 &
+  PIDS+=("$!")
+  BANK_SIM_EXPORTS=(
+    "E2E_BANK_SIM_REST_URL=http://127.0.0.1:$BANK_REST_PORT"
+    "E2E_BANK_SIM_DB_URL=postgres://$BANK_ADMIN:$BANK_ADMIN_PASSWORD@$PG_HOST:$PG_PORT/$BANK_DB"
+    "E2E_BANK_SIM_DB_HOST_FOR_APP=$PG_HOST"
+    "E2E_BANK_SIM_DB_PORT_FOR_APP=$PG_PORT"
+    "E2E_BANK_SIM_DB_NAME=$BANK_DB"
+    "E2E_BANK_SIM_DB_READER=$BANK_READER"
+    "E2E_BANK_SIM_DB_READER_PASSWORD=$BANK_READER_PASSWORD"
+    "E2E_BANK_SIM_DB_WRITER=$BANK_WRITER"
+    "E2E_BANK_SIM_DB_WRITER_PASSWORD=$BANK_WRITER_PASSWORD"
+    "E2E_BANK_SIM_CLIENT_ID=$BANK_CLIENT_ID"
+    "E2E_BANK_SIM_CLIENT_SECRET=$BANK_CLIENT_SECRET"
+    "E2E_BANK_SIM_API_KEY=$BANK_API_KEY"
+    "E2E_BANK_SIM_WEBHOOK_SECRET=$BANK_WEBHOOK_SECRET"
+  )
+fi
+
 # --- 5. Backend -----------------------------------------------------------------
 # Production profile (no SPRING_PROFILES_ACTIVE): Flyway on PostgreSQL, RLS
 # via the modocument_app role, bootstrap admin, MFA forced for admins.
 # E2E-only relaxations (config, not code): the auth/MFA throttles are per
-# client IP and the whole suite comes from 127.0.0.1, so they are raised;
-# everything else keeps its production default.
+# client IP and the whole suite comes from 127.0.0.1, so they are raised; the
+# AI read timeout is 5 s instead of 120 s so the fake LLM's `timeout` mode
+# reaches the code fallback inside a test; everything else keeps its
+# production default.
 log "starting backend on :$APP_PORT (database role mode: $E2E_DB_APP_ROLE)"
 (
   export MODOCUMENT_DB_URL="jdbc:postgresql://$PG_HOST:$PG_PORT/$DB_NAME?sslmode=disable"
@@ -174,11 +246,13 @@ log "starting backend on :$APP_PORT (database role mode: $E2E_DB_APP_ROLE)"
   export MODOCUMENT_MFA_KEY="$MFA_KEY"
   export MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL="$ADMIN_EMAIL"
   export MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+  export MODOCUMENT_PLATFORM_ADMIN_EMAILS="$PLATFORM_ADMIN_1_EMAIL,$PLATFORM_ADMIN_2_EMAIL"
+  export MODOCUMENT_PLATFORM_ADMIN_PASSWORDS="$PLATFORM_ADMIN_1_PASSWORD,$PLATFORM_ADMIN_2_PASSWORD"
   export MODOCUMENT_AI_BASE_URL="http://127.0.0.1:$LLM_PORT"
   export MODOCUMENT_AI_API_KEY="$AI_KEY"
   export MODOCUMENT_STORAGE_ROOT="$RUN_DIR/storage"
   export MODOCUMENT_CORS_ALLOWED_ORIGINS="http://127.0.0.1:$WEB_PORT"
-  export SPRING_APPLICATION_JSON='{"modocument":{"security":{"rate-limit":{"auth":{"per-ip-max":1000,"per-email-max":200},"mfa":{"per-ip-max":200,"per-user-max":60}}}}}'
+  export SPRING_APPLICATION_JSON='{"modocument":{"security":{"rate-limit":{"auth":{"per-ip-max":1000,"per-email-max":200},"mfa":{"per-ip-max":200,"per-user-max":60}}},"ai":{"http":{"read-timeout":"5s"}}}}'
   exec setsid java ${E2E_JAVA_OPTS:--Xmx1536m} -jar "$JAR" \
     --server.port="$APP_PORT" --server.address=127.0.0.1
 ) >"$RUN_DIR/backend.log" 2>&1 &
@@ -220,9 +294,15 @@ set +e
   export E2E_DB_URL="postgres://$DB_OWNER:$OWNER_PASSWORD@$PG_HOST:$PG_PORT/$DB_NAME"
   export E2E_BOOTSTRAP_ADMIN_EMAIL="$ADMIN_EMAIL"
   export E2E_BOOTSTRAP_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+  export E2E_PLATFORM_ADMIN_1_EMAIL="$PLATFORM_ADMIN_1_EMAIL"
+  export E2E_PLATFORM_ADMIN_1_PASSWORD="$PLATFORM_ADMIN_1_PASSWORD"
+  export E2E_PLATFORM_ADMIN_2_EMAIL="$PLATFORM_ADMIN_2_EMAIL"
+  export E2E_PLATFORM_ADMIN_2_PASSWORD="$PLATFORM_ADMIN_2_PASSWORD"
   export E2E_STATE_DIR="$RUN_DIR/state"
   export E2E_RUN_ID="$RUN_ID"
   export E2E_DB_APP_ROLE
+  export E2E_BACKEND_LOG="$RUN_DIR/backend.log"
+  for assignment in "${BANK_SIM_EXPORTS[@]}"; do export "${assignment?}"; done
   npx --no-install playwright test "$@"
 )
 TEST_STATUS=$?

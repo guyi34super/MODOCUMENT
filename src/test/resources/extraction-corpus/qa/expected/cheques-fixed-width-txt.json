@@ -1,0 +1,72 @@
+{
+  "name": "cheques-fixed-width-txt",
+  "file": "cheques-fixed-width.txt",
+  "strategies": [
+    "FIXED_WIDTH"
+  ],
+  "note": "space-aligned columns, a dashed underline row, an unlabelled totals line and a footer",
+  "fields": [
+    {
+      "name": "Issue Date",
+      "type": "DATE"
+    },
+    {
+      "name": "Cheque Number",
+      "type": "TEXT",
+      "aliases": [
+        "Cheque No"
+      ]
+    },
+    {
+      "name": "Purpose",
+      "type": "TEXT",
+      "aliases": [
+        "Payee Purpose"
+      ]
+    },
+    {
+      "name": "Amount",
+      "type": "NUMBER"
+    }
+  ],
+  "rows": [
+    [
+      "2024-04-01",
+      "CHQ-118842",
+      "Payroll April",
+      "125000.00"
+    ],
+    [
+      "2024-04-02",
+      "CHQ-118843",
+      "Office rent",
+      "42500.00"
+    ],
+    [
+      "2024-04-05",
+      "CHQ-118844",
+      "Electricity",
+      "3870.45"
+    ],
+    [
+      "2024-04-09",
+      "CHQ-118845",
+      "Insurance premium",
+      "18200.00"
+    ],
+    [
+      "2024-04-12",
+      "CHQ-118846",
+      "Stationery",
+      "615.30"
+    ],
+    [
+      "2024-04-18",
+      "CHQ-118847",
+      "Courier services",
+      "1240.00"
+    ]
+  ],
+  "expectAccepted": true,
+  "minConfidence": 0.75
+}

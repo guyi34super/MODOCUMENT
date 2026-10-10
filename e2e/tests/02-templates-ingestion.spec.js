@@ -4,7 +4,7 @@
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { test, expect, openAs } from '../lib/fixtures.js';
+import { test, expect, openAs, openUploadPanel } from '../lib/fixtures.js';
 import { createTemplate, getJob, uploadForIngestion, waitForJob } from '../lib/api.js';
 import { OPERATOR, uniqueName } from '../lib/seed.js';
 import { E2E_ROOT } from '../lib/env.js';
@@ -53,8 +53,7 @@ test.describe('templates and ingestion @smoke', () => {
     await llm.reset();
     await openAs(page, OPERATOR(), '/ingestion');
     await expect(page.getByRole('heading', { name: 'Upload & Process' })).toBeVisible();
-    const uploadToggle = page.getByRole('button', { name: 'Upload a document' });
-    if (await uploadToggle.isVisible()) await uploadToggle.click();
+    await openUploadPanel(page);
 
     await page.getByLabel('File').setInputFiles(CSV);
     await page.getByLabel('Template').selectOption({ label: templateName });
