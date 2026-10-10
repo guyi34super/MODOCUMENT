@@ -49,11 +49,60 @@ same environment variables. The jar is attached to every GitHub Release.
 | `MODOCUMENT_SECRETS_DIR` | `/etc/modocument-agent/secrets` | Local secrets, one file or folder per `secretRef`. |
 | `MODOCUMENT_SECRET_<REF>` | — | A local secret in the environment (wins over the folder). |
 | `MODOCUMENT_AGENT_MAX_BACKOFF` | `5m` | Longest wait between retries after errors. |
+| `MODOCUMENT_AGENT_AUTH_METHOD` | `OAUTH2_CLIENT_CREDENTIALS` | How the agent authenticates to MoDocument: `OAUTH2_CLIENT_CREDENTIALS` or `MTLS` (see [Authentication](#authentication)). Chosen at enrolment. |
+| `MODOCUMENT_AGENT_CLIENT_CERT_REF` | `agent-client-cert` | `MTLS` only: the local secret that holds the agent's certificate and key. |
+| `MODOCUMENT_AGENT_TRUSTED_CA_FILE` | — | A PEM bundle that **replaces** the JDK trust store for calls to MoDocument (a private CA, local development). |
 | `JAVA_TOOL_OPTIONS` | — | e.g. `-Dhttps.proxyHost=proxy.bank.local -Dhttps.proxyPort=3128` for an outbound proxy. |
 
 The agent long-polls MoDocument for work (25 s, under the 30 s CloudFront origin timeout), sends a heartbeat every
 30 s and backs off exponentially (with jitter) when MoDocument or a bank
 system is unreachable.
+
+## Authentication
+
+The agent authenticates to MoDocument in one of two ways. It chooses at
+enrolment, and the choice is stored with its credentials.
+
+- **`OAUTH2_CLIENT_CREDENTIALS`** (default): MoDocument issues a client
+  secret at enrolment. The agent keeps it in `credentials.json` and trades
+  it for short-lived access tokens (`client_secret_basic`).
+- **`MTLS`**: the agent uses its **own client certificate**. No secret is
+  issued:
+  1. The certificate goes to MoDocument at enrolment and is registered for
+     the agent's client.
+  2. The token endpoint authenticates the agent by the certificate in the
+     TLS handshake (RFC 8705 `tls_client_auth`). It binds every access
+     token to that certificate, so the agent presents it on every call.
+  3. The agent must reach MoDocument through its mTLS listener
+     (`https://api.<domain>`). The bank's CA must be in that listener's
+     trust store (`api_mtls_ca_bundle_pem` in `infra/terraform`), and the
+     agent's public address in `api_mtls_client_cidrs`.
+
+  The certificate and its **unencrypted PKCS#8** key come from the local
+  secret store, never from a file MoDocument knows about: a folder
+  `<secrets dir>/agent-client-cert/` with the files `certificatePem` (leaf
+  first, then any intermediates) and `privateKeyPem`
+  (`-----BEGIN PRIVATE KEY-----`; convert other formats with
+  `openssl pkcs8 -topk8 -nocrypt`). A JSON value
+  `{"certificatePem": "…", "privateKeyPem": "…"}` in
+  `MODOCUMENT_SECRET_AGENT_CLIENT_CERT` works too.
+
+```sh
+docker run … \
+  -e MODOCUMENT_URL=https://api.modocument.example.com \
+  -e MODOCUMENT_AGENT_AUTH_METHOD=MTLS \
+  -v /etc/modocument-agent:/etc/modocument-agent:ro \
+  ghcr.io/guyi34super/modocument-agent:<version>
+# /etc/modocument-agent/secrets/agent-client-cert/{certificatePem,privateKeyPem}
+```
+
+To switch an enrolled agent between methods, or to replace its certificate,
+revoke it and register it again: the certificate is part of the agent's
+identity. An agent that enrolled with `MTLS` refuses to start without
+`MODOCUMENT_AGENT_AUTH_METHOD=MTLS`, so it never silently falls back.
+
+For local development against the compose mTLS listener, see
+[`docs/integration/developer-guide.md`](../docs/integration/developer-guide.md#local-mtls-listener).
 
 ## Secrets
 
@@ -110,8 +159,23 @@ qualified with the connection's `schema` before it is compared.
 | Type | Read (inbound) | Write (outbound) | Notes |
 |---|---|---|---|
 | `DATABASE` | Read-only `SELECT` of listed columns from a listed table or view, by identifier (never free SQL), with an optional watermark column and a row cap | `INSERT`, or the vendor's UPSERT, of one batch in one transaction | PostgreSQL, MariaDB/MySQL, SQL Server, Oracle |
-| `REST_API` | `GET` a JSON array (no pagination in this version) | `POST`/`PUT` JSON in batches with `Idempotency-Key` | No redirects; 20 MB response cap |
+| `REST_API` | `GET` a JSON array at `recordsPath`, paginated (below) | `POST`/`PUT` JSON in batches with `Idempotency-Key` | No redirects; 20 MB response cap |
 | `SFTP` | Files matching a glob (≤ 50 MB each), then moved to `processed/` or deleted | Upload to a temporary name, then rename | Host key **pinned** (`SHA256:…`); unknown keys are refused |
+
+### REST pagination
+
+The flow's `sourceSpec.pagination` works the same way as with MoDocument's
+direct REST connector:
+
+| `type` | Settings | The agent… |
+|---|---|---|
+| `NONE` | — | makes one request |
+| `PAGE` | `pageParam` (`page`), `sizeParam`, `pageSize` (100), `startPage` (1), `maxPages` | counts pages up and stops at a short page (or at an empty page when no size is set) or after `maxPages` |
+| `CURSOR` | `cursorParam`, `cursorPath` (e.g. `meta.next` or `$.meta.next`), `sizeParam`, `pageSize` | sends the cursor from the previous answer and stops when it is missing, empty or repeats |
+| `LINK` | `sizeParam`, `pageSize` | follows `Link: <…>; rel="next"`, but only on the same host and the **same path** (the path your allow-list approved) |
+
+Each page is at most 1000 records (MoDocument's limit per upload). The
+flow's row cap still applies.
 
 ## Health
 

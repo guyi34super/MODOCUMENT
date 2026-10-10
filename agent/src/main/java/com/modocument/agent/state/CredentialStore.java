@@ -1,5 +1,6 @@
 package com.modocument.agent.state;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -81,12 +82,30 @@ public class CredentialStore {
         }
     }
 
-    /** What the agent keeps; {@link #toString()} never prints the secret. */
+    /**
+     * What the agent keeps; {@link #toString()} never prints the secret.
+     * {@code authMethod} is how it enrolled: OAUTH2_CLIENT_CREDENTIALS (also
+     * when absent — files written before MTLS support) with the issued
+     * {@code clientSecret}, or MTLS, with no secret at all (the client
+     * certificate, kept in the local secret store, is the credential).
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Credentials(int agentId, String clientId, String clientSecret, String tokenUrl) {
+    public record Credentials(int agentId, String clientId, String clientSecret, String tokenUrl,
+                              String authMethod) {
+
+        public Credentials(int agentId, String clientId, String clientSecret, String tokenUrl) {
+            this(agentId, clientId, clientSecret, tokenUrl, null);
+        }
+
+        @JsonIgnore
+        public boolean mtls() {
+            return "MTLS".equals(authMethod);
+        }
+
         @Override
         public String toString() {
-            return "Credentials[agentId=" + agentId + ", clientId=" + clientId + "]";
+            return "Credentials[agentId=" + agentId + ", clientId=" + clientId
+                    + (mtls() ? ", MTLS" : "") + "]";
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.modocument.agent.runtime;
 
+import com.modocument.agent.cloud.AgentTls;
 import com.modocument.agent.cloud.CloudClient;
 import com.modocument.agent.cloud.CloudException;
 import com.modocument.agent.cloud.Protocol;
@@ -41,6 +42,7 @@ public class AgentLoop {
     private final int pollWaitSeconds;
     private final Duration heartbeat;
     private final Backoff backoff;
+    private final AgentTls.ClientAuth auth;
     private volatile boolean running = true;
     private volatile String announcedLatest;
     private ScheduledExecutorService heartbeats;
@@ -48,6 +50,15 @@ public class AgentLoop {
     public AgentLoop(CloudClient cloud, CredentialStore store, TaskExecutor executor, Path stateDir,
                      String version, String name, String enrolmentToken, int pollWaitSeconds,
                      Duration heartbeat, Duration maxBackoff) {
+        this(cloud, store, executor, stateDir, version, name, enrolmentToken, pollWaitSeconds,
+                heartbeat, maxBackoff, AgentTls.ClientAuth.oauth2());
+    }
+
+    /** @param auth how to enrol (OAUTH2_CLIENT_CREDENTIALS, or MTLS with the client certificate) */
+    public AgentLoop(CloudClient cloud, CredentialStore store, TaskExecutor executor, Path stateDir,
+                     String version, String name, String enrolmentToken, int pollWaitSeconds,
+                     Duration heartbeat, Duration maxBackoff, AgentTls.ClientAuth auth) {
+        this.auth = auth == null ? AgentTls.ClientAuth.oauth2() : auth;
         this.cloud = cloud;
         this.store = store;
         this.executor = executor;
@@ -64,6 +75,15 @@ public class AgentLoop {
     public Credentials ensureEnrolled() {
         Optional<Credentials> stored = store.load();
         if (stored.isPresent()) {
+            if (stored.get().mtls() && !auth.mtls()) {
+                throw new IllegalStateException("Agent " + stored.get().agentId() + " enrolled with "
+                        + "MTLS: set MODOCUMENT_AGENT_AUTH_METHOD=MTLS and its client certificate.");
+            }
+            if (!stored.get().mtls() && auth.mtls()) {
+                log.warn("Agent {} enrolled with client credentials; MODOCUMENT_AGENT_AUTH_METHOD=MTLS "
+                        + "takes effect only for a new enrolment (revoke and register the agent "
+                        + "again).", stored.get().agentId());
+            }
             cloud.useCredentials(stored.get());
             if (enrolmentToken != null && !enrolmentToken.isBlank()) {
                 log.info("Agent {} is already enrolled; MODOCUMENT_ENROLMENT_TOKEN is ignored "
@@ -76,9 +96,13 @@ public class AgentLoop {
                     + "MODOCUMENT_ENROLMENT_TOKEN (from the dashboard's agent registration).");
         }
         Protocol.EnrollResponse enrolled = cloud.enroll(new Protocol.EnrollRequest(
-                enrolmentToken.strip(), name, version, "OAUTH2_CLIENT_CREDENTIALS", null));
+                enrolmentToken.strip(), name, version, auth.method(), auth.certificatePem()));
+        if (!auth.mtls() && (enrolled.secret() == null || enrolled.secret().isEmpty())) {
+            throw new CloudException(502, "MoDocument issued no client secret at enrolment.");
+        }
         Credentials credentials = new Credentials(enrolled.agentId(), enrolled.clientId(),
-                enrolled.secret(), cloud.tokenUrlFor(enrolled.tokenUrl()));
+                auth.mtls() ? null : enrolled.secret(), cloud.tokenUrlFor(enrolled.tokenUrl()),
+                auth.method());
         store.save(credentials);
         cloud.useCredentials(credentials);
         log.info("Enrolled as agent {} (client {}); credentials stored in {}", enrolled.agentId(),

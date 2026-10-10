@@ -55,6 +55,16 @@ agent   ── POST /api/agent/v1/enroll {token, name, version} ──▶ {agent
 agent   ── POST tokenUrl (client credentials) ──▶ short-lived bearer token ──▶ /api/agent/v1/**
 ```
 
+With `MODOCUMENT_AGENT_AUTH_METHOD=MTLS`, the agent enrols with
+`{…, authMethod: "MTLS", certificatePem}`, using its own certificate and
+key from the local secret store. MoDocument registers the certificate's
+fingerprint for the agent's ApiClient and issues **no secret**. The token
+call then sends only `client_id`, and the certificate in the TLS handshake
+is the credential (RFC 8705). The access token carries
+`cnf.x5t#S256`, so every `/api/agent/v1` call must present the same
+certificate. This path needs the ALB's mTLS listener (`api.<domain>`), or
+the local listener in development.
+
 - **The token** is `mda1.<agentId>.<43 chars>`: 256 random bits.
   MoDocument stores only the SHA-256 of the secret part. Enrolment
   compares the hashes in constant time, checks the expiry and that the
@@ -128,9 +138,13 @@ the release version (`scripts/check-version-sync.sh`).
 - The agent has its own minimal connectors (DATABASE, REST_API, SFTP). One
   shared implementation with the server's `IntegrationConnector` beans is a
   later refactor.
-- REST reads support pagination `NONE` only. Agent authentication is OAuth2
-  client credentials. mTLS for the agent itself is left for later; the
-  server side, the ALB listener and the nginx pass-through exist already.
+- REST reads paginate `PAGE`, `CURSOR` and `LINK` like the server's REST
+  connector (agent README, "REST pagination"). A `LINK` next page must keep
+  the configured path, so the allow-list's path check stays valid. Bank
+  REST targets that need a client certificate (outbound `MTLS` auth) are
+  not supported by the agent yet.
+- An agent's certificate is fixed at enrolment. Rotating it means revoking
+  the agent and registering it again.
 - SFTP reads upload each file as one record
   `{fileName, remotePath, size, contentBase64}`. The flow engine turns
   these into file ingestions.
