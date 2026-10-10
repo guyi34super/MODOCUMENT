@@ -127,6 +127,47 @@ describe('AdminDashboardPage', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/integrations/agents');
   });
 
+  it('shows the AI vs code share of parsed uploads with a text alternative', async () => {
+    getDashboard.mockResolvedValue({
+      ...DASHBOARD,
+      ingestion: { ...DASHBOARD.ingestion, parsedBy: { AI: 6, CODE: 3, AI_PARTIAL: 1 } },
+    });
+    renderPage();
+    const tile = await screen.findByTestId('kpi-parsed-by');
+
+    // Every part is stated in words (count + share), not only as a colour.
+    const legend = within(tile).getByRole('list', { name: 'AI vs code' });
+    expect(within(legend).getByTestId('share-AI')).toHaveTextContent('AI6 (60%)');
+    expect(within(legend).getByTestId('share-CODE')).toHaveTextContent('Code3 (30%)');
+    expect(within(legend).getByTestId('share-AI_PARTIAL')).toHaveTextContent(
+      'AI with code fallback1 (10%)'
+    );
+    expect(screen.getByRole('region', { name: 'How uploads were parsed (7 days)' })).toContainElement(
+      tile
+    );
+    expect(within(screen.getByTestId('kpi-parsed-by-code')).getByText(/30% of parsed uploads/))
+      .toBeInTheDocument();
+  });
+
+  it('says so when nothing was parsed in the last 7 days', async () => {
+    getDashboard.mockResolvedValue({
+      ...DASHBOARD,
+      ingestion: { ...DASHBOARD.ingestion, parsedBy: { AI: 0, CODE: 0, AI_PARTIAL: 0 } },
+    });
+    renderPage();
+    const tile = await screen.findByTestId('kpi-parsed-by');
+    expect(tile).toHaveTextContent('No uploads parsed in the last 7 days');
+    expect(within(tile).queryByRole('list')).toBeNull();
+  });
+
+  it('states a warning or danger tone in words, not only in colour', async () => {
+    renderPage();
+    await screen.findByTestId('kpi-admins-without-mfa');
+    expect(screen.getByTestId('kpi-admins-without-mfa')).toHaveTextContent('Needs action.');
+    expect(screen.getByTestId('kpi-users-locked')).toHaveTextContent('Needs attention.');
+    expect(screen.getByTestId('kpi-templates-shared')).not.toHaveTextContent(/Needs/);
+  });
+
   it('links the tiles to the pages behind them', async () => {
     renderPage();
     await userEvent.click(await screen.findByTestId('kpi-pending-approvals'));

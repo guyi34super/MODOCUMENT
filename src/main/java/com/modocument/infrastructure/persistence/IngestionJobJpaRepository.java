@@ -59,4 +59,15 @@ public interface IngestionJobJpaRepository extends JpaRepository<IngestionJob, I
             + " where j.bankId = :bankId and j.createdDate >= :since group by j.status")
     List<Object[]> countByStatusSince(@Param("bankId") int bankId,
                                       @Param("since") java.time.LocalDateTime since);
+
+    /**
+     * Admin dashboard (ws23 parse provenance): rows of [ParsedBy (String),
+     * count (Long)] of ONE bank's jobs created at or after {@code since}
+     * that were parsed (ParsedBy set).
+     */
+    @Query("select j.parsedBy, count(j) from IngestionJob j"
+            + " where j.bankId = :bankId and j.createdDate >= :since"
+            + " and j.parsedBy is not null group by j.parsedBy")
+    List<Object[]> countByParsedBySince(@Param("bankId") int bankId,
+                                        @Param("since") java.time.LocalDateTime since);
 }

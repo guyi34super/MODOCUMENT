@@ -56,5 +56,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './src/test/setup.js',
+    // The typing-heavy dialog tests take ~1 s alone; on a loaded shared
+    // runner the 5 s default made them flaky.
+    testTimeout: 15_000,
   },
 });

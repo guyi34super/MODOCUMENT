@@ -148,6 +148,13 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-white">
+      {/* First tab stop: keyboard users skip the app bar and the sidebar. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:text-accent focus:shadow"
+      >
+        Skip to main content
+      </a>
       <header className="fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between border-b border-line bg-white px-5">
         <div className="flex items-center gap-3">
           <button
@@ -157,6 +164,7 @@ export default function Layout() {
             className="cursor-pointer rounded p-2 text-ink hover:bg-neutral-200/60"
           >
             <svg
+              aria-hidden="true"
               width="18"
               height="18"
               viewBox="0 0 18 18"
@@ -260,7 +268,11 @@ export default function Layout() {
           mobile sidebar backdrop z-40 and drawer z-[45] < Modal/ConfirmDialog
           z-[48] < toasts z-50 (a toast stays readable over an open dialog).
           Sticky in-page elements use top-14 (below the app bar). */}
-      <main className={`pt-14 transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-64' : ''}`}>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className={`pt-14 outline-none transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-64' : ''}`}
+      >
         <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
           {/* ws24: maintenance/release/info banners + "new version" prompt. */}
           <AnnouncementBanner />

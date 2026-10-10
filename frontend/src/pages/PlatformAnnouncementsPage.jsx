@@ -307,6 +307,7 @@ export default function PlatformAnnouncementsPage() {
       {!rows && !error && <Spinner label="Loading announcements…" />}
       {rows && (
         <DataTable
+          caption="Announcements"
           columns={columns}
           rows={rows}
           emptyMessage="No announcements yet. New releases announce themselves when they are deployed."

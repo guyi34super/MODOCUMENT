@@ -281,11 +281,14 @@ export default function SettingField({ setting, mode = 'bank', draft, onDraft, e
             onClick={() => onDraft?.({ reset: true })}
           >
             Reset to inherited
+            {/* Many settings share this button: name the one it acts on. */}
+            <span className="sr-only">: {setting.label}</span>
           </Button>
         )}
         {draft && !readOnly && (
           <Button type="button" size="sm" variant="secondary" onClick={() => onDraft?.(undefined)}>
             Undo
+            <span className="sr-only"> change to {setting.label}</span>
           </Button>
         )}
       </div>

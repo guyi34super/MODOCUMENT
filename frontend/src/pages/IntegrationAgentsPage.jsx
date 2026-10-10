@@ -20,7 +20,10 @@ import {
  * the one-time enrolment token and `docker run` command (readable once,
  * 15 minutes) — shown with a countdown and wiped when the dialog closes.
  * Status: ONLINE / OFFLINE / PENDING_ENROLMENT, the version the agent last
- * reported and an "update available" badge from the release pipeline.
+ * reported and an "update available" badge (AgentView.updateAvailable /
+ * latestVersion, computed by the server). "Get enrolment command" is offered
+ * only while AgentView.enrolmentAvailable is true; enrolmentExpiresAt shows
+ * when the token stops working.
  */
 export default function IntegrationAgentsPage() {
   return (
@@ -34,6 +37,43 @@ export default function IntegrationAgentsPage() {
         <Agents />
       </RequireIntegrationAdmin>
     </div>
+  );
+}
+
+/**
+ * A pending agent's enrolment, as the server decides it (AgentView,
+ * contracts §7.3 + SE5's additive fields): the one-time command is offered
+ * only while `enrolmentAvailable` (the caller registered it, the token has
+ * not been shown and `enrolmentExpiresAt` is still ahead); otherwise the
+ * cell says why there is nothing to get.
+ */
+function EnrolmentCell({ row, busy, onEnrol }) {
+  if (row.status !== 'PENDING_ENROLMENT') return null;
+  const expiresAt = row.enrolmentExpiresAt ? new Date(row.enrolmentExpiresAt) : null;
+  const expired = expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt <= new Date();
+  if (row.enrolmentAvailable) {
+    return (
+      <span className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          onClick={() => onEnrol(row)}
+          disabled={busy}
+          aria-label={`Get enrolment command for ${row.name}`}
+        >
+          Get enrolment command
+        </Button>
+        {expiresAt && (
+          <span className="text-xs text-muted">Expires {formatDateTime(row.enrolmentExpiresAt)}</span>
+        )}
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs text-muted">
+      {expired
+        ? 'Enrolment expired: revoke the agent and register it again.'
+        : 'Waiting for enrolment. The command is shown once, to the admin who registered the agent.'}
+    </span>
   );
 }
 
@@ -133,17 +173,8 @@ function Agents() {
     {
       key: 'actions',
       label: '',
-      render: (row) =>
-        row.status === 'PENDING_ENROLMENT' ? (
-          <Button
-            size="sm"
-            onClick={() => enrol(row)}
-            disabled={busy === row.id}
-            aria-label={`Get enrolment command for ${row.name}`}
-          >
-            Get enrolment command
-          </Button>
-        ) : null,
+      srLabel: 'Enrolment',
+      render: (row) => <EnrolmentCell row={row} busy={busy === row.id} onEnrol={enrol} />,
     },
   ];
 
@@ -165,6 +196,7 @@ function Agents() {
       {!agents && !error && <Spinner label="Loading agents…" />}
       {agents && (
         <DataTable
+          caption="Connector agents"
           columns={columns}
           rows={agents}
           emptyMessage="No agents yet. Register one to reach databases, APIs or SFTP servers inside your network."
@@ -198,11 +230,13 @@ function Agents() {
               className={inputClass}
               maxLength={200}
               value={name}
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? `${formId}-error` : undefined}
               onChange={(e) => setName(e.target.value)}
             />
           </Field>
           {nameError && (
-            <p role="alert" className="text-sm text-danger-ink">
+            <p id={`${formId}-error`} role="alert" className="text-sm text-danger-ink">
               {nameError}
             </p>
           )}

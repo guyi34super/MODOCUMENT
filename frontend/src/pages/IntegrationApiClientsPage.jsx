@@ -292,7 +292,7 @@ function ApiClients() {
       <SentForApproval what={sent?.what} change={sent?.change} onDismiss={() => setSent(null)} />
       {!clients && !error && <Spinner label="Loading API clients…" />}
       {clients && (
-        <DataTable columns={columns} rows={clients} emptyMessage="No API clients yet." />
+        <DataTable caption="API clients" columns={columns} rows={clients} emptyMessage="No API clients yet." />
       )}
 
       <Modal

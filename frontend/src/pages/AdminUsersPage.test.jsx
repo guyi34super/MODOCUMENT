@@ -189,14 +189,14 @@ describe('AdminUsersPage', () => {
     renderPage();
     await screen.findByText('worker@bank.example');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Disable' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Disable worker@bank.example' }));
     const dialog = screen.getByRole('dialog', { name: 'Disable user' });
     expect(dialog).toHaveTextContent('worker@bank.example');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(setUserDisabled).not.toHaveBeenCalled();
 
-    await userEvent.click(screen.getByRole('button', { name: 'Disable' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Disable worker@bank.example' }));
     await userEvent.click(screen.getByRole('button', { name: 'Request disable' }));
     await waitFor(() => expect(setUserDisabled).toHaveBeenCalledWith(2, true));
     // ws10: the disable is pending a second administrator's approval.

@@ -23,7 +23,35 @@ const AGENTS = [
     connections: [7, 8],
   },
   { id: 6, name: 'dc2-agent', status: 'OFFLINE', version: '1.3.0', updateAvailable: false, connections: [] },
-  { id: 7, name: 'new-agent', status: 'PENDING_ENROLMENT', version: null, connections: [] },
+  {
+    id: 7,
+    name: 'new-agent',
+    status: 'PENDING_ENROLMENT',
+    version: null,
+    connections: [],
+    enrolmentAvailable: true,
+    enrolmentExpiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  },
+  // Pending, but the token is not this caller's to read (or already shown).
+  {
+    id: 8,
+    name: 'colleague-agent',
+    status: 'PENDING_ENROLMENT',
+    version: null,
+    connections: [],
+    enrolmentAvailable: false,
+    enrolmentExpiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  },
+  // Pending and expired.
+  {
+    id: 9,
+    name: 'stale-agent',
+    status: 'PENDING_ENROLMENT',
+    version: null,
+    connections: [],
+    enrolmentAvailable: false,
+    enrolmentExpiresAt: '2026-01-01T00:00:00Z',
+  },
 ];
 
 const TOKEN = 'enrol-tok-once-only';
@@ -48,10 +76,24 @@ describe('IntegrationAgentsPage', () => {
     expect(await screen.findByText('dc1-agent')).toBeInTheDocument();
     expect(screen.getByText('Online')).toBeInTheDocument();
     expect(screen.getByText('Offline')).toBeInTheDocument();
-    expect(screen.getByText('Pending enrolment')).toBeInTheDocument();
+    expect(screen.getAllByText('Pending enrolment')).toHaveLength(3);
+    // The badge comes from AgentView.updateAvailable + latestVersion only.
     expect(screen.getByText('Update available (1.3.0)')).toBeInTheDocument();
-    // Only an agent awaiting enrolment offers the command.
+    expect(screen.getAllByText(/Update available/)).toHaveLength(1);
+    expect(screen.getByRole('table', { name: 'Connector agents' })).toBeInTheDocument();
+  });
+
+  it('offers the enrolment command only while the server says it is available', async () => {
+    renderPage();
+    await screen.findByText('dc1-agent');
     expect(screen.getAllByRole('button', { name: /Get enrolment command/ })).toHaveLength(1);
+    expect(
+      screen.getByRole('button', { name: 'Get enrolment command for new-agent' })
+    ).toBeInTheDocument();
+    const row = (name) => screen.getByText(name).closest('tr');
+    expect(within(row('new-agent')).getByText(/^Expires /)).toBeInTheDocument();
+    expect(within(row('colleague-agent')).getByText(/Waiting for enrolment/)).toBeInTheDocument();
+    expect(within(row('stale-agent')).getByText(/Enrolment expired/)).toBeInTheDocument();
   });
 
   it('registers an agent for approval', async () => {
@@ -87,6 +129,25 @@ describe('IntegrationAgentsPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(document.body.textContent).not.toContain(TOKEN);
+  });
+
+  it('announces a copy without ever putting the secret in the live region', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    getAgentEnrolment.mockResolvedValue({ token: TOKEN, expiresAt, dockerCommand: COMMAND });
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Get enrolment command for new-agent' })
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Enrol "new-agent"' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Copy docker command' }));
+
+    expect(writeText).toHaveBeenCalledWith(COMMAND);
+    const announcer = within(dialog).getByTestId('secret-announcer');
+    expect(announcer).toHaveAttribute('aria-live', 'polite');
+    expect(announcer).toHaveTextContent('Docker command copied to the clipboard.');
+    expect(announcer.textContent).not.toContain(TOKEN);
   });
 
   it('counts down to "Expired"', async () => {

@@ -18,16 +18,25 @@ export default function PageHeader({ crumbs = [], title, subtitle, actions, stic
       }`}
     >
       {showCrumbs && (
-        <nav className="mb-0.5 text-xs">
+        <nav aria-label="Breadcrumb" className="mb-0.5 text-xs">
           {crumbs.map((crumb, i) => (
             <span key={i}>
-              {i > 0 && <span className="mx-1.5 text-muted">›</span>}
+              {i > 0 && (
+                <span aria-hidden="true" className="mx-1.5 text-muted">
+                  ›
+                </span>
+              )}
               {crumb.to ? (
                 <Link to={crumb.to} className="text-accent hover:underline">
                   {crumb.label}
                 </Link>
               ) : (
-                <span className="text-muted">{crumb.label}</span>
+                <span
+                  className="text-muted"
+                  aria-current={i === crumbs.length - 1 ? 'page' : undefined}
+                >
+                  {crumb.label}
+                </span>
               )}
             </span>
           ))}

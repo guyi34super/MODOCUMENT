@@ -221,15 +221,23 @@ export default function SettingsPage({ mode = 'bank' }) {
                   role="tab"
                   id={`settings-tab-${group.id}`}
                   aria-selected={selected}
-                  aria-controls={`settings-panel-${group.id}`}
+                  // Only the selected tab's panel is rendered.
+                  aria-controls={selected ? `settings-panel-${group.id}` : undefined}
                   tabIndex={selected ? 0 : -1}
                   onClick={() => selectTab(group.id)}
                   onKeyDown={(event) => {
                     const index = groups.indexOf(group);
+                    let target = null;
                     if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
-                      event.preventDefault();
                       const step = event.key === 'ArrowRight' ? 1 : -1;
-                      const target = groups[(index + step + groups.length) % groups.length];
+                      target = groups[(index + step + groups.length) % groups.length];
+                    } else if (event.key === 'Home') {
+                      target = groups[0];
+                    } else if (event.key === 'End') {
+                      target = groups[groups.length - 1];
+                    }
+                    if (target) {
+                      event.preventDefault();
                       selectTab(target.id);
                       document.getElementById(`settings-tab-${target.id}`)?.focus();
                     }
@@ -242,10 +250,13 @@ export default function SettingsPage({ mode = 'bank' }) {
                 >
                   {group.label}
                   {dirty && (
-                    <span
-                      aria-hidden="true"
-                      className="ml-1.5 inline-block size-1.5 rounded-full bg-amber-500 align-middle"
-                    />
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="ml-1.5 inline-block size-1.5 rounded-full bg-amber-500 align-middle"
+                      />
+                      <span className="sr-only"> (unsaved changes)</span>
+                    </>
                   )}
                 </button>
               );

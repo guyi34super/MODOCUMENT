@@ -165,6 +165,31 @@ describe('SettingsPage (bank)', () => {
     expect(screen.getByRole('button', { name: 'Save Sign-in & passwords' })).toBeDisabled();
   });
 
+  it('moves between tabs with Arrow, Home and End and names unsaved tabs in words', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const tabs = await screen.findAllByRole('tab');
+    // Only the selected tab points at a panel, and that panel exists.
+    expect(tabs[0]).toHaveAttribute('aria-controls');
+    expect(tabs[1]).not.toHaveAttribute('aria-controls');
+
+    tabs[0].focus();
+    await user.keyboard('{End}');
+    expect(screen.getByRole('tab', { name: 'AI & extraction' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'AI & extraction' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    await user.keyboard('{Home}');
+    expect(screen.getByRole('tab', { name: /^Sign-in & passwords/ })).toHaveFocus();
+
+    await user.click(within(screen.getByRole('tabpanel')).getAllByRole('spinbutton')[0]);
+    await user.keyboard('{Backspace}{Backspace}13');
+    expect(
+      screen.getByRole('tab', { name: 'Sign-in & passwords (unsaved changes)' })
+    ).toBeInTheDocument();
+  });
+
   it('shows the clamped badge on the data-protection tab', async () => {
     renderPage();
     await userEvent.click(await screen.findByRole('tab', { name: 'Data protection' }));
@@ -272,7 +297,7 @@ describe('SettingsPage (bank)', () => {
     renderPage();
 
     const row = await screen.findByTestId('setting-security.lockout.allowedAttempts');
-    await userEvent.click(within(row).getByRole('button', { name: 'Reset to inherited' }));
+    await userEvent.click(within(row).getByRole('button', { name: /^Reset to inherited/ }));
     await userEvent.click(screen.getByRole('button', { name: 'Save Sign-in & passwords' }));
 
     await waitFor(() =>

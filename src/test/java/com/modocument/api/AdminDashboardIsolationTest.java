@@ -12,6 +12,7 @@ import com.modocument.domain.entity.AlertLog;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.entity.IngestionJob;
+import com.modocument.domain.entity.IntegrationAgent;
 import com.modocument.domain.entity.PendingChange;
 import com.modocument.domain.entity.Template;
 import com.modocument.domain.entity.UserMfa;
@@ -24,10 +25,12 @@ import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.PendingChangeStatus;
 import com.modocument.domain.model.Role;
 import com.modocument.domain.model.TemplateVisibility;
+import com.modocument.domain.model.integration.AgentStatus;
 import com.modocument.infrastructure.persistence.AlertLogJpaRepository;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
 import com.modocument.infrastructure.persistence.IngestionJobJpaRepository;
+import com.modocument.infrastructure.persistence.IntegrationAgentJpaRepository;
 import com.modocument.infrastructure.persistence.PendingChangeJpaRepository;
 import com.modocument.infrastructure.persistence.TemplateJpaRepository;
 import com.modocument.infrastructure.persistence.UserMfaJpaRepository;
@@ -38,9 +41,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -98,8 +103,13 @@ class AdminDashboardIsolationTest {
     private ExtractionJobStore extractionJobs;
     @Autowired
     private AuditRecorder audit;
+    @Autowired
+    private IntegrationAgentJpaRepository agents;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private String tag;
+    private int runSequence;
     private Bank bankA;
     private Bank bankB;
     private AppUser adminA;
@@ -136,6 +146,11 @@ class AdminDashboardIsolationTest {
             }
         }
         createdRows.clear();
+        for (String table : List.of("OutboundDelivery", "IntegrationRun", "IntegrationFlow",
+                "IntegrationConnection", "IntegrationAgent")) {
+            jdbc.update("DELETE FROM " + table + " WHERE BankId IN (?, ?)",
+                    bankA.getBankId(), bankB.getBankId());
+        }
         createdUsers.forEach(user -> users.deleteById(user.getAppUserId()));
         createdUsers.clear();
         banks.delete(bankA);
@@ -160,10 +175,12 @@ class AdminDashboardIsolationTest {
         secondAdminA.setLockedUntil(LocalDateTime.now().minusMinutes(5));
         users.save(secondAdminA);
 
-        ingestion(bankA, adminA, JobStatus.COMPLETED, LocalDateTime.now());
-        ingestion(bankA, adminA, JobStatus.COMPLETED, LocalDateTime.now());
-        ingestion(bankA, writerA, JobStatus.FAILED, LocalDateTime.now().minusDays(3));
-        ingestion(bankA, writerA, JobStatus.FAILED, LocalDateTime.now().minusDays(10));
+        ingestion(bankA, adminA, JobStatus.COMPLETED, LocalDateTime.now(), "AI");
+        ingestion(bankA, adminA, JobStatus.COMPLETED, LocalDateTime.now(), "CODE");
+        ingestion(bankA, writerA, JobStatus.FAILED, LocalDateTime.now().minusDays(3),
+                "AI_PARTIAL");
+        // Older than 7 days: neither in last7d nor in parsedBy.
+        ingestion(bankA, writerA, JobStatus.FAILED, LocalDateTime.now().minusDays(10), "AI");
         extraction(bankA, adminA, ExtractionJobStatus.RUNNING, Instant.now());
         extraction(bankA, writerA, ExtractionJobStatus.COMPLETED,
                 Instant.now().minus(2, ChronoUnit.DAYS));
@@ -181,8 +198,37 @@ class AdminDashboardIsolationTest {
         docInstance(bankA, writerA, DocInstance.STATUS_SUBMITTED);
         docInstance(bankA, writerA, DocInstance.STATUS_RELEASED);
         retentionRun(bankA, 3, 2);
+        // Integration hub: 2 ok + 1 failed in the last 24 h; an older run, a
+        // cancelled run and an unfinished one do not count.
+        long flowA = flow(bankA, adminA);
+        run(bankA, flowA, "SUCCEEDED", Instant.now().minus(1, ChronoUnit.HOURS));
+        run(bankA, flowA, "SUCCEEDED", Instant.now().minus(23, ChronoUnit.HOURS));
+        run(bankA, flowA, "FAILED", Instant.now().minus(2, ChronoUnit.HOURS));
+        run(bankA, flowA, "SUCCEEDED", Instant.now().minus(30, ChronoUnit.HOURS));
+        run(bankA, flowA, "CANCELLED", Instant.now());
+        delivery(bankA, flowA, "DEAD");
+        delivery(bankA, flowA, "DELIVERED");
+        // One silent agent (offline), one fresh (online), one never heard
+        // from since enrolment (offline), pending and revoked (neither).
+        agent(bankA, adminA, AgentStatus.ONLINE, Instant.now().minus(2, ChronoUnit.DAYS));
+        agent(bankA, adminA, AgentStatus.ONLINE, Instant.now());
+        agent(bankA, adminA, AgentStatus.ONLINE, null);
+        agent(bankA, adminA, AgentStatus.PENDING_ENROLMENT, null);
+        agent(bankA, adminA, AgentStatus.REVOKED, Instant.now().minus(2, ChronoUnit.DAYS));
+        apiCall(bankA);
+        apiCall(bankA);
+        apiCall(bankA);
+        apiCallAt(bankA, Instant.now().minus(2, ChronoUnit.DAYS));
 
         // ---- bank B: MORE of everything, all of it must stay invisible to A
+        long flowB = flow(bankB, adminB);
+        for (int i = 0; i < 5; i++) {
+            run(bankB, flowB, "SUCCEEDED", Instant.now());
+            run(bankB, flowB, "FAILED", Instant.now());
+            delivery(bankB, flowB, "DEAD");
+            agent(bankB, adminB, AgentStatus.ONLINE, null);
+            apiCall(bankB);
+        }
         mfa(adminB);
         for (int i = 0; i < 4; i++) {
             AppUser b = user("dash-b" + i, bankB, Role.ADMIN);
@@ -191,7 +237,7 @@ class AdminDashboardIsolationTest {
             b.setLastLoginAt(LocalDateTime.now());
             users.save(b);
             mfa(b);
-            ingestion(bankB, b, JobStatus.FAILED, LocalDateTime.now());
+            ingestion(bankB, b, JobStatus.FAILED, LocalDateTime.now(), "AI");
             extraction(bankB, b, ExtractionJobStatus.FAILED, Instant.now());
             alert(bankB, AlertSeverity.CRITICAL, Instant.now());
             pending(bankB, adminB, ChangeType.SETTING_UPDATE);
@@ -235,7 +281,7 @@ class AdminDashboardIsolationTest {
                 .isEqualTo(1);
         assertThat(ingestion.get("failures7d").asLong()).isEqualTo(1);
         assertThat(map(ingestion.get("parsedBy")))
-                .isEqualTo(Map.of("AI", 0L, "CODE", 0L, "AI_PARTIAL", 0L));
+                .isEqualTo(Map.of("AI", 1L, "CODE", 1L, "AI_PARTIAL", 1L));
 
         JsonNode extraction = body.get("extraction").get("last7d").get("byStatus");
         assertThat(extraction.get("RUNNING").asLong()).isEqualTo(1);
@@ -257,16 +303,13 @@ class AdminDashboardIsolationTest {
         assertThat(body.get("templates").get("private").asLong()).isEqualTo(2);
         assertThat(body.get("templates").get("shared").asLong()).isEqualTo(1);
         assertThat(body.get("settings").get("pendingSecurityChanges").asLong()).isEqualTo(1);
-        // The integration hub is not tracked yet: null, never a fake zero.
-        assertThat(body.get("integrations").get("runs24h").get("failed").isNull()).isTrue();
-        assertThat(body.get("integrations").get("deadLetters").isNull()).isTrue();
-        // The full contracts §3 shape is present so the UI tiles render "—".
-        assertThat(body.get("integrations").get("runs24h").has("ok")).isTrue();
-        assertThat(body.get("integrations").get("runs24h").get("ok").isNull()).isTrue();
-        assertThat(body.get("integrations").has("agentsOffline")).isTrue();
-        assertThat(body.get("integrations").get("agentsOffline").isNull()).isTrue();
-        assertThat(body.get("integrations").has("apiCalls24h")).isTrue();
-        assertThat(body.get("integrations").get("apiCalls24h").isNull()).isTrue();
+        // Integration hub (contracts §3): bank A's own counts only.
+        JsonNode hub = body.get("integrations");
+        assertThat(hub.get("runs24h").get("ok").asLong()).isEqualTo(2);
+        assertThat(hub.get("runs24h").get("failed").asLong()).isEqualTo(1);
+        assertThat(hub.get("deadLetters").asLong()).isEqualTo(1);
+        assertThat(hub.get("agentsOffline").asLong()).isEqualTo(2);
+        assertThat(hub.get("apiCalls24h").asLong()).isEqualTo(3);
 
         // Counts only: no account, template or other-bank identifier anywhere.
         assertThat(json)
@@ -287,6 +330,14 @@ class AdminDashboardIsolationTest {
         assertThat(bodyB.get("templates").get("private").asLong()).isEqualTo(4);
         assertThat(bodyB.get("templates").get("shared").asLong()).isEqualTo(4);
         assertThat(bodyB.get("retention").get("lastPurged").asLong()).isEqualTo(99);
+        assertThat(map(bodyB.get("ingestion").get("parsedBy")))
+                .isEqualTo(Map.of("AI", 4L, "CODE", 0L, "AI_PARTIAL", 0L));
+        JsonNode hubB = bodyB.get("integrations");
+        assertThat(hubB.get("runs24h").get("ok").asLong()).isEqualTo(5);
+        assertThat(hubB.get("runs24h").get("failed").asLong()).isEqualTo(5);
+        assertThat(hubB.get("deadLetters").asLong()).isEqualTo(5);
+        assertThat(hubB.get("agentsOffline").asLong()).isEqualTo(5);
+        assertThat(hubB.get("apiCalls24h").asLong()).isEqualTo(5);
     }
 
     @Test
@@ -349,8 +400,10 @@ class AdminDashboardIsolationTest {
         createdRows.add(userMfa.save(row));
     }
 
-    private void ingestion(Bank bank, AppUser owner, JobStatus status, LocalDateTime created) {
+    private void ingestion(Bank bank, AppUser owner, JobStatus status, LocalDateTime created,
+                           String parsedBy) {
         IngestionJob job = new IngestionJob();
+        job.setParsedBy(parsedBy);
         job.setBankId(bank.getBankId());
         job.setOwnerUserId(owner.getAppUserId());
         job.setTemplateId(1);
@@ -432,6 +485,76 @@ class AdminDashboardIsolationTest {
                 .bankId(bank.getBankId())
                 .newValues(evidence)
                 .build());
+    }
+
+    /** A REST connection and an outbound flow on it (the runs' and deliveries' parents). */
+    private long flow(Bank bank, AppUser by) {
+        int bankId = bank.getBankId();
+        String name = "dash-hub-" + tag;
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbc.update("INSERT INTO IntegrationConnection (BankId, Name, Type, Mode, ConfigJson, "
+                        + "AuthType, Status, Version, CreatedBy, CreatedAt) "
+                        + "VALUES (?, ?, 'REST_API', 'DIRECT', '{}', 'NONE', 'UNTESTED', 0, ?, ?)",
+                bankId, name, by.getAppUserId(), now);
+        Long connectionId = jdbc.queryForObject("SELECT IntegrationConnectionId FROM "
+                + "IntegrationConnection WHERE BankId = ? AND Name = ?", Long.class, bankId, name);
+        jdbc.update("INSERT INTO IntegrationFlow (BankId, Name, ConnectionId, Direction, "
+                        + "TriggerType, PayloadKinds, Format, MaskPii, Enabled, Version, "
+                        + "CreatedBy, CreatedAt) VALUES (?, ?, ?, 'OUTBOUND', 'MANUAL', "
+                        + "'JOB_STATUS', 'JSON', true, false, 0, ?, ?)",
+                bankId, name, connectionId, by.getAppUserId(), now);
+        return jdbc.queryForObject("SELECT IntegrationFlowId FROM IntegrationFlow "
+                + "WHERE BankId = ? AND Name = ?", Long.class, bankId, name);
+    }
+
+    private void run(Bank bank, long flowId, String status, Instant finishedAt) {
+        Long connectionId = jdbc.queryForObject("SELECT ConnectionId FROM IntegrationFlow "
+                + "WHERE IntegrationFlowId = ?", Long.class, flowId);
+        // ScheduledFor is unique per flow.
+        Timestamp scheduledFor = Timestamp.from(Instant.now().plusMillis(runSequence++));
+        jdbc.update("INSERT INTO IntegrationRun (BankId, FlowId, ConnectionId, Operation, "
+                        + "TriggerType, ScheduledFor, Status, Attempt, RecordsIn, RecordsOut, "
+                        + "CreatedAt, StartedAt, FinishedAt) "
+                        + "VALUES (?, ?, ?, 'WRITE', 'MANUAL', ?, ?, 1, 0, 0, ?, ?, ?)",
+                bank.getBankId(), flowId, connectionId, scheduledFor, status,
+                Timestamp.from(finishedAt), Timestamp.from(finishedAt),
+                Timestamp.from(finishedAt));
+    }
+
+    private void delivery(Bank bank, long flowId, String status) {
+        jdbc.update("INSERT INTO OutboundDelivery (BankId, FlowId, PayloadKind, PayloadRef, "
+                        + "Status, Attempts, CreatedAt) VALUES (?, ?, 'JOB_STATUS', 'job:1', ?, "
+                        + "5, ?)",
+                bank.getBankId(), flowId, status, Timestamp.from(Instant.now()));
+    }
+
+    private void agent(Bank bank, AppUser by, AgentStatus status, Instant lastHeartbeat) {
+        IntegrationAgent agent = new IntegrationAgent();
+        agent.setBankId(bank.getBankId());
+        agent.setName("dash-agent-" + tag + "-" + runSequence++);
+        agent.setStatus(status);
+        agent.setLastHeartbeatAt(lastHeartbeat);
+        agent.setCreatedByUserId(by.getAppUserId());
+        agent.setCreatedAt(Instant.now());
+        agents.save(agent);
+    }
+
+    /** What MachineApiInterceptor records for one Integration API v1 call. */
+    private void apiCall(Bank bank) {
+        audit.record(AuditEventSpec.builder("INTEGRATION_API_CALL", AuditOutcome.SUCCESS)
+                .entity("ApiClient", "1")
+                .actorEmail("api-client:dash-" + tag)
+                .actorRole("API_CLIENT")
+                .bankId(bank.getBankId())
+                .newValues(Map.of("method", "GET", "route", "/api/integration/v1/templates"))
+                .build());
+    }
+
+    private void apiCallAt(Bank bank, Instant occurredAt) {
+        jdbc.update("INSERT INTO AuditEvent (AuditEventId, OccurredAt, BankId, Action, "
+                        + "EntityType, EntityId, Outcome) "
+                        + "VALUES (?, ?, ?, 'INTEGRATION_API_CALL', 'ApiClient', '1', 'SUCCESS')",
+                UUID.randomUUID(), Timestamp.from(occurredAt), bank.getBankId());
     }
 
     private String bearer(AppUser user) {

@@ -221,6 +221,7 @@ function Connections() {
       {!connections && !error && <Spinner label="Loading connections…" />}
       {connections && (
         <DataTable
+          caption="Connections"
           columns={columns}
           rows={connections}
           emptyMessage="No connections yet. Add one to start receiving or sending data."

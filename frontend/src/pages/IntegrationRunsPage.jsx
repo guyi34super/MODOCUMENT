@@ -108,7 +108,7 @@ function Runs() {
       </div>
       <ErrorBanner message={error} onDismiss={() => setError('')} />
       {!runs && !error && <Spinner label="Loading runs…" />}
-      {runs && <DataTable columns={columns} rows={runs} emptyMessage="No runs yet." />}
+      {runs && <DataTable caption="Integration runs" columns={columns} rows={runs} emptyMessage="No runs yet." />}
     </>
   );
 }

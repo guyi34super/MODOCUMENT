@@ -88,6 +88,15 @@ class AdminDashboardIsolationPgIT extends PgSpringItSupport {
                 .isZero();
         assertThat(body.get("templates").get("private").asLong()).isEqualTo(1);
         assertThat(body.get("retention").get("lastPurged").asLong()).isEqualTo(4);
+        assertThat(body.get("ingestion").get("parsedBy").get("AI").asLong()).isEqualTo(1);
+        assertThat(body.get("ingestion").get("parsedBy").get("CODE").asLong()).isZero();
+
+        JsonNode hub = body.get("integrations");
+        assertThat(hub.get("runs24h").get("ok").asLong()).isEqualTo(1);
+        assertThat(hub.get("runs24h").get("failed").asLong()).isEqualTo(1);
+        assertThat(hub.get("deadLetters").asLong()).isEqualTo(1);
+        assertThat(hub.get("agentsOffline").asLong()).isEqualTo(1);
+        assertThat(hub.get("apiCalls24h").asLong()).isEqualTo(2);
 
         assertThat(json).doesNotContain("@example.com").doesNotContain("DASH_B")
                 .doesNotContain("Dash Template");
@@ -108,6 +117,15 @@ class AdminDashboardIsolationPgIT extends PgSpringItSupport {
                 .isEqualTo(2);
         assertThat(body.get("templates").get("private").asLong()).isEqualTo(2);
         assertThat(body.get("retention").get("lastPurged").asLong()).isEqualTo(70);
+        assertThat(body.get("ingestion").get("parsedBy").get("CODE").asLong()).isEqualTo(2);
+        assertThat(body.get("ingestion").get("parsedBy").get("AI").asLong()).isZero();
+
+        JsonNode hub = body.get("integrations");
+        assertThat(hub.get("runs24h").get("ok").asLong()).isEqualTo(3);
+        assertThat(hub.get("runs24h").get("failed").asLong()).isEqualTo(3);
+        assertThat(hub.get("deadLetters").asLong()).isEqualTo(3);
+        assertThat(hub.get("agentsOffline").asLong()).isEqualTo(3);
+        assertThat(hub.get("apiCalls24h").asLong()).isEqualTo(4);
     }
 
     private String dashboard(int userId, int bankId) throws Exception {
@@ -156,11 +174,59 @@ class AdminDashboardIsolationPgIT extends PgSpringItSupport {
                     + "(7411, 'Dash Template B2', 'seed', 9413, 410) "
                     + "ON CONFLICT DO NOTHING",
             "INSERT INTO IngestionJob (IngestionJobId, TemplateId, FileName, CurrentStep, Status, "
-                    + "CreatedDate, UpdatedDate, OwnerUserId, BankId) VALUES "
-                    + "(7320, 7310, 'dash-a.csv', 'UPLOADED', 'FAILED', now(), now(), 9311, 310), "
-                    + "(7420, 7410, 'dash-b.csv', 'UPLOADED', 'FAILED', now(), now(), 9413, 410), "
-                    + "(7421, 7410, 'dash-b.csv', 'UPLOADED', 'FAILED', now(), now(), 9413, 410) "
+                    + "CreatedDate, UpdatedDate, OwnerUserId, BankId, ParsedBy) VALUES "
+                    + "(7320, 7310, 'dash-a.csv', 'UPLOADED', 'FAILED', now(), now(), 9311, 310, 'AI'), "
+                    + "(7420, 7410, 'dash-b.csv', 'UPLOADED', 'FAILED', now(), now(), 9413, 410, 'CODE'), "
+                    + "(7421, 7410, 'dash-b.csv', 'UPLOADED', 'FAILED', now(), now(), 9413, 410, 'CODE') "
                     + "ON CONFLICT DO NOTHING",
+            // Integration hub (ws25/ws26): one connection + outbound flow per bank.
+            "INSERT INTO IntegrationConnection (BankId, Name, Type, Mode, CreatedBy) VALUES "
+                    + "(310, 'dash-hub', 'REST_API', 'DIRECT', 9310), "
+                    + "(410, 'dash-hub', 'REST_API', 'DIRECT', 9410) "
+                    + "ON CONFLICT DO NOTHING",
+            "INSERT INTO IntegrationFlow (BankId, Name, ConnectionId, Direction, TriggerType, "
+                    + "CreatedBy) SELECT BankId, Name, IntegrationConnectionId, 'OUTBOUND', "
+                    + "'MANUAL', CreatedBy FROM IntegrationConnection WHERE Name = 'dash-hub' "
+                    + "ON CONFLICT DO NOTHING",
+            // Bank A: 1 ok + 1 failed in the last 24 h, one ok run older than that.
+            // Bank B: 3 ok + 3 failed.
+            "INSERT INTO IntegrationRun (BankId, FlowId, ConnectionId, Operation, TriggerType, "
+                    + "ScheduledFor, Status, FinishedAt) "
+                    + "SELECT f.BankId, f.IntegrationFlowId, f.ConnectionId, 'WRITE', 'MANUAL', "
+                    + "now() - (r.n * interval '1 minute'), r.status, now() - r.age "
+                    + "FROM IntegrationFlow f JOIN (VALUES "
+                    + "(310, 1, 'SUCCEEDED', interval '1 hour'), "
+                    + "(310, 2, 'FAILED', interval '2 hours'), "
+                    + "(310, 3, 'SUCCEEDED', interval '30 hours'), "
+                    + "(410, 1, 'SUCCEEDED', interval '0'), (410, 2, 'SUCCEEDED', interval '0'), "
+                    + "(410, 3, 'SUCCEEDED', interval '0'), (410, 4, 'FAILED', interval '0'), "
+                    + "(410, 5, 'FAILED', interval '0'), (410, 6, 'FAILED', interval '0')"
+                    + ") AS r(bank, n, status, age) ON r.bank = f.BankId "
+                    + "WHERE f.Name = 'dash-hub' ON CONFLICT DO NOTHING",
+            "INSERT INTO OutboundDelivery (BankId, FlowId, PayloadKind, PayloadRef, Status) "
+                    + "SELECT f.BankId, f.IntegrationFlowId, 'JOB_STATUS', 'job:1', d.status "
+                    + "FROM IntegrationFlow f JOIN (VALUES (310, 'DEAD'), (310, 'DELIVERED'), "
+                    + "(410, 'DEAD'), (410, 'DEAD'), (410, 'DEAD')) AS d(bank, status) "
+                    + "ON d.bank = f.BankId WHERE f.Name = 'dash-hub'",
+            // Bank A: one silent agent (offline) and one fresh (online);
+            // bank B: three that never sent a heartbeat (offline).
+            "INSERT INTO IntegrationAgent (BankId, Name, Status, LastHeartbeatAt, "
+                    + "CreatedByUserId, CreatedAt) VALUES "
+                    + "(310, 'dash-a-silent', 'ONLINE', now() - interval '2 days', 9310, now()), "
+                    + "(310, 'dash-a-fresh', 'ONLINE', now(), 9310, now()), "
+                    + "(410, 'dash-b-1', 'ONLINE', null, 9410, now()), "
+                    + "(410, 'dash-b-2', 'ONLINE', null, 9410, now()), "
+                    + "(410, 'dash-b-3', 'ONLINE', null, 9410, now())",
+            // Integration API calls (MachineApiInterceptor's audit rows).
+            "INSERT INTO AuditEvent (AuditEventId, OccurredAt, BankId, Action, EntityType, "
+                    + "EntityId, Outcome) VALUES "
+                    + "(gen_random_uuid(), now(), 310, 'INTEGRATION_API_CALL', 'ApiClient', '1', 'SUCCESS'), "
+                    + "(gen_random_uuid(), now(), 310, 'INTEGRATION_API_CALL', 'ApiClient', '1', 'SUCCESS'), "
+                    + "(gen_random_uuid(), now() - interval '2 days', 310, 'INTEGRATION_API_CALL', 'ApiClient', '1', 'SUCCESS'), "
+                    + "(gen_random_uuid(), now(), 410, 'INTEGRATION_API_CALL', 'ApiClient', '2', 'SUCCESS'), "
+                    + "(gen_random_uuid(), now(), 410, 'INTEGRATION_API_CALL', 'ApiClient', '2', 'SUCCESS'), "
+                    + "(gen_random_uuid(), now(), 410, 'INTEGRATION_API_CALL', 'ApiClient', '2', 'SUCCESS'), "
+                    + "(gen_random_uuid(), now(), 410, 'INTEGRATION_API_CALL', 'ApiClient', '2', 'SUCCESS')",
             "INSERT INTO ExtractionSource (ExtractionSourceId, OwnerUserId, Name, Type, "
                     + "TermsAcknowledged, BankId) VALUES "
                     + "(7330, 9311, 'Dash A Source', 'WEBSITE', true, 310), "
