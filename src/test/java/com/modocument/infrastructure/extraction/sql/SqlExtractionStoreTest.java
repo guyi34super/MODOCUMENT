@@ -22,11 +22,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -139,6 +142,36 @@ class SqlExtractionStoreTest {
         jobs.save(loaded);
         assertThat(jobs.getById(job.getId()).orElseThrow().getCounters())
                 .containsEntry(ExtractionJob.RECORDS_RAW, (long) threads * perThread);
+    }
+
+    @Test
+    void firstIncrementRaceLosesNoCounts() throws Exception {
+        // All workers hit a brand-new counter at once, so all but one lose the
+        // UPDATE-then-INSERT race; each loser must still land its increment.
+        int threads = 8;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        try {
+            for (int round = 0; round < 40; round++) {
+                ExtractionJob job = jobs.save(newJob(ExtractionJobStatus.RUNNING));
+                CyclicBarrier start = new CyclicBarrier(threads);
+                List<Future<?>> workers = new ArrayList<>();
+                for (int t = 0; t < threads; t++) {
+                    workers.add(pool.submit(() -> {
+                        start.await();
+                        jobs.increment(job.getId(), ExtractionJob.RECORDS_RAW, 1);
+                        return null;
+                    }));
+                }
+                for (Future<?> worker : workers) {
+                    worker.get(30, TimeUnit.SECONDS);
+                }
+                assertThat(jobs.getById(job.getId()).orElseThrow().getCounters())
+                        .as("round %d", round)
+                        .containsEntry(ExtractionJob.RECORDS_RAW, (long) threads);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test
