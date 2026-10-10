@@ -1,7 +1,6 @@
 package com.modocument.infrastructure.ai;
 
 import com.modocument.domain.model.FallbackReason;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.CancellationException;
@@ -9,7 +8,7 @@ import java.util.concurrent.CancellationException;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * BUG-03 (QA, phase 2 Wave 2) — regression test, disabled until fixed.
+ * BUG-03 (QA, phase 2 Wave 2) — regression test; fixed in Wave 3 (AiFailureClassifier).
  *
  * <p>Observed in a full {@code mvn -B verify}: with a model that accepts the
  * request and never answers, Spring's JDK request factory sometimes reports
@@ -47,8 +46,6 @@ class AiTimeoutCancellationBug03Test {
     }
 
     @Test
-    @Disabled("BUG-03: a read timeout surfacing as CancellationException is re-prompted, "
-            + "not counted for the circuit breaker and classified ERROR instead of TIMEOUT")
     void aCancelledModelCallIsATimeoutNotAReplyProblem() {
         CancellationException timedOut = new CancellationException();
 

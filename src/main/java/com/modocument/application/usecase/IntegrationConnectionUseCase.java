@@ -127,7 +127,9 @@ public class IntegrationConnectionUseCase {
             String before = connection.getName();
             connection.setName(name);
             connection.setUpdatedAt(Instant.now());
-            IntegrationConnection saved = connections.save(connection);
+            // Flush so @Version is incremented before the view is built: the
+            // answer must carry the committed version the next edit sends.
+            IntegrationConnection saved = connections.saveAndFlush(connection);
             Map<String, Object> values = IntegrationConnectionChangeApplier.auditValues(saved, "RENAMED", false);
             audit.record(AuditEventSpec.builder("INTEGRATION_CONNECTION_CHANGED", AuditOutcome.SUCCESS)
                     .entity("IntegrationConnection", String.valueOf(saved.getId()))

@@ -6,6 +6,7 @@ import com.modocument.domain.model.integration.OutboundAuthType;
 import com.modocument.infrastructure.integration.connector.DatabaseIntegrationConnector;
 import com.modocument.infrastructure.integration.connector.OutboundHttp;
 import com.modocument.infrastructure.integration.connector.SftpIntegrationConnector;
+import com.modocument.infrastructure.net.EgressTargets;
 import org.springframework.stereotype.Component;
 
 import java.util.Locale;
@@ -100,6 +101,7 @@ public class ConnectionValidator {
                 : new ConnectionContext(connection.bankId(), connection.connectionId(), connection.name(),
                 connection.type(), com.modocument.domain.model.integration.ConnectionMode.AGENT,
                 connection.config(), connection.secret());
+        refuseMetadataDestination(connection);
         switch (connection.type()) {
             case REST_API -> {
                 http.baseUri(checked);
@@ -122,6 +124,39 @@ public class ConnectionValidator {
                 }
             }
             case SFTP -> sftp.validate(checked, Map.of(), false);
+        }
+    }
+
+    /**
+     * A cloud metadata / credential endpoint (IMDS, the ECS task endpoint)
+     * written as an IP literal is refused when the connection is SUBMITTED,
+     * not only when the connector connects (BUG-06; no egress rule can ever
+     * open these). Host names are not resolved here; one that resolves to
+     * such an address is still refused by the EgressGuard at connect time.
+     */
+    private void refuseMetadataDestination(ConnectionContext connection) {
+        String host = switch (connection.type()) {
+            case REST_API, WEBHOOK -> {
+                String url = connection.config("url") != null ? connection.config("url")
+                        : connection.config("baseUrl");
+                try {
+                    yield url == null ? null : java.net.URI.create(url.trim()).getHost();
+                } catch (IllegalArgumentException e) {
+                    yield null; // malformed: the type-specific checks report it
+                }
+            }
+            case DATABASE, SFTP -> connection.config("host");
+        };
+        if (host == null || host.isBlank()) {
+            return;
+        }
+        String bare = host.trim();
+        if (bare.startsWith("[") && bare.endsWith("]")) {
+            bare = bare.substring(1, bare.length() - 1);
+        }
+        if (EgressTargets.isIpLiteral(bare) && EgressTargets.isMetadata(EgressTargets.literal(bare))) {
+            throw new IllegalArgumentException("The destination " + host + " is a cloud metadata "
+                    + "endpoint and can never be a connection target.");
         }
     }
 }

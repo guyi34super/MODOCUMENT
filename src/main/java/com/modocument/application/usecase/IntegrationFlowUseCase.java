@@ -610,12 +610,13 @@ public class IntegrationFlowUseCase {
 
     /** What decides whether an enabled outbound flow was widened. */
     record Snapshot(boolean maskPii, Set<PayloadKind> kinds, Set<FlowEvent> events, long connectionId,
-                    Integer templateId, String target, String mapping, PayloadFormat format) {
+                    Integer templateId, String target, String mapping, PayloadFormat format,
+                    Integer rowCap) {
 
         static Snapshot of(IntegrationFlow flow) {
             return new Snapshot(flow.isMaskPii(), flow.payloadKindSet(), flow.eventSet(),
                     flow.getConnectionId(), flow.getTemplateId(), flow.getTargetSpecJson(),
-                    flow.getFieldMappingJson(), flow.getFormat());
+                    flow.getFieldMappingJson(), flow.getFormat(), flow.getRowCap());
         }
 
         boolean widenedBy(Snapshot after) {
@@ -626,7 +627,17 @@ public class IntegrationFlowUseCase {
                     || !Objects.equals(templateId, after.templateId)
                     || !Objects.equals(target, after.target)
                     || !Objects.equals(mapping, after.mapping)
-                    || format != after.format;
+                    || format != after.format
+                    || rowCapRaised(rowCap, after.rowCap);
+        }
+
+        /**
+         * More rows may leave per run: a higher explicit cap, or dropping the
+         * cap (null = the bank's {@code integration.maxRowsPerRun}). Setting a
+         * cap where there was none only lowers the bound.
+         */
+        private static boolean rowCapRaised(Integer before, Integer after) {
+            return before != null && (after == null || after > before);
         }
     }
 }

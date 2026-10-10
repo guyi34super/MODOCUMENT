@@ -26,7 +26,6 @@ import com.modocument.infrastructure.persistence.BankEgressRuleJpaRepository;
 import com.modocument.infrastructure.persistence.OutboundDeliveryJpaRepository;
 import com.modocument.integration.IntegrationTestSupport;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -212,7 +211,6 @@ class IntegrationHubSecurityQaTest extends IntegrationTestSupport {
      * "config":{"baseUrl":"http://169.254.169.254/latest/meta-data"}} → 202.
      */
     @Test
-    @Disabled("BUG-06: metadata destination accepted at submit (refused only at connect)")
     void bug06MetadataDestinationRefusedAtSubmit() throws Exception {
         for (String url : List.of("http://169.254.169.254/latest/meta-data",
                 "http://[fd00:ec2::254]/", "http://169.254.170.2/v2/credentials")) {
@@ -631,7 +629,6 @@ class IntegrationHubSecurityQaTest extends IntegrationTestSupport {
      * maker/checker, then PUT the flow with rowCap 10000: 200, still enabled.
      */
     @Test
-    @Disabled("BUG-08: raising the row cap of an enabled outbound flow needs no second admin")
     void bug08RaisingTheRowCapIsAWidening() throws Exception {
         IntegrationConnection hook = restConnection("hook", "HMAC_SIGNATURE",
                 Map.of("hmacSecret", "0123456789abcdef0123"), ConnectionType.WEBHOOK);
@@ -785,7 +782,6 @@ class IntegrationHubSecurityQaTest extends IntegrationTestSupport {
      * → version = v + 1. Found by the E2E AC-INT-01.
      */
     @Test
-    @Disabled("BUG-07: rename answers the pre-commit version, the next edit with it gets 409")
     void bug07RenameAnswersTheCommittedVersion() throws Exception {
         IntegrationConnection db = dbConnection();
         JsonNode before = json(getAs(admin, CONNECTIONS + "/" + db.getId()));
