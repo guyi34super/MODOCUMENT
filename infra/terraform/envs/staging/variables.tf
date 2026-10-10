@@ -78,6 +78,12 @@ variable "bootstrap_admin_enabled" {
   default     = true
 }
 
+variable "platform_admin_bootstrap_enabled" {
+  description = "Create the platform-admin secret pair (MODOCUMENT_PLATFORM_ADMIN_EMAILS / _PASSWORDS) and inject it into the app task. true for the v1.1.0 rollout (set both values before the deploy; an injected secret without a value stops the task from starting); false once both PLATFORM_ADMINs have changed their passwords and enrolled MFA."
+  type        = bool
+  default     = false
+}
+
 # --- ws26 bank integration hub ------------------------------------------------
 
 variable "bank_egress_cidrs" {

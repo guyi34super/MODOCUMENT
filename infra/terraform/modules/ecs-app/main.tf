@@ -11,8 +11,8 @@
 #                 MODOCUMENT_JWT_SECRET, MODOCUMENT_MFA_KEY,
 #                 MODOCUMENT_CONNECTOR_KEY (ws26), DB credentials,
 #                 and — until the first admin exists — the bootstrap-admin
-#                 pair. Nothing secret in the task definition JSON, tfvars or
-#                 state.
+#                 pair (likewise the platform-admin pair, v1.1.0). Nothing
+#                 secret in the task definition JSON, tfvars or state.
 #   SEC-028       ALB listener pinned to a TLS 1.2+ security policy. HSTS is
 #                 emitted by the APP (SecurityConfig) when X-Forwarded-Proto
 #                 is https — the ALB must keep forwarding that header (it
@@ -236,6 +236,16 @@ locals {
     var.bootstrap_admin_secret_arns.email,
     var.bootstrap_admin_secret_arns.password,
   ]
+  # Platform owner (ws21, v1.1.0): the two PLATFORM_ADMIN accounts, seeded
+  # once by BootstrapPlatformRunner; same on/off lifecycle as the above.
+  platform_admin_secrets = var.platform_admin_secret_arns == null ? [] : [
+    { name = "MODOCUMENT_PLATFORM_ADMIN_EMAILS", valueFrom = var.platform_admin_secret_arns.emails },
+    { name = "MODOCUMENT_PLATFORM_ADMIN_PASSWORDS", valueFrom = var.platform_admin_secret_arns.passwords },
+  ]
+  platform_admin_secret_arns = var.platform_admin_secret_arns == null ? [] : [
+    var.platform_admin_secret_arns.emails,
+    var.platform_admin_secret_arns.passwords,
+  ]
 }
 
 # Only the exact secrets the task injects — least privilege, no wildcard.
@@ -253,7 +263,7 @@ resource "aws_iam_role_policy" "execution_secrets" {
         var.connector_key_secret_arn,
         var.db_app_credentials_secret_arn,
         var.db_master_secret_arn,
-      ], local.bootstrap_admin_secret_arns)
+      ], local.bootstrap_admin_secret_arns, local.platform_admin_secret_arns)
     }]
   })
 }
@@ -394,7 +404,7 @@ resource "aws_ecs_task_definition" "this" {
         { name = "MODOCUMENT_DB_PASSWORD", valueFrom = "${var.db_app_credentials_secret_arn}:password::" },
         { name = "MODOCUMENT_FLYWAY_USERNAME", valueFrom = "${var.db_master_secret_arn}:username::" },
         { name = "MODOCUMENT_FLYWAY_PASSWORD", valueFrom = "${var.db_master_secret_arn}:password::" }
-      ], local.bootstrap_admin_secrets)
+      ], local.bootstrap_admin_secrets, local.platform_admin_secrets)
       healthCheck = {
         command     = ["CMD-SHELL", "curl -fsS http://localhost:${var.app_port}/actuator/health || exit 1"]
         interval    = 30

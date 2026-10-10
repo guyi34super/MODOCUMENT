@@ -118,6 +118,16 @@ one run. Operationally, the sequence that avoids dead ends:
    runtime — it just removes a standing admin credential. Do **not** delete
    the secrets by hand while the flag is still true: the task definition
    would reference a missing secret and new tasks would fail to launch.
+6. **Platform owner (v1.1.0), per env:** `platform_admin_bootstrap_enabled
+   = true` creates `MODOCUMENT_PLATFORM_ADMIN_EMAILS` and
+   `MODOCUMENT_PLATFORM_ADMIN_PASSWORDS` (two comma-separated entries each,
+   in the same order; the passwords must pass the password policy) and
+   injects them. BootstrapPlatformRunner then seeds the platform bank and
+   its two PLATFORM_ADMIN accounts once. Set both values **before** the
+   deploy that carries the flag. After both platform admins have changed
+   their passwords and enrolled MFA, set the flag to `false` and re-apply,
+   as in step 5. Default `false`: an install without a platform owner yet
+   simply skips the seeding.
    Re-enable only to seed a rebuilt, empty database.
 6. **After the restore drill passes (gate D6):** set
    `enforce_backup_locks=true` in production tfvars and re-apply — vault
