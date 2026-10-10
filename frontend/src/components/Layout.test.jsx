@@ -151,6 +151,15 @@ describe('Layout sidebar', () => {
       'href',
       '/platform/settings'
     );
+    // ws24: announcements and the release notes of deployed versions.
+    expect(screen.getByRole('link', { name: 'Announcements' })).toHaveAttribute(
+      'href',
+      '/platform/announcements'
+    );
+    expect(screen.getByRole('link', { name: 'Release notes' })).toHaveAttribute(
+      'href',
+      '/platform/releases'
+    );
     expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
     for (const hidden of ['Home', /Design Templates/, 'Blueprints', 'Extraction Jobs',
       'Security alerts', 'Releases', 'Admin dashboard']) {

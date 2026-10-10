@@ -19,7 +19,7 @@ const sections = [
       { to: '/platform/settings', label: 'Settings', roles: PLATFORM_ONLY },
       // ws24: announcements (maintenance / release banners) and release notes.
       { to: '/platform/announcements', label: 'Announcements', roles: PLATFORM_ONLY },
-      { to: '/platform/releases', label: 'Releases', roles: PLATFORM_ONLY },
+      { to: '/platform/releases', label: 'Release notes', roles: PLATFORM_ONLY },
     ],
   },
   {

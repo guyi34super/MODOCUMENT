@@ -26,6 +26,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -66,7 +67,7 @@ class TransformControllerTemplateAccessTest {
         TemplateFields amount = new TemplateFields();
         amount.setFieldName("Amount");
         when(fields.listByTemplateId(TEMPLATE)).thenReturn(List.of(amount));
-        when(transform.transform(any(), any())).thenReturn(new TransformResult("[]"));
+        when(transform.transform(any(), any(), anyInt())).thenReturn(new TransformResult("[]"));
         when(imports.add(any(ImportHistory.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ResponseEntity<?> result = controller.transformFile(new TransformRequest("doc.pdf"));
@@ -86,6 +87,6 @@ class TransformControllerTemplateAccessTest {
         ResponseEntity<?> result = controller.transformFile(new TransformRequest("doc.pdf"));
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        verify(transform, never()).transform(any(), any());
+        verify(transform, never()).transform(any(), any(), anyInt());
     }
 }
