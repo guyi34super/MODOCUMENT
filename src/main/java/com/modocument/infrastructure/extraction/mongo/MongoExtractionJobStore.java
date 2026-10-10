@@ -2,6 +2,7 @@ package com.modocument.infrastructure.extraction.mongo;
 
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.domain.document.ExtractionJob;
+import com.modocument.domain.model.ExtractionJobStatus;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -11,7 +12,9 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Component
@@ -63,5 +66,20 @@ public class MongoExtractionJobStore implements ExtractionJobStore {
                 new Query(Criteria.where("_id").is(jobId)),
                 new Update().inc("counters." + counter, delta).set("updatedDate", Instant.now()),
                 ExtractionJob.class);
+    }
+
+    @Override
+    public Map<ExtractionJobStatus, Long> countByStatusSince(int bankId, Instant since) {
+        // Status-only projection: the dashboard needs counts, never job bodies.
+        Query query = new Query(Criteria.where("bankId").is(bankId)
+                .and("createdDate").gte(since));
+        query.fields().include("status");
+        Map<ExtractionJobStatus, Long> counts = new EnumMap<>(ExtractionJobStatus.class);
+        for (ExtractionJob job : mongo.find(query, ExtractionJob.class)) {
+            if (job.getStatus() != null) {
+                counts.merge(job.getStatus(), 1L, Long::sum);
+            }
+        }
+        return counts;
     }
 }

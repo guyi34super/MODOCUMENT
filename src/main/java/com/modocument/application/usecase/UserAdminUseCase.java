@@ -7,6 +7,7 @@ import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.BankDirectory;
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.application.port.RecoveryCodeRepository;
 import com.modocument.application.port.RefreshTokenRepository;
 import com.modocument.application.port.UserMfaRepository;
 import com.modocument.application.security.RoleAssignmentPolicy;
@@ -29,6 +30,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -62,13 +64,25 @@ import java.util.Set;
  * PLATFORM_ADMIN only in the platform bank), and the platform bank never
  * drops below {@link RoleAssignmentPolicy#MIN_ACTIVE_PLATFORM_ADMINS}
  * enabled platform admins.
+ *
+ * <p>Phase 2 (ws22) admin actions on ANOTHER user of the bank (self-targeting
+ * is refused with 409 on every one of them — self-service lives in the
+ * profile): {@link #unlock} and {@link #updateDisplayName} apply directly
+ * (they restore access or change a label); the credential resets
+ * ({@link #applyPasswordReset}, {@link #applyMfaReset}) are the appliers of
+ * the USER_PASSWORD_RESET / USER_MFA_RESET maker/checker changes and kill
+ * every outstanding session of the target.
  */
 @Service
 public class UserAdminUseCase {
 
+    /** Same bound as the AppUsers.DisplayName column. */
+    private static final int MAX_DISPLAY_NAME = 200;
+
     private final CurrentUserProvider currentUser;
     private final AppUserRepository users;
     private final UserMfaRepository userMfa;
+    private final RecoveryCodeRepository recoveryCodes;
     private final RefreshTokenRepository refreshTokens;
     private final BankJpaRepository banks;
     private final AuthUseCase auth;
@@ -76,12 +90,13 @@ public class UserAdminUseCase {
     private final BankDirectory bankDirectory;
 
     public UserAdminUseCase(CurrentUserProvider currentUser, AppUserRepository users,
-                            UserMfaRepository userMfa, RefreshTokenRepository refreshTokens,
-                            BankJpaRepository banks, AuthUseCase auth, AuditRecorder audit,
-                            BankDirectory bankDirectory) {
+                            UserMfaRepository userMfa, RecoveryCodeRepository recoveryCodes,
+                            RefreshTokenRepository refreshTokens, BankJpaRepository banks,
+                            AuthUseCase auth, AuditRecorder audit, BankDirectory bankDirectory) {
         this.currentUser = currentUser;
         this.users = users;
         this.userMfa = userMfa;
+        this.recoveryCodes = recoveryCodes;
         this.refreshTokens = refreshTokens;
         this.banks = banks;
         this.auth = auth;
@@ -214,6 +229,163 @@ public class UserAdminUseCase {
                 .newValues(Map.of("disabled", disabled, "email", saved.getEmail()))
                 .build());
         return AdminUserDto.from(saved, userMfa.isEnabled(targetUserId));
+    }
+
+    // ------------------------------------------------ phase 2 admin actions
+
+    /**
+     * Lifts a login lockout (gate B4) before it expires: clears LockedUntil
+     * and both failure counters, so the next lockout starts again from the
+     * base duration. Direct (no maker/checker) — it restores access the
+     * account already had; the password itself is untouched. A user with
+     * nothing to clear is answered as-is, without an audit row.
+     */
+    @Transactional
+    public AdminUserDto unlock(int targetUserId) {
+        AppUser target = requireOtherSameBankUser(targetUserId,
+                "You cannot unlock your own account.");
+        LocalDateTime lockedUntil = target.getLockedUntil();
+        int failedLogins = target.getFailedLoginCount();
+        int lockouts = target.getLockoutCount();
+        if (lockedUntil == null && failedLogins == 0 && lockouts == 0) {
+            return AdminUserDto.from(target, userMfa.isEnabled(targetUserId));
+        }
+        clearLockout(target);
+        target.setUpdatedDate(LocalDateTime.now());
+        AppUser saved = users.save(target);
+        Map<String, Object> before = new LinkedHashMap<>();
+        before.put("lockedUntil", lockedUntil == null ? "" : lockedUntil.toString());
+        before.put("failedLoginCount", failedLogins);
+        before.put("lockoutCount", lockouts);
+        audit.record(AuditEventSpec.builder("USER_UNLOCKED", AuditOutcome.SUCCESS)
+                .entity("AppUser", String.valueOf(targetUserId))
+                .oldValues(before)
+                .newValues(Map.of("locked", false))
+                .build());
+        return AdminUserDto.from(saved, userMfa.isEnabled(targetUserId));
+    }
+
+    /**
+     * Renames another user of the bank (direct). The email is deliberately
+     * NOT editable: it is the login identity and, for OIDC accounts, part of
+     * the IdP link. Own name changes go through the profile.
+     */
+    @Transactional
+    public AdminUserDto updateDisplayName(int targetUserId, String displayName) {
+        String cleaned = displayName == null ? "" : displayName.trim();
+        if (cleaned.isEmpty()) {
+            throw new IllegalArgumentException("A display name is required.");
+        }
+        if (cleaned.length() > MAX_DISPLAY_NAME) {
+            throw new IllegalArgumentException(
+                    "The display name must be at most " + MAX_DISPLAY_NAME + " characters.");
+        }
+        AppUser target = requireOtherSameBankUser(targetUserId,
+                "Change your own display name in your profile.");
+        String previous = target.getDisplayName();
+        if (cleaned.equals(previous)) {
+            return AdminUserDto.from(target, userMfa.isEnabled(targetUserId));
+        }
+        target.setDisplayName(cleaned);
+        target.setUpdatedDate(LocalDateTime.now());
+        AppUser saved = users.save(target);
+        audit.record(AuditEventSpec.builder("USER_UPDATED", AuditOutcome.SUCCESS)
+                .entity("AppUser", String.valueOf(targetUserId))
+                .oldValues(Map.of("displayName", previous == null ? "" : previous))
+                .newValues(Map.of("displayName", cleaned))
+                .build());
+        return AdminUserDto.from(saved, userMfa.isEnabled(targetUserId));
+    }
+
+    /**
+     * Applies an APPROVED USER_PASSWORD_RESET (the applier is the only
+     * caller). The hash was computed when the maker submitted — no password
+     * material reaches this layer. The account is forced through a password
+     * change on its next sign-in (MustChangePassword), every outstanding
+     * session dies (TokenVersion bump + refresh revocation) and any login
+     * lockout is lifted so the temporary password is usable at once.
+     */
+    @Transactional
+    public AdminUserDto applyPasswordReset(int targetUserId, String passwordHash) {
+        if (passwordHash == null || passwordHash.isBlank()) {
+            throw new IllegalArgumentException("A password hash is required.");
+        }
+        AppUser target = requireOtherSameBankUser(targetUserId,
+                "You cannot reset your own password; change it in your profile.");
+        requireLocalPasswordAccount(target);
+        target.setPasswordHash(passwordHash);
+        target.setMustChangePassword(true);
+        clearLockout(target);
+        target.setTokenVersion(target.getTokenVersion() + 1);
+        target.setUpdatedDate(LocalDateTime.now());
+        AppUser saved = users.save(target);
+        refreshTokens.revokeAllForUser(targetUserId, Instant.now());
+        // No hash, no password: the audit trail records THAT it happened.
+        audit.record(AuditEventSpec.builder("USER_PASSWORD_RESET", AuditOutcome.SUCCESS)
+                .entity("AppUser", String.valueOf(targetUserId))
+                .newValues(Map.of("mustChangePassword", true, "sessionsRevoked", true))
+                .build());
+        return AdminUserDto.from(saved, userMfa.isEnabled(targetUserId));
+    }
+
+    /**
+     * Applies an APPROVED USER_MFA_RESET: removes the TOTP enrolment (active
+     * or half-finished) and every recovery code, then ends every session of
+     * the user — the next sign-in starts without a second factor and, for an
+     * ADMIN (require-for-admin), is forced straight back into enrolment.
+     */
+    @Transactional
+    public AdminUserDto applyMfaReset(int targetUserId, String reason) {
+        AppUser target = requireOtherSameBankUser(targetUserId,
+                "You cannot reset your own MFA.");
+        boolean wasEnabled = userMfa.isEnabled(targetUserId);
+        userMfa.deleteByUserId(targetUserId);
+        recoveryCodes.deleteByUserId(targetUserId);
+        target.setTokenVersion(target.getTokenVersion() + 1);
+        target.setUpdatedDate(LocalDateTime.now());
+        AppUser saved = users.save(target);
+        refreshTokens.revokeAllForUser(targetUserId, Instant.now());
+        audit.record(AuditEventSpec.builder("USER_MFA_RESET", AuditOutcome.SUCCESS)
+                .entity("AppUser", String.valueOf(targetUserId))
+                .oldValues(Map.of("mfaEnabled", wasEnabled))
+                .newValues(Map.of("mfaEnabled", false,
+                        "reason", reason == null ? "" : reason))
+                .build());
+        return AdminUserDto.from(saved, false);
+    }
+
+    /**
+     * The target of a phase-2 admin action: a user of the caller's bank
+     * (another bank's id answers 404 like a missing one) who is NOT the
+     * caller (409). The appliers call it at submit time as the maker and,
+     * through the apply methods above, again as the checker. Public on
+     * purpose: called through the Spring proxy of this bean.
+     */
+    public AppUser requireOtherSameBankUser(int targetUserId, String selfRefusal) {
+        AppUser target = requireSameBankUser(targetUserId);
+        if (targetUserId == currentUser.requireUserId()) {
+            throw new IllegalStateException(selfRefusal);
+        }
+        return target;
+    }
+
+    /**
+     * An account whose credential an IdP owns (ws07 OIDC) has no usable
+     * local password by design; an admin-issued one would bypass the IdP's
+     * own controls (its MFA, its leaver process).
+     */
+    public static void requireLocalPasswordAccount(AppUser target) {
+        if (target.getAuthProvider() != null) {
+            throw new IllegalStateException("This account signs in through its identity "
+                    + "provider (" + target.getAuthProvider() + "); reset the password there.");
+        }
+    }
+
+    /** The lockout counters of LoginLockoutPolicy, all back to "never failed". */
+    private static void clearLockout(AppUser target) {
+        target.setLockedUntil(null);
+        target.setFailedLoginCount(0);
+        target.setLockoutCount(0);
     }
 
     /**

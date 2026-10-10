@@ -6,7 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.CreateUserRequest;
+import com.modocument.application.dto.ResetUserMfaRequest;
+import com.modocument.application.dto.ResetUserPasswordRequest;
 import com.modocument.application.dto.UpdateUserDisabledRequest;
+import com.modocument.application.dto.UpdateUserRequest;
 import com.modocument.application.dto.UpdateUserRoleRequest;
 import com.modocument.application.usecase.AccessReviewUseCase;
 import com.modocument.application.usecase.PendingChangeUseCase;
@@ -19,6 +22,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -38,6 +42,11 @@ import org.springframework.web.bind.annotation.RestController;
  * (202 Accepted + the pending row) that a DIFFERENT user must approve via
  * POST /api/admin/changes/{id}/approve. Only re-enabling an account stays
  * direct: it restores access that was already dual-approved.
+ *
+ * <p>Phase 2 (ws22): unlock and display-name edits apply directly (200);
+ * password and MFA resets are maker/checker (202, USER_PASSWORD_RESET /
+ * USER_MFA_RESET) and share the {@code admin-security} rate-limit bucket.
+ * Every one of them refuses the caller's own account (409).
  */
 @RestController
 @Tag(name = "User Admin", description = "User lifecycle (maker-checker gated)")
@@ -104,6 +113,51 @@ public class UserAdminController {
         payload.put("targetUserId", id);
         return ResponseEntity.accepted()
                 .body(pendingChanges.submit(ChangeType.USER_DISABLE, payload, null));
+    }
+
+    // ------------------------------------------------ phase 2 (ws22) actions
+
+    /** Lifts a login lockout early (direct: it restores access). */
+    @Operation(summary = "Unlock a user's account after a login lockout")
+    @PostMapping("/api/admin/users/{id}/unlock")
+    public ResponseEntity<?> unlock(@PathVariable int id) {
+        return ResponseEntity.ok(userAdmin.unlock(id));
+    }
+
+    /**
+     * Maker side of USER_PASSWORD_RESET: 202 + the pending change. The
+     * temporary password goes no further than submit(): the applier checks
+     * it against the password policy and persists only its hash.
+     */
+    @Operation(summary = "Request a temporary password for a user (maker/checker)")
+    @PostMapping("/api/admin/users/{id}/password-reset")
+    public ResponseEntity<?> resetPassword(@PathVariable int id,
+                                           @Valid @RequestBody ResetUserPasswordRequest request) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("userId", id);
+        payload.put("temporaryPassword", request.getTemporaryPassword());
+        return ResponseEntity.accepted()
+                .body(pendingChanges.submit(ChangeType.USER_PASSWORD_RESET, payload, null));
+    }
+
+    /** Maker side of USER_MFA_RESET: 202 + the pending change. */
+    @Operation(summary = "Request removal of a user's MFA enrolment (maker/checker)")
+    @PostMapping("/api/admin/users/{id}/mfa-reset")
+    public ResponseEntity<?> resetMfa(@PathVariable int id,
+                                      @Valid @RequestBody ResetUserMfaRequest request) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("userId", id);
+        payload.put("reason", request.getReason());
+        return ResponseEntity.accepted()
+                .body(pendingChanges.submit(ChangeType.USER_MFA_RESET, payload, null));
+    }
+
+    /** Edits another user's display name (direct). The email is not editable. */
+    @Operation(summary = "Change a user's display name")
+    @PatchMapping("/api/admin/users/{id}")
+    public ResponseEntity<?> update(@PathVariable int id,
+                                    @Valid @RequestBody UpdateUserRequest request) {
+        return ResponseEntity.ok(userAdmin.updateDisplayName(id, request.getDisplayName()));
     }
 
     /** Gate B10: the caller's bank's users with last-login dates, as CSV. */

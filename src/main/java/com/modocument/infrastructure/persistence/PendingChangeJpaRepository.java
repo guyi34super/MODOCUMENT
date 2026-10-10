@@ -13,6 +13,13 @@ public interface PendingChangeJpaRepository extends JpaRepository<PendingChange,
     List<PendingChange> findByBankIdAndStatusOrderByRequestedAtDescPendingChangeIdDesc(
             int bankId, PendingChangeStatus status);
 
+    /** Admin dashboard (phase 2): the bank's queue size in one status. */
+    long countByBankIdAndStatus(int bankId, PendingChangeStatus status);
+
+    /** Admin dashboard (phase 2): the queue size of one change type. */
+    long countByBankIdAndStatusAndChangeType(int bankId, PendingChangeStatus status,
+                                             com.modocument.domain.model.ChangeType changeType);
+
     /**
      * ws11 nightly SoD scan: APPLIED changes approved by their own maker —
      * the B7 invariant says there are none.

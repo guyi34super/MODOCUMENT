@@ -4,6 +4,8 @@ import com.modocument.domain.entity.AlertLog;
 import com.modocument.domain.model.AlertStatus;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
@@ -18,6 +20,16 @@ public interface AlertLogJpaRepository extends JpaRepository<AlertLog, Integer> 
 
     /** The admin panel: a bank's newest alerts first. */
     List<AlertLog> findByBankIdOrderByCreatedAtDescAlertLogIdDesc(int bankId, Pageable page);
+
+    /** Admin dashboard (phase 2): rows of [AlertSeverity, count (Long)] since a moment. */
+    @Query("select a.severity, count(a) from AlertLog a"
+            + " where a.bankId = :bankId and a.createdAt >= :since group by a.severity")
+    List<Object[]> countBySeveritySince(@Param("bankId") int bankId,
+                                        @Param("since") Instant since);
+
+    /** Admin dashboard (phase 2): when the bank's newest alert was raised, or null. */
+    @Query("select max(a.createdAt) from AlertLog a where a.bankId = :bankId")
+    Instant lastCreatedAt(@Param("bankId") int bankId);
 
     /** Dedupe: has this burst already raised an alert inside the rule window? */
     boolean existsByBankIdAndDedupeKeyAndCreatedAtAfter(int bankId, String dedupeKey,

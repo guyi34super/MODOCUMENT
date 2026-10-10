@@ -2,6 +2,7 @@ package com.modocument.infrastructure.extraction.sql;
 
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.domain.document.ExtractionJob;
+import com.modocument.domain.model.ExtractionJobStatus;
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionJobCounterEntity;
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionJobEntity;
 import org.slf4j.Logger;
@@ -11,6 +12,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -102,6 +104,17 @@ public class SqlExtractionJobStore implements ExtractionJobStore {
             // Another worker inserted the row between our UPDATE and INSERT.
             addAfterInsertRace(entityId, counter, delta);
         }
+    }
+
+    @Override
+    public Map<ExtractionJobStatus, Long> countByStatusSince(int bankId, Instant since) {
+        Map<ExtractionJobStatus, Long> counts = new EnumMap<>(ExtractionJobStatus.class);
+        for (Object[] row : jobs.countByStatusSince(bankId, since)) {
+            if (row[0] instanceof ExtractionJobStatus status) {
+                counts.put(status, ((Number) row[1]).longValue());
+            }
+        }
+        return counts;
     }
 
     /**

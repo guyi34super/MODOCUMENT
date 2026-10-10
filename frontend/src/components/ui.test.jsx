@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Badge, Button, Callout, Card, ErrorBanner, StatCard } from './ui';
+import { MemoryRouter } from 'react-router-dom';
+import { Badge, Button, Callout, Card, ErrorBanner, KpiTile, StatCard } from './ui';
 
 describe('Callout', () => {
   it('renders title and children', () => {
@@ -86,6 +87,47 @@ describe('Card', () => {
     const { container: compact } = render(<Card padding="compact">content</Card>);
     expect(normal.firstChild.className).toContain('p-5');
     expect(compact.firstChild.className).toContain('p-3');
+  });
+});
+
+describe('KpiTile', () => {
+  it('renders label, value and hint like a StatCard, neutral by default', () => {
+    render(<KpiTile label="Users" value={12} hint="2 disabled" />);
+    expect(screen.getByText('Users')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('2 disabled')).toBeInTheDocument();
+    expect(screen.getByText('12').closest('[data-tone]')).toHaveAttribute(
+      'data-tone',
+      'neutral'
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('colours the value and edge by tone', () => {
+    render(<KpiTile label="Admins without MFA" value={1} tone="danger" />);
+    render(<KpiTile label="Locked" value={3} tone="warning" />);
+    render(<KpiTile label="Healthy" value={0} tone="success" />);
+    expect(screen.getByText('1').className).toContain('text-danger-ink');
+    expect(screen.getByText('3').className).toContain('text-amber-800');
+    expect(screen.getByText('0').className).toContain('text-success-ink');
+    expect(screen.getByText('1').closest('[data-tone]').className).toContain(
+      'border-l-danger-ink'
+    );
+  });
+
+  it('becomes a link to the page behind the number when given `to`', () => {
+    render(
+      <MemoryRouter>
+        <KpiTile label="Pending approvals" value={4} to="/admin/changes" tone="warning" />
+      </MemoryRouter>
+    );
+    const link = screen.getByRole('link', { name: /Pending approvals\s*4/ });
+    expect(link).toHaveAttribute('href', '/admin/changes');
+  });
+
+  it('shows a dash when the value is not known', () => {
+    render(<KpiTile label="Parsed by code" value={null} />);
+    expect(screen.getByText('—')).toBeInTheDocument();
   });
 });
 

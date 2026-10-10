@@ -15,6 +15,8 @@ undecided request (`CANCELLED`).
 | `USER_CREATE`      | Create a user in the maker's bank         | `user:admin`     | `POST /api/admin/users` → 202                    | `change:approve` |
 | `USER_ROLE_CHANGE` | Change a user's role (mover, B5)          | `user:admin`     | `PUT /api/admin/users/{id}/role` → 202           | `change:approve` |
 | `USER_DISABLE`     | Disable a user (leaver switch, PRIV-017)  | `user:admin`     | `PUT /api/admin/users/{id}/disabled` (true) → 202 | `change:approve` |
+| `USER_PASSWORD_RESET` | Temporary password + forced change; every session killed (ws22) | `user:admin` | `POST /api/admin/users/{id}/password-reset` → 202 | `change:approve` |
+| `USER_MFA_RESET`   | Remove a user's TOTP enrolment + recovery codes; sessions killed (ws22) | `user:admin` | `POST /api/admin/users/{id}/mfa-reset` → 202 | `change:approve` |
 | `TEMPLATE_UPDATE`  | Rename/redescribe a template              | `template:write` | `PUT /Templates/Update` → 202                    | `change:approve` |
 | `TEMPLATE_DELETE`  | Delete a template (+ fields, rules)       | `template:write` | `DELETE /Templates/{id}` → 202                   | `change:approve` |
 
@@ -28,6 +30,15 @@ privilege shortcut.
 single-admin operation. It only restores access that two users already
 approved granting — the lower-risk direction — and keeping it direct means
 an accidental disable can be undone without waiting for a second admin.
+The same reasoning keeps two phase-2 actions direct: lifting a login
+lockout (`POST /api/admin/users/{id}/unlock`, audit `USER_UNLOCKED`) and
+renaming a user (`PATCH /api/admin/users/{id}`, display name only, audit
+`USER_UPDATED`). Every phase-2 user action refuses the caller's own account
+(409), and the password reset refuses IdP-owned (OIDC) accounts (409).
+`USER_PASSWORD_RESET` follows `USER_CREATE`: the temporary password is
+checked against the password policy and hashed at submit; the queue holds
+`{userId, targetEmail, passwordHash}` and the hash never leaves the backend.
+Both resets share the `admin-security` rate-limit bucket (10 per window).
 
 ## Flow
 
@@ -117,7 +128,8 @@ workstream's design review.
 | `CHANGE_APPLY_FAILED`   | FAILED   | approved apply hit a changed invariant     |
 
 The applier's own domain rows (`USER_CREATED`, `USER_ROLE_CHANGED`,
-`USER_DISABLED`, `TEMPLATE_UPDATED`, `TEMPLATE_DELETED`) are written in the
+`USER_DISABLED`, `USER_PASSWORD_RESET`, `USER_MFA_RESET`, `TEMPLATE_UPDATED`,
+`TEMPLATE_DELETED`) are written in the
 approval's transaction with the **checker** as actor; `CHANGE_REQUESTED`
 names the maker. Together the trail answers "who asked, who approved, what
 happened" for every critical change.

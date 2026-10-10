@@ -64,6 +64,14 @@ public class ApiRateLimitProperties {
      */
     private int adminJobs = 10;
 
+    /**
+     * Admin-issued credential resets: temporary-password and MFA resets of
+     * another user (phase 2, ws22). Each submits a maker/checker request,
+     * so a scripted loop would flood the approval queue and the password
+     * hasher; ten per window is far above any real helpdesk load.
+     */
+    private int adminSecurity = 10;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -166,5 +174,13 @@ public class ApiRateLimitProperties {
 
     public void setAdminJobs(int adminJobs) {
         this.adminJobs = adminJobs;
+    }
+
+    public int getAdminSecurity() {
+        return adminSecurity;
+    }
+
+    public void setAdminSecurity(int adminSecurity) {
+        this.adminSecurity = adminSecurity;
     }
 }

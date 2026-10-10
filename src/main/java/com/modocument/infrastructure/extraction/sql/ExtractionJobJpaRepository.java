@@ -3,7 +3,10 @@ package com.modocument.infrastructure.extraction.sql;
 import com.modocument.domain.model.ExtractionJobStatus;
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionJobEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -17,4 +20,10 @@ public interface ExtractionJobJpaRepository extends JpaRepository<ExtractionJobE
     List<ExtractionJobEntity> findAllByOrderByIdDesc();
 
     List<ExtractionJobEntity> findByStatusIn(Collection<ExtractionJobStatus> statuses);
+
+    /** Admin dashboard (phase 2): rows of [ExtractionJobStatus, count (Long)] of one bank. */
+    @Query("select j.status, count(j) from ExtractionJobEntity j"
+            + " where j.bankId = :bankId and j.createdDate >= :since group by j.status")
+    List<Object[]> countByStatusSince(@Param("bankId") int bankId,
+                                      @Param("since") Instant since);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AuthProvider } from '../context/AuthContext';
@@ -132,6 +132,126 @@ describe('PendingChangesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel request' }));
 
     await waitFor(() => expect(cancelChange).toHaveBeenCalledWith(5));
+  });
+
+  it('labels and summarizes every phase-2 change type', async () => {
+    const row = (id, changeType, payload) => ({
+      pendingChangeId: id,
+      changeType,
+      status: 'REQUESTED',
+      makerUserId: 2,
+      makerEmail: 'other-admin@bank.example',
+      requestedAt: '2026-10-05T10:00:00',
+      payload,
+    });
+    listChanges.mockResolvedValue([
+      row(20, 'USER_PASSWORD_RESET', { userId: 7, targetEmail: 'worker@bank.example' }),
+      row(21, 'USER_MFA_RESET', {
+        userId: 7,
+        targetEmail: 'worker@bank.example',
+        reason: 'Lost phone',
+      }),
+      row(22, 'SETTING_UPDATE', {
+        changes: [
+          { key: 'security.lockout.allowed-attempts', from: 5, to: 3, baseVersion: 1 },
+          { key: 'retention.customer-data-days', from: 30, to: null, baseVersion: 4 },
+        ],
+      }),
+      row(23, 'PLATFORM_SETTING_UPDATE', {
+        changes: [
+          { key: 'ratelimit.uploads', from: 20, to: 40, bankMin: 10, bankMax: 80, baseVersion: 2 },
+        ],
+      }),
+      row(24, 'BANK_CREATE', {
+        code: 'ACME',
+        name: 'Acme Bank',
+        users: [
+          { email: 'a@acme.example', role: 'ADMIN' },
+          { email: 'b@acme.example', role: 'APPROVER' },
+        ],
+      }),
+      row(25, 'BANK_SUSPEND', { bankId: 9, bankCode: 'ACME', reason: 'Contract ended' }),
+      row(26, 'BANK_ADMIN_ADD', { bankId: 9, email: 'c@acme.example', reason: 'Break-glass' }),
+      row(27, 'INTEGRATION_CONNECTION_CHANGE', {
+        name: 'Core banking DB',
+        type: 'DATABASE',
+        mode: 'AGENT',
+        secretRef: 'vault:1',
+      }),
+      row(28, 'INTEGRATION_FLOW_ENABLE', { flowId: 3, flowVersion: 2 }),
+      row(29, 'API_CLIENT_CREATE', {
+        name: 'Loans system',
+        authMethod: 'OAUTH2_CLIENT_CREDENTIALS',
+        scopes: ['integration:ingest', 'integration:results'],
+      }),
+      row(30, 'AGENT_REGISTER', { name: 'dc1-agent' }),
+      row(31, 'EGRESS_RULE_APPROVE', { ruleId: 12 }),
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Password reset for worker@bank.example')).toBeInTheDocument();
+    expect(screen.getByText('#20 · Reset password')).toBeInTheDocument();
+    expect(screen.getByText('MFA reset for worker@bank.example — Lost phone')).toBeInTheDocument();
+    expect(screen.getByText('#21 · Reset MFA')).toBeInTheDocument();
+
+    // Settings changes list one `key: from → to` line each (null = default).
+    expect(screen.getByText('#22 · Change settings')).toBeInTheDocument();
+    expect(screen.getByText('Change 2 settings')).toBeInTheDocument();
+    const diffs = screen.getByRole('list', { name: 'Changes in #22' });
+    expect(within(diffs).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
+      'security.lockout.allowed-attempts: 5 → 3',
+      'retention.customer-data-days: 30 → default',
+    ]);
+    expect(screen.getByText('#23 · Change platform settings')).toBeInTheDocument();
+    expect(
+      screen.getByText('ratelimit.uploads: 20 → 40 (bank range 10–80)')
+    ).toBeInTheDocument();
+
+    expect(screen.getByText('#24 · Onboard bank')).toBeInTheDocument();
+    expect(
+      screen.getByText('Onboard bank ACME "Acme Bank" with 2 users (1 administrator)')
+    ).toBeInTheDocument();
+    expect(screen.getByText('#25 · Suspend bank')).toBeInTheDocument();
+    expect(screen.getByText('Suspend ACME — Contract ended')).toBeInTheDocument();
+    expect(screen.getByText('#26 · Add bank administrator')).toBeInTheDocument();
+    expect(
+      screen.getByText('Add c@acme.example as administrator of bank 9 — Break-glass')
+    ).toBeInTheDocument();
+    expect(screen.getByText('#27 · Change integration connection')).toBeInTheDocument();
+    expect(
+      screen.getByText('Create connection "Core banking DB" (DATABASE, AGENT, new credentials)')
+    ).toBeInTheDocument();
+    expect(screen.getByText('#28 · Enable integration flow')).toBeInTheDocument();
+    expect(screen.getByText('Enable flow #3 (version 2)')).toBeInTheDocument();
+    expect(screen.getByText('#29 · Create API client')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Create API client "Loans system" (OAUTH2_CLIENT_CREDENTIALS) with scopes ' +
+          'integration:ingest, integration:results'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByText('#30 · Register connector agent')).toBeInTheDocument();
+    expect(screen.getByText('Register connector agent "dc1-agent"')).toBeInTheDocument();
+    expect(screen.getByText('#31 · Approve egress destination')).toBeInTheDocument();
+    expect(screen.getByText('Approve egress rule #12')).toBeInTheDocument();
+  });
+
+  it('lets a platform admin decide platform changes', async () => {
+    listChanges.mockResolvedValue([
+      {
+        pendingChangeId: 40,
+        changeType: 'BANK_SUSPEND',
+        status: 'REQUESTED',
+        makerUserId: 2,
+        makerEmail: 'owner@moi.example',
+        requestedAt: '2026-10-05T10:00:00',
+        payload: { bankId: 9, bankName: 'Acme Bank', reason: 'Unpaid' },
+      },
+    ]);
+    renderPage({ userId: 3, email: 'second-owner@moi.example', role: 'PLATFORM_ADMIN' });
+
+    expect(await screen.findByText('Suspend Acme Bank — Unpaid')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
   });
 
   it('hides the decision controls from makers without approval rights', async () => {
