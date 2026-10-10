@@ -38,8 +38,12 @@ agent's host. When a flow runs, the flow engine queues the run as
 
 The dashboard shows each agent as `PENDING_ENROLMENT`, `ONLINE`, `OFFLINE`
 or `REVOKED`. `OFFLINE` means the last heartbeat is older than the bank
-setting `integration.agentHeartbeatTimeout` (default 2 min). The dashboard
-also shows the agent's version and an **Update available** notice when
+setting `integration.agentHeartbeatTimeout` (default 2 min). Once a
+minute, the offline sweep also stores that state. It writes
+`AGENT_OFFLINE` once per transition, in the agent's bank, and the
+`agent-offline` alert (MEDIUM) reaches the bank's security-alert channels.
+The agent's next heartbeat stores `ONLINE` again and writes
+`AGENT_ONLINE`. The dashboard also shows the agent's version and an **Update available** notice when
 the agent reports an older version than the running MoDocument. Agents are
 released with the same version number.
 
