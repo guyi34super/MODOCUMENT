@@ -144,6 +144,7 @@ module "ecs_app" {
   } : null
 
   cors_allowed_origins = "https://${var.app_domain}"
+  deploy_environment   = "production"
 
   # client -> CloudFront -> ALB -> nginx: the ALB (inside the VPC) is the
   # trusted proxy; the client address is the CloudFront-Viewer-Address the
@@ -210,10 +211,18 @@ module "ci_oidc" {
   name                 = local.name
   create_oidc_provider = var.create_oidc_provider
   oidc_provider_arn    = var.oidc_provider_arn
-  # Production deploys ONLY from main (pair with branch protection — ws19).
-  github_subject_patterns = ["repo:${var.github_repository}:ref:refs/heads/main"]
-  ecs_cluster_arn         = module.ecs_app.cluster_arn
-  passable_role_arns      = module.ecs_app.task_role_arns
+  # ws24: production deploys run in the GitHub environment "production"
+  # (required reviewers, v* tags only — docs/release/runbook.md), whose
+  # jobs present sub = repo:<repo>:environment:production.
+  # TRANSITION: the refs/heads/main entry is the pre-ws24 trust (pair with
+  # branch protection — ws19). Remove it once one release has shipped
+  # through the environment-gated pipeline.
+  github_subject_patterns = [
+    "repo:${var.github_repository}:environment:production",
+    "repo:${var.github_repository}:ref:refs/heads/main", # remove after one release
+  ]
+  ecs_cluster_arn    = module.ecs_app.cluster_arn
+  passable_role_arns = module.ecs_app.task_role_arns
 
   tags = local.tags
 }

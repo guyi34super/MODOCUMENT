@@ -8,7 +8,8 @@
 #   * backup/Object locks OFF (enforce_locks=false) — locks are irreversible
 #     and staging data is disposable; the restore drill (D6) still rehearses
 #     here against unlocked vaults;
-#   * CI OIDC trust is repo-wide (any branch may deploy to staging).
+#   * CI OIDC trust is repo-wide (any branch may deploy to staging); the
+#     release pipeline's environment-gated jobs use environment:staging.
 #
 # terraform validate passes; plan/apply pending — nothing applied.
 # ===========================================================================
@@ -139,6 +140,7 @@ module "ecs_app" {
   } : null
 
   cors_allowed_origins = "https://${var.app_domain}"
+  deploy_environment   = "staging"
 
   # client -> ALB -> nginx (no CloudFront here): the ALB is the first hop and
   # appends the client to X-Forwarded-For, so the rightmost untrusted hop IS
@@ -180,10 +182,17 @@ module "ci_oidc" {
   name                 = local.name
   create_oidc_provider = var.create_oidc_provider
   oidc_provider_arn    = var.oidc_provider_arn
-  # Any branch of the repo may deploy to staging.
-  github_subject_patterns = ["repo:${var.github_repository}:*"]
-  ecs_cluster_arn         = module.ecs_app.cluster_arn
-  passable_role_arns      = module.ecs_app.task_role_arns
+  # ws24: release.yml / deploy.yml deploy from jobs in the GitHub
+  # environment "staging" (sub = repo:<repo>:environment:staging). The
+  # repo-wide entry is the existing trust (any branch may deploy to
+  # staging) and is kept; it also matches the environment subject, which
+  # is listed explicitly so the target state is visible.
+  github_subject_patterns = [
+    "repo:${var.github_repository}:environment:staging",
+    "repo:${var.github_repository}:*",
+  ]
+  ecs_cluster_arn    = module.ecs_app.cluster_arn
+  passable_role_arns = module.ecs_app.task_role_arns
 
   tags = local.tags
 }

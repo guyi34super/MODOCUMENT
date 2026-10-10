@@ -9,7 +9,8 @@ GitHub-OIDC deploys with no static cloud keys.
 > -check` and `terraform init -backend=false && terraform validate` pass for
 > both envs (Terraform 1.9.8, hashicorp/aws 5.100.0, hashicorp/random 3.9.1,
 > from a checksum-verified local provider mirror — 9 Oct 2026, go-live
-> blocker fixes). `terraform plan/apply` still need AWS credentials and are
+> blocker fixes; re-validated 10 Oct 2026 with the ws24 release changes
+> below). `terraform plan/apply` still need AWS credentials and are
 > **pending** — run them per env before anything goes live. Nothing here has
 > touched any cloud account.
 
@@ -31,7 +32,9 @@ infra/terraform/
 │   │                         cap (SEC-002/003), Session-Manager-only nodes;
 │   │                         non-root containers (nginx-unprivileged uid 101
 │   │                         on 8080, app uid 10001 on 8081 in the shared
-│   │                         awsvpc namespace), all capabilities dropped
+│   │                         awsvpc namespace), all capabilities dropped;
+│   │                         deployment circuit breaker with rollback, CI-
+│   │                         owned task-definition revisions (ws24)
 │   ├── edge/                 CloudFront + AWS WAF managed/rate rules
 │   │                         (SUP-S03/SEC-002), origin locked to CloudFront
 │   │                         (A12), D3 egress NACL stub
@@ -39,7 +42,8 @@ infra/terraform/
 │   │                         (A6/SEC-015), alarms → SNS (ws18 seam), Session
 │   │                         Manager session logging (SEC-015)
 │   └── ci-oidc/              GitHub OIDC provider + least-privilege per-env
-│                             deploy roles (SUP-S05/A8)
+│                             deploy roles (SUP-S05/A8), trusted per GitHub
+│                             environment (ws24)
 └── envs/
     ├── production/           af-south-1, full edge, locks gated behind a flag
     └── staging/              SEPARATE account (SUP-S07), scaled down, no locks
@@ -99,7 +103,9 @@ one run. Operationally, the sequence that avoids dead ends:
    on RDS following
    [`docker/postgres-init/01-app-role.sh`](../../docker/postgres-init/01-app-role.sh)
    (NOBYPASSRLS — the RLS-subject runtime role, see the rds module header);
-   push images (ci-oidc outputs the ECR URLs); point DNS at the CloudFront
+   push the released images (ci-oidc outputs the ECR URLs; the tfvars
+   `app_image` / `frontend_image` tag must exist before the service is
+   created — "Releases and deployments" below); point DNS at the CloudFront
    output.
 4. **Production**, same steps, `enforce_backup_locks=false`.
 5. **After the first admin exists, per env:** that admin signs in, changes
@@ -119,6 +125,55 @@ one run. Operationally, the sequence that avoids dead ends:
 7. **After the egress allow-list is signed off (gate D3):** narrow
    `app_egress_https_cidrs`, set `enforce_egress_nacl=true` +
    `egress_allowlist_cidrs`, re-apply.
+
+## Releases and deployments (ws24)
+
+How Terraform and the release pipeline share the ECS service — see
+[docs/release/runbook.md](../../docs/release/runbook.md). `release.yml` and
+`deploy.yml` arrive in Wave 2.
+
+- **Terraform owns the task-definition template; CI owns its revisions.**
+  - Terraform defines the family, roles, environment, secrets, health
+    checks and container users/capabilities. It also registers the
+    **first** revision, with `app_image` / `frontend_image` from tfvars.
+    These must be **released version tags** (`…/app:1.0.0`): the ECR
+    repositories are `IMMUTABLE`, so a moving tag like `latest-build`
+    cannot be pushed twice.
+  - From then on, CI copies the latest revision, pins both images **by
+    digest**, registers it and updates the service.
+  - `aws_ecs_service` ignores `task_definition` (and `desired_count`, which
+    autoscaling owns), so `terraform apply` never rolls a release back to
+    the tfvars image.
+  - `skip_destroy = true` keeps superseded revisions ACTIVE, so a running
+    service or a circuit-breaker rollback never points at a deregistered
+    one.
+  - A Terraform-only change (a new env var or secret) registers a new
+    revision. It reaches the running service with the next CI deploy: run
+    `deploy.yml` with the current version.
+- **Automatic rollback.** The service has `deployment_circuit_breaker
+  { enable = true, rollback = true }`. A deployment whose tasks keep failing
+  to start or to pass health checks returns to the last steady revision.
+  The schema stays migrated, which is why
+  [docs/release/migration-policy.md](../../docs/release/migration-policy.md)
+  allows only expand migrations in a release.
+- **App environment.** The app container gets:
+  - `MODOCUMENT_DEPLOY_ENVIRONMENT` = `staging` / `production`
+    (`deploy_environment`, reported by `GET /api/system/version`);
+  - `MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS=true`: the app refuses to boot
+    if a configured default lies outside its hard limits (ws20).
+- **CI OIDC trust.** A GitHub job that declares an `environment:` presents
+  `sub = repo:<owner>/<repo>:environment:<name>`, not the ref form.
+  - **Production** trusts `environment:production`. That environment has
+    required reviewers and accepts `v*` tags only; configure both in the
+    repository settings together with a tag ruleset protecting `v*`.
+  - **Production transition:** production also keeps
+    `ref:refs/heads/main` (the pre-ws24 trust). Remove it once one release
+    has shipped through the environment-gated pipeline.
+  - **Staging** trusts `environment:staging` and keeps its repo-wide
+    `repo:<repo>:*` entry.
+  - A variable validation pins every subject to one `owner/repo`.
+  - The deploy role can also run `ecr:DescribeImages` (tag → digest),
+    besides the existing ECS describe/register/update rights.
 
 ## What this IaC deliberately does NOT do
 

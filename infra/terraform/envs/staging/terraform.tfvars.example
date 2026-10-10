@@ -4,8 +4,12 @@
 app_domain          = "staging.modocument.example"
 alb_certificate_arn = "arn:aws:acm:af-south-1:222222222222:certificate/REPLACE"
 
-app_image      = "222222222222.dkr.ecr.af-south-1.amazonaws.com/modocument-staging/app:latest-build"
-frontend_image = "222222222222.dkr.ecr.af-south-1.amazonaws.com/modocument-staging/frontend:latest-build"
+# A RELEASED version tag (the repositories are IMMUTABLE — a moving tag such
+# as latest-build cannot be re-pushed). Only the service's FIRST revision
+# uses it; afterwards CI deploys by digest and Terraform ignores the
+# service's task definition (modules/ecs-app header "RELEASES").
+app_image      = "222222222222.dkr.ecr.af-south-1.amazonaws.com/modocument-staging/app:1.0.0"
+frontend_image = "222222222222.dkr.ecr.af-south-1.amazonaws.com/modocument-staging/frontend:1.0.0"
 
 # Office/VPN ranges; widen to 0.0.0.0/0 only for the external pen test (E4).
 ingress_cidrs = ["203.0.113.0/24"]
