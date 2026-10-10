@@ -367,6 +367,57 @@ class IntegrationApiSecurityTest {
                 .andExpect(jsonPath("$[0].status").value("EXPIRED"));
     }
 
+    /**
+     * Leaver check (wave 4): a client stops working when the user who
+     * created it is disabled or removed — token issue, API key and an
+     * already-issued token all answer 401, audited CREATOR_INACTIVE.
+     */
+    @Test
+    void aClientDiesWithItsCreator() throws Exception {
+        Created oauth = create(makerA, checkerA, "OAUTH2_CLIENT_CREDENTIALS",
+                List.of("INTEGRATION_INGEST"), null, null);
+        String token = token(oauth, null);
+        Created key = create(makerA, checkerA, "API_KEY", List.of("INTEGRATION_INGEST"), null,
+                null);
+        mvc.perform(get(V1 + "/templates").header("Authorization", "ApiKey " + key.secret))
+                .andExpect(status().isOk()); // the verification is now cached
+
+        jdbc.update("UPDATE AppUsers SET Disabled = TRUE WHERE AppUserId = ?",
+                makerA.getAppUserId());
+
+        mvc.perform(get(V1 + "/templates").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get(V1 + "/templates").header("Authorization", "ApiKey " + key.secret))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/integration/oauth/token").header("Authorization", basic(oauth))
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .content("grant_type=client_credentials"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("invalid_client"));
+        for (int id : new int[] {oauth.id, key.id}) {
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM AuditEvent WHERE Action = "
+                            + "'API_CLIENT_AUTH_FAILED' AND EntityId = ? "
+                            + "AND CAST(NewValues AS VARCHAR) LIKE '%CREATOR_INACTIVE%'",
+                    Integer.class, String.valueOf(id))).isGreaterThanOrEqualTo(1);
+        }
+
+        // Re-enabled: the same credentials work again (the creator was the only reason).
+        jdbc.update("UPDATE AppUsers SET Disabled = FALSE WHERE AppUserId = ?",
+                makerA.getAppUserId());
+        mvc.perform(get(V1 + "/templates").header("Authorization", "ApiKey " + key.secret))
+                .andExpect(status().isOk());
+
+        // A removed creator, or one that is not an account of the client's bank.
+        jdbc.update("UPDATE ApiClient SET CreatedByUserId = ? WHERE ApiClientId = ?",
+                987_654_321, key.id);
+        mvc.perform(get(V1 + "/templates").header("Authorization", "ApiKey " + key.secret))
+                .andExpect(status().isUnauthorized());
+        jdbc.update("UPDATE ApiClient SET CreatedByUserId = ? WHERE ApiClientId = ?",
+                makerB.getAppUserId(), key.id);
+        mvc.perform(get(V1 + "/templates").header("Authorization", "ApiKey " + key.secret))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Test
     void theCallerAddressMustBeInsideAllowedCidrs() throws Exception {
         Created key = create(makerA, checkerA, "API_KEY", List.of("INTEGRATION_INGEST"),

@@ -115,8 +115,10 @@ import java.util.concurrent.Callable;
  *       before any tenant exists (OAuth2 token endpoint, API-key and
  *       client-certificate authentication, the client-token branch of
  *       RevocationValidator, and the "certificate already registered"
- *       check). Identifying/credential columns only; the request then runs
- *       under the client's bank (IdentityContextFilter).</li>
+ *       check), and (wave 4 leaver check) whether the client's creator is
+ *       still an enabled AppUsers row of the client's bank — a boolean
+ *       from one primary-key probe. Identifying/credential columns only; the
+ *       request then runs under the client's bank (IdentityContextFilter).</li>
  *   <li>{@code AgentApiClientIssuer#issueAgentClient} — ws26: when the
  *       caller (SE5's public agent enrolment) has bound no tenant,
  *       {@code runAs(bankId)} to write the agent's new ApiClient row, its

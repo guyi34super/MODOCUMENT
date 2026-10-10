@@ -42,6 +42,10 @@ What every method enforces on **every** request:
 
 - the client is ACTIVE and not expired;
 - the bank is not suspended;
+- the user who created the client is still an enabled user of the bank. When
+  that person leaves (disabled or removed), the client stops working; create
+  a new client under an active administrator. Agent clients have no creator
+  and are not affected;
 - the method is still allowed for the bank (the platform can switch a method
   off);
 - the caller's IP is inside the allowed CIDRs, when any are set.
@@ -102,7 +106,7 @@ The token endpoint follows RFC 6749:
 | 400 | `invalid_request` | Missing `grant_type`, or two client authentication methods at once |
 | 400 | `unsupported_grant_type` | Only `client_credentials` is supported |
 | 400 | `invalid_scope` | The requested scope is not a subset of the client's scopes |
-| 401 | `invalid_client` | Unknown client, wrong secret, revoked, expired, IP not allowed, method disabled |
+| 401 | `invalid_client` | Unknown client, wrong secret, revoked, expired, creator disabled or removed, IP not allowed, method disabled |
 | 429 | `slow_down` | Too many token requests from this address (see `Retry-After`) |
 
 Answers carry `Cache-Control: no-store`. When client authentication fails,
@@ -282,7 +286,7 @@ Quote `requestId` when you contact support.
 | Status | `code` | When |
 |---|---|---|
 | 400 | `INVALID_REQUEST`, `INVALID_JSON`, `INVALID_FORMAT`, `INVALID_CURSOR`, `FILE_REQUIRED`, `UNSUPPORTED_FILE_TYPE`, `IDEMPOTENCY_KEY_REQUIRED`, `IDEMPOTENCY_KEY_INVALID` | The request is malformed |
-| 401 | `CLIENT_AUTH_FAILED` (API key / certificate); an empty body with `WWW-Authenticate: Bearer error="invalid_token"` (token) | Missing, wrong, revoked or expired credential; IP not allowed; method disabled |
+| 401 | `CLIENT_AUTH_FAILED` (API key / certificate); an empty body with `WWW-Authenticate: Bearer error="invalid_token"` (token) | Missing, wrong, revoked or expired credential; creator disabled or removed; IP not allowed; method disabled |
 | 403 | `INSUFFICIENT_SCOPE` | The client lacks the route's scope |
 | 403 | `EXPORT_CAP_EXCEEDED` | More validated rows than the bank's export cap |
 | 403 | (empty body) | A user token on the integration API, or a client credential on a user route |
