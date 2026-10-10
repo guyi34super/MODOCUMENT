@@ -48,7 +48,7 @@ directory (kind/status) but keeps this interface.
 | ChangeType | Maker permission | Applier owner | Payload (JSON) |
 |---|---|---|---|
 | `SETTING_UPDATE` | SETTINGS_WRITE | SE1 | `{changes:[{key, from, to, baseVersion}]}` |
-| `PLATFORM_SETTING_UPDATE` | PLATFORM_SETTINGS | SE1 | `{changes:[{key, from, to, bankMin?, bankMax?, baseVersion}]}` |
+| `PLATFORM_SETTING_UPDATE` | PLATFORM_SETTINGS | SE1 | `{bankId?, changes:[{key, from, to, bankMin?, bankMax?, baseVersion}]}` — `bankId` set when the platform writes a bank's platform-controlled setting (Wave 4) |
 | `USER_PASSWORD_RESET` | USER_ADMIN | SE3 | `{userId, passwordHash}` (hash taken at submit, never plaintext) |
 | `USER_MFA_RESET` | USER_ADMIN | SE3 | `{userId, reason}` |
 | `BANK_CREATE` | PLATFORM_BANKS | SE2 | `{code, name, users:[{email, displayName, role, passwordHash}] (≥2, ≥1 ADMIN)}` |
@@ -76,6 +76,7 @@ All JSON; errors use the existing `ApiExceptionHandler` shape
 - `GET  /api/admin/settings` (SETTINGS_READ) → `{layer:"BANK", revision, groups:[{id,label,settings:[SettingView]}]}`
 - `PUT  /api/admin/settings` (SETTINGS_WRITE) body `{changes:[{key, value|null, expectedVersion}], comment}` → 200 `{applied:[SettingView], pendingChange:null}` or 202 `{applied:[…], pendingChange:{…}}`
 - `GET|PUT /api/platform/settings` (PLATFORM_READ / PLATFORM_SETTINGS) same shapes, `SettingView` adds `bankMin, bankMax`
+- `GET|PUT /api/platform/banks/{bankId}/settings` (PLATFORM_READ / PLATFORM_SETTINGS, Wave 4): a bank's platform-controlled settings (`integration.auth.allow*`); views carry `platformControlled: true` and bank admins see them read-only (`SETTING_LOCKED` on a bank PUT)
 - `GET|POST /api/admin/integrations/egress-rules` (INTEGRATION_ADMIN) request a destination; `GET /api/platform/egress-rules`, `POST /api/platform/egress-rules/{id}/approve` → 202 (PLATFORM_BANKS)
 - `SettingView = {key, type, tier, scope, group, label, description, unit, value, source:"BANK|PLATFORM|DEFAULT", default, min, max, hardMin, hardMax, allowed, requiresApproval, requiresRestart, locked, clamped, pendingChangeId, version}`
 - Error codes: `SETTING_OUT_OF_RANGE`(400), `SETTING_LOCKED`(400), `SETTING_UNKNOWN`(400), `SETTING_VERSION_CONFLICT`(409), `SETTING_CHANGE_PENDING`(409), `USE_PLATFORM_SETTINGS`(409)
@@ -148,12 +149,19 @@ Audit (via `AuditRecorder`): `SETTING_UPDATED`, `SECURITY_SETTING_UPDATED`,
 `INTEGRATION_RUN_FAILED`, `INTEGRATION_DELIVERY_DEAD`, `API_CLIENT_CREATED`,
 `API_CLIENT_ROTATED`, `API_CLIENT_REVOKED`, `API_CLIENT_AUTH_FAILED`,
 `AGENT_REGISTERED`, `AGENT_ENROLLED`, `EGRESS_RULE_APPROVED`.
+Added during Waves 3–4: `EGRESS_RULE_REQUESTED`, `EGRESS_RULE_REVOKED`,
+`AGENT_REVOKED`, `AGENT_OFFLINE`, `AGENT_ONLINE`, `INTEGRATION_API_CALL`,
+`API_CLIENT_TOKEN_ISSUED`, `API_CLIENT_INITIAL_SECRET_READ`,
+`INTEGRATION_FLOW_SAVED`, `INTEGRATION_FLOW_DELETED`,
+`BANK_ONBOARDING_REVERTED`; `API_CLIENT_AUTH_FAILED` carries a reason
+(e.g. `CREATOR_INACTIVE`).
 
 New yml alert rules (owner adds them to `modocument.alerts.rules`):
 `security-setting-changed` (MEDIUM), `platform-change` (HIGH),
 `parse-fallback-surge` (20/h, MEDIUM), `ai-circuit-opened` (HIGH),
 `integration-failures` (5/h, MEDIUM), `integration-dead-letter` (HIGH),
-`api-client-auth-failures` (10/5m, HIGH).
+`api-client-auth-failures` (10/5m, HIGH), `agent-offline` (IMMEDIATE,
+MEDIUM, Wave 4).
 
 ## 6. File ownership (merge-conflict control)
 

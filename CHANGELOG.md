@@ -92,6 +92,24 @@ All notable changes to MoDocument are recorded here. The format follows
   dead letters, offline agents, Integration API calls) and the share of
   uploads parsed by AI or by code over 7 days.
 
+- Template extraction settings: each template can follow the bank's default
+  extraction mode or choose AI with code fallback, code only or AI only, and
+  carry per-field aliases, label/value patterns and date formats.
+- Jobs show how they were parsed ("Extracted by code — AI unavailable
+  (quota)"), the code confidence and a low-confidence warning.
+- Schema inference and extraction summaries keep working without the AI,
+  from the sample values and counters (marked as produced by code).
+- The platform owner can restrict, per bank, which API authentication
+  methods its clients may use (OAuth2, API keys, mutual TLS); bank admins
+  see these settings read-only.
+- Connector Agent: REST pagination (page, cursor and next-link), mutual-TLS
+  authentication of the agent itself, and an `agent-offline` alert when an
+  agent stops sending heartbeats.
+- Per-bank integration counts on the platform bank page (counts only).
+- End-to-end tests in CI: pull requests run the smoke set; `main` also runs
+  the integration-hub suite against a bank simulator (database, REST, SFTP).
+- A local mutual-TLS listener for developers (`docker-compose.mtls-dev.yml`).
+
 ### Changed
 - Accessibility of the admin, settings, platform and integration pages:
   every table is named, colour-only status has a text equivalent, a skip
@@ -117,12 +135,26 @@ All notable changes to MoDocument are recorded here. The format follows
   `environment:production` subjects. Production also keeps
   `refs/heads/main` for one release, during the transition.
 
+- Staging and production refuse to start without `MODOCUMENT_CONNECTOR_KEY`.
+- Every pending change is listed to, and decided by, the right checkers:
+  other approvers of the same bank, or a second platform admin for
+  platform changes.
+- An API client stops working when the user who created it is disabled or
+  removed; revoking a Connector Agent revokes its API client at once.
+- Terraform: optional platform-admin bootstrap secrets
+  (`platform_admin_bootstrap_enabled`).
+
 ### Fixed
 - An AI model that stopped answering could be retried and recorded as a
   generic error; it is now recorded as a timeout, counts toward the AI
   circuit breaker and goes straight to the code fallback.
 - After a forced password change, the sign-in page shows the "Password
   changed" notice again.
+- A failure after a new bank was created no longer leaves the bank and its
+  first users behind; the onboarding is reverted and can be approved again.
+- A break-glass bank administrator's password is checked against that
+  bank's own password policy.
+- `scripts/bump-version.sh` accepts release-candidate versions (`1.1.0-rc.1`).
 
 ## [1.0.0] - 2026-10-10
 
