@@ -16,7 +16,9 @@ modocument:
     state-dir: ${MODOCUMENT_AGENT_STATE_DIR:/var/lib/modocument-agent}
     allow-list: ${MODOCUMENT_AGENT_ALLOWLIST:/etc/modocument-agent/allowlist.yml}
     secrets-dir: ${MODOCUMENT_SECRETS_DIR:/etc/modocument-agent/secrets}
-    poll-wait-seconds: 30
+    # Long-poll wait (server cap 30 s). 25 s keeps the answer inside
+    # CloudFront's default 30 s origin read timeout in front of MoDocument.
+    poll-wait-seconds: 25
     heartbeat: 30s
     max-backoff: ${MODOCUMENT_AGENT_MAX_BACKOFF:5m}
     allow-insecure-http: ${MODOCUMENT_ALLOW_INSECURE_HTTP:false}

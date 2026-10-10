@@ -18,7 +18,8 @@ import java.time.Duration;
  * @param allowList        bank-controlled allow-list YAML (MODOCUMENT_AGENT_ALLOWLIST)
  * @param secretsDir       local secrets, one file or folder per secretRef
  *                         (MODOCUMENT_SECRETS_DIR)
- * @param pollWaitSeconds  long-poll wait (≤ 30)
+ * @param pollWaitSeconds  long-poll wait (≤ 30; default 25 so the answer
+ *                         beats CloudFront's 30 s origin read timeout)
  * @param heartbeat        heartbeat interval (30 s)
  * @param maxBackoff       ceiling of the exponential back-off on errors
  * @param allowInsecureHttp plain http to MoDocument (local tests only)
@@ -34,7 +35,7 @@ public record AgentProperties(String url, String enrolmentToken, String name, Pa
         stateDir = stateDir == null ? Path.of("/var/lib/modocument-agent") : stateDir;
         allowList = allowList == null ? Path.of("/etc/modocument-agent/allowlist.yml") : allowList;
         secretsDir = secretsDir == null ? Path.of("/etc/modocument-agent/secrets") : secretsDir;
-        pollWaitSeconds = pollWaitSeconds == null ? 30 : Math.max(0, Math.min(30, pollWaitSeconds));
+        pollWaitSeconds = pollWaitSeconds == null ? 25 : Math.max(0, Math.min(30, pollWaitSeconds));
         heartbeat = heartbeat == null ? Duration.ofSeconds(30) : heartbeat;
         maxBackoff = maxBackoff == null ? Duration.ofMinutes(5) : maxBackoff;
         run = run == null ? Boolean.TRUE : run;

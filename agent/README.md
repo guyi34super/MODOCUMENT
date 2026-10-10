@@ -51,7 +51,7 @@ same environment variables. The jar is attached to every GitHub Release.
 | `MODOCUMENT_AGENT_MAX_BACKOFF` | `5m` | Longest wait between retries after errors. |
 | `JAVA_TOOL_OPTIONS` | — | e.g. `-Dhttps.proxyHost=proxy.bank.local -Dhttps.proxyPort=3128` for an outbound proxy. |
 
-The agent long-polls MoDocument for work (30 s), sends a heartbeat every
+The agent long-polls MoDocument for work (25 s, under the 30 s CloudFront origin timeout), sends a heartbeat every
 30 s and backs off exponentially (with jitter) when MoDocument or a bank
 system is unreachable.
 
