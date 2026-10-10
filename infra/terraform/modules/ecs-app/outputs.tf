@@ -48,6 +48,11 @@ output "service_name" {
   description = "ECS service name (alarm dimension for security-monitoring)."
 }
 
+output "api_mtls_listener_arn" {
+  value       = one(aws_lb_listener.api_mtls[*].arn)
+  description = "ws26 mTLS API listener ARN (null while api_mtls_enabled is false). Point api.<domain> at alb_dns_name."
+}
+
 output "log_group_name" {
   value       = aws_cloudwatch_log_group.app.name
   description = "App/frontend CloudWatch log group (metric-filter seam for ws18 alerts)."

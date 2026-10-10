@@ -42,6 +42,15 @@ resource "aws_secretsmanager_secret" "mfa_key" {
   tags = local.tags
 }
 
+# ws25/26: AES-256-GCM key of the connector SecretVault (bank integration
+# credentials at rest), separate from the MFA key. 32 random bytes, base64.
+resource "aws_secretsmanager_secret" "connector_key" {
+  name        = "${local.name}/MODOCUMENT_CONNECTOR_KEY"
+  description = "AES-256-GCM key for bank integration credentials at rest (>=32 bytes, openssl rand -base64 32)."
+
+  tags = local.tags
+}
+
 resource "aws_secretsmanager_secret" "db_app" {
   name = "${local.name}/db-app-credentials"
   tags = local.tags
@@ -70,7 +79,9 @@ module "network" {
   region   = var.region
   vpc_cidr = var.vpc_cidr
   app_port = local.frontend_port
-  tags     = local.tags
+  # ws26 DIRECT-mode bank connections (empty = none).
+  bank_egress_cidrs = var.bank_egress_cidrs
+  tags              = local.tags
 }
 
 # Staging has no CloudFront in front: the ALB accepts HTTPS from the test
@@ -134,6 +145,14 @@ module "ecs_app" {
   mfa_key_secret_arn            = aws_secretsmanager_secret.mfa_key.arn
   db_app_credentials_secret_arn = aws_secretsmanager_secret.db_app.arn
   db_master_secret_arn          = module.rds.master_user_secret_arn
+  connector_key_secret_arn      = aws_secretsmanager_secret.connector_key.arn
+
+  # ws26: mutual TLS for machine clients on api.<domain> (off by default).
+  api_mtls_enabled       = var.api_mtls_enabled
+  api_domain             = var.api_domain
+  api_certificate_arn    = var.api_certificate_arn
+  api_mtls_ca_bundle_pem = var.api_mtls_ca_bundle_pem
+  api_mtls_client_cidrs  = var.api_mtls_client_cidrs
   bootstrap_admin_secret_arns = var.bootstrap_admin_enabled ? {
     email    = one(aws_secretsmanager_secret.bootstrap_admin_email[*].arn)
     password = one(aws_secretsmanager_secret.bootstrap_admin_password[*].arn)

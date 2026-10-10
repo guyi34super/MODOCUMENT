@@ -64,6 +64,58 @@ variable "mfa_key_secret_arn" {
   type        = string
 }
 
+variable "connector_key_secret_arn" {
+  description = "Secrets Manager/SSM ARN of MODOCUMENT_CONNECTOR_KEY (ws25/26): the AES-256-GCM key of the connector SecretVault that seals bank integration credentials at rest — separate from the MFA key (SEC-018)."
+  type        = string
+}
+
+variable "api_mtls_enabled" {
+  description = "ws26: serve api_domain on a second HTTPS listener with mutual TLS (verify mode, trust store in S3) for machine clients — see mtls.tf. Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "api_domain" {
+  description = "Machine API host name (api.<domain>) served by the mTLS listener."
+  type        = string
+  default     = ""
+}
+
+variable "api_certificate_arn" {
+  description = "ACM certificate for api_domain on the mTLS listener."
+  type        = string
+  default     = ""
+}
+
+variable "api_mtls_listener_port" {
+  description = "ALB port of the mTLS listener (mTLS applies to a whole listener, so it cannot share 443 with browsers)."
+  type        = number
+  default     = 8443
+
+  validation {
+    condition     = var.api_mtls_listener_port != 443 && var.api_mtls_listener_port != 80
+    error_message = "api_mtls_listener_port must not be 80 or 443 (the browser listeners)."
+  }
+}
+
+variable "api_mtls_ca_bundle_pem" {
+  description = "PEM bundle of the CA certificates whose client certificates the mTLS listener accepts (the banks' issuing CAs; public material). Uploaded to the trust-store bucket."
+  type        = string
+  default     = ""
+}
+
+variable "api_mtls_client_cidrs" {
+  description = "Networks allowed to reach the mTLS listener (the banks' egress addresses). Required when api_mtls_enabled."
+  type        = list(string)
+  default     = []
+}
+
+variable "frontend_mtls_port" {
+  description = "Port of the frontend nginx's mTLS server (frontend/nginx.conf: the only server that passes X-Amzn-Mtls-Clientcert-* to the app, and only from the trusted ALB). The mTLS target group points at it."
+  type        = number
+  default     = 8443
+}
+
 variable "db_app_credentials_secret_arn" {
   description = "Secrets Manager ARN of the modocument_app (NOBYPASSRLS) credentials JSON {username,password}."
   type        = string

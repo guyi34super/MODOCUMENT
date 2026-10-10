@@ -90,13 +90,14 @@ one run. Operationally, the sequence that avoids dead ends:
    terraform validate && terraform plan && terraform apply`.
 3. **Secret values, per env** — every secret the task injects must HAVE a
    value or ECS cannot launch the task (it retries until it can):
-   `MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`, the `modocument_app` DB
-   credentials, and — first deploy only — the **bootstrap admin pair**
+   `MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`, `MODOCUMENT_CONNECTOR_KEY`
+   (ws26: the connector SecretVault key, `openssl rand -base64 32`), the
+   `modocument_app` DB credentials, and — first deploy only — the **bootstrap admin pair**
    `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` (an empty database
    refuses to boot without it; the password must pass the app's password
    policy). Cleanest: create the shells first, set the values, then apply
    the rest —
-   `terraform apply -target=aws_secretsmanager_secret.jwt -target=aws_secretsmanager_secret.mfa_key -target=aws_secretsmanager_secret.db_app -target='aws_secretsmanager_secret.bootstrap_admin_email[0]' -target='aws_secretsmanager_secret.bootstrap_admin_password[0]'`,
+   `terraform apply -target=aws_secretsmanager_secret.jwt -target=aws_secretsmanager_secret.mfa_key -target=aws_secretsmanager_secret.connector_key -target=aws_secretsmanager_secret.db_app -target='aws_secretsmanager_secret.bootstrap_admin_email[0]' -target='aws_secretsmanager_secret.bootstrap_admin_password[0]'`,
    then `aws secretsmanager put-secret-value --secret-id <env>/MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD --secret-string file://pw.txt`
    (a file, not the shell history; shred it after) and likewise for the
    others, then the full `terraform apply`. Create the `modocument_app` role
@@ -175,6 +176,40 @@ below as GitHub environment variables (runbook §7).
   - A variable validation pins every subject to one `owner/repo`.
   - The deploy role can also run `ecr:DescribeImages` (tag → digest),
     besides the existing ECS describe/register/update rights.
+
+## Bank integration hub (ws26)
+
+All three switches are **off by default**: an apply without them changes
+nothing but the new `MODOCUMENT_CONNECTOR_KEY` secret.
+
+- **`MODOCUMENT_CONNECTOR_KEY`**: a secret shell per env
+  (`aws_secretsmanager_secret.connector_key`), injected into the app like
+  the MFA key. This is the AES-256-GCM key of the connector SecretVault,
+  which seals bank integration credentials at rest. Set its value before
+  the next deploy (apply order step 3) and register it in the key register
+  (K16).
+- **`bank_egress_cidrs`** (network module): for DIRECT-mode connections to
+  bank systems reached over a per-bank VPN or PrivateLink (see the root
+  README "Implement later"). It adds app-SG egress on 1433, 1521, 3306,
+  5432 and 22 to exactly these CIDRs. Empty means no rule. The app also
+  requires an approved `BankEgressRule` per destination. In production,
+  the egress NACL (`enforce_egress_nacl`) must allow the same ranges.
+- **`api_mtls_enabled`** (ecs-app `mtls.tf`): machine clients with client
+  certificates use `api_domain` on a second HTTPS listener
+  (`api_mtls_listener_port`, default 8443). It runs in **verify** mode
+  against a trust store whose CA bundle (`api_mtls_ca_bundle_pem`, the
+  banks' issuing CAs) lives in a private, versioned, encrypted S3 bucket.
+  Only `api_mtls_client_cidrs` may reach it. Only `Host: api_domain` is
+  forwarded, to a dedicated target group on the nginx mTLS server
+  (`frontend_mtls_port` 8443). That is the only place that passes the
+  `X-Amzn-Mtls-Clientcert-*` headers to the app, and only from the trusted
+  ALB. The browser path always strips them. Point `api_domain` at the ALB
+  (not CloudFront, which cannot carry the client certificate).
+  Requires `api_domain`, `api_certificate_arn`, the CA bundle and client
+  CIDRs (a precondition fails the plan otherwise).
+
+AGENT-mode connections need none of this. The on-prem Connector Agent dials
+out to the normal HTTPS endpoint (`docs/integration/agent.md`).
 
 ## What this IaC deliberately does NOT do
 
