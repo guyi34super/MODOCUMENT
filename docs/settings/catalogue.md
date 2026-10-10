@@ -25,6 +25,16 @@ values are skipped with a WARN (the setting inherits). A PLATFORM-scope
 setting has no bank layer: every bank gets the platform value or the
 shipped default.
 
+A **platform-set** BANK setting (scope `BANK (platform-set)` below,
+`platformControlled` in the API) resolves exactly the same way, but its
+bank value (step 1) is written by the **platform owner** for that bank
+(`/api/platform/banks/{bankId}/settings`), never by the bank: the bank's
+administrators see it read-only (`SETTING_LOCKED` on a bank PUT). With no
+per-bank value every bank inherits the platform value, so a deployment that
+never sets one behaves exactly as if the setting were platform-wide. Today
+this covers the allowed API-client authentication methods
+(`integration.auth.allow*`).
+
 **Hard limits** are the go-live gate's floors and ceilings: no platform
 value, bank bound or override can leave them. A **locked** setting has
 exactly one allowed value. A shipped default outside its limits is a startup
@@ -39,6 +49,16 @@ exactly (dev/test profiles switch e.g. retention off on purpose).
 | OPERATIONAL | applies at once, audited `SETTING_UPDATED` | applies at once, audited `SETTING_UPDATED` |
 | SECURITY | maker/checker `SETTING_UPDATE`, audited `SECURITY_SETTING_UPDATED` (alert `security-setting-changed`, MEDIUM) | maker/checker `PLATFORM_SETTING_UPDATE`, audited `PLATFORM_SETTING_UPDATED` (alert `platform-change`, HIGH) |
 | bank bounds (`bankMin`/`bankMax`) | — | always maker/checker `PLATFORM_SETTING_UPDATE` |
+
+A platform-set setting's **per-bank value** is the platform layer's too:
+`GET /api/platform/banks/{bankId}/settings` (`platform:read`) shows one
+customer bank's platform-set settings as that bank sees them, and
+`PUT` (`platform:settings`) changes them under the same tier rules; a
+security value is one `PLATFORM_SETTING_UPDATE` whose payload names the
+bank (`{bankId, changes:[{key, from, to, baseVersion}]}`), approved by a
+second platform admin and written into that bank's own rows. Unknown bank:
+404; the platform bank: 409 `USE_PLATFORM_SETTINGS`. In the console it is
+the bank's page → **Settings set by the platform**.
 
 `value: null` resets a setting to the inherited value. Every change carries
 the `version` the caller read (`expectedVersion`); a stale one answers
@@ -82,12 +102,40 @@ Which bank a value is read for:
 | `AiSectionSplitter`, `AiDocumentComposer` | `doccreation.sectionAiEnabled`, `doccreation.generateAiEnabled`, AND `ai.enabled` | the caller's bank |
 | `ParsingSettings.forBank(id)` | `parsing.*` (batch size/concurrency platform-wide) | fresh `ParsingProperties` copy per job; `excelForBank(id)` for the Excel switch |
 | `MappingSettings.forBank(id)` | `mapping.llmFallbackEnabled`, `mapping.confidenceThreshold` | fresh `MappingProperties` copy; `AutoMapUseCase` resolves once per mapping run |
+| `IntegrationSettings` (flow engine: `FlowRunner`, `IntegrationScheduler`, `OutboundDispatcher`, `PayloadBuilder`) | `integration.maxRowsPerRun`, `integration.runTimeout`, `integration.webhookRetryAttempts` | the flow's (or delivery's) bank, per run / per delivery attempt |
+| `IntegrationSettings` (client auth: `ClientTokenService`, `ApiClientAuthenticator`, and through it `ApiClientProvisioning`) | `integration.clientTokenTtl`, `integration.auth.allow*` | the API client's bank, on every token issue and every authenticated call (a method switched off refuses existing clients at once) |
+| `IntegrationFlowUseCase`, `IntegrationAgentUseCase` | `integration.minScheduleInterval`, `integration.outboundPiiMasking`, `integration.agentHeartbeatTimeout` | the caller's bank (application layer: `SettingsReader` directly) |
 
 Stay yml-only on purpose: the locked switches (`ratelimit.enabled`,
 `retention.enabled`, `privacy.tokenizePii`), the restart-only rate-limit
 window, every limiter's key bound, and `parsing.llmSinglePassMaxRows`.
 Settings without a property (extraction mode and code confidence, the AI
 circuit breaker, the integration tab) are read by their own workstreams.
+
+## The tabs
+
+The settings screens show one tab per group, in this order: **Sign-in &
+passwords**, **Rate limits**, **Data protection**, **Security alerts**
+(platform only), **AI & extraction** and **Integrations**. A bank
+administrator sees the BANK-scope settings of each tab; the platform
+console shows every setting with its bank bounds.
+
+**Integrations** (ws25/ws26) holds the integration hub's guardrails:
+
+- maximum rows per run, run timeout, minimum schedule interval, webhook
+  delivery attempts and the agent-offline timeout (operational: apply at
+  once);
+- masking PII in new outbound flows and the API-client token lifetime
+  (security: maker/checker);
+- which API-client authentication methods the bank may use — OAuth2 client
+  credentials, API keys, mutual TLS. These are **platform-set**: the
+  platform owner chooses the default for every bank on the platform
+  settings screen and, where needed, a bank's own value on that bank's
+  page; the bank sees them read-only. Switching a method off refuses new
+  clients of that method and stops existing ones authenticating.
+
+Connection credentials are not settings: they are entered write-only on the
+connection and sealed by the `SecretVault` (docs/integration/secrets.md).
 
 **Change notification.** Each task publishes `SettingsChangedEvent` after it
 loads a new snapshot — after a settings write commits on that task, and
@@ -200,8 +248,8 @@ application.yml has exactly one threshold and one window setting
 | `integration.webhookRetryAttempts` | Integrations | BANK | OPERATIONAL | INT | 5 attempts | 0 – 10 |  |  | — (code default) |
 | `integration.outboundPiiMasking` | Integrations | BANK | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
 | `integration.clientTokenTtl` | Integrations | BANK | SECURITY | DURATION | 15m | 5m – 15m |  |  | — (code default) |
-| `integration.auth.allowOauth2` | Integrations | PLATFORM | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
-| `integration.auth.allowApiKeys` | Integrations | PLATFORM | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
-| `integration.auth.allowMtls` | Integrations | PLATFORM | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
+| `integration.auth.allowOauth2` | Integrations | BANK (platform-set) | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
+| `integration.auth.allowApiKeys` | Integrations | BANK (platform-set) | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
+| `integration.auth.allowMtls` | Integrations | BANK (platform-set) | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
 | `integration.agentHeartbeatTimeout` | Integrations | BANK | OPERATIONAL | DURATION | 2m | 1m – 1h |  |  | — (code default) |
 <!-- END GENERATED -->

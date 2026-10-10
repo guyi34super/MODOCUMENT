@@ -2,6 +2,7 @@ package com.modocument.api.controller;
 
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.PlatformSettingView;
+import com.modocument.application.dto.SettingView;
 import com.modocument.application.dto.SettingsPage;
 import com.modocument.application.dto.SettingsUpdateRequest;
 import com.modocument.application.dto.SettingsUpdateResult;
@@ -13,6 +14,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,6 +26,12 @@ import org.springframework.web.bind.annotation.RestController;
  * once (200); security values and every bank-bound change are one
  * maker/checker request (202) a second platform admin approves. Only
  * platform-bank users get past {@code SettingsUseCase} (403 otherwise).
+ *
+ * <p>Per bank ({@code /api/platform/banks/{bankId}/settings}): the
+ * platform-controlled settings of one customer bank (e.g. which API-client
+ * authentication methods it may use) — that bank's own value, which its
+ * administrators see read-only. Unknown bank → 404; the platform bank →
+ * 409 USE_PLATFORM_SETTINGS.
  */
 @RestController
 @Tag(name = "Platform settings", description = "Global defaults and bank bounds (platform owner)")
@@ -49,6 +57,24 @@ public class PlatformSettingsController {
             @Valid @RequestBody SettingsUpdateRequest request) {
         SettingsUpdateResult<PlatformSettingView> result =
                 settings.updatePlatformSettings(request);
+        return ResponseEntity.status(result.pendingChange() == null
+                ? HttpStatus.OK : HttpStatus.ACCEPTED).body(result);
+    }
+
+    @RequiresPermission(Permission.PLATFORM_READ)
+    @Operation(summary = "One bank's platform-controlled settings (values set per bank)")
+    @GetMapping("/api/platform/banks/{bankId}/settings")
+    public SettingsPage<SettingView> getForBank(@PathVariable int bankId) {
+        return settings.bankSettingsForPlatform(bankId);
+    }
+
+    @RequiresPermission(Permission.PLATFORM_SETTINGS)
+    @Operation(summary = "Set one bank's platform-controlled settings (security: 202 pending)")
+    @PutMapping("/api/platform/banks/{bankId}/settings")
+    public ResponseEntity<SettingsUpdateResult<SettingView>> updateForBank(
+            @PathVariable int bankId, @Valid @RequestBody SettingsUpdateRequest request) {
+        SettingsUpdateResult<SettingView> result =
+                settings.updateBankSettingsForPlatform(bankId, request);
         return ResponseEntity.status(result.pendingChange() == null
                 ? HttpStatus.OK : HttpStatus.ACCEPTED).body(result);
     }

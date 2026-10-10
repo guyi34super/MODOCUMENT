@@ -34,6 +34,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The settings catalogue may never put infrastructure wiring or secrets in
@@ -285,6 +286,31 @@ class SettingsCatalogueSafetyTest {
         assertThat(SettingDefinitions.ALL)
                 .filteredOn(definition -> definition.group() == SettingGroup.SECURITY_ALERTS)
                 .allMatch(definition -> definition.scope() == SettingScope.PLATFORM);
+    }
+
+    @Test
+    void platformControlledSettingsAreTheAuthMethodFlagsOfABank() {
+        // Only the platform sets them per bank; a bank administrator sees them
+        // read-only (SettingChangeService refuses the bank layer).
+        assertThat(SettingDefinitions.ALL)
+                .filteredOn(SettingDefinition::platformControlled)
+                .extracting(SettingDefinition::key)
+                .containsExactly(SettingKeys.INTEGRATION_ALLOW_OAUTH2,
+                        SettingKeys.INTEGRATION_ALLOW_API_KEYS, SettingKeys.INTEGRATION_ALLOW_MTLS);
+        assertThat(SettingDefinitions.ALL)
+                .filteredOn(SettingDefinition::platformControlled)
+                .allMatch(definition -> definition.scope() == SettingScope.BANK);
+        // The record refuses a platform-controlled PLATFORM-scope setting.
+        SettingDefinition bankScoped = SettingDefinition.builder("test.platformSet",
+                        SettingType.BOOLEAN).platformControlled().group(SettingGroup.INTEGRATIONS)
+                .label("Test").defaultValue("true").build();
+        assertThat(bankScoped.scope()).isEqualTo(SettingScope.BANK);
+        assertThatThrownBy(() -> new SettingDefinition(
+                        "test.platformSet", SettingType.BOOLEAN, SettingScope.PLATFORM,
+                        bankScoped.tier(), bankScoped.group(), "Test", "", null, null, null,
+                        Boolean.TRUE, null, null, List.of("true", "false"), false, true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("platform-controlled");
     }
 
     private static void check(String name, List<String> offenders) {

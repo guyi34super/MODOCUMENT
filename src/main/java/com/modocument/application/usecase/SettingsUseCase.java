@@ -6,6 +6,7 @@ import com.modocument.application.dto.SettingView;
 import com.modocument.application.dto.SettingsPage;
 import com.modocument.application.dto.SettingsUpdateRequest;
 import com.modocument.application.dto.SettingsUpdateResult;
+import com.modocument.application.port.BankDirectory;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.PlatformBankLookup;
 import com.modocument.domain.model.settings.SettingDefinition;
@@ -24,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.function.Function;
 
 import static com.modocument.application.usecase.SettingChangeService.Layer;
@@ -52,6 +54,14 @@ import static com.modocument.application.usecase.SettingChangeService.ParsedChan
  * USE_PLATFORM_SETTINGS — their settings ARE the platform layer); the
  * platform layer refuses anyone outside the platform bank (403), on top of
  * the route permissions.
+ *
+ * <p><b>Platform-controlled values of one bank</b>
+ * ({@code /api/platform/banks/{id}/settings}): the platform owner reads and
+ * sets a CUSTOMER bank's own value of the platform-controlled settings
+ * (e.g. the allowed API-client authentication methods), which that bank's
+ * administrators see read-only. Same rules as the other layers; a security
+ * value is one PLATFORM_SETTING_UPDATE naming the bank, approved by a second
+ * platform admin.
  */
 @Service
 public class SettingsUseCase {
@@ -63,12 +73,13 @@ public class SettingsUseCase {
     private final SettingsCache cache;
     private final SettingChangeService changes;
     private final PendingChangeUseCase pendingChanges;
+    private final BankDirectory banks;
     private final TransactionTemplate tx;
 
     public SettingsUseCase(CurrentUserProvider currentUser, PlatformBankLookup platformBanks,
                            SettingsCatalogue catalogue, SettingsResolver resolver,
                            SettingsCache cache, SettingChangeService changes,
-                           PendingChangeUseCase pendingChanges,
+                           PendingChangeUseCase pendingChanges, BankDirectory banks,
                            PlatformTransactionManager transactionManager) {
         this.currentUser = currentUser;
         this.platformBanks = platformBanks;
@@ -77,6 +88,7 @@ public class SettingsUseCase {
         this.cache = cache;
         this.changes = changes;
         this.pendingChanges = pendingChanges;
+        this.banks = banks;
         this.tx = new TransactionTemplate(transactionManager);
     }
 
@@ -124,6 +136,49 @@ public class SettingsUseCase {
         return new SettingsUpdateResult<>(applied, outcome.pendingChange());
     }
 
+    // ------------------------------------- platform-controlled values of one bank
+
+    /** The platform-controlled settings of one customer bank, as that bank sees them. */
+    public SettingsPage<SettingView> bankSettingsForPlatform(int targetBankId) {
+        requirePlatformBank();
+        int bankId = requireCustomerTarget(targetBankId);
+        cache.refreshIfChanged();
+        Map<String, Integer> open = changes.openChangeKeys(Layer.BANK_BY_PLATFORM, bankId);
+        return page(Layer.BANK_BY_PLATFORM, platformControlled(),
+                definition -> bankView(definition, bankId, open));
+    }
+
+    /** Sets one customer bank's platform-controlled values (security: maker/checker). */
+    public SettingsUpdateResult<SettingView> updateBankSettingsForPlatform(
+            int targetBankId, SettingsUpdateRequest request) {
+        requirePlatformBank();
+        int bankId = requireCustomerTarget(targetBankId);
+        Outcome outcome = update(Layer.BANK_BY_PLATFORM, bankId, request);
+        Map<String, Integer> open = changes.openChangeKeys(Layer.BANK_BY_PLATFORM, bankId);
+        List<SettingView> applied = outcome.appliedKeys().stream()
+                .map(key -> bankView(catalogue.require(key), bankId, open))
+                .toList();
+        return new SettingsUpdateResult<>(applied, outcome.pendingChange());
+    }
+
+    private List<SettingDefinition> platformControlled() {
+        return catalogue.ofScope(SettingScope.BANK).stream()
+                .filter(SettingDefinition::platformControlled)
+                .toList();
+    }
+
+    /** An existing customer bank (404 for an unknown id, 409 for the platform bank). */
+    private int requireCustomerTarget(int bankId) {
+        BankDirectory.BankRef bank = banks.find(bankId)
+                .orElseThrow(() -> new NoSuchElementException("Bank " + bankId + " not found."));
+        if (bank.isPlatform() || platformBanks.isPlatformBank(bankId)) {
+            throw new SettingException(SettingException.Code.USE_PLATFORM_SETTINGS, null,
+                    "The platform bank's settings are the platform layer: use "
+                            + "/api/platform/settings.");
+        }
+        return bankId;
+    }
+
     // ------------------------------------------------------------ plumbing
 
     private Outcome update(Layer layer, int bankId, SettingsUpdateRequest request) {
@@ -144,7 +199,9 @@ public class SettingsUseCase {
             }
             PendingChangeDto pending = approval.isEmpty() ? null
                     : pendingChanges.submit(layer.changeType(),
-                    changes.toPayload(layer, approval), request.comment());
+                    changes.toPayload(layer,
+                            layer == Layer.BANK_BY_PLATFORM ? bankId : null, approval),
+                    request.comment());
             return new Outcome(direct.stream().map(change -> change.definition().key()).toList(),
                     pending);
         });
@@ -217,7 +274,8 @@ public class SettingsUseCase {
                 definition.locked(),
                 resolution.clamped(),
                 open.get(definition.key()),
-                resolution.version());
+                resolution.version(),
+                definition.platformControlled());
     }
 
     /** What one PUT did: the keys applied at once and the pending request, if any. */

@@ -20,12 +20,31 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * REST_API connections over the JDK HttpClient: GET pull (pagination NONE)
- * and POST/PUT push in batches with an {@code Idempotency-Key}. Auth from
+ * REST_API connections over the JDK HttpClient. GET pull, paginated like the
+ * server's REST connector (contracts §7.3 {@code sourceSpec.pagination}):
+ * <ul>
+ *   <li>{@code NONE}: one request;</li>
+ *   <li>{@code PAGE}: {@code pageParam} (default {@code page}) counting up
+ *       from {@code startPage} (default 1), {@code sizeParam} =
+ *       {@code pageSize} (default 100, at most 1000 per request); stops at a
+ *       short page (an empty one when no size is configured) or after
+ *       {@code maxPages};</li>
+ *   <li>{@code CURSOR}: {@code cursorParam} = the value at {@code cursorPath}
+ *       (a dot path, optionally starting {@code $.}) of the previous answer;
+ *       stops when that value is missing, empty or repeats;</li>
+ *   <li>{@code LINK}: the {@code Link: <…>; rel="next"} header, followed only
+ *       on the same origin AND the same path as the configured one (the path
+ *       the allow-list approved; only the query may change).</li>
+ * </ul>
+ * The read cursor is the next page number, cursor value or link; the
+ * TaskExecutor posts every page with it. Push: POST/PUT in batches with an
+ * {@code Idempotency-Key}. Auth from
  * the local secret: NONE, BASIC ({@code username} config + {@code password}),
  * BEARER ({@code token}) or API_KEY header ({@code apiKeyHeader} config +
  * {@code apiKey}). Redirects are never followed (a redirect could leave the
@@ -40,6 +59,15 @@ public class RestConnector implements Connector {
     private static final Pattern PATH = Pattern.compile("/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*");
     private static final Pattern HEADER = Pattern.compile("[A-Za-z0-9-]{1,64}");
     private static final TypeReference<Map<String, Object>> MAP = new TypeReference<>() { };
+    private static final Pattern PARAM = Pattern.compile("[A-Za-z0-9_.\\[\\]-]{1,64}");
+    private static final Pattern DOT_PATH = Pattern.compile("(\\$\\.)?[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*");
+    private static final Pattern LINK_NEXT = Pattern.compile("<([^>]+)>\\s*;\\s*rel=\"?next\"?");
+    private static final Set<String> PAGINATION_KEYS = Set.of("type", "pageParam", "sizeParam",
+            "pageSize", "startPage", "cursorParam", "cursorPath", "maxPages");
+    /** The server keeps a run's cursor up to 1000 characters (agent protocol). */
+    private static final int MAX_CURSOR = 1000;
+    /** Records per request: the server accepts at most 1000 per records POST. */
+    static final int MAX_PAGE_SIZE = 1000;
 
     private final ObjectMapper mapper;
     private final HttpClient http;
@@ -65,6 +93,9 @@ public class RestConnector implements Connector {
         if ("READ".equals(operation) || "WRITE".equals(operation)) {
             allowList.checkRestPath(fullPath(base, path(task)));
         }
+        if ("READ".equals(operation)) {
+            Paging.of(task.spec("pagination")); // a bad spec fails before any secret is read
+        }
     }
 
     @Override
@@ -80,26 +111,41 @@ public class RestConnector implements Connector {
 
     @Override
     public ReadPage read(TaskContext task, String cursor, int max) throws IOException, InterruptedException {
-        Object pagination = task.spec("pagination");
-        if (pagination instanceof Map<?, ?> map && map.get("type") != null
-                && !"NONE".equalsIgnoreCase(String.valueOf(map.get("type")))) {
-            throw new IllegalArgumentException("This agent version reads REST sources without "
-                    + "pagination only (pagination type NONE).");
+        Paging paging = Paging.of(task.spec("pagination"));
+        URI base = base(task);
+        String path = path(task);
+        Map<String, String> query = query(task);
+        URI uri;
+        int page = 0;
+        if (paging.type() == PagingType.LINK && cursor != null) {
+            uri = nextLink(base, path, cursor);
+        } else {
+            switch (paging.type()) {
+                case PAGE -> {
+                    page = cursor == null ? paging.startPage() : pageNumber(cursor);
+                    query.put(paging.pageParam(), String.valueOf(page));
+                    paging.sizeTo(query);
+                }
+                case CURSOR -> {
+                    if (cursor != null) {
+                        query.put(paging.cursorParam(), cursor);
+                    }
+                    paging.sizeTo(query);
+                }
+                case LINK -> paging.sizeTo(query);
+                case NONE -> { }
+            }
+            uri = resolve(task, path, query);
         }
-        URI uri = resolve(task, path(task), query(task));
         HttpResponse<InputStream> response = send(task, HttpRequest.newBuilder(uri)
                 .header("Accept", "application/json").GET());
         byte[] body = readCapped(response);
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IOException("The API answered HTTP " + response.statusCode() + ".");
         }
-        JsonNode node = mapper.readTree(body);
+        JsonNode root = mapper.readTree(body);
         String recordsPath = task.specText("recordsPath");
-        if (recordsPath != null && !recordsPath.isEmpty()) {
-            for (String part : recordsPath.split("\\.")) {
-                node = node == null ? null : node.get(part);
-            }
-        }
+        JsonNode node = at(root, recordsPath);
         if (node == null || !node.isArray()) {
             throw new IOException("The API response has no record array at '"
                     + (recordsPath == null ? "" : recordsPath) + "'.");
@@ -113,10 +159,41 @@ public class RestConnector implements Connector {
                 records.add(mapper.convertValue(item, MAP));
             }
         }
-        return new ReadPage(records, cursor, false, null);
+        int received = node.size();
+
+        String next = null;
+        switch (paging.type()) {
+            case PAGE -> {
+                boolean full = paging.sizeKnown() ? received >= paging.pageSize() : received > 0;
+                if (full && paging.underCap(page - paging.startPage() + 1)) {
+                    next = String.valueOf(page + 1);
+                }
+            }
+            case CURSOR -> {
+                JsonNode token = at(root, paging.cursorPath());
+                if (received > 0 && token != null && token.isValueNode() && !token.isNull()) {
+                    String value = token.asText();
+                    if (!value.isEmpty() && !value.equals(cursor) && value.length() <= MAX_CURSOR) {
+                        next = value;
+                    }
+                }
+            }
+            case LINK -> {
+                String link = response.headers().firstValue("Link").orElse(null);
+                if (received > 0 && link != null) {
+                    Matcher matcher = LINK_NEXT.matcher(link);
+                    if (matcher.find()) {
+                        URI candidate = nextLink(base, path, uri.resolve(matcher.group(1)).toString());
+                        next = candidate.toString();
+                    }
+                }
+            }
+            case NONE -> { }
+        }
+        return new ReadPage(records, next, next != null, null);
     }
 
-    @Override
+        @Override
     public WriteOutcome write(TaskContext task, Protocol.OutboundBatch batch)
             throws IOException, InterruptedException {
         String method = task.specText("method") == null ? "POST" : task.specText("method").toUpperCase(Locale.ROOT);
@@ -267,5 +344,159 @@ public class RestConnector implements Connector {
             throw new IllegalArgumentException("The REST path leaves the connection's host.");
         }
         return resolved;
+    }
+
+    // ------------------------------------------------------------- pagination
+
+    enum PagingType { NONE, PAGE, CURSOR, LINK }
+
+    /** The validated {@code sourceSpec.pagination} (same keys and limits as the server's). */
+    record Paging(PagingType type, String pageParam, String sizeParam, int pageSize,
+                  boolean sizeKnown, int startPage, String cursorParam, String cursorPath,
+                  Integer maxPages) {
+
+        static Paging of(Object raw) {
+            if (raw == null) {
+                return new Paging(PagingType.NONE, "page", null, 100, false, 1, null, null, null);
+            }
+            if (!(raw instanceof Map<?, ?> map)) {
+                throw new IllegalArgumentException("The REST pagination must be an object.");
+            }
+            for (Object key : map.keySet()) {
+                if (!PAGINATION_KEYS.contains(String.valueOf(key))) {
+                    throw new IllegalArgumentException("Unknown pagination setting '"
+                            + abbreviate(String.valueOf(key)) + "'.");
+                }
+            }
+            String typeName = text(map, "type");
+            PagingType type;
+            try {
+                type = typeName == null ? PagingType.NONE
+                        : PagingType.valueOf(typeName.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Pagination type must be NONE, PAGE, CURSOR or LINK.");
+            }
+            String pageParam = param(map, "pageParam");
+            String sizeParam = param(map, "sizeParam");
+            String cursorParam = param(map, "cursorParam");
+            String cursorPath = text(map, "cursorPath");
+            if (cursorPath != null && !DOT_PATH.matcher(cursorPath).matches()) {
+                throw new IllegalArgumentException("'cursorPath' must be a dot path such as meta.next.");
+            }
+            Integer pageSize = number(map, "pageSize", 1, 10_000);
+            Integer startPage = number(map, "startPage", 0, 1_000_000);
+            Integer maxPages = number(map, "maxPages", 1, 100_000);
+            if (type == PagingType.CURSOR && (cursorParam == null || cursorPath == null)) {
+                throw new IllegalArgumentException("CURSOR pagination needs 'cursorParam' and 'cursorPath'.");
+            }
+            return new Paging(type, pageParam == null ? "page" : pageParam, sizeParam,
+                    pageSize == null ? 100 : Math.min(pageSize, MAX_PAGE_SIZE),
+                    sizeParam != null || pageSize != null, startPage == null ? 1 : startPage,
+                    cursorParam, cursorPath, maxPages);
+        }
+
+        void sizeTo(Map<String, String> query) {
+            if (sizeParam != null) {
+                query.put(sizeParam, String.valueOf(pageSize));
+            }
+        }
+
+        boolean underCap(int pagesRead) {
+            return maxPages == null || pagesRead < maxPages;
+        }
+
+        private static String text(Map<?, ?> map, String key) {
+            Object value = map.get(key);
+            if (value == null) {
+                return null;
+            }
+            String text = String.valueOf(value).strip();
+            return text.isEmpty() ? null : text;
+        }
+
+        private static String param(Map<?, ?> map, String key) {
+            String value = text(map, key);
+            if (value != null && !PARAM.matcher(value).matches()) {
+                throw new IllegalArgumentException("'" + key + "' is not a valid parameter name.");
+            }
+            return value;
+        }
+
+        private static Integer number(Map<?, ?> map, String key, int min, int max) {
+            String value = text(map, key);
+            if (value == null) {
+                return null;
+            }
+            try {
+                int number = Integer.parseInt(value);
+                if (number < min || number > max) {
+                    throw new NumberFormatException();
+                }
+                return number;
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("'" + key + "' must be a whole number from "
+                        + min + " to " + max + ".");
+            }
+        }
+
+        private static String abbreviate(String value) {
+            return value.length() > 40 ? value.substring(0, 40) + "..." : value;
+        }
+    }
+
+    private static int pageNumber(String cursor) {
+        try {
+            int page = Integer.parseInt(cursor.strip());
+            if (page < 0) {
+                throw new NumberFormatException();
+            }
+            return page;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("The PAGE cursor is not a page number.");
+        }
+    }
+
+    /**
+     * A next-page link: absolute, on the base's scheme, host and port, with
+     * exactly the configured path (the one the allow-list approved) — only
+     * its query may differ.
+     */
+    static URI nextLink(URI base, String path, String raw) {
+        URI candidate;
+        try {
+            candidate = URI.create(raw);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("The next-page link is not a URL.");
+        }
+        if (!candidate.isAbsolute()
+                || !base.getScheme().equalsIgnoreCase(candidate.getScheme())
+                || candidate.getHost() == null || !base.getHost().equalsIgnoreCase(candidate.getHost())
+                || port(base) != port(candidate)
+                || candidate.getRawUserInfo() != null || candidate.getRawFragment() != null
+                || !fullPath(base, path).equals(candidate.getRawPath())
+                || raw.length() > MAX_CURSOR) {
+            throw new IllegalArgumentException("The next-page link leaves the connection's host or "
+                    + "the configured path; refused.");
+        }
+        return candidate;
+    }
+
+    /** The node at a dot path ({@code data.items} or {@code $.data.items}); the root for none. */
+    static JsonNode at(JsonNode root, String dotPath) {
+        if (dotPath == null || dotPath.isBlank()) {
+            return root;
+        }
+        String path = dotPath.strip();
+        if (path.startsWith("$.")) {
+            path = path.substring(2);
+        }
+        JsonNode node = root;
+        for (String part : path.split("\\.")) {
+            if (node == null) {
+                return null;
+            }
+            node = node.get(part);
+        }
+        return node;
     }
 }

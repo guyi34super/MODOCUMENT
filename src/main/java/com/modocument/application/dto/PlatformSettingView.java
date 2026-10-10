@@ -10,7 +10,9 @@ import java.util.List;
  * banks choose from (null = the hard limit applies). Only ranged BANK-scope
  * settings carry bank bounds. {@code min}/{@code max} here are the hard
  * limits; {@code value}/{@code source} the platform value (PLATFORM) or the
- * shipped default (DEFAULT).
+ * shipped default (DEFAULT). {@code platformControlled} — besides this
+ * default, the platform sets the value per bank
+ * ({@code /api/platform/banks/{id}/settings}).
  */
 public record PlatformSettingView(String key, String type, String tier, String scope,
                                   String group, String label, String description, String unit,
@@ -20,7 +22,8 @@ public record PlatformSettingView(String key, String type, String tier, String s
                                   List<String> allowed, boolean requiresApproval,
                                   boolean requiresRestart, boolean locked, boolean clamped,
                                   Integer pendingChangeId, int version, Object bankMin,
-                                  Object bankMax, boolean hasBankBounds) {
+                                  Object bankMax, boolean hasBankBounds,
+                                  boolean platformControlled) {
 
     /** The bank-layer field set plus the platform's bank bounds. */
     public static PlatformSettingView of(SettingView view, Object bankMin, Object bankMax,
@@ -30,6 +33,6 @@ public record PlatformSettingView(String key, String type, String tier, String s
                 view.source(), view.defaultValue(), view.min(), view.max(), view.hardMin(),
                 view.hardMax(), view.allowed(), view.requiresApproval(), view.requiresRestart(),
                 view.locked(), view.clamped(), view.pendingChangeId(), view.version(), bankMin,
-                bankMax, hasBankBounds);
+                bankMax, hasBankBounds, view.platformControlled());
     }
 }

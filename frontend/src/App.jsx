@@ -104,6 +104,7 @@ export default function App() {
         <Route path="/admin" element={<AdminDashboardPage />} />
         <Route path="/admin/settings" element={<SettingsPage mode="bank" />} />
         <Route path="/platform/settings" element={<SettingsPage mode="platform" />} />
+        <Route path="/platform/banks/:id/settings" element={<SettingsPage mode="platformBank" />} />
         {/* ws24 platform console (server: platform:read / platform:announce,
             PLATFORM_ADMIN of the platform bank only). */}
         <Route path="/platform/announcements" element={<PlatformAnnouncementsPage />} />

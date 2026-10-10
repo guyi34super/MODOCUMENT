@@ -2,7 +2,6 @@ package com.modocument.infrastructure.integration.engine;
 
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
-import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.integration.ConnectionContext;
 import com.modocument.application.port.integration.IntegrationConnector;
 import com.modocument.application.port.integration.OutboundBatch;
@@ -18,11 +17,11 @@ import com.modocument.domain.model.integration.ConnectionType;
 import com.modocument.domain.model.integration.DeliveryStatus;
 import com.modocument.domain.model.integration.FlowTrigger;
 import com.modocument.domain.model.integration.RunStatus;
-import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.integration.connector.ConnectorErrors;
 import com.modocument.infrastructure.persistence.IntegrationConnectionJpaRepository;
 import com.modocument.infrastructure.persistence.IntegrationFlowJpaRepository;
 import com.modocument.infrastructure.persistence.OutboundDeliveryJpaRepository;
+import com.modocument.infrastructure.settings.IntegrationSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -78,7 +77,7 @@ public class OutboundDispatcher {
     private final IntegrationConnectors connectors;
     private final PayloadBuilder payloads;
     private final IntegrationRuns runs;
-    private final SettingsReader settings;
+    private final IntegrationSettings settings;
     private final AuditRecorder audit;
     private final IntegrationEngineProperties properties;
     private final JdbcTemplate jdbc;
@@ -89,7 +88,7 @@ public class OutboundDispatcher {
     public OutboundDispatcher(OutboundDeliveryJpaRepository deliveries, IntegrationFlowJpaRepository flows,
                               IntegrationConnectionJpaRepository connections,
                               IntegrationConnectors connectors, PayloadBuilder payloads,
-                              IntegrationRuns runs, SettingsReader settings, AuditRecorder audit,
+                              IntegrationRuns runs, IntegrationSettings settings, AuditRecorder audit,
                               IntegrationEngineProperties properties, JdbcTemplate jdbc,
                               PlatformTransactionManager transactionManager) {
         this.deliveries = deliveries;
@@ -319,8 +318,7 @@ public class OutboundDispatcher {
 
     /** A failed attempt: retry with backoff, or DEAD once the retries are spent. */
     void recordFailure(OutboundDelivery delivery, IntegrationFlow flow, String error) {
-        int retries = Math.max(0, settings.getInt(SettingKeys.INTEGRATION_WEBHOOK_RETRY_ATTEMPTS,
-                delivery.getBankId()));
+        int retries = Math.max(0, settings.webhookRetryAttempts(delivery.getBankId()));
         boolean dead = tx.execute(status -> deliveries.findById(delivery.getId()).map(row -> {
             int attempts = row.getAttempts() + 1;
             row.setAttempts(attempts);

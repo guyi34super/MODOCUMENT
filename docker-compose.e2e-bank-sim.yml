@@ -1,0 +1,56 @@
+# Wave-3 overlay for docker-compose.e2e.yml: the bank simulator joins the E2E
+# stack (same project and network, so the app reaches bank-db:5432,
+# http://bank-rest:18090 and bank-sftp:22) and the Playwright runner gets
+# its coordinates plus E2E_WAVE3=1, which switches the integration-hub
+# specs on. TEST ONLY; every bank credential is REQUIRED and generated per
+# run (the CI job in .github/workflows/ci.yml, or
+# e2e/bank-simulator/README.md "Per-run secrets").
+#
+#   COMPOSE_FILE=docker-compose.e2e.yml:docker-compose.e2e-bank-sim.yml \
+#     docker compose --env-file e2e/.run/ci.env up --build \
+#     --abort-on-container-exit --exit-code-from e2e
+#
+# `include` resolves the simulator's relative paths (db/, rest-stub/, sftp/)
+# against its own folder; a second `-f` of that file would not.
+
+include:
+  - path: e2e/bank-simulator/docker-compose.bank-sim.yml
+
+services:
+  app:
+    depends_on:
+      bank-db:
+        condition: service_healthy
+      bank-rest:
+        condition: service_healthy
+      bank-sftp:
+        condition: service_healthy
+
+  e2e:
+    environment:
+      E2E_WAVE3: ${E2E_WAVE3:-1}
+      E2E_BANK_SIM_REST_URL: http://bank-rest:18090
+      E2E_BANK_SIM_DB_URL: postgres://bankadmin:${BANK_SIM_DB_ADMIN_PASSWORD}@bank-db:5432/bank
+      # The bank as the APP sees it (connections are created through the product).
+      E2E_BANK_SIM_DB_HOST_FOR_APP: bank-db
+      E2E_BANK_SIM_DB_PORT_FOR_APP: "5432"
+      E2E_BANK_SIM_DB_NAME: bank
+      E2E_BANK_SIM_DB_READER: modoc_reader
+      E2E_BANK_SIM_DB_READER_PASSWORD: ${BANK_SIM_DB_READER_PASSWORD}
+      E2E_BANK_SIM_DB_WRITER: modoc_writer
+      E2E_BANK_SIM_DB_WRITER_PASSWORD: ${BANK_SIM_DB_WRITER_PASSWORD}
+      E2E_BANK_SIM_CLIENT_ID: ${BANK_SIM_CLIENT_ID}
+      E2E_BANK_SIM_CLIENT_SECRET: ${BANK_SIM_CLIENT_SECRET}
+      E2E_BANK_SIM_API_KEY: ${BANK_SIM_API_KEY}
+      E2E_BANK_SIM_WEBHOOK_SECRET: ${BANK_SIM_WEBHOOK_SECRET}
+      E2E_BANK_SIM_SFTP_HOST: bank-sftp
+      E2E_BANK_SIM_SFTP_PORT: "22"
+      E2E_BANK_SIM_SFTP_USER: ${BANK_SIM_SFTP_USER:-bank}
+      E2E_BANK_SIM_SFTP_PASSWORD: ${BANK_SIM_SFTP_PASSWORD}
+    depends_on:
+      bank-db:
+        condition: service_healthy
+      bank-rest:
+        condition: service_healthy
+      bank-sftp:
+        condition: service_healthy

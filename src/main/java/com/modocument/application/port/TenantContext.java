@@ -71,7 +71,11 @@ import java.util.concurrent.Callable;
  *       {@code #listBanks}; PLATFORM_READ, platform bank only):
  *       {@code runAsSystem} in its own read-only transaction for a
  *       cross-bank COUNTS-ONLY read (Bank identifying columns +
- *       COUNT/MAX/SUM aggregates; no row content).</li>
+ *       COUNT/MAX/SUM aggregates; no row content). Wave 4: {@code #getBank}
+ *       also counts that one bank's IntegrationConnection (all / FAILED),
+ *       enabled IntegrationFlow, IntegrationRun finished in 24 h by
+ *       outcome, DEAD OutboundDelivery and offline IntegrationAgent rows in
+ *       the same transaction — aggregates only.</li>
  *   <li>{@code SettingsCache#reload} / {@code SettingsCache#refreshIfChanged}
  *       — phase 2 (ws20) settings snapshot: {@code runAsSystem} in its own
  *       read-only REQUIRES_NEW transaction to read the tenant-less
@@ -81,6 +85,16 @@ import java.util.concurrent.Callable;
  *       write commits, and by {@code ConfigRevisionPoller#poll} every
  *       {@code modocument.settings.poll-interval-ms}. Read-only; writes stay
  *       under the writer's own tenant.</li>
+ *   <li>{@code SettingChangeService#inTargetBank} (via {@code #findRow} and
+ *       {@code #write}) — phase 2 platform-controlled settings
+ *       ({@code /api/platform/banks/{id}/settings} and the
+ *       PLATFORM_SETTING_UPDATE applier when its payload names a
+ *       {@code bankId}; PLATFORM_SETTINGS, platform bank only):
+ *       {@code runAs(target customer bank)} around a REQUIRES_NEW
+ *       transaction (read-only for the version/"from" read) to read and
+ *       write that bank's BankSetting rows of platform-controlled keys, plus
+ *       the tenant-less ConfigRevision bump. Never the platform bank, never
+ *       {@code runAsSystem}; the audit rows stay in the platform bank.</li>
  *   <li>{@code PlatformBankLifecycleUseCase#requireAvailableCode} — ws21
  *       BANK_CREATE submit: {@code runAsSystem} in its own read-only
  *       transaction to check that no bank carries the requested code (the
@@ -95,7 +109,15 @@ import java.util.concurrent.Callable;
  *       + RefreshToken revocation on suspension) and AuditEvent rows
  *       stamped explicitly with the customer bank and the platform bank;
  *       new users and their USER_CREATED rows are written under
- *       {@code runAs(newBank)}. No customer content is read.</li>
+ *       {@code runAs(newBank)} inside the same system transaction, so a
+ *       failed user insert rolls the new Bank row back too. No customer
+ *       content is read.
+ *       {@code #revertOnboarding} (wave 4) is the compensating cleanup when
+ *       the approval transaction rolls back after the onboarding committed:
+ *       {@code runAsSystem} around a REQUIRES_NEW write transaction that
+ *       deletes the new bank's first users (and any refresh token) and the
+ *       Bank row, and writes BANK_ONBOARDING_REVERTED in the platform
+ *       bank.</li>
  *   <li>{@code AiCircuitBreaker#auditOpened} — ws23: when the AI circuit
  *       opens, {@code runAs(platformBankId)} to write AI_CIRCUIT_OPENED in
  *       the platform bank (skipped when no platform bank exists). No
@@ -107,17 +129,34 @@ import java.util.concurrent.Callable;
  *       before any tenant exists (OAuth2 token endpoint, API-key and
  *       client-certificate authentication, the client-token branch of
  *       RevocationValidator, and the "certificate already registered"
- *       check). Identifying/credential columns only; the request then runs
- *       under the client's bank (IdentityContextFilter).</li>
- *   <li>{@code AgentApiClientIssuer#issueAgentClient} — ws26: when the
+ *       check), and (wave 4 leaver check) whether the client's creator is
+ *       still an enabled AppUsers row of the client's bank — a boolean
+ *       from one primary-key probe. Identifying/credential columns only; the
+ *       request then runs under the client's bank (IdentityContextFilter).</li>
+ *   <li>{@code AgentApiClientIssuer#issueAgentClient} /
+ *       {@code #revokeAgentClient} — ws26 (revoke: wave 4): when the
  *       caller (SE5's public agent enrolment) has bound no tenant,
  *       {@code runAs(bankId)} to write the agent's new ApiClient row, its
- *       secret hash and the API_CLIENT_CREATED audit in that bank; a caller
- *       bound to another bank is refused.</li>
+ *       secret hash and the API_CLIENT_CREATED audit in that bank (revoke:
+ *       to set that AGENT client REVOKED + TokenVersion bump and write
+ *       API_CLIENT_REVOKED; the agent revoke normally calls it under the
+ *       admin's own bank); a caller bound to another bank is refused.</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker
  *       executor.</li>
+ *   <li>{@code IngestionParseStepImpl#extractBatchesParallel} — the same
+ *       {@link #snapshot()}/{@link #runWith} hand-off onto the short-lived
+ *       pool that sends parallel LLM batches (the AI gateway refuses a
+ *       thread with no bound tenant). It only copies the caller's bank.</li>
+ *   <li>{@code JpaAuditRecorder#write} — anonymous flows (login, refresh,
+ *       MFA) where no tenant is bound yet: {@code runAs(event's bank)} for
+ *       that one AuditEvent insert, so the RLS WITH CHECK passes; restored
+ *       right after. Never {@code runAsSystem}.</li>
+ *   <li>{@code MfaUseCase#inUsersBank} — the MFA login step (the caller is
+ *       anonymous until tokens are issued): {@code runAs(user's bank)}
+ *       around a new transaction for that user's second-factor check and
+ *       session creation. Never {@code runAsSystem}.</li>
  *   <li>{@code RetentionPurgeJob#runOnce} — the ws14 daily retention sweep
  *       (and its manual admin trigger): {@code runAsSystem} to list the
  *       RLS-protected Bank table across tenants, then
@@ -201,6 +240,13 @@ import java.util.concurrent.Callable;
  *   <li>{@code IntegrationRunExecutor#submit} — ws25: executes one run on
  *       the integration worker pool under {@code runAs(run's bank)} (from
  *       the scheduler, "Run now" and retry).</li>
+ *   <li>{@code AgentOfflineSweep#sweep} — ws26 (Wave 4) agent offline
+ *       alert, every minute: {@code runAsSystem} in its own read-only
+ *       REQUIRES_NEW transaction for the cross-bank scan that lists ONLY the
+ *       ids of banks with an ONLINE IntegrationAgent; then
+ *       {@code runAs(bank)} per bank for that bank's silent agents, each
+ *       flipped ONLINE → OFFLINE under a row lock with its AGENT_OFFLINE
+ *       audit row in that bank. No row content is read as SYSTEM.</li>
  * </ul>
  */
 public final class TenantContext {

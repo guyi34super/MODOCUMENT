@@ -26,7 +26,14 @@ import java.util.regex.Pattern;
  *       absent (and pinned against application.yml by a test);</li>
  *   <li>{@code hardMin}/{@code hardMax} (ranged types) or
  *       {@code allowedValues} (BOOLEAN/ENUM) — the guardrails nobody can
- *       override; a single allowed value LOCKS the setting.</li>
+ *       override; a single allowed value LOCKS the setting;</li>
+ *   <li>{@code platformControlled} — a BANK-scope setting whose per-bank
+ *       value only the PLATFORM owner may set: each bank can carry its own
+ *       value (an override row in that bank), but it is written through the
+ *       platform's per-bank settings ({@code /api/platform/banks/{id}/settings},
+ *       maker/checker PLATFORM_SETTING_UPDATE) — the bank's administrators
+ *       see it read-only. Without an override the bank inherits the platform
+ *       value, exactly like any other BANK-scope setting.</li>
  * </ul>
  * Typed values follow {@link SettingType}: Integer, BigDecimal, Boolean,
  * String, Duration.
@@ -35,7 +42,7 @@ public record SettingDefinition(String key, SettingType type, SettingScope scope
                                 SettingGroup group, String label, String description, String unit,
                                 String propertyName, ChronoUnit propertyUnit, Object codeDefault,
                                 Object hardMin, Object hardMax, List<String> allowedValues,
-                                boolean requiresRestart) {
+                                boolean requiresRestart, boolean platformControlled) {
 
     /** Keys are dotted camelCase, short enough for AuditEvent.EntityId (64). */
     private static final Pattern KEY_SHAPE =
@@ -72,6 +79,10 @@ public record SettingDefinition(String key, SettingType type, SettingScope scope
             if (allowedValues.isEmpty()) {
                 throw new IllegalArgumentException(key + ": allowed values are required");
             }
+        }
+        if (platformControlled && scope != SettingScope.BANK) {
+            throw new IllegalArgumentException(key + ": only a BANK-scope setting can be "
+                    + "platform-controlled per bank");
         }
         if (propertyUnit != null && type != SettingType.DURATION) {
             throw new IllegalArgumentException(key + ": propertyUnit is for durations only");
@@ -159,6 +170,7 @@ public record SettingDefinition(String key, SettingType type, SettingScope scope
         private String hardMax;
         private final List<String> allowed = new ArrayList<>();
         private boolean requiresRestart;
+        private boolean platformControlled;
 
         private Builder(String key, SettingType type) {
             this.key = key;
@@ -247,6 +259,16 @@ public record SettingDefinition(String key, SettingType type, SettingScope scope
             return this;
         }
 
+        /**
+         * A BANK-scope setting whose per-bank value only the platform owner
+         * sets (the bank sees it read-only); implies {@link #bank()}.
+         */
+        public Builder platformControlled() {
+            this.scope = SettingScope.BANK;
+            this.platformControlled = true;
+            return this;
+        }
+
         public SettingDefinition build() {
             List<String> allowedValues = new ArrayList<>(allowed);
             if (type == SettingType.BOOLEAN && allowedValues.isEmpty()) {
@@ -267,7 +289,8 @@ public record SettingDefinition(String key, SettingType type, SettingScope scope
                 }
             }
             return new SettingDefinition(key, type, scope, tier, group, label, description, unit,
-                    propertyName, propertyUnit, dflt, min, max, allowedValues, requiresRestart);
+                    propertyName, propertyUnit, dflt, min, max, allowedValues, requiresRestart,
+                    platformControlled);
         }
     }
 }

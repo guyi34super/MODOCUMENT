@@ -414,21 +414,23 @@ public final class SettingDefinitions {
                     .label("API client token lifetime")
                     .description("Lifetime of an access token issued to a bank system.")
                     .defaultValue("15m").range("5m", "15m").build(),
-            builder(INTEGRATION_ALLOW_OAUTH2, BOOLEAN).platform().security()
+            builder(INTEGRATION_ALLOW_OAUTH2, BOOLEAN).platformControlled().security()
                     .group(SettingGroup.INTEGRATIONS)
                     .label("Allow OAuth2 client credentials")
-                    .description("API clients may authenticate with OAuth2 client "
-                            + "credentials.")
+                    .description("The bank's API clients may authenticate with OAuth2 "
+                            + "client credentials. Set by the platform owner, per bank.")
                     .defaultValue("true").build(),
-            builder(INTEGRATION_ALLOW_API_KEYS, BOOLEAN).platform().security()
+            builder(INTEGRATION_ALLOW_API_KEYS, BOOLEAN).platformControlled().security()
                     .group(SettingGroup.INTEGRATIONS)
                     .label("Allow API keys")
-                    .description("API clients may authenticate with a static API key.")
+                    .description("The bank's API clients may authenticate with a static "
+                            + "API key. Set by the platform owner, per bank.")
                     .defaultValue("true").build(),
-            builder(INTEGRATION_ALLOW_MTLS, BOOLEAN).platform().security()
+            builder(INTEGRATION_ALLOW_MTLS, BOOLEAN).platformControlled().security()
                     .group(SettingGroup.INTEGRATIONS)
                     .label("Allow mutual TLS")
-                    .description("API clients may authenticate with a client certificate.")
+                    .description("The bank's API clients may authenticate with a client "
+                            + "certificate. Set by the platform owner, per bank.")
                     .defaultValue("true").build(),
             builder(INTEGRATION_AGENT_HEARTBEAT_TIMEOUT, DURATION).bank().operational()
                     .group(SettingGroup.INTEGRATIONS)

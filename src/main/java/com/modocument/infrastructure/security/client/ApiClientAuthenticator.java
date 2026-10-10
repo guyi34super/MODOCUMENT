@@ -3,7 +3,6 @@ package com.modocument.infrastructure.security.client;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.BankDirectory;
-import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.TenantContext;
 import com.modocument.application.port.integration.ClientPrincipal;
 import com.modocument.domain.entity.ApiClient;
@@ -11,12 +10,14 @@ import com.modocument.domain.entity.ApiClientSecret;
 import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.integration.ApiAuthMethod;
+import com.modocument.domain.model.integration.ApiClientKind;
 import com.modocument.domain.model.integration.ApiClientStatus;
-import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.persistence.ApiClientJpaRepository;
 import com.modocument.infrastructure.persistence.ApiClientSecretJpaRepository;
+import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.ratelimit.FixedWindowRateLimiter;
 import com.modocument.infrastructure.security.ClientIps;
+import com.modocument.infrastructure.settings.IntegrationSettings;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,11 +55,16 @@ import java.util.function.Supplier;
  * call site of machine identity (registered in TenantContext's Javadoc): a
  * read-only REQUIRES_NEW transaction that fetches one client by ClientId,
  * KeyPrefix, certificate fingerprint or id, plus that client's secret
- * hashes. Nothing else is read as SYSTEM.
+ * hashes, and whether the client's creator is still an enabled account of
+ * its bank (one primary-key probe of AppUsers). Nothing else is read as
+ * SYSTEM.
  *
  * <p><b>Every method enforces</b> (in {@link #check}): status ACTIVE, not
- * expired, the client's bank not suspended, the auth method still allowed
- * for the bank (platform settings {@code integration.auth.allow*}), and the
+ * expired, the client's bank not suspended, its creator still an enabled
+ * account of that bank (the leaver check: a SYSTEM client dies with the
+ * user who made it — disabled or deleted; AGENT clients have no creator and
+ * are exempt), the auth method still allowed for the bank
+ * ({@code integration.auth.allow*}: platform-set, per bank), and the
  * caller's IP inside {@code AllowedCidrs} (the forwarded-aware address of
  * {@link ClientIps}). Client tokens additionally carry {@code token_ver}:
  * a revocation bumps TokenVersion, so a token stops working on its very next
@@ -86,8 +92,9 @@ public class ApiClientAuthenticator {
 
     private final ApiClientJpaRepository clients;
     private final ApiClientSecretJpaRepository secrets;
+    private final AppUserJpaRepository users;
     private final PasswordEncoder passwordEncoder;
-    private final SettingsReader settings;
+    private final IntegrationSettings settings;
     private final BankDirectory bankDirectory;
     private final AuditRecorder audit;
     private final IntegrationClientProperties properties;
@@ -98,14 +105,16 @@ public class ApiClientAuthenticator {
 
     public ApiClientAuthenticator(ApiClientJpaRepository clients,
                                   ApiClientSecretJpaRepository secrets,
+                                  AppUserJpaRepository users,
                                   PasswordEncoder passwordEncoder,
-                                  SettingsReader settings,
+                                  IntegrationSettings settings,
                                   BankDirectory bankDirectory,
                                   AuditRecorder audit,
                                   IntegrationClientProperties properties,
                                   PlatformTransactionManager transactionManager) {
         this.clients = clients;
         this.secrets = secrets;
+        this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.settings = settings;
         this.bankDirectory = bankDirectory;
@@ -128,6 +137,8 @@ public class ApiClientAuthenticator {
     /** Why an authentication failed (audited; never told to the caller). */
     public enum Failure {
         UNKNOWN_CLIENT, BAD_SECRET, WRONG_METHOD, REVOKED, EXPIRED, BANK_SUSPENDED,
+        /** The SYSTEM client's creator is disabled, deleted or in another bank (leaver check). */
+        CREATOR_INACTIVE,
         METHOD_DISABLED, IP_NOT_ALLOWED, TOKEN_REVOKED, TOKEN_MISMATCH, CERTIFICATE_MISMATCH,
         MALFORMED, RATE_LIMITED
     }
@@ -153,8 +164,12 @@ public class ApiClientAuthenticator {
         }
     }
 
-    /** The client row and its secret hashes, read together as SYSTEM. */
-    private record Loaded(ApiClient client, List<ApiClientSecret> secrets) {
+    /**
+     * The client row, its secret hashes and whether its creator is still an
+     * enabled account of its bank, read together as SYSTEM.
+     */
+    private record Loaded(ApiClient client, List<ApiClientSecret> secrets,
+                          boolean creatorActive) {
     }
 
     // ============================================================ the methods
@@ -183,7 +198,7 @@ public class ApiClientAuthenticator {
         if (matchingSecret(loaded.secrets(), secret, now) == null) {
             return fail(request, method, client, Failure.BAD_SECRET);
         }
-        return check(request, method, client, now, null);
+        return check(request, method, loaded, now, null);
     }
 
     /**
@@ -225,7 +240,7 @@ public class ApiClientAuthenticator {
             }
             remember(cacheKey, client.getApiClientId(), match.getApiClientSecretId());
         }
-        return check(request, method, client, now, null);
+        return check(request, method, loaded, now, null);
     }
 
     /**
@@ -248,7 +263,7 @@ public class ApiClientAuthenticator {
         if (!blank(clientIdHint) && !clientIdHint.equals(client.getClientId())) {
             return fail(request, method, client, Failure.CERTIFICATE_MISMATCH);
         }
-        return check(request, method, client, Instant.now(), null);
+        return check(request, method, loaded, Instant.now(), null);
     }
 
     /**
@@ -298,7 +313,7 @@ public class ApiClientAuthenticator {
                         Failure.CERTIFICATE_MISMATCH);
             }
         }
-        return check(request, client.getAuthMethod(), client, Instant.now(), tokenScopes);
+        return check(request, client.getAuthMethod(), loaded, Instant.now(), tokenScopes);
     }
 
     // =============================================================== checks
@@ -307,8 +322,9 @@ public class ApiClientAuthenticator {
      * The checks every method shares. {@code narrowedScopes} (a token's
      * {@code scope}) narrows the principal's scopes; null = the client's own.
      */
-    private Result check(HttpServletRequest request, ApiAuthMethod method, ApiClient client,
+    private Result check(HttpServletRequest request, ApiAuthMethod method, Loaded loaded,
                          Instant now, Set<Permission> narrowedScopes) {
+        ApiClient client = loaded.client();
         if (client.getStatus() != ApiClientStatus.ACTIVE) {
             return fail(request, method, client, Failure.REVOKED);
         }
@@ -317,6 +333,9 @@ public class ApiClientAuthenticator {
         }
         if (bankDirectory.isSuspended(client.getBankId())) {
             return fail(request, method, client, Failure.BANK_SUSPENDED);
+        }
+        if (!loaded.creatorActive()) {
+            return fail(request, method, client, Failure.CREATOR_INACTIVE);
         }
         if (!methodAllowed(client.getAuthMethod(), client.getBankId())) {
             return fail(request, method, client, Failure.METHOD_DISABLED);
@@ -328,17 +347,13 @@ public class ApiClientAuthenticator {
         return Result.ok(principalOf(client, scopes), client);
     }
 
-    /** Whether the bank may use {@code method} (platform settings integration.auth.allow*). */
+    /** Whether the bank may use {@code method} (integration.auth.allow*, platform-set per bank). */
     public boolean methodAllowed(ApiAuthMethod method, int bankId) {
-        String key = switch (method) {
-            case OAUTH2_CLIENT_CREDENTIALS -> SettingKeys.INTEGRATION_ALLOW_OAUTH2;
-            case API_KEY -> SettingKeys.INTEGRATION_ALLOW_API_KEYS;
-            case MTLS -> SettingKeys.INTEGRATION_ALLOW_MTLS;
-        };
         try {
-            return settings.getBool(key, bankId);
+            return settings.isAuthMethodAllowed(method, bankId);
         } catch (RuntimeException unreadable) {
-            log.warn("Could not read {} for bank {}; refusing the method", key, bankId);
+            log.warn("Could not read {} for bank {}; refusing the method",
+                    IntegrationSettings.authMethodKey(method), bankId);
             return false;
         }
     }
@@ -417,7 +432,10 @@ public class ApiClientAuthenticator {
         }
     }
 
-    /** Called inside {@link #lookupAsSystem}: the client plus its secret hashes. */
+    /**
+     * Called inside {@link #lookupAsSystem}: the client plus its secret
+     * hashes and the leaver check of its creator.
+     */
     private Loaded load(Optional<ApiClient> client) {
         if (client.isEmpty()) {
             return null;
@@ -425,7 +443,22 @@ public class ApiClientAuthenticator {
         ApiClient found = client.get();
         List<ApiClientSecret> hashes = found.getAuthMethod() == ApiAuthMethod.MTLS
                 ? List.of() : secrets.findForClient(found.getApiClientId(), found.getBankId());
-        return new Loaded(found, hashes);
+        return new Loaded(found, hashes, creatorActive(found));
+    }
+
+    /**
+     * The leaver check: an AGENT client has no creator (it belongs to its
+     * agent); any other client is good only while the user who created it is
+     * an enabled account of the client's bank. A client without a recorded
+     * creator fails closed.
+     */
+    private boolean creatorActive(ApiClient client) {
+        if (client.getKind() == ApiClientKind.AGENT) {
+            return true;
+        }
+        Integer creator = client.getCreatedByUserId();
+        return creator != null
+                && users.existsByAppUserIdAndBankIdAndDisabledFalse(creator, client.getBankId());
     }
 
     private ApiClientSecret matchingSecret(List<ApiClientSecret> candidates, String secret,

@@ -6,7 +6,6 @@ import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.IngestionJobRepository;
-import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.integration.OutboundBatch;
 import com.modocument.application.privacy.Masker;
 import com.modocument.application.privacy.PiiMaskingService;
@@ -20,11 +19,11 @@ import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.model.Role;
 import com.modocument.domain.model.integration.PayloadFormat;
 import com.modocument.domain.model.integration.PayloadKind;
-import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.export.ExportGuard;
 import com.modocument.infrastructure.export.FileExportService;
 import com.modocument.infrastructure.file.StorageProperties;
 import com.modocument.infrastructure.persistence.IntegrationEventJpaRepository;
+import com.modocument.infrastructure.settings.IntegrationSettings;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
@@ -74,7 +73,7 @@ public class PayloadBuilder {
     private final IngestionJobRepository jobs;
     private final PiiMaskingService masking;
     private final ExportGuard exportGuard;
-    private final SettingsReader settings;
+    private final IntegrationSettings settings;
     private final FileExportService files;
     private final DocInstanceRepository documents;
     private final StorageProperties storage;
@@ -82,7 +81,7 @@ public class PayloadBuilder {
     private final AuditRecorder audit;
 
     public PayloadBuilder(IngestionJobRepository jobs, PiiMaskingService masking,
-                          ExportGuard exportGuard, SettingsReader settings,
+                          ExportGuard exportGuard, IntegrationSettings settings,
                           FileExportService files, DocInstanceRepository documents,
                           StorageProperties storage, IntegrationEventJpaRepository events,
                           AuditRecorder audit) {
@@ -329,7 +328,7 @@ public class PayloadBuilder {
     // ---- helpers --------------------------------------------------------------------
 
     private void enforceCaps(IntegrationFlow flow, int rows) {
-        int maxRows = settings.getInt(SettingKeys.INTEGRATION_MAX_ROWS_PER_RUN, flow.getBankId());
+        int maxRows = settings.maxRowsPerRun(flow.getBankId());
         int exportCap = exportGuard.capFor(Role.ADMIN, flow.getBankId());
         if (flow.getRowCap() != null && rows > flow.getRowCap()) {
             throw new PayloadRefusedException("The payload has " + rows + " rows, above the flow's "

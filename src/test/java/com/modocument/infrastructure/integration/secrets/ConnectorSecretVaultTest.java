@@ -32,7 +32,7 @@ class ConnectorSecretVaultTest {
     }
 
     private static ConnectorSecretVault vault(String active, int version, String retired) {
-        return new ConnectorSecretVault(active, version, retired, false, MAPPER);
+        return new ConnectorSecretVault(active, version, retired, false, false, MAPPER);
     }
 
     @Test
@@ -127,7 +127,7 @@ class ConnectorSecretVaultTest {
 
     @Test
     void withoutAKeySealAndOpenRefuseClearly() {
-        ConnectorSecretVault vault = new ConnectorSecretVault("", 1, "", true, MAPPER);
+        ConnectorSecretVault vault = new ConnectorSecretVault("", 1, "", true, false, MAPPER);
 
         assertThat(vault.isConfigured()).isFalse();
         assertThatThrownBy(() -> vault.seal(5, MATERIAL))
@@ -137,7 +137,33 @@ class ConnectorSecretVaultTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("MODOCUMENT_CONNECTOR_KEY");
         // Production-like (permit-dev-paths off) still boots: it only warns.
-        assertThat(new ConnectorSecretVault("", 1, "", false, MAPPER).isConfigured()).isFalse();
+        assertThat(new ConnectorSecretVault("", 1, "", false, false, MAPPER).isConfigured()).isFalse();
+    }
+
+    @Test
+    void stagingAndProductionRefuseToStartWithoutAKey() {
+        // MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS=true (staging/production):
+        // no active key is a refused boot, with or without retired keys.
+        for (String retired : new String[] {"", "1:" + key(3)}) {
+            int activeVersion = retired.isEmpty() ? 1 : 2;
+            assertThatThrownBy(() -> new ConnectorSecretVault(
+                    "", activeVersion, retired, false, true, MAPPER))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageStartingWith("Refusing to start: MODOCUMENT_CONNECTOR_KEY is not set")
+                    .hasMessageContaining("enforce-guardrails")
+                    .hasMessageContaining("openssl rand -base64 32");
+        }
+        // A blank value is the same as unset.
+        assertThatThrownBy(() -> new ConnectorSecretVault("  ", 1, "", false, true, MAPPER))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage(ConnectorSecretVault.MISSING_KEY_REFUSAL);
+        // With a valid key the guardrail is satisfied.
+        assertThat(new ConnectorSecretVault(key(4), 1, "", false, true, MAPPER).isConfigured())
+                .isTrue();
+        // Malformed keys still fail on their own, more specific message.
+        assertThatThrownBy(() -> new ConnectorSecretVault("short", 1, "", false, true, MAPPER))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageNotContaining("Refusing to start");
     }
 
     @Test

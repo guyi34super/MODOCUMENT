@@ -106,7 +106,9 @@ export function limitsHint(setting) {
  * (number/decimal with unit, on/off switch, choice list, duration text),
  * the effective value with its source (Bank / Platform / Default), the
  * limits hint, the badges "Requires approval" / "Pending" / "Locked" /
- * "Clamped by platform", "Reset to inherited" and an inline error.
+ * "Set by platform" / "Clamped by platform", "Reset to inherited" and an
+ * inline error. A platform-set setting (`platformControlled`) is read-only on
+ * the bank's own screen (`mode="bank"`); the platform edits it per bank.
  *
  * Controlled: the page owns the drafts. `draft` is undefined (unchanged) or
  * `{ value }`, `{ reset: true }` and, in platform mode, `{ bankMin, bankMax }`
@@ -123,7 +125,8 @@ export default function SettingField({ setting, mode = 'bank', draft, onDraft, e
   const ownLayer = mode === 'platform' ? 'PLATFORM' : 'BANK';
   const pending = setting.pendingChangeId !== null && setting.pendingChangeId !== undefined;
   const resetting = Boolean(draft?.reset);
-  const readOnly = setting.locked || pending || disabled;
+  const platformSet = mode === 'bank' && Boolean(setting.platformControlled);
+  const readOnly = setting.locked || platformSet || pending || disabled;
   const current = draft && 'value' in draft ? draft.value : setting.value;
   const problem = draftProblem(setting, draft);
   const shownError = problem || error;
@@ -235,7 +238,7 @@ export default function SettingField({ setting, mode = 'bank', draft, onDraft, e
         >
           {setting.label}
         </label>
-        {setting.requiresApproval && !setting.locked && (
+        {setting.requiresApproval && !setting.locked && !platformSet && (
           <Tag tone="warning" title="A second administrator must approve a change.">
             Requires approval
           </Tag>
@@ -252,6 +255,11 @@ export default function SettingField({ setting, mode = 'bank', draft, onDraft, e
         )}
         {setting.locked && (
           <Tag title="Fixed by the go-live security gate: nobody can change it.">Locked</Tag>
+        )}
+        {platformSet && (
+          <Tag title="The platform owner sets this for your bank; it cannot be changed here.">
+            Set by platform
+          </Tag>
         )}
         {setting.clamped && (
           <Tag

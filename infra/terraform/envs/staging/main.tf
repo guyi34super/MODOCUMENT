@@ -72,6 +72,19 @@ resource "aws_secretsmanager_secret" "bootstrap_admin_password" {
   tags  = local.tags
 }
 
+# Platform owner (ws21, v1.1.0): same lifecycle as production (see there).
+resource "aws_secretsmanager_secret" "platform_admin_emails" {
+  count = var.platform_admin_bootstrap_enabled ? 1 : 0
+  name  = "${local.name}/MODOCUMENT_PLATFORM_ADMIN_EMAILS"
+  tags  = local.tags
+}
+
+resource "aws_secretsmanager_secret" "platform_admin_passwords" {
+  count = var.platform_admin_bootstrap_enabled ? 1 : 0
+  name  = "${local.name}/MODOCUMENT_PLATFORM_ADMIN_PASSWORDS"
+  tags  = local.tags
+}
+
 module "network" {
   source = "../../modules/network"
 
@@ -156,6 +169,10 @@ module "ecs_app" {
   bootstrap_admin_secret_arns = var.bootstrap_admin_enabled ? {
     email    = one(aws_secretsmanager_secret.bootstrap_admin_email[*].arn)
     password = one(aws_secretsmanager_secret.bootstrap_admin_password[*].arn)
+  } : null
+  platform_admin_secret_arns = var.platform_admin_bootstrap_enabled ? {
+    emails    = one(aws_secretsmanager_secret.platform_admin_emails[*].arn)
+    passwords = one(aws_secretsmanager_secret.platform_admin_passwords[*].arn)
   } : null
 
   cors_allowed_origins = "https://${var.app_domain}"

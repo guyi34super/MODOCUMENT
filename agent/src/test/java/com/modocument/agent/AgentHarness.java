@@ -3,6 +3,7 @@ package com.modocument.agent;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.agent.allowlist.AllowList;
+import com.modocument.agent.cloud.AgentTls;
 import com.modocument.agent.cloud.CloudClient;
 import com.modocument.agent.exec.DatabaseConnector;
 import com.modocument.agent.exec.RestConnector;
@@ -12,6 +13,7 @@ import com.modocument.agent.runtime.AgentLoop;
 import com.modocument.agent.secrets.LocalSecrets;
 import com.modocument.agent.state.CredentialStore;
 
+import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,6 +40,13 @@ final class AgentHarness {
 
     AgentHarness(FakeCloud cloud, Path root, String allowListYaml, Map<String, String> env,
                  DatabaseConnector.ConnectionFactory factory, String token) throws IOException {
+        this(cloud, root, allowListYaml, env, factory, token, null, AgentTls.ClientAuth.oauth2());
+    }
+
+    /** With the agent's TLS context towards an HTTPS FakeCloud and its auth method. */
+    AgentHarness(FakeCloud cloud, Path root, String allowListYaml, Map<String, String> env,
+                 DatabaseConnector.ConnectionFactory factory, String token, SSLContext tls,
+                 AgentTls.ClientAuth auth) throws IOException {
         this.stateDir = root.resolve("state");
         this.allowList = root.resolve("allowlist.yml");
         this.secretsDir = root.resolve("secrets");
@@ -50,12 +59,12 @@ final class AgentHarness {
             connectionsOpened.incrementAndGet();
             return DriverManager.getConnection(h2Url, "sa", "");
         };
-        CloudClient client = new CloudClient(cloud.url(), true, MAPPER);
+        CloudClient client = new CloudClient(cloud.url(), true, MAPPER, tls);
         TaskExecutor executor = new TaskExecutor(List.of(new DatabaseConnector(connections, MAPPER),
                 new RestConnector(MAPPER), new SftpConnector(MAPPER)), new AllowList(allowList),
                 new LocalSecrets(secretsDir, env::get, MAPPER), client);
         this.loop = new AgentLoop(client, new CredentialStore(stateDir, MAPPER), executor, stateDir,
-                "1.0.0", "test-host", token, 0, Duration.ofSeconds(30), Duration.ofSeconds(5));
+                "1.0.0", "test-host", token, 0, Duration.ofSeconds(30), Duration.ofSeconds(5), auth);
     }
 
     Connection bankDb() throws SQLException {

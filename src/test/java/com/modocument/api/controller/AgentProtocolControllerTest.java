@@ -3,6 +3,7 @@ package com.modocument.api.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.AgentProtocol;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.TenantContext;
 import com.modocument.application.port.integration.AgentRunPort;
 import com.modocument.application.port.integration.ClientPrincipal;
@@ -84,6 +85,7 @@ class AgentProtocolControllerTest {
     private final AgentRunPort runs = mock(AgentRunPort.class);
     private final AgentEnrolmentService enrolment = mock(AgentEnrolmentService.class);
     private final SystemVersionService versions = mock(SystemVersionService.class);
+    private final AuditRecorder audit = mock(AuditRecorder.class);
     private AgentTaskLongPoll longPoll;
     private IntegrationAgent agent;
     private MockMvc mvc;
@@ -94,7 +96,7 @@ class AgentProtocolControllerTest {
         longPoll = new AgentTaskLongPoll(runs, 3_600_000, 2, 10);
         AgentProtocolUseCase useCase = new AgentProtocolUseCase(
                 new AgentCallerResolver(clients, agents), runs, longPoll, agents, versions,
-                MAPPER, 3);
+                MAPPER, audit, 3);
         AgentProtocolController controller =
                 new AgentProtocolController(enrolment, useCase, "https://modocument.test/");
         mvc = MockMvcBuilders.standaloneSetup(controller)
@@ -108,6 +110,7 @@ class AgentProtocolControllerTest {
         agent.setStatus(AgentStatus.ONLINE);
         agent.setApiClientId(CLIENT);
         when(agents.findByIntegrationAgentIdAndBankId(AGENT, BANK)).thenReturn(Optional.of(agent));
+        when(agents.findForUpdate(AGENT, BANK)).thenReturn(Optional.of(agent));
         when(clients.current()).thenReturn(Optional.of(principal(ApiClientKind.AGENT, AGENT, CLIENT,
                 Set.of(Permission.AGENT_CONNECT))));
         when(versions.version()).thenReturn("1.2.0");
@@ -244,6 +247,27 @@ class AgentProtocolControllerTest {
         mvc.perform(post("/api/agent/v1/heartbeat").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"version\":\"1.0.0; rm -rf /\"}"))
                 .andExpect(status().isBadRequest());
+        verify(audit, never()).record(any());
+    }
+
+    @Test
+    void theFirstHeartbeatOfAnOfflineAgentBringsItBackOnlineOnce() throws Exception {
+        agent.setStatus(AgentStatus.OFFLINE); // stored by AgentOfflineSweep
+        mvc.perform(post("/api/agent/v1/heartbeat").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":\"1.1.0\",\"status\":\"OK\"}"))
+                .andExpect(status().isOk());
+        assertThat(agent.getStatus()).isEqualTo(AgentStatus.ONLINE);
+        org.mockito.ArgumentCaptor<com.modocument.application.port.AuditEventSpec> spec =
+                org.mockito.ArgumentCaptor.forClass(com.modocument.application.port.AuditEventSpec.class);
+        verify(audit).record(spec.capture());
+        assertThat(spec.getValue().action()).isEqualTo(AgentProtocolUseCase.AGENT_ONLINE);
+        assertThat(spec.getValue().bankId()).isEqualTo(BANK);
+        assertThat(spec.getValue().entityId()).isEqualTo(String.valueOf(AGENT));
+
+        mvc.perform(post("/api/agent/v1/heartbeat").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":\"1.1.0\",\"status\":\"OK\"}"))
+                .andExpect(status().isOk());
+        verify(audit).record(any()); // still once: the agent was already ONLINE
     }
 
     @Test

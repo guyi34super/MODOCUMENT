@@ -1,9 +1,14 @@
 package com.modocument.application.usecase;
 
+import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.TenantContext;
 import com.modocument.application.port.integration.ApiClientIssuer;
+import com.modocument.domain.entity.ApiClient;
 import com.modocument.domain.model.integration.ApiAuthMethod;
 import com.modocument.domain.model.integration.ApiClientKind;
+import com.modocument.infrastructure.persistence.ApiClientJpaRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -22,6 +27,10 @@ import java.util.Optional;
  * one-time enrolment token checked out; that enrolment approval is the
  * dual control, so this is not another maker/checker change.
  *
+ * <p>{@link #revokeAgentClient} revokes that client again when the agent is
+ * revoked (REVOKED + TokenVersion bump through
+ * {@link ApiClientProvisioning#revoke}), so the agent's tokens die at once.
+ *
  * <p>Tenant: the rows are written in {@code bankId}. When the caller has not
  * bound a tenant (the public enrolment endpoint), this binds it with
  * {@code TenantContext.runAs(bankId)} (registered call site); a caller bound
@@ -30,12 +39,19 @@ import java.util.Optional;
 @Component
 public class AgentApiClientIssuer implements ApiClientIssuer {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentApiClientIssuer.class);
+
     private final ApiClientProvisioning provisioning;
+    private final ApiClientJpaRepository clients;
+    private final CurrentUserProvider currentUser;
     private final TransactionTemplate tx;
 
-    public AgentApiClientIssuer(ApiClientProvisioning provisioning,
+    public AgentApiClientIssuer(ApiClientProvisioning provisioning, ApiClientJpaRepository clients,
+                                CurrentUserProvider currentUser,
                                 PlatformTransactionManager transactionManager) {
         this.provisioning = provisioning;
+        this.clients = clients;
+        this.currentUser = currentUser;
         this.tx = new TransactionTemplate(transactionManager);
     }
 
@@ -60,6 +76,45 @@ public class AgentApiClientIssuer implements ApiClientIssuer {
             throw e;
         } catch (Exception e) {
             throw new IllegalStateException("Could not issue the agent client.", e);
+        }
+    }
+
+    @Override
+    public void revokeAgentClient(int bankId, int apiClientId) {
+        Optional<Integer> bound = TenantContext.currentBankId();
+        if (bound.isPresent() && bound.get() != bankId) {
+            throw new IllegalStateException("Cannot revoke an agent client of another bank.");
+        }
+        if (bound.isPresent() || TenantContext.isSystem()) {
+            revoke(bankId, apiClientId);
+            return;
+        }
+        TenantContext.runAs(bankId, () -> revoke(bankId, apiClientId));
+    }
+
+    private void revoke(int bankId, int apiClientId) {
+        tx.executeWithoutResult(status -> {
+            ApiClient client = clients.findByApiClientIdAndBankId(apiClientId, bankId)
+                    .orElse(null);
+            if (client == null) {
+                // Already gone: nothing left that could authenticate.
+                log.warn("Agent client {} of bank {} not found; nothing to revoke",
+                        apiClientId, bankId);
+                return;
+            }
+            if (client.getKind() != ApiClientKind.AGENT) {
+                throw new IllegalArgumentException("API client " + apiClientId
+                        + " is not an agent client.");
+            }
+            provisioning.revoke(client, currentUserIdOrNull(), "AGENT_REVOKED");
+        });
+    }
+
+    private Integer currentUserIdOrNull() {
+        try {
+            return currentUser.requireUserId();
+        } catch (RuntimeException noUser) {
+            return null;
         }
     }
 

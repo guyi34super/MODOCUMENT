@@ -106,6 +106,10 @@ function summarize(change) {
     }
     case 'PLATFORM_SETTING_UPDATE': {
       const count = Array.isArray(p.changes) ? p.changes.length : 0;
+      // A bankId: that bank's own value of platform-set settings.
+      if (p.bankId !== undefined && p.bankId !== null) {
+        return `Change ${plural(count, 'platform-set setting')} of ${bankOf(p)}`;
+      }
       return `Change ${plural(count, 'platform setting')}`;
     }
     case 'BANK_CREATE': {

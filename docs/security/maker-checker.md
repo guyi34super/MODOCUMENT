@@ -20,7 +20,7 @@ undecided request (`CANCELLED`).
 | `TEMPLATE_UPDATE`  | Rename/redescribe a template              | `template:write` | `PUT /Templates/Update` → 202                    | `change:approve` |
 | `TEMPLATE_DELETE`  | Delete a template (+ fields, rules)       | `template:write` | `DELETE /Templates/{id}` → 202                   | `change:approve` |
 | `SETTING_UPDATE`   | Security-tier bank settings (ws20); payload `{changes:[{key, from, to, baseVersion}]}`; audited `SECURITY_SETTING_UPDATED` per key | `settings:write` | `PUT /api/admin/settings` → 202 (operational keys in the same request apply at once) | `change:approve` (same bank) |
-| `PLATFORM_SETTING_UPDATE` | Platform security defaults and every bank-bound (`bankMin`/`bankMax`) change (ws20); payload `{changes:[{key, from, to, bankMin?, bankMax?, baseVersion}]}`; audited `PLATFORM_SETTING_UPDATED` | `platform:settings` | `PUT /api/platform/settings` → 202 | `change:approve` (a second platform admin) |
+| `PLATFORM_SETTING_UPDATE` | Platform security defaults and every bank-bound (`bankMin`/`bankMax`) change (ws20); payload `{changes:[{key, from, to, bankMin?, bankMax?, baseVersion}]}`. With a top-level `bankId` (`{bankId, changes:[{key, from, to, baseVersion}]}`) it sets that customer bank's own value of **platform-set** settings (the allowed API-client auth methods), written in the bank's tenant at apply; audited `PLATFORM_SETTING_UPDATED` (layer `BANK_BY_PLATFORM` + `bankId` for a per-bank change) | `platform:settings` | `PUT /api/platform/settings` → 202; `PUT /api/platform/banks/{bankId}/settings` → 202 | `change:approve` (a second platform admin) |
 | `BANK_CREATE`      | Onboard a customer bank with ≥ 2 first users (≥ 1 ADMIN, ≥ 2 ADMIN/APPROVER), each with MustChangePassword (ws21) | `platform:banks` | `POST /api/platform/banks` → 202 | `change:approve` (a second platform admin) |
 | `BANK_SUSPEND`     | Suspend a customer bank: every user's TokenVersion bumped, refresh tokens revoked, sign-in refused (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/suspend` → 202 | `change:approve` (a second platform admin) |
 | `BANK_ADMIN_ADD`   | Break-glass: a new ADMIN (MustChangePassword) in a customer bank (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/admins` → 202 | `change:approve` (a second platform admin) |
@@ -61,7 +61,12 @@ same rules between two PLATFORM_ADMINs of the platform bank. `BANK_CREATE`
 and `BANK_ADMIN_ADD` hash every temporary password at submit (the queue
 holds `{code, name, users:[{email, displayName, role, passwordHash}]}` /
 `{bankId, bankCode, bankName, email, displayName, passwordHash, reason}`,
-and the API strips the hashes at any depth). Reactivating a suspended bank
+and the API strips the hashes at any depth). `BANK_ADMIN_ADD` checks the
+temporary password against the TARGET bank's password policy. `BANK_CREATE`
+writes the bank, its first users and `BANK_ONBOARDED` in one system
+transaction; if the approval then fails after that commit, a compensating
+transaction deletes the bank and its users again and audits
+`BANK_ONBOARDING_REVERTED` in the platform bank. Reactivating a suspended bank
 (`POST /api/platform/banks/{id}/reactivate`) is direct — the lower-risk
 direction.
 Both resets share the `admin-security` rate-limit bucket (10 per window).
@@ -74,6 +79,25 @@ tenant), disabling any flow, and running an enabled flow. All of them are
 audited (`INTEGRATION_CONNECTION_CHANGED`, `INTEGRATION_FLOW_SAVED`,
 `INTEGRATION_FLOW_DELETED`, `INTEGRATION_FLOW_ENABLED`,
 `INTEGRATION_FLOW_DISABLED`).
+
+## Who sees and who decides
+
+Every change type has exactly one checker audience
+(`application/security/ChangeAudience`; the switch is exhaustive, so a new
+type does not compile until it is placed, and `PendingChangeAudienceTest`
+walks every type against every role):
+
+| Audience | Types | Listed to and decided by |
+|---|---|---|
+| **Bank** | `USER_CREATE`, `USER_ROLE_CHANGE`, `USER_DISABLE`, `USER_PASSWORD_RESET`, `USER_MFA_RESET`, `TEMPLATE_UPDATE`, `TEMPLATE_DELETE`, `SETTING_UPDATE`, `INTEGRATION_CONNECTION_CHANGE`, `INTEGRATION_FLOW_ENABLE`, `API_CLIENT_CREATE`, `AGENT_REGISTER` | any other `change:approve` holder of the maker's bank (APPROVER, ADMIN; in the platform bank another PLATFORM_ADMIN) |
+| **Platform** | `PLATFORM_SETTING_UPDATE`, `BANK_CREATE`, `BANK_SUSPEND`, `BANK_ADMIN_ADD`, `EGRESS_RULE_APPROVE` | a second platform admin only: `change:approve` **plus** the type's own platform permission (`platform:settings` / `platform:banks`), which `PermissionChecker` grants only inside the platform bank. A platform type found in any other bank is decided by nobody |
+
+`GET /api/admin/changes` returns the rows the caller may decide plus the
+caller's own submissions; it needs `change:approve` or the maker permission
+of at least one type (so an integration or platform maker sees their own
+requests without holding `change:approve`). Approve/reject answer 403 to a
+checker outside the type's audience, before the self-approval check (409,
+`SodPolicy`), which still applies to everyone.
 
 ## Flow
 

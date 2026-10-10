@@ -1,6 +1,7 @@
 package com.modocument.pgit;
 
 import com.modocument.MoDocumentApplication;
+import com.modocument.infrastructure.integration.secrets.ConnectorSecretVault;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -26,6 +28,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * First production boot, end to end on real PostgreSQL (ws16): the app is
@@ -69,34 +72,8 @@ class ProductionBootPgIT extends PgItSupport {
 
     @Test
     void firstBootMigratesAsOwnerRunsAsAppRoleAndServesProductionHeaders() throws Exception {
-        // pg() also guarantees the cluster-wide modocument_app role exists
-        // with the password the suite knows.
-        String perRunUrl = pg().jdbcUrl();
-        databaseName = "modocument_boot_"
-                + Long.toString(System.nanoTime(), 36).toLowerCase(Locale.ROOT);
-        try (Connection owner = ownerDataSource().getConnection();
-             Statement statement = owner.createStatement()) {
-            statement.execute("CREATE DATABASE " + databaseName);
-        }
-        String url = withDatabaseAndTls(perRunUrl, databaseName);
-
-        Path jwtSecret = Files.writeString(dir.resolve("jwt_secret"),
-                "prod-boot-it-signing-key-0123456789abcdefghijklmnop\n");
-        Path mfaKey = Files.writeString(dir.resolve("mfa_key"),
-                "prod-boot-it-mfa-encryption-key-0123456789abcdefgh\n");
-
-        // The deployment contract, as docker-compose sets it (secrets as files).
-        Map<String, Object> deployment = new HashMap<>();
-        deployment.put("MODOCUMENT_DB_URL", url);
-        deployment.put("MODOCUMENT_DB_USERNAME", APP_ROLE);
-        deployment.put("MODOCUMENT_DB_PASSWORD", APP_ROLE_PASSWORD);
-        deployment.put("MODOCUMENT_FLYWAY_USERNAME", pg().ownerUser());
-        deployment.put("MODOCUMENT_FLYWAY_PASSWORD", pg().ownerPassword());
-        deployment.put("MODOCUMENT_JWT_SECRET_FILE", jwtSecret.toString());
-        deployment.put("MODOCUMENT_MFA_KEY_FILE", mfaKey.toString());
-        deployment.put("MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL", "boot-admin@example.com");
-        deployment.put("MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD", "Prod-Boot-Passphrase-2026!");
-        deployment.put("MODOCUMENT_STORAGE_ROOT", dir.resolve("storage").toString());
+        Map<String, Object> deployment = deployment(true);
+        String url = (String) deployment.get("MODOCUMENT_DB_URL");
 
         context = new SpringApplicationBuilder(MoDocumentApplication.class)
                 .properties(deployment)
@@ -117,6 +94,8 @@ class ProductionBootPgIT extends PgItSupport {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getString(1)).isEqualTo(APP_ROLE);
         }
+        // ws25: the connector key arrives through its _FILE indirection too.
+        assertThat(context.getBean(ConnectorSecretVault.class).isConfigured()).isTrue();
 
         String port = context.getEnvironment().getProperty("local.server.port");
         HttpResponse<String> health = HttpClient.newHttpClient().send(
@@ -146,6 +125,79 @@ class ProductionBootPgIT extends PgItSupport {
         assertThat(probe.body()).contains("\"status\":\"UP\"", "\"db\":true");
         assertThat(String.join(",", probe.headers().allValues("Cache-Control")))
                 .contains("no-store");
+    }
+
+    /**
+     * Staging/production ({@code MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS=true},
+     * as Terraform sets it) without {@code MODOCUMENT_CONNECTOR_KEY}: the
+     * context refuses to start and says which variable is missing — the
+     * same contract as an unset {@code MODOCUMENT_MFA_KEY}.
+     */
+    @Test
+    void stagingAndProductionRefuseToBootWithoutTheConnectorKey() throws Exception {
+        Map<String, Object> deployment = deployment(false);
+        deployment.put("MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS", "true");
+
+        assertThatThrownBy(() -> context = new SpringApplicationBuilder(MoDocumentApplication.class)
+                .properties(deployment)
+                .run("--server.port=0", "--extraction.worker.enabled=false"))
+                .satisfies(failure -> assertThat(rootCause(failure))
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageStartingWith(
+                                "Refusing to start: MODOCUMENT_CONNECTOR_KEY is not set")
+                        .hasMessageContaining("openssl rand -base64 32"));
+        assertThat(context).isNull();
+    }
+
+    /**
+     * The deployment contract, as docker-compose sets it (secrets as files),
+     * against a fresh database dropped after the test.
+     */
+    private Map<String, Object> deployment(boolean withConnectorKey) throws Exception {
+        // pg() also guarantees the cluster-wide modocument_app role exists
+        // with the password the suite knows.
+        String perRunUrl = pg().jdbcUrl();
+        databaseName = "modocument_boot_"
+                + Long.toString(System.nanoTime(), 36).toLowerCase(Locale.ROOT);
+        try (Connection owner = ownerDataSource().getConnection();
+             Statement statement = owner.createStatement()) {
+            statement.execute("CREATE DATABASE " + databaseName);
+        }
+        String url = withDatabaseAndTls(perRunUrl, databaseName);
+
+        Path jwtSecret = Files.writeString(dir.resolve("jwt_secret"),
+                "prod-boot-it-signing-key-0123456789abcdefghijklmnop\n");
+        Path mfaKey = Files.writeString(dir.resolve("mfa_key"),
+                "prod-boot-it-mfa-encryption-key-0123456789abcdefgh\n");
+
+        Map<String, Object> deployment = new HashMap<>();
+        deployment.put("MODOCUMENT_DB_URL", url);
+        deployment.put("MODOCUMENT_DB_USERNAME", APP_ROLE);
+        deployment.put("MODOCUMENT_DB_PASSWORD", APP_ROLE_PASSWORD);
+        deployment.put("MODOCUMENT_FLYWAY_USERNAME", pg().ownerUser());
+        deployment.put("MODOCUMENT_FLYWAY_PASSWORD", pg().ownerPassword());
+        deployment.put("MODOCUMENT_JWT_SECRET_FILE", jwtSecret.toString());
+        deployment.put("MODOCUMENT_MFA_KEY_FILE", mfaKey.toString());
+        if (withConnectorKey) {
+            // base64 of 32 generated bytes (`openssl rand -base64 32` shape).
+            byte[] key = new byte[32];
+            Arrays.fill(key, (byte) 0x5a);
+            Path connectorKey = Files.writeString(dir.resolve("connector_key"),
+                    Base64.getEncoder().encodeToString(key) + "\n");
+            deployment.put("MODOCUMENT_CONNECTOR_KEY_FILE", connectorKey.toString());
+        }
+        deployment.put("MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL", "boot-admin@example.com");
+        deployment.put("MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD", "Prod-Boot-Passphrase-2026!");
+        deployment.put("MODOCUMENT_STORAGE_ROOT", dir.resolve("storage").toString());
+        return deployment;
+    }
+
+    private static Throwable rootCause(Throwable failure) {
+        Throwable cause = failure;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause;
     }
 
     private static String withDatabaseAndTls(String url, String database) {

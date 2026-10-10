@@ -135,6 +135,15 @@ variable "bootstrap_admin_secret_arns" {
   default = null
 }
 
+variable "platform_admin_secret_arns" {
+  description = "Secrets Manager ARNs of MODOCUMENT_PLATFORM_ADMIN_EMAILS / _PASSWORDS ({emails, passwords}; two comma-separated entries each, same order). BootstrapPlatformRunner seeds the platform bank's two PLATFORM_ADMIN accounts once, while it has none; then the values are ignored. null = not injected (the default, and again after both platform admins have enrolled MFA — docs/release/runbook.md)."
+  type = object({
+    emails    = string
+    passwords = string
+  })
+  default = null
+}
+
 variable "trusted_proxy_cidrs" {
   description = "Peers the frontend nginx trusts to report the client (MODOCUMENT_TRUSTED_PROXY_CIDRS): the ALB, i.e. the VPC CIDR the envs pass. Only these may set X-Forwarded-For / X-Forwarded-Proto (and CloudFront-Viewer-Address); the app SG admits nothing but the ALB SG on the frontend port anyway."
   type        = list(string)

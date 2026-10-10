@@ -17,3 +17,5 @@ frontend
 # ws26: the Connector Agent is a standalone project with its own image and
 # build context (agent/Dockerfile).
 agent
+# Wave 4: the local mTLS listener's throwaway keys (scripts/dev-mtls-certs.sh)
+.mtls-dev

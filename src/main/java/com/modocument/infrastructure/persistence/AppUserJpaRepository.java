@@ -17,6 +17,9 @@ public interface AppUserJpaRepository extends JpaRepository<AppUser, Integer> {
 
     boolean existsByEmailIgnoreCase(String email);
 
+    /** ws26 leaver check: the user exists, belongs to the bank and is not disabled. */
+    boolean existsByAppUserIdAndBankIdAndDisabledFalse(int appUserId, int bankId);
+
     /** OIDC identity link (ws07): returning users match by (provider, subject) first. */
     Optional<AppUser> findByAuthProviderAndProviderSubject(String authProvider,
                                                            String providerSubject);
