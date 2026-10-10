@@ -113,11 +113,62 @@ gateway (tenancy check, content-free logging, `AI_CALL` audit).
 - An **external** endpoint is an explicit operator opt-in via
   `MODOCUMENT_AI_BASE_URL` / `MODOCUMENT_AI_API_KEY` / `MODOCUMENT_AI_MODEL`
   (legacy `AIFILES_OPENAI_*` names still work).
-- The app boots and the full suite passes with **no AI endpoint reachable**:
-  every feature degrades to its non-AI path.
+- The app boots and the full suite passes with **no AI endpoint reachable**.
+  Not every feature has a non-AI path, though: see
+  [Availability and code fallback](#availability-and-code-fallback-ws23) for
+  exactly what keeps working and what answers 503.
 - **Prompts and completions are not stored** (the per-request token map lives
   only in memory) and **never logged** — logs and audit evidence carry
   purposes, models and lengths only, at every log level.
+
+## Availability and code fallback (ws23)
+
+The gateway refuses a model call in three cases, all before any prompt
+leaves the backend:
+
+- **No key configured**: `AiNotConfiguredException`.
+- **AI switched off for the bank** (`ai.enabled` setting, Data protection
+  tab): `AiUnavailableException`, reason `AI_DISABLED`. This is the master
+  switch: no feature makes a model call for that bank.
+- **Circuit breaker open** (`AiCircuitBreaker`, one per application
+  instance): `AiUnavailableException`, reason `CIRCUIT_OPEN`, with a
+  `Retry-After`.
+  - It opens after `ai.circuitBreaker.failureThreshold` (default 5)
+    consecutive transport failures, timeouts or 5xx answers. 4xx answers,
+    output-scanner rejections and unusable replies do not count.
+  - It stays open for `ai.circuitBreaker.openDuration` (default 120 s), then
+    lets exactly one trial call through.
+  - Opening is audited as `AI_CIRCUIT_OPENED` under the platform bank, with
+    counts and the failure type only.
+
+HTTP endpoints answer **503** for all three.
+
+The AI client has a 5 s connect timeout and a 120 s read timeout
+(`modocument.ai.http.*`). It retries a 5xx once after 1 s
+(`spring.ai.retry.*`) and never retries a timeout. A failing model is
+therefore given up on within seconds, and a hung one after the read timeout.
+Before this, Spring AI's defaults applied: about 19 minutes of retries, and
+no read timeout.
+
+What happens to each feature when the model cannot be used:
+
+| Feature | Without the AI |
+|---|---|
+| Ingestion parse, mode `AI_WITH_CODE_FALLBACK` (default) | The code extractor reads the table instead. This covers AI off, no key, circuit open, LLM quota spent, provider error, timeout, output-scanner rejection, an unusable reply and a gateway prompt refusal. The job records `parsedBy=CODE` and the reason, and `INGESTION_PARSE_FALLBACK` is audited. A failed batch of a long table is re-parsed by code (`AI_PARTIAL`). If code cannot reach `extraction.code.minConfidence` either, the job fails, naming both failures. |
+| Ingestion parse, mode `CODE_ONLY` | Never calls the model. |
+| Ingestion parse, mode `AI_ONLY` | The job fails, as before phase 2. |
+| Structured files (CSV, Excel, markdown/row-line text) | Parsed by code before any AI call, in every mode. |
+| Legacy transform (`/api/transform/transform`) | The same three modes. Template detection needs the model, so without it the caller passes `templateId`; otherwise the answer is 400. |
+| Column mapping | The code tiers always run. Columns they leave unresolved stay unmapped for review. |
+| Document creation: section breakdown, composition | The heuristic parser and the deterministic engine. |
+| LLM record cleaning while bridging | The original rows are kept. |
+| Vision OCR | Tesseract. |
+| Chat table edits, schema inference, run summaries, `/api/aifiles/send`, `/api/automapper/generate` | **No non-AI path**: 503. The heuristic schema inference and summaries are planned for phase 2, wave 4. |
+
+Falling back to code never sends data anywhere: the code extractor runs
+locally and its notes carry no cell values. A prompt the gateway refused
+(tenancy, raw identifiers) is therefore a privacy-safe fallback, logged at
+WARN.
 
 ## Evidence (tests)
 
@@ -131,6 +182,16 @@ gateway (tenancy check, content-free logging, `AI_CALL` audit).
 - `AiOutputScannerTest`, `AiOutputPolicyC10Test` — seeded wrong-NIC and
   injection-echo completions caught; STRICT rejection with caller fallback;
   LENIENT scrub-and-flag.
+- ws23 availability:
+  - `AiCircuitBreakerTest`: opens after N counted failures, one half-open
+    trial, closes on success. The gateway refuses at once while the circuit
+    is open and for a bank with AI switched off.
+  - `AiFailureClassifierTest`: every failure maps to its reason.
+  - `IngestionFallbackIntegrationTest`: a real loopback model answering 500,
+    or never answering, falls back to code in about 1.5 s or 2.6 s (2 s read
+    timeout in the test). `CODE_ONLY` makes no call, and `AI_ONLY` fails the
+    job.
+  - `IngestionFallbackPgIT`: the same on PostgreSQL with row level security.
 - `NoDirectChatModelAccessGuardTest` — no class outside `infrastructure/ai`
   references the Spring AI chat types.
 

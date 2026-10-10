@@ -30,6 +30,13 @@ public class CreateTemplateRequest {
     @Size(max = 10)
     private String visibility;
 
+    /**
+     * ws23: AI_WITH_CODE_FALLBACK, CODE_ONLY or AI_ONLY; null inherits the
+     * bank's {@code extraction.defaultMode}.
+     */
+    @Size(max = 30)
+    private String extractionMode;
+
     public CreateTemplateRequest() {
     }
 
@@ -69,5 +76,13 @@ public class CreateTemplateRequest {
 
     public void setVisibility(String visibility) {
         this.visibility = visibility;
+    }
+
+    public String getExtractionMode() {
+        return extractionMode;
+    }
+
+    public void setExtractionMode(String extractionMode) {
+        this.extractionMode = extractionMode;
     }
 }

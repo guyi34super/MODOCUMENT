@@ -95,6 +95,10 @@ import java.util.concurrent.Callable;
  *       stamped explicitly with the customer bank and the platform bank;
  *       new users and their USER_CREATED rows are written under
  *       {@code runAs(newBank)}. No customer content is read.</li>
+ *   <li>{@code AiCircuitBreaker#auditOpened} — ws23: when the AI circuit
+ *       opens, {@code runAs(platformBankId)} to write AI_CIRCUIT_OPENED in
+ *       the platform bank (skipped when no platform bank exists). No
+ *       customer data is read or written.</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker

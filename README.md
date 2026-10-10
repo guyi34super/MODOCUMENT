@@ -39,6 +39,55 @@ the test suite.
 - **LLM table extraction** (Spring AI structured output) turns the extracted text of
   unstructured documents into the same table shape.
 
+### Code-based fallback and extraction modes
+When the AI cannot produce the table, a **code-based extractor** reads it instead, with
+no LLM involved.
+- **How it reads a document.** Several strategies run and the best-scoring table wins:
+  - delimited text (delimiter sniffing, quotes, BOM, windows-1252);
+  - native spreadsheet cells;
+  - markdown and `Row N:` tables;
+  - whitespace-aligned columns (PDF text);
+  - `Label: value` forms, one record per repeated block;
+  - per-field value regexes.
+- **Confidence.** Each candidate gets a score: 0.4 field coverage + 0.3 value shape +
+  0.2 structure + 0.1 row-count agreement. It is accepted at
+  `extraction.code.minConfidence` (default 0.75).
+- **Normalisation.** Dates become ISO, using the field's own date formats first.
+  Numbers are read locale-aware.
+- **Extraction mode.** Each template sets one (`extractionMode`); `null` inherits the
+  bank's `extraction.defaultMode` setting.
+  - `AI_WITH_CODE_FALLBACK` (default): AI first. Code takes over in these cases:
+    - the bank turned AI off;
+    - no key is configured;
+    - the AI circuit breaker is open;
+    - the user's LLM quota is spent;
+    - the model fails, times out, returns something unusable or is withheld by the
+      output scanner;
+    - the gateway refuses the prompt.
+
+    In batched extraction only the failed batches go to code, recorded as
+    `AI_PARTIAL`. So do the remaining batches once the 10-minute AI budget is
+    spent. If code cannot reach the threshold either, the job fails, naming both
+    failures.
+  - `CODE_ONLY`: never calls the AI. Scores from 0.40 pass with a low-confidence flag.
+  - `AI_ONLY`: the AI or a failed job (the pre-phase-2 behaviour).
+- **Field hints help the extractor.** Each template field may carry:
+  - `aliases`: alternative header or label texts, which the column auto-mapper uses
+    too;
+  - `labelPattern`: a regex for the label;
+  - `valuePattern`: a regex with one capture group;
+  - `dateFormats`.
+
+  The patterns are vetted against ReDoS on save. A dangerous or invalid one is a 400.
+- **Provenance on every job.** The job records `parsedBy` (`AI` / `CODE` /
+  `AI_PARTIAL`), `parseStrategy`, `parseConfidence` and `parseFallbackReason`. Each
+  fallback is audited as `INGESTION_PARSE_FALLBACK` (labels and the score only).
+- **Fast failure.** A failing model reaches the fallback within seconds: one retry on
+  a 5xx, a 5 s connect timeout and a 120 s read timeout (`modocument.ai.http.*`,
+  `spring.ai.retry.*`).
+- Structured files (CSV, Excel, clean markdown tables) are parsed by code first in
+  every mode, so they never wait for the AI.
+
 ### Resumable ingestion jobs
 - Every ingestion runs as a **job** with per-stage SQL checkpoints:
   `UPLOADED → PARSED → MAPPED → VALIDATED → EXPORTED`.
@@ -164,8 +213,12 @@ the test suite.
   operator explicitly configures an external endpoint** via
   `MODOCUMENT_AI_BASE_URL` / `MODOCUMENT_AI_API_KEY` / `MODOCUMENT_AI_MODEL`
   (the legacy `AIFILES_OPENAI_*` names keep working). The app boots and passes
-  its suite with **no AI endpoint reachable at all** — every AI feature degrades
-  to its non-AI path.
+  its suite with **no AI endpoint reachable at all**.
+  - Ingestion and the transform fall back to code extraction. So do mapping,
+    document creation, record cleaning and OCR.
+  - Chat edits, schema inference, run summaries and the raw AI endpoints answer 503.
+  - Feature by feature, with the AI circuit breaker and the per-bank AI switch:
+    [docs/security/ai-controls.md](docs/security/ai-controls.md#availability-and-code-fallback-ws23).
 - **One gateway, no raw paths** (gate C9): every LLM call goes through the single
   `AiGateway` (`infrastructure/ai`) — a guard test fails the build on any other
   class touching the Spring AI chat types. Call sites pseudonymise identifiers

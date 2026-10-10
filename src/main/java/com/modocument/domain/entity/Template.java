@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.validation.constraints.Size;
 import org.hibernate.annotations.Check;
@@ -22,6 +23,9 @@ import org.hibernate.annotations.ColumnDefault;
         name = "uq_template_owneruserid_name", columnNames = {"OwnerUserId", "Name"}))
 // SCHEMA PARITY with V220 (ws22): Visibility NOT NULL DEFAULT 'PRIVATE'.
 @Check(name = "ck_template_visibility", constraints = "Visibility in ('PRIVATE', 'BANK')")
+// SCHEMA PARITY with V230 (ck_template_extractionmode) on the H2 test schema.
+@Check(name = "ck_template_extractionmode",
+        constraints = "ExtractionMode in ('AI_WITH_CODE_FALLBACK', 'CODE_ONLY', 'AI_ONLY')")
 public class Template {
 
     @Id
@@ -56,6 +60,23 @@ public class Template {
     @ColumnDefault("'PRIVATE'") // H2 parity: raw-SQL inserts land PRIVATE, as on PG
     @Column(name = "Visibility", length = 10, nullable = false)
     private TemplateVisibility visibility = TemplateVisibility.PRIVATE;
+
+    /**
+     * ws23: how the parse stage may use the AI for this template's uploads —
+     * an {@code ExtractionMode} name, or null to inherit the bank's
+     * {@code extraction.defaultMode} setting (V230).
+     */
+    @Size(max = 30)
+    @Column(name = "ExtractionMode", length = 30)
+    private String extractionMode;
+
+    /**
+     * Whether a request body named {@code extractionMode} at all (Jackson
+     * calls the setter only for present properties): an update that omits it
+     * keeps the stored mode, an explicit null resets it to "inherit".
+     */
+    @Transient
+    private boolean extractionModeProvided;
 
     public Template() {
     }
@@ -120,5 +141,19 @@ public class Template {
     @JsonIgnore
     public boolean isShared() {
         return visibility == TemplateVisibility.BANK;
+    }
+
+    public String getExtractionMode() {
+        return extractionMode;
+    }
+
+    public void setExtractionMode(String extractionMode) {
+        this.extractionMode = extractionMode;
+        this.extractionModeProvided = true;
+    }
+
+    @JsonIgnore
+    public boolean isExtractionModeProvided() {
+        return extractionModeProvided;
     }
 }

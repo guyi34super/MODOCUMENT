@@ -15,14 +15,17 @@ import com.modocument.domain.entity.Template;
  *   <li>{@code ownerName} — the owner's display name, for templates shared
  *       by a colleague (null for the caller's own templates).</li>
  * </ul>
+ * ws23 adds {@code extractionMode} — AI_WITH_CODE_FALLBACK, CODE_ONLY,
+ * AI_ONLY, or null when the template inherits the bank default.
  */
 public record TemplateDto(int templateId, String name, String description, String visibility,
-                          boolean ownedByMe, boolean editable, String ownerName) {
+                          boolean ownedByMe, boolean editable, String ownerName,
+                          String extractionMode) {
 
     public static TemplateDto of(Template template, boolean ownedByMe, boolean editable,
                                  String ownerName) {
         return new TemplateDto(template.getTemplateId(), template.getName(),
                 template.getDescription(), template.getVisibility().name(), ownedByMe, editable,
-                ownedByMe ? null : ownerName);
+                ownedByMe ? null : ownerName, template.getExtractionMode());
     }
 }

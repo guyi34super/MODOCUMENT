@@ -54,7 +54,7 @@ class TemplateControllerTest {
     private final TemplateController gated = controller(true);
 
     private static TemplateDto view(int id, String name, String description) {
-        return new TemplateDto(id, name, description, "PRIVATE", true, true, null);
+        return new TemplateDto(id, name, description, "PRIVATE", true, true, null, null);
     }
 
     @Test
@@ -94,7 +94,7 @@ class TemplateControllerTest {
 
     @Test
     void visibilityDelegatesTheParsedValue() {
-        TemplateDto shared = new TemplateDto(4, "T", null, "BANK", true, true, null);
+        TemplateDto shared = new TemplateDto(4, "T", null, "BANK", true, true, null, null);
         when(views.changeVisibility(4, TemplateVisibility.BANK)).thenReturn(shared);
 
         ResponseEntity<TemplateDto> result =

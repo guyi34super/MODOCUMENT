@@ -708,3 +708,45 @@ logging:
       # error.stack_trace, …) through this customizer instead. Same pattern
       # set as the %mask/%maskEx conversion words in logback-spring.xml.
       customizer: com.modocument.infrastructure.logging.RedactingJsonMembersCustomizer
+
+---
+# ============================================================================
+# ws23 (SE4, phase 2) — AI client resilience (QA finding OBS-03).
+# Kept in its own YAML document, outside the ws20 settings and alert blocks
+# above; it carries no profile condition, so it applies in every profile.
+# Infrastructure wiring, not editable settings (docs/settings/catalogue.md).
+#
+# Before this block Spring AI's defaults applied: 10 attempts with a 2 s x5
+# backoff (capped at 3 min) on every 5xx — about 19 minutes before a failing
+# model reached the code fallback — and an HTTP client without a read
+# timeout, so a hung model held a job forever. Now a model 500 is retried
+# once after 1 s, a timeout or refused connection is not retried at all
+# (Spring AI retries only TransientAiException, i.e. 5xx), and the parse
+# stage falls back to code within seconds (AI_WITH_CODE_FALLBACK, the
+# default mode). Five such failures in a row open the AI circuit breaker
+# (platform settings ai.circuitBreaker.*): AI calls are then refused at once.
+# ============================================================================
+spring:
+  ai:
+    retry:
+      # Total attempts per model call (1 = no retry). Only 5xx answers are
+      # retried; 4xx answers, transport failures and timeouts never are.
+      max-attempts: ${MODOCUMENT_AI_RETRY_MAX_ATTEMPTS:2}
+      backoff:
+        initial-interval: ${MODOCUMENT_AI_RETRY_INITIAL_INTERVAL:1s}
+        multiplier: 2
+        max-interval: ${MODOCUMENT_AI_RETRY_MAX_INTERVAL:5s}
+modocument:
+  ai:
+    http:
+      # AiHttpClientConfig: timeouts of the HTTP client under the AI client
+      # (Spring Boot's default client has none).
+      connect-timeout: ${MODOCUMENT_AI_CONNECT_TIMEOUT:5s}
+      # One model reply. A local model writing a long table can need
+      # minutes; raise it for slow hardware rather than lose good answers.
+      read-timeout: ${MODOCUMENT_AI_READ_TIMEOUT:120s}
+    extraction:
+      # Batched LLM extraction of one document may spend this long in
+      # AI_WITH_CODE_FALLBACK mode; batches not started by then are parsed
+      # by code (ParsedBy AI_PARTIAL, reason TIMEOUT).
+      time-budget: ${MODOCUMENT_AI_EXTRACTION_TIME_BUDGET:10m}

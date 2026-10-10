@@ -13,9 +13,11 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.Check;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -25,6 +27,8 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "IngestionJob")
+// SCHEMA PARITY with V230 (ck_ingestionjob_parsedby) on the H2 test schema.
+@Check(name = "ck_ingestionjob_parsedby", constraints = "ParsedBy in ('AI', 'CODE', 'AI_PARTIAL')")
 public class IngestionJob {
 
     @Id
@@ -112,6 +116,26 @@ public class IngestionJob {
      */
     @Column(name = "PurgedAt")
     private LocalDateTime purgedAt;
+
+    /*
+     * ws23 parse provenance (V230), written by the parse stage: who produced
+     * the parsed table (AI / CODE / AI_PARTIAL), how (strategy), how sure the
+     * code extractor was (0..1, three decimals) and why code stood in for the
+     * AI. Labels and a score only — never cell values. Null for jobs parsed
+     * before V230 or not parsed yet.
+     */
+
+    @Column(name = "ParsedBy", length = 15)
+    private String parsedBy;
+
+    @Column(name = "ParseStrategy", length = 30)
+    private String parseStrategy;
+
+    @Column(name = "ParseConfidence", precision = 4, scale = 3)
+    private BigDecimal parseConfidence;
+
+    @Column(name = "ParseFallbackReason", length = 30)
+    private String parseFallbackReason;
 
     public IngestionJob() {
     }
@@ -276,5 +300,37 @@ public class IngestionJob {
 
     public void setPurgedAt(LocalDateTime purgedAt) {
         this.purgedAt = purgedAt;
+    }
+
+    public String getParsedBy() {
+        return parsedBy;
+    }
+
+    public void setParsedBy(String parsedBy) {
+        this.parsedBy = parsedBy;
+    }
+
+    public String getParseStrategy() {
+        return parseStrategy;
+    }
+
+    public void setParseStrategy(String parseStrategy) {
+        this.parseStrategy = parseStrategy;
+    }
+
+    public BigDecimal getParseConfidence() {
+        return parseConfidence;
+    }
+
+    public void setParseConfidence(BigDecimal parseConfidence) {
+        this.parseConfidence = parseConfidence;
+    }
+
+    public String getParseFallbackReason() {
+        return parseFallbackReason;
+    }
+
+    public void setParseFallbackReason(String parseFallbackReason) {
+        this.parseFallbackReason = parseFallbackReason;
     }
 }

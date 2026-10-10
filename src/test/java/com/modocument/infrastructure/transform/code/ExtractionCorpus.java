@@ -57,7 +57,7 @@ import static org.mockito.Mockito.mock;
  * fixtures in the repository. Text is read the way the parse stage reads it
  * ({@link FileTextReader}) and hints come from {@link TableExtractionHintsBuilder}.
  */
-final class ExtractionCorpus {
+public final class ExtractionCorpus {
 
     static final List<String> CASES = List.of(
             "semicolon-statement-csv",
@@ -87,7 +87,7 @@ final class ExtractionCorpus {
     private ExtractionCorpus() {
     }
 
-    static CodeTableExtractor extractor() {
+    public static CodeTableExtractor extractor() {
         return new CodeTableExtractor(new TabularNormalizer(), new MarkdownTableMaterializer(),
                 new RowLineTableMaterializer(),
                 new ValueShapeScorer(mock(ValidationRuleRepository.class),
@@ -156,7 +156,8 @@ final class ExtractionCorpus {
         return total == 0 ? 0 : (double) matched / total;
     }
 
-    static Path generate(String fileName, Path dir) throws IOException {
+    /** Writes the named corpus document into {@code dir} (also used by the parse-stage tests). */
+    public static Path generate(String fileName, Path dir) throws IOException {
         Path file = dir.resolve(fileName);
         switch (fileName) {
             case "semicolon-statement.csv" -> semicolonStatement(file);
