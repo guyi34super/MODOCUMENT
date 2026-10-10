@@ -119,6 +119,7 @@ class VersionScriptsTest {
 
     @Test
     void bumpMovesEveryCarrierAndTheUnreleasedNotes() throws IOException {
+        withUnreleasedEntry();
         String next = nextMinor(current);
         String pomBefore = Files.readString(tree.resolve("pom.xml"));
 
@@ -154,6 +155,7 @@ class VersionScriptsTest {
 
     @Test
     void bumpAcceptsAReleaseCandidateButTheFilesCarryOnlyXyz() throws IOException {
+        withUnreleasedEntry();
         String next = nextMinor(current);
         Result rc1 = run(tree, Map.of("RELEASE_DATE", "2031-02-03"),
                 "bash", "scripts/bump-version.sh", next + "-rc.1");
@@ -190,6 +192,20 @@ class VersionScriptsTest {
         List<String> command = new ArrayList<>(List.of("bash", "scripts/check-version-sync.sh"));
         command.addAll(List.of(tag));
         return run(tree, Map.of(), command.toArray(String[]::new));
+    }
+
+    /**
+     * Right after a release the repository's [Unreleased] section is empty,
+     * and a bump (correctly) refuses that; give the copy one entry so the
+     * bump tests do not depend on where the release cycle is.
+     */
+    private void withUnreleasedEntry() throws IOException {
+        Path path = tree.resolve("CHANGELOG.md");
+        String content = Files.readString(path);
+        if (content.contains("## [Unreleased]\n\n## [")) {
+            Files.writeString(path, content.replaceFirst(Pattern.quote("## [Unreleased]\n\n## ["),
+                    Matcher.quoteReplacement("## [Unreleased]\n\n### Added\n- A test entry.\n\n## [")));
+        }
     }
 
     private void replace(String file, String from, String to) throws IOException {

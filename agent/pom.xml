@@ -22,7 +22,7 @@
 
     <groupId>com.modocument</groupId>
     <artifactId>modocument-agent</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <name>MoDocument Connector Agent</name>
     <description>On-prem agent that connects bank systems to MoDocument over outbound HTTPS only</description>
 

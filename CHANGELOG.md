@@ -16,6 +16,16 @@ All notable changes to MoDocument are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-10
+
+Phase 2: settings every admin can change within guardrails, a platform owner
+console, the admin dashboard, code-based extraction when the AI is
+unavailable, a release pipeline with in-app release notes, and the Bank
+Integration Hub (connections, flows, the Integration API and the on-prem
+Connector Agent). Before the first deployment of this version, set
+`MODOCUMENT_CONNECTOR_KEY` and the platform-admin bootstrap secrets in each
+environment (docs/release/runbook.md §11).
+
 ### Added
 - Release versioning: one version for `pom.xml`, `frontend/package.json` and
   this changelog, kept in sync by `scripts/bump-version.sh` and checked in CI
@@ -35,9 +45,9 @@ All notable changes to MoDocument are recorded here. The format follows
 - Phase 2 contracts: roles `PLATFORM_ADMIN` and `API_CLIENT`, the new
   permission and maker/checker change-type vocabulary, and the platform bank
   lookup.
-- In progress (phase 2): editable settings with guardrails, a platform owner
-  console, the admin dashboard, code-based extraction fallback, in-app release
-  notices and the bank integration hub.
+- Editable settings with guardrails: every operational setting is changeable
+  per bank from the admin console; security settings need a second admin's
+  approval and can never go below the hard limits.
 - Platform owner console (`/platform`): an overview of every customer bank
   (counts only), onboarding a bank with its first users, suspending and
   reactivating a bank, and a break-glass administrator. Onboarding,
@@ -211,5 +221,6 @@ workstreams) merged into `main`.
   CycloneDX SBOMs, Dependabot, CODEOWNERS review and documented
   branch-protection settings.
 
-[Unreleased]: https://github.com/guyi34super/MODOCUMENT/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/guyi34super/MODOCUMENT/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/guyi34super/MODOCUMENT/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/guyi34super/MODOCUMENT/releases/tag/v1.0.0
