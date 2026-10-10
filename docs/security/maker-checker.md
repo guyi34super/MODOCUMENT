@@ -24,6 +24,7 @@ undecided request (`CANCELLED`).
 | `BANK_CREATE`      | Onboard a customer bank with ≥ 2 first users (≥ 1 ADMIN, ≥ 2 ADMIN/APPROVER), each with MustChangePassword (ws21) | `platform:banks` | `POST /api/platform/banks` → 202 | `change:approve` (a second platform admin) |
 | `BANK_SUSPEND`     | Suspend a customer bank: every user's TokenVersion bumped, refresh tokens revoked, sign-in refused (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/suspend` → 202 | `change:approve` (a second platform admin) |
 | `BANK_ADMIN_ADD`   | Break-glass: a new ADMIN (MustChangePassword) in a customer bank (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/admins` → 202 | `change:approve` (a second platform admin) |
+| `EGRESS_RULE_APPROVE` | Open a bank's requested private-network destination (host or CIDR + port) to its DIRECT connections (ws25); payload `{ruleId}` (+ `bankId, bankCode, host\|cidr, port, reason` for review only); the rule must still be `PENDING` at apply; audited `EGRESS_RULE_APPROVED` in the bank and the platform bank. Revoking is direct, by the bank (`DELETE /api/admin/integrations/egress-rules/{id}`). Details: [docs/integration/secrets.md](../integration/secrets.md) | `platform:banks` | `POST /api/platform/egress-rules/{id}/approve` → 202 | `change:approve` (a second platform admin) |
 
 Everything can also be submitted through the generic
 `POST /api/admin/changes` (`{changeType, payload, comment}`); the use case

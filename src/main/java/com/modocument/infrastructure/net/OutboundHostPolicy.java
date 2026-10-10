@@ -120,7 +120,23 @@ public class OutboundHostPolicy {
         return addresses.length > 0;
     }
 
-    private static boolean isInternal(InetAddress address) {
+    /** Whether the policy is enforcing (tests that talk to loopback servers turn it off). */
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    /** Whether the host is on the operator's explicit SSRF allow-list. */
+    public boolean isAllowListed(String host) {
+        return host != null && allowHosts.contains(host.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Whether one resolved address is loopback, wildcard, link-local,
+     * site-local (private), multicast, unique-local (fc00::/7) or
+     * carrier-grade NAT — i.e. not a public destination. Shared with the
+     * bank-aware {@code BankEgressGuard} (ws25).
+     */
+    public static boolean isInternal(InetAddress address) {
         if (address.isLoopbackAddress() || address.isAnyLocalAddress()
                 || address.isLinkLocalAddress() || address.isSiteLocalAddress()
                 || address.isMulticastAddress()) {
