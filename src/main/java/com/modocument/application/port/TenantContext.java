@@ -119,11 +119,14 @@ import java.util.concurrent.Callable;
  *       still an enabled AppUsers row of the client's bank — a boolean
  *       from one primary-key probe. Identifying/credential columns only; the
  *       request then runs under the client's bank (IdentityContextFilter).</li>
- *   <li>{@code AgentApiClientIssuer#issueAgentClient} — ws26: when the
+ *   <li>{@code AgentApiClientIssuer#issueAgentClient} /
+ *       {@code #revokeAgentClient} — ws26 (revoke: wave 4): when the
  *       caller (SE5's public agent enrolment) has bound no tenant,
  *       {@code runAs(bankId)} to write the agent's new ApiClient row, its
- *       secret hash and the API_CLIENT_CREATED audit in that bank; a caller
- *       bound to another bank is refused.</li>
+ *       secret hash and the API_CLIENT_CREATED audit in that bank (revoke:
+ *       to set that AGENT client REVOKED + TokenVersion bump and write
+ *       API_CLIENT_REVOKED; the agent revoke normally calls it under the
+ *       admin's own bank); a caller bound to another bank is refused.</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker

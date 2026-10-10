@@ -8,6 +8,7 @@ import com.modocument.application.dto.AgentView;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.SettingsReader;
+import com.modocument.application.port.integration.ApiClientIssuer;
 import com.modocument.application.port.integration.SecretMaterial;
 import com.modocument.application.port.integration.SecretVault;
 import com.modocument.domain.entity.IntegrationAgent;
@@ -79,6 +80,7 @@ public class IntegrationAgentUseCase {
     private final SettingsReader settings;
     private final SystemVersionService versions;
     private final ObjectMapper objectMapper;
+    private final ApiClientIssuer clientIssuer;
     private final Duration enrolmentTtl;
     private final String image;
     private Clock clock = Clock.systemUTC();
@@ -87,6 +89,7 @@ public class IntegrationAgentUseCase {
                                    CurrentUserProvider currentUser, SecretVault vault,
                                    AuditRecorder audit, SettingsReader settings,
                                    SystemVersionService versions, ObjectMapper objectMapper,
+                                   ApiClientIssuer clientIssuer,
                                    @Value("${modocument.agent.enrolment-ttl:15m}") Duration enrolmentTtl,
                                    @Value("${modocument.agent.image:ghcr.io/guyi34super/modocument-agent}")
                                    String image) {
@@ -97,6 +100,7 @@ public class IntegrationAgentUseCase {
         this.settings = settings;
         this.versions = versions;
         this.objectMapper = objectMapper;
+        this.clientIssuer = clientIssuer;
         if (enrolmentTtl.isNegative() || enrolmentTtl.isZero() || enrolmentTtl.toMinutes() > 60) {
             throw new IllegalStateException("modocument.agent.enrolment-ttl must be 1s-60m");
         }
@@ -243,7 +247,11 @@ public class IntegrationAgentUseCase {
                 dockerCommand(baseUrl, token));
     }
 
-    /** Direct revocation (idempotent): terminal, token forgotten, audited AGENT_REVOKED. */
+    /**
+     * Direct revocation (idempotent): terminal, token forgotten, audited
+     * AGENT_REVOKED; the agent's ApiClient is revoked too (wave 4), so every
+     * token it holds fails its next request.
+     */
     @Transactional
     public AgentView revoke(int agentId) {
         int bankId = currentUser.requireBankId();
@@ -261,6 +269,10 @@ public class IntegrationAgentUseCase {
             audit.success("AGENT_REVOKED", "IntegrationAgent", String.valueOf(agentId),
                     Map.of("status", before.name()),
                     Map.of("status", AgentStatus.REVOKED.name(), "name", agent.getName()));
+        }
+        if (agent.getApiClientId() != null) {
+            // Its tokens die now (TokenVersion bump), not only at the agent routes.
+            clientIssuer.revokeAgentClient(bankId, agent.getApiClientId());
         }
         return view(agent, now, heartbeatTimeout(bankId), userId);
     }

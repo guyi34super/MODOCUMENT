@@ -12,6 +12,7 @@ import com.modocument.domain.model.integration.ConnectionType;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
 import com.modocument.infrastructure.persistence.IntegrationAgentJpaRepository;
+import com.modocument.infrastructure.security.JwtService;
 import com.modocument.testsupport.PlatformBankFixture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,7 +48,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * (H2): an agent ApiClient issued through {@link ApiClientIssuer} gets its
  * token from {@code POST /api/integration/oauth/token}; the long-poll's
  * DeferredResult completes and its async dispatch is still authorized; the
- * heartbeat lands on the agent row; a revoked agent is refused.
+ * heartbeat lands on the agent row; a revoked agent is refused, and
+ * revoking it through the admin API kills its client token at once (401).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -66,6 +68,8 @@ class AgentProtocolSecurityChainTest {
     private ApiClientIssuer issuer;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private JwtService jwtService;
 
     @MockitoBean
     private AgentRunPort runs;
@@ -139,6 +143,35 @@ class AgentProtocolSecurityChainTest {
         agents.save(agent);
         mvc.perform(get("/api/agent/v1/tasks").param("wait", "0").header("Authorization", bearer()))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void revokingTheAgentRevokesItsClientAndKillsItsTokenAtOnce() throws Exception {
+        mvc.perform(post("/api/agent/v1/heartbeat").header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":\"1.0.0\",\"status\":\"OK\",\"connections\":[]}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/api/admin/integrations/agents/" + agent.getIntegrationAgentId()
+                                + "/revoke")
+                        .header("Authorization", "Bearer " + jwtService.issueToken(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REVOKED"));
+
+        // 401 at authentication (TokenVersion), not only 403 at the agent routes.
+        mvc.perform(post("/api/agent/v1/heartbeat").header("Authorization", bearer())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":\"1.0.0\",\"status\":\"OK\",\"connections\":[]}"))
+                .andExpect(status().isUnauthorized());
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT Status FROM ApiClient WHERE ApiClientId = ?", String.class,
+                agent.getApiClientId())).isEqualTo("REVOKED");
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT TokenVersion FROM ApiClient WHERE ApiClientId = ?", Integer.class,
+                agent.getApiClientId())).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM AuditEvent WHERE Action = 'API_CLIENT_REVOKED' AND EntityId = ?",
+                Integer.class, String.valueOf(agent.getApiClientId()))).isEqualTo(1);
     }
 
     private String bearer() {

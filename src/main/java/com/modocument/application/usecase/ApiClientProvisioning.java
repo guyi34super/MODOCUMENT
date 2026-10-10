@@ -67,6 +67,7 @@ public class ApiClientProvisioning {
             Collections.unmodifiableSet(EnumSet.of(Permission.AGENT_CONNECT));
 
     public static final String CREATED = "API_CLIENT_CREATED";
+    public static final String REVOKED = "API_CLIENT_REVOKED";
 
     private static final int MAX_CIDRS = 20;
 
@@ -187,6 +188,45 @@ public class ApiClientProvisioning {
         }
         change.setTargetEntityId(String.valueOf(created.client().getApiClientId()));
         return created.client();
+    }
+
+    // ============================================================ revocation
+
+    /**
+     * Revokes a client, immediately: REVOKED + TokenVersion bump (every
+     * issued token fails its next request), the unread initial secret
+     * deleted, cached API-key verifications dropped, audited
+     * API_CLIENT_REVOKED. Revoking twice is a no-op. Runs in the caller's
+     * transaction and tenant; the caller has already scoped {@code client}
+     * to its bank.
+     *
+     * @param revokedByUserId who revoked it (null when no user is known)
+     * @param via             why, when not the client's own revoke (e.g. AGENT_REVOKED)
+     * @return the (saved) client
+     */
+    public ApiClient revoke(ApiClient client, Integer revokedByUserId, String via) {
+        if (client.getStatus() != ApiClientStatus.REVOKED) {
+            client.setStatus(ApiClientStatus.REVOKED);
+            client.setTokenVersion(client.getTokenVersion() + 1);
+            client.setRevokedAt(Instant.now());
+            client.setRevokedByUserId(revokedByUserId);
+            client = clients.save(client);
+            initialSecrets.findByApiClientIdAndBankId(client.getApiClientId(), client.getBankId())
+                    .ifPresent(initialSecrets::delete);
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("clientId", client.getClientId());
+            values.put("kind", client.getKind().name());
+            if (via != null) {
+                values.put("via", via);
+            }
+            audit.record(AuditEventSpec.builder(REVOKED, AuditOutcome.SUCCESS)
+                    .bankId(client.getBankId())
+                    .entity("ApiClient", String.valueOf(client.getApiClientId()))
+                    .newValues(values)
+                    .build());
+        }
+        authenticator.forget(client.getApiClientId());
+        return client;
     }
 
     // ============================================================ creation

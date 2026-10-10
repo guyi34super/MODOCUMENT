@@ -58,7 +58,7 @@ import java.util.Set;
 public class ApiClientAdminUseCase {
 
     public static final String ROTATED = "API_CLIENT_ROTATED";
-    public static final String REVOKED = "API_CLIENT_REVOKED";
+    public static final String REVOKED = ApiClientProvisioning.REVOKED;
     public static final String INITIAL_SECRET_READ = "API_CLIENT_INITIAL_SECRET_READ";
 
     private final ApiClientJpaRepository clients;
@@ -227,24 +227,8 @@ public class ApiClientAdminUseCase {
     public ApiClientView revoke(int apiClientId) {
         int bankId = currentUser.requireBankId();
         int callerId = currentUser.requireUserId();
-        ApiClient client = requireClient(apiClientId, bankId);
-        Instant now = Instant.now();
-        if (client.getStatus() != ApiClientStatus.REVOKED) {
-            client.setStatus(ApiClientStatus.REVOKED);
-            client.setTokenVersion(client.getTokenVersion() + 1);
-            client.setRevokedAt(now);
-            client.setRevokedByUserId(callerId);
-            client = clients.save(client);
-            initialSecrets.findByApiClientIdAndBankId(apiClientId, bankId)
-                    .ifPresent(initialSecrets::delete);
-            audit.record(AuditEventSpec.builder(REVOKED, AuditOutcome.SUCCESS)
-                    .entity("ApiClient", String.valueOf(apiClientId))
-                    .newValues(Map.of("clientId", client.getClientId(),
-                            "kind", client.getKind().name()))
-                    .build());
-        }
-        authenticator.forget(apiClientId);
-        return view(client, now, false, new HashMap<>());
+        ApiClient client = provisioning.revoke(requireClient(apiClientId, bankId), callerId, null);
+        return view(client, Instant.now(), false, new HashMap<>());
     }
 
     // ------------------------------------------------------------ plumbing

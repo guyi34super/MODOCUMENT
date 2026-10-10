@@ -16,6 +16,7 @@ import com.modocument.domain.model.ChangeType;
 import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.integration.ApiAuthMethod;
 import com.modocument.domain.model.integration.ApiClientKind;
+import com.modocument.domain.model.integration.ApiClientStatus;
 import com.modocument.infrastructure.persistence.ApiClientInitialSecretJpaRepository;
 import com.modocument.infrastructure.persistence.ApiClientJpaRepository;
 import com.modocument.infrastructure.persistence.ApiClientSecretJpaRepository;
@@ -31,6 +32,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -159,7 +161,8 @@ class ApiClientProvisioningTest {
     void agentClientsGetAgentConnectOnlyAndTheirSecretOnce() {
         PlatformTransactionManager tx = mock(PlatformTransactionManager.class);
         when(tx.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
-        AgentApiClientIssuer issuer = new AgentApiClientIssuer(provisioning, tx);
+        AgentApiClientIssuer issuer = new AgentApiClientIssuer(provisioning, clients, currentUser,
+                tx);
 
         ApiClientIssuer.Issued issued = issuer.issueAgentClient(BANK, 9, "dc-agent",
                 ApiAuthMethod.OAUTH2_CLIENT_CREDENTIALS, null);
@@ -175,5 +178,44 @@ class ApiClientProvisioningTest {
         verify(vault, never()).seal(anyInt(), any());
         assertThatThrownBy(() -> issuer.issueAgentClient(BANK, 9, "x", ApiAuthMethod.API_KEY,
                 null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void revokingAnAgentClientBumpsItsTokenVersionAndRefusesSystemClients() {
+        PlatformTransactionManager tx = mock(PlatformTransactionManager.class);
+        when(tx.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        when(currentUser.requireUserId()).thenReturn(MAKER);
+        AgentApiClientIssuer issuer = new AgentApiClientIssuer(provisioning, clients, currentUser,
+                tx);
+        ApiClient agentClient = new ApiClient();
+        agentClient.setApiClientId(41);
+        agentClient.setBankId(BANK);
+        agentClient.setClientId("mdc_agent");
+        agentClient.setKind(ApiClientKind.AGENT);
+        agentClient.setStatus(ApiClientStatus.ACTIVE);
+        agentClient.setTokenVersion(2);
+        ApiClient systemClient = new ApiClient();
+        systemClient.setApiClientId(42);
+        systemClient.setBankId(BANK);
+        systemClient.setKind(ApiClientKind.SYSTEM);
+        systemClient.setStatus(ApiClientStatus.ACTIVE);
+        when(clients.findByApiClientIdAndBankId(41, BANK)).thenReturn(Optional.of(agentClient));
+        when(clients.findByApiClientIdAndBankId(42, BANK)).thenReturn(Optional.of(systemClient));
+
+        issuer.revokeAgentClient(BANK, 41);
+        issuer.revokeAgentClient(BANK, 41); // idempotent
+
+        assertThat(agentClient.getStatus()).isEqualTo(ApiClientStatus.REVOKED);
+        assertThat(agentClient.getTokenVersion()).isEqualTo(3);
+        assertThat(agentClient.getRevokedByUserId()).isEqualTo(MAKER);
+        ArgumentCaptor<AuditEventSpec> event = ArgumentCaptor.forClass(AuditEventSpec.class);
+        verify(audit).record(event.capture());
+        assertThat(event.getValue().action()).isEqualTo("API_CLIENT_REVOKED");
+        assertThat(String.valueOf(event.getValue().newValues())).contains("AGENT_REVOKED");
+        verify(authenticator, org.mockito.Mockito.times(2)).forget(41);
+
+        assertThatThrownBy(() -> issuer.revokeAgentClient(BANK, 42))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(systemClient.getStatus()).isEqualTo(ApiClientStatus.ACTIVE);
     }
 }
