@@ -46,4 +46,9 @@ public class AppUserRepositoryImpl implements AppUserRepository {
     public long countActiveAdmins(int bankId) {
         return jpa.countByBankIdAndRoleAndDisabledFalse(bankId, Role.ADMIN);
     }
+
+    @Override
+    public long countActiveByRole(int bankId, Role role) {
+        return jpa.countByBankIdAndRoleAndDisabledFalse(bankId, role);
+    }
 }

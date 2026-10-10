@@ -5,9 +5,11 @@ import com.modocument.application.dto.UserDto;
 import com.modocument.application.port.AppUserRepository;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
+import com.modocument.application.port.BankDirectory;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.RefreshTokenRepository;
 import com.modocument.application.port.UserMfaRepository;
+import com.modocument.application.security.RoleAssignmentPolicy;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.AuditOutcome;
@@ -53,6 +55,13 @@ import java.util.Set;
  * invariant (bank scoping, self-targeting, last-admin guard), because the
  * world may have changed between submit and approve. Only re-enabling an
  * account ({@link #setDisabled} with {@code false}) stays direct.
+ *
+ * <p>Platform bank (ws21): the same use case serves the platform owner's
+ * own users. Which roles may be handed out follows the bank's kind
+ * ({@link RoleAssignmentPolicy}: the four bank roles in a customer bank,
+ * PLATFORM_ADMIN only in the platform bank), and the platform bank never
+ * drops below {@link RoleAssignmentPolicy#MIN_ACTIVE_PLATFORM_ADMINS}
+ * enabled platform admins.
  */
 @Service
 public class UserAdminUseCase {
@@ -64,10 +73,12 @@ public class UserAdminUseCase {
     private final BankJpaRepository banks;
     private final AuthUseCase auth;
     private final AuditRecorder audit;
+    private final BankDirectory bankDirectory;
 
     public UserAdminUseCase(CurrentUserProvider currentUser, AppUserRepository users,
                             UserMfaRepository userMfa, RefreshTokenRepository refreshTokens,
-                            BankJpaRepository banks, AuthUseCase auth, AuditRecorder audit) {
+                            BankJpaRepository banks, AuthUseCase auth, AuditRecorder audit,
+                            BankDirectory bankDirectory) {
         this.currentUser = currentUser;
         this.users = users;
         this.userMfa = userMfa;
@@ -75,6 +86,7 @@ public class UserAdminUseCase {
         this.banks = banks;
         this.auth = auth;
         this.audit = audit;
+        this.bankDirectory = bankDirectory;
     }
 
     /** Every user of the caller's bank, ordered by email (gate B1). */
@@ -96,7 +108,7 @@ public class UserAdminUseCase {
     @Transactional
     public UserDto createApprovedUser(String email, String displayName, Role role,
                                       String passwordHash, int bankId) {
-        requireBankRole(role);
+        RoleAssignmentPolicy.requireAssignable(bankDirectory.kindOf(bankId), role);
         UserDto created = auth.createUserWithHash(email, passwordHash, displayName, bankId,
                 role, true);
         audit.record(AuditEventSpec.builder("USER_CREATED", AuditOutcome.SUCCESS)
@@ -120,7 +132,10 @@ public class UserAdminUseCase {
         if (newRole == null) {
             throw new IllegalArgumentException("A role is required.");
         }
-        requireBankRole(newRole);
+        // The target must be in the caller's bank (checked next), so the
+        // caller's bank kind decides which roles exist here.
+        RoleAssignmentPolicy.requireAssignable(
+                bankDirectory.kindOf(currentUser.requireBankId()), newRole);
         AppUser target = requireSameBankUser(targetUserId);
         if (targetUserId == currentUser.requireUserId()) {
             // Also one half of the last-admin protection: an admin cannot
@@ -136,6 +151,9 @@ public class UserAdminUseCase {
             throw new IllegalStateException(
                     "Cannot demote the only remaining active administrator of this bank; "
                             + "promote another administrator first.");
+        }
+        if (oldRole == Role.PLATFORM_ADMIN && !target.isDisabled()) {
+            requirePlatformAdminQuorumAfterLosingOne(target.getBankId(), "demote");
         }
         target.setRole(newRole);
         // THE mover mechanism: outstanding access tokens carry the old role
@@ -176,6 +194,9 @@ public class UserAdminUseCase {
             throw new IllegalStateException(
                     "Cannot disable the only remaining active administrator of this bank; "
                             + "promote another administrator first.");
+        }
+        if (disabled && target.getRole() == Role.PLATFORM_ADMIN) {
+            requirePlatformAdminQuorumAfterLosingOne(target.getBankId(), "disable");
         }
         target.setDisabled(disabled);
         target.setUpdatedDate(LocalDateTime.now());
@@ -274,11 +295,17 @@ public class UserAdminUseCase {
     private record BankUser(AppUser user, boolean mfaEnabled) {
     }
 
-    /** Bank user administration only ever hands out the four bank roles. */
-    private static void requireBankRole(Role role) {
-        if (role != null && !role.isBankRole()) {
-            throw new IllegalArgumentException(
-                    "Unknown role '" + role + "'; use ADMIN, APPROVER, READ_WRITE or READ_ONLY.");
+    /**
+     * ws21: losing one more enabled PLATFORM_ADMIN must still leave
+     * {@link RoleAssignmentPolicy#MIN_ACTIVE_PLATFORM_ADMINS} — otherwise
+     * no platform change could ever find a second approver again (409).
+     */
+    private void requirePlatformAdminQuorumAfterLosingOne(int bankId, String verb) {
+        long active = users.countActiveByRole(bankId, Role.PLATFORM_ADMIN);
+        if (active - 1 < RoleAssignmentPolicy.MIN_ACTIVE_PLATFORM_ADMINS) {
+            throw new IllegalStateException("Cannot " + verb + " this platform administrator: "
+                    + "at least " + RoleAssignmentPolicy.MIN_ACTIVE_PLATFORM_ADMINS
+                    + " active platform administrators must remain; add another one first.");
         }
     }
 }

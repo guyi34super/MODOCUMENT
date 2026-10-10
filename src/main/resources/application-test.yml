@@ -28,6 +28,11 @@ spring:
       api-key: test-key
 
 modocument:
+  platform:
+    # ws21 BankDirectory: no caching in tests. Test contexts with different
+    # configurations recreate the shared H2 schema (ddl-auto: create), so a
+    # bank id cached by one context can name a different bank later.
+    bank-cache-ttl: 0s
   retention:
     # No scheduled purge racing deterministic tests; the ws14 retention gate
     # tests re-enable it (and drive the job explicitly) via test properties.

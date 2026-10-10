@@ -15,6 +15,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -32,9 +34,16 @@ import java.util.Map;
  * missing the app refuses to start — except under the local/test profiles
  * (modocument.security.permit-dev-paths=true), where it only logs a warning,
  * because test suites boot empty databases all the time.
+ *
+ * <p>Ordered explicitly, ahead of {@link BootstrapPlatformRunner} (ws21):
+ * "AppUsers is empty" must be judged before the platform admins exist.
  */
 @Component
+@Order(BootstrapAdminRunner.ORDER)
 public class BootstrapAdminRunner implements ApplicationRunner {
+
+    /** Early among the startup runners; BootstrapPlatformRunner follows it. */
+    static final int ORDER = Ordered.HIGHEST_PRECEDENCE + 100;
 
     private static final Logger log = LoggerFactory.getLogger(BootstrapAdminRunner.class);
 

@@ -31,8 +31,14 @@ to banking job functions:
 | `PLATFORM_ADMIN` (ws21) | MO Intelligence staff, only in the single platform bank (enforced by a DB trigger and `RoleAssignmentPolicy`). | `platform:*` + `lookup:admin`, plus managing their own platform-bank users, approving platform changes, the platform bank's audit feed, the version. **No domain permission**: no bank's templates, jobs or data. Platform changes (bank onboarding/suspension, platform settings, egress rules) are maker/checker between two platform admins. |
 | `API_CLIENT` (ws26) | A bank system's machine principal, never an `AppUsers` row. | Only the `integration:*` / `agent:connect` scopes, further narrowed by the client's granted scopes; bound to one bank. |
 
-Neither role can be assigned through user administration, maker/checker
-payloads or OIDC (`Role.isBankRole()` guards each path).
+Which roles a user may hold follows the kind of their bank
+(`RoleAssignmentPolicy`, ws21): a customer bank hands out the four bank
+roles only, the platform bank `PLATFORM_ADMIN` only — so platform admins
+manage their own colleagues through the same maker/checker user
+administration, and nobody can grant `PLATFORM_ADMIN` inside a customer
+bank (a V210 database trigger backs this). `API_CLIENT` is never assignable,
+and OIDC maps bank roles only and never provisions into the platform bank.
+See [platform-owner.md](../platform/platform-owner.md).
 
 **Job-function customization:** banks that model finer-grained job functions
 in their IdP do not need new MoDocument roles — the OIDC integration maps an

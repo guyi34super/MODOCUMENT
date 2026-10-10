@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.modocument.application.port.AppUserRepository;
+import com.modocument.application.port.BankDirectory;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.PendingChange;
@@ -19,6 +20,10 @@ import java.util.NoSuchElementException;
  * self-targeting); APPLY delegates to {@link UserAdminUseCase#changeRole},
  * which re-runs them all as the checker — including the last-admin guard —
  * and performs the B5 token kill + USER_ROLE_CHANGED audit.
+ *
+ * <p>The role vocabulary depends on the kind of the bank the change lives
+ * in (ws21, {@code RoleAssignmentPolicy}): bank roles in a customer bank,
+ * PLATFORM_ADMIN only in the platform bank.
  */
 @Component
 public class UserRoleChangeApplier implements PendingChangeApplier {
@@ -27,13 +32,16 @@ public class UserRoleChangeApplier implements PendingChangeApplier {
     private final CurrentUserProvider currentUser;
     private final UserAdminUseCase userAdmin;
     private final ObjectMapper objectMapper;
+    private final BankDirectory bankDirectory;
 
     public UserRoleChangeApplier(AppUserRepository users, CurrentUserProvider currentUser,
-                                 UserAdminUseCase userAdmin, ObjectMapper objectMapper) {
+                                 UserAdminUseCase userAdmin, ObjectMapper objectMapper,
+                                 BankDirectory bankDirectory) {
         this.users = users;
         this.currentUser = currentUser;
         this.userAdmin = userAdmin;
         this.objectMapper = objectMapper;
+        this.bankDirectory = bankDirectory;
     }
 
     @Override
@@ -44,7 +52,10 @@ public class UserRoleChangeApplier implements PendingChangeApplier {
     @Override
     public Prepared prepare(JsonNode payload) {
         int targetUserId = ChangePayloads.requireInt(payload, "targetUserId");
-        Role role = ChangePayloads.parseRole(ChangePayloads.requireText(payload, "role", 20));
+        // The target must live in the maker's bank (checked next), so the
+        // maker's bank decides the vocabulary.
+        Role role = ChangePayloads.parseRole(ChangePayloads.requireText(payload, "role", 20),
+                bankDirectory.kindOf(currentUser.requireBankId()));
         AppUser target = requireSameBankUser(targetUserId);
         if (targetUserId == currentUser.requireUserId()) {
             throw new IllegalStateException("You cannot change your own role.");
@@ -63,7 +74,8 @@ public class UserRoleChangeApplier implements PendingChangeApplier {
         JsonNode payload = ChangePayloads.parse(objectMapper, change.getPayloadJson());
         userAdmin.changeRole(
                 ChangePayloads.requireInt(payload, "targetUserId"),
-                ChangePayloads.parseRole(ChangePayloads.requireText(payload, "role", 20)));
+                ChangePayloads.parseRole(ChangePayloads.requireText(payload, "role", 20),
+                        bankDirectory.kindOf(change.getBankId())));
     }
 
     /** Gate B6 at submit: a user of another bank answers like a missing id. */

@@ -12,6 +12,7 @@ import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
 import com.modocument.testsupport.FixedUser;
+import com.modocument.testsupport.StubBankDirectory;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -47,6 +48,8 @@ import static org.mockito.Mockito.when;
 class UserAdminUseCaseTest {
 
     private static final int CALLER = 100;
+    private static final int PLATFORM_BANK = 50;
+    private static final int PLATFORM_CALLER = 500;
 
     private final AppUserRepository users = mock(AppUserRepository.class);
     private final UserMfaRepository userMfa = mock(UserMfaRepository.class);
@@ -54,8 +57,15 @@ class UserAdminUseCaseTest {
     private final BankJpaRepository banks = mock(BankJpaRepository.class);
     private final AuthUseCase auth = mock(AuthUseCase.class);
     private final AuditRecorder audit = mock(AuditRecorder.class);
+    private final StubBankDirectory bankDirectory =
+            new StubBankDirectory().customer(Bank.DEFAULT_BANK_ID).platform(PLATFORM_BANK);
     private final UserAdminUseCase useCase = new UserAdminUseCase(
-            FixedUser.admin(CALLER), users, userMfa, refreshTokens, banks, auth, audit);
+            FixedUser.admin(CALLER), users, userMfa, refreshTokens, banks, auth, audit,
+            bankDirectory);
+    /** ws21: the same use case serving a platform admin of the platform bank. */
+    private final UserAdminUseCase platformUseCase = new UserAdminUseCase(
+            new FixedUser(PLATFORM_CALLER, PLATFORM_BANK, Role.PLATFORM_ADMIN), users, userMfa,
+            refreshTokens, banks, auth, audit, bankDirectory);
 
     private static AppUser user(int id, int bankId, Role role) {
         AppUser user = new AppUser();
@@ -248,6 +258,57 @@ class UserAdminUseCaseTest {
         AuditEventSpec recorded = recordedAudit();
         assertThat(recorded.action()).isEqualTo("USER_LIST_EXPORTED");
         assertThat(String.valueOf(recorded.newValues())).contains("rows=1");
+    }
+
+    // ------------------------------------------- ws21 role policy + quorum
+
+    @Test
+    void aCustomerBankNeverHandsOutPlatformOrMachineRoles() {
+        for (Role role : new Role[] {Role.PLATFORM_ADMIN, Role.API_CLIENT}) {
+            assertThatThrownBy(() -> useCase.createApprovedUser("x@example.com", "X", role,
+                    "{argon2}$h", Bank.DEFAULT_BANK_ID))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("ADMIN, APPROVER, READ_WRITE or READ_ONLY");
+            assertThatThrownBy(() -> useCase.changeRole(7, role))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        verify(auth, never()).createUserWithHash(any(), any(), any(), anyInt(), any(),
+                org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
+    void thePlatformBankOnlyHandsOutPlatformAdmin() {
+        UserDto created = new UserDto(9, "ops@example.com", "Ops", "{}", "PLATFORM_ADMIN",
+                PLATFORM_BANK, true);
+        when(auth.createUserWithHash("ops@example.com", "{argon2}$h", "Ops", PLATFORM_BANK,
+                Role.PLATFORM_ADMIN, true)).thenReturn(created);
+
+        assertThat(platformUseCase.createApprovedUser("ops@example.com", "Ops",
+                Role.PLATFORM_ADMIN, "{argon2}$h", PLATFORM_BANK)).isSameAs(created);
+        for (Role bankRole : new Role[] {Role.ADMIN, Role.APPROVER, Role.READ_WRITE,
+                Role.READ_ONLY}) {
+            assertThatThrownBy(() -> platformUseCase.createApprovedUser("b@example.com", "B",
+                    bankRole, "{argon2}$h", PLATFORM_BANK))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("use PLATFORM_ADMIN");
+        }
+    }
+
+    @Test
+    void disablingAPlatformAdminMustLeaveTwoActive() {
+        AppUser target = user(8, PLATFORM_BANK, Role.PLATFORM_ADMIN);
+        when(users.getById(8)).thenReturn(Optional.of(target));
+        when(users.countActiveByRole(PLATFORM_BANK, Role.PLATFORM_ADMIN)).thenReturn(2L);
+
+        assertThatThrownBy(() -> platformUseCase.setDisabled(8, true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("at least 2 active platform administrators");
+        verify(users, never()).save(any(AppUser.class));
+
+        // With a third active platform admin, one may go.
+        when(users.countActiveByRole(PLATFORM_BANK, Role.PLATFORM_ADMIN)).thenReturn(3L);
+        when(users.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+        assertThat(platformUseCase.setDisabled(8, true).disabled()).isTrue();
     }
 
     private AuditEventSpec recordedAudit() {

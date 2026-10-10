@@ -166,7 +166,8 @@ public class AuthUseCase {
      * Verifies credentials. With no second factor owed this stamps
      * LastLoginAt and opens a session: a short access token (response body)
      * plus a new refresh-token family (cookie). When MFA is enabled — or the
-     * user is an ADMIN who still has to enrol (require-for-admin) — the
+     * user is an ADMIN who still has to enrol (require-for-admin), or a
+     * PLATFORM_ADMIN (always, ws21) — the
      * password alone buys only an {@link MfaChallenge}; no tokens are issued
      * and LOGIN_SUCCESS is not recorded until {@link MfaUseCase#verify}.
      */
@@ -242,8 +243,7 @@ public class AuthUseCase {
         user = upgradeHashIfNeeded(user, password);
 
         boolean mfaEnabled = userMfa.isEnabled(user.getAppUserId());
-        boolean enrollmentRequired = !mfaEnabled && requireMfaForAdmin
-                && user.getRole() == Role.ADMIN;
+        boolean enrollmentRequired = !mfaEnabled && mustEnrolMfa(user.getRole());
         if (mfaEnabled || enrollmentRequired) {
             // Password OK but a second factor is owed: persist the counter
             // reset, hand out ONLY the challenge. LastLoginAt/LOGIN_SUCCESS
@@ -252,6 +252,17 @@ public class AuthUseCase {
             return new MfaChallenge(challengeTokens.issue(user), enrollmentRequired);
         }
         return openSession(user, ip, userAgent);
+    }
+
+    /**
+     * Whether a role must enrol a second factor before it gets a session.
+     * ADMIN follows {@code modocument.security.mfa.require-for-admin}
+     * (default on); PLATFORM_ADMIN (ws21) ALWAYS must — the platform owner
+     * is the most cross-cutting account there is, so no setting can switch
+     * its second factor off.
+     */
+    private boolean mustEnrolMfa(Role role) {
+        return role == Role.PLATFORM_ADMIN || (requireMfaForAdmin && role == Role.ADMIN);
     }
 
     /**

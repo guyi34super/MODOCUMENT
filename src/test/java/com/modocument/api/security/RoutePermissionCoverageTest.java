@@ -82,7 +82,7 @@ class RoutePermissionCoverageTest {
      */
     private static final Set<Permission> RESERVED = EnumSet.of(
             Permission.SETTINGS_READ, Permission.SETTINGS_WRITE,        // ws20
-            Permission.PLATFORM_READ, Permission.PLATFORM_BANKS,        // ws21
+            Permission.PLATFORM_BANKS,                                  // ws21 (wave 2)
             Permission.PLATFORM_SETTINGS,                               // ws20
             Permission.TEMPLATE_PUBLISH,                                // ws22
             Permission.SYSTEM_INFO, Permission.PLATFORM_ANNOUNCE,       // ws24
