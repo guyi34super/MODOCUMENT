@@ -1,0 +1,5 @@
+CustomerId,FullName,Email,Segment,Balance
+CUST-0101,Asha Ramdin,asha.ramdin@bank-sim.test,RETAIL,1520.75
+CUST-0102,Kevin Li,kevin.li@bank-sim.test,SME,98200.00
+CUST-0103,Elodie Moreau,elodie.moreau@bank-sim.test,CORPORATE,1250000.00
+CUST-0104,Sunita Bhujun,sunita.bhujun@bank-sim.test,RETAIL,42.10

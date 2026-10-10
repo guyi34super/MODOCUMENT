@@ -19,6 +19,16 @@ export function registerBootstrapAdmin() {
   return email;
 }
 
+/**
+ * The bootstrap admin's CURRENT password. Since phase 2 (OBS-02) the
+ * bootstrap password is temporary: the first sign-in changes it, and the
+ * account book keeps the new one. Seeded clones copy the CURRENT hash, so
+ * they must be registered with this password, not the env one.
+ */
+export function bootstrapPassword() {
+  return getAccount(registerBootstrapAdmin())?.password ?? env.bootstrapPassword;
+}
+
 /** Bootstrap admin API session (enrols MFA on first use). */
 export async function bootstrapAdmin() {
   return sessionFor(registerBootstrapAdmin());
@@ -26,10 +36,29 @@ export async function bootstrapAdmin() {
 
 async function clonedAccount(email, role, displayName) {
   if (!getAccount(email)?.password) {
-    registerBootstrapAdmin();
+    const password = bootstrapPassword();
     await seedClonedUser({ email, displayName, role, cloneFromEmail: BOOTSTRAP() });
-    // The cloned row carries the bootstrap password hash; the first sign-in changes it.
-    saveAccount(email, { password: env.bootstrapPassword, role, origin: 'sql-seed' });
+    // The cloned row carries the bootstrap admin's CURRENT hash; the first
+    // sign-in changes it.
+    saveAccount(email, { password, role, origin: 'sql-seed' });
+  }
+  return sessionFor(email);
+}
+
+/** Email of bootstrap platform admin `n` (1 or 2), or null without platform admins. */
+export const PLATFORM_ADMIN = (n) => env.platformAdmins[n - 1]?.email?.toLowerCase() ?? null;
+
+/**
+ * Session of bootstrap platform admin `n` (1 or 2), signed in through the
+ * forced password change and MFA enrolment like any first login. Null when
+ * the stack was started without platform admins (specs then skip).
+ */
+export async function platformAdmin(n) {
+  const admin = env.platformAdmins[n - 1];
+  if (!admin) return null;
+  const email = PLATFORM_ADMIN(n);
+  if (!getAccount(email)?.password) {
+    saveAccount(email, { password: admin.password, role: 'PLATFORM_ADMIN', origin: 'bootstrap' });
   }
   return sessionFor(email);
 }

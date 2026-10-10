@@ -1,0 +1,51 @@
+{
+  "name": "beneficiaries-key-value-txt",
+  "file": "beneficiaries-key-value.txt",
+  "strategies": [
+    "KEY_VALUE"
+  ],
+  "note": "repeated Label: value blocks with a preamble line; one label only matches through an alias",
+  "fields": [
+    {
+      "name": "Beneficiary Name",
+      "type": "TEXT"
+    },
+    {
+      "name": "Account Number",
+      "type": "TEXT",
+      "aliases": [
+        "Account No"
+      ]
+    },
+    {
+      "name": "Bank",
+      "type": "TEXT"
+    },
+    {
+      "name": "Added On",
+      "type": "DATE"
+    }
+  ],
+  "rows": [
+    [
+      "Asha Ramdin",
+      "MU17BOMM0101101030300200000MUR",
+      "Mauritius Commercial Bank",
+      "2024-04-02"
+    ],
+    [
+      "Kevin Li",
+      "MU43SBMM0203303030300100000MUR",
+      "SBM Bank",
+      "2024-04-10"
+    ],
+    [
+      "Elodie Moreau",
+      "MU12ABSA0505505050500300000MUR",
+      "Absa Bank Mauritius",
+      "2024-04-21"
+    ]
+  ],
+  "expectAccepted": true,
+  "minConfidence": 0.75
+}

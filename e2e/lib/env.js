@@ -49,6 +49,31 @@ export const env = {
   get appRole() {
     return process.env.E2E_DB_APP_ROLE || 'rls';
   },
+  /**
+   * The two bootstrap PLATFORM_ADMIN accounts (ws21), generated per run by
+   * run-local.sh / the compose job: E2E_PLATFORM_ADMIN_{1,2}_{EMAIL,PASSWORD}.
+   * Empty when the stack was started without them — platform specs skip.
+   */
+  get platformAdmins() {
+    return [1, 2]
+      .map((n) => ({
+        email: process.env[`E2E_PLATFORM_ADMIN_${n}_EMAIL`],
+        password: process.env[`E2E_PLATFORM_ADMIN_${n}_PASSWORD`],
+      }))
+      .filter((admin) => admin.email && admin.password);
+  },
+  /** Bank simulator coordinates (Wave 3, e2e/bank-simulator); null when not started. */
+  get bankSim() {
+    const rest = process.env.E2E_BANK_SIM_REST_URL;
+    if (!rest) return null;
+    return {
+      restURL: rest.replace(/\/$/, ''),
+      dbURL: process.env.E2E_BANK_SIM_DB_URL || null,
+      sftpHost: process.env.E2E_BANK_SIM_SFTP_HOST || '127.0.0.1',
+      sftpPort: Number(process.env.E2E_BANK_SIM_SFTP_PORT || 2222),
+      webhookSecret: process.env.E2E_BANK_SIM_WEBHOOK_SECRET || null,
+    };
+  },
   /** Short unique suffix so names never collide when the suite re-runs on one database. */
   get runId() {
     return process.env.E2E_RUN_ID || 'local';

@@ -1,0 +1,2 @@
+# QA golden corpus fixtures: exact bytes matter (BOM, CRLF, tabs).
+files/** -text

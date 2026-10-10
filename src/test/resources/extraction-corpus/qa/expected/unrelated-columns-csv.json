@@ -1,0 +1,14 @@
+{
+  "name": "unrelated-columns-csv",
+  "file": "unrelated-columns.csv",
+  "note": "negative case: a clean table whose columns have nothing to do with the template must NOT pass the default gate",
+  "expectAccepted": false,
+  "minConfidence": 0.75,
+  "fields": [
+    {"name": "Customer Name", "type": "TEXT"},
+    {"name": "Account Number", "type": "TEXT"},
+    {"name": "Amount", "type": "NUMBER"},
+    {"name": "Transaction Date", "type": "DATE"}
+  ],
+  "rows": []
+}

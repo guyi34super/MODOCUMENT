@@ -8,8 +8,24 @@ import { BOOTSTRAP, uniqueName } from '../lib/seed.js';
 
 test.describe.configure({ mode: 'serial' });
 
+/** Password + TOTP code step for an account that already enrolled. */
+async function signInWithCode(page, email) {
+  const account = getAccount(email);
+  await page.goto('/login');
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(account.password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page.getByRole('heading', { name: 'Two-factor authentication' })).toBeVisible();
+  const { code, counter } = await nextCode(account.totpSecret, account.lastCounter);
+  await page.getByLabel('Verification code').fill(code);
+  await page.getByRole('button', { name: 'Verify' }).click();
+  saveAccount(email, { lastCounter: counter });
+}
+
 test.describe('authentication @smoke', () => {
-  test('SMK-AUTH-01 bootstrap admin signs in and is forced through TOTP enrolment', async ({ page }) => {
+  test('SMK-AUTH-01 bootstrap admin signs in, enrols TOTP and must replace the bootstrap password', async ({
+    page,
+  }) => {
     const email = BOOTSTRAP();
     const account = getAccount(email);
 
@@ -44,6 +60,39 @@ test.describe('authentication @smoke', () => {
       await page.getByLabel('Verification code').fill(code);
       await page.getByRole('button', { name: 'Activate and sign in' }).click();
       saveAccount(email, { lastCounter: counter });
+    }
+
+    // Phase 2 (OBS-02): the bootstrap password comes from deployment
+    // configuration, so it is temporary like an admin-issued one. After the
+    // second factor, nothing but the password change is reachable.
+    if (await page.waitForURL(/\/force-password-change$/, { timeout: 15_000 }).then(() => true, () => false)) {
+      await expect(page.getByRole('heading', { name: 'Choose your own password' })).toBeVisible();
+      const { token: changeToken } = await sessionFromPage(page);
+      expect(changeToken).toBeTruthy();
+      const blocked = await new ApiClient({ token: changeToken }).request('GET', '/api/admin/users');
+      expect(blocked.status).toBe(403);
+      expect(blocked.body.code).toBe('PASSWORD_CHANGE_REQUIRED');
+
+      const newPassword = strongPassword();
+      await page.getByLabel('Temporary password').fill(getAccount(email).password);
+      await page.getByLabel('New password').fill(newPassword);
+      await page.getByRole('button', { name: 'Change password' }).click();
+      await expect(page).toHaveURL(/\/login$/);
+      // Book the new password before any further assertion: every later
+      // spec signs in (and clones users) with it.
+      saveAccount(email, { password: newPassword, passwordChangedAt: new Date().toISOString() });
+      // The confirmation toast. (The inline "Password changed — sign in again"
+      // notice on the login page never shows: BUG-04, 04-known-bugs.spec.js.)
+      await expect(page.getByText('Password changed — sign in with your new password')).toBeVisible();
+
+      // The env-provided password is dead; the new one plus TOTP opens a session.
+      const stale = await new ApiClient().request('POST', '/api/auth/login', {
+        json: { email, password: account.password },
+      });
+      expect(stale.status).toBe(401);
+      await signInWithCode(page, email);
+    } else {
+      test.info().annotations.push({ type: 'note', description: 'bootstrap password already replaced' });
     }
 
     await expect(page).toHaveURL(/\/$/);

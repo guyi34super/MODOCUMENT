@@ -62,7 +62,7 @@ Rules:
 | CI E2E | `docker-compose.e2e.yml` (job definition in the e2e README, owned by SE5) | postgres:16 on tmpfs plus `docker/postgres-init` | fake LLM container | real frontend nginx image and real app image |
 | CI unit/IT | `ci.yml` (`mvn verify`, `-Ppostgres-it`, Vitest, build) | H2 / Testcontainers PG | none | already exists |
 | CI connectors | `-Pconnectors-it` (SE4 adds the profile) | Testcontainers Oracle XE, SQL Server, MariaDB | none | licence check of the drivers in the SBOM |
-| Bank simulator (Wave 3) | services added to `run-local.sh` and compose by QA | bank PG (`bank_sim` schema), REST stub with signed-webhook receiver, SFTP with pinned host key | none | the "bank" side of the integration loop |
+| Bank simulator (Wave 3) | `e2e/bank-simulator/` ([README](../../e2e/bank-simulator/README.md)): `E2E_BANK_SIM=1 e2e/run-local.sh` (bank DB + REST stub) or `docker-compose.bank-sim.yml` (adds SFTP) | bank PG: view `integration.customers`, table `integration.staging_results`, least-privilege reader/writer roles; REST stub (OAuth2 CC, paging, capture with idempotency, signed-webhook receiver); SFTP (`atmoz/sftp`) with a pinned TEST-ONLY host key | none | the "bank" side of the integration loop; security cases in [`docs/qa/integration-security-tests.md`](../qa/integration-security-tests.md) |
 | Staging (later) | release.yml | RDS | configured endpoint | smoke `/api/probe/synthetic` plus the E2E `@smoke` subset |
 
 Test data: one database per run, run-scoped names (`uniqueName()`) and
@@ -233,7 +233,7 @@ ones at the end.
 | ID | Journey | Location |
 |---|---|---|
 | HARNESS-01…05 | TOTP RFC vectors; TOTP step logic; fake-LLM answers and modes; SPA and API through one origin | `e2e/tests/00-harness.spec.js` |
-| SMK-AUTH-01 | Bootstrap admin signs in and is forced through TOTP enrolment (secret read from the UI; QR, URI, 10 recovery codes) | `e2e/tests/01-auth.spec.js` |
+| SMK-AUTH-01 | Bootstrap admin signs in, is forced through TOTP enrolment (secret read from the UI; QR, URI, 10 recovery codes) and then through the bootstrap password change (OBS-02 fix): other routes 403 `PASSWORD_CHANGE_REQUIRED`, the env password is dead afterwards | `e2e/tests/01-auth.spec.js` |
 | SMK-AUTH-02 | A wrong TOTP code is refused; no session is stored | ″ |
 | SMK-AUTH-03 | USER_CREATE needs a second admin: self-approval gives 409, the checker applies, and no credential appears in the queue | ″ |
 | SMK-AUTH-04 | First sign-in with the temporary password forces a change (other routes give 403 `PASSWORD_CHANGE_REQUIRED`); the old password is dead and the new one works | ″ |
@@ -250,18 +250,19 @@ Status: **Live** = automated and running; **Fixme** = E2E placeholder exists
 
 | Criteria | Owner | Tests (lowest level first) | Wave | Status |
 |---|---|---|---|---|
-| AC-SET-01, 03, 04, 05, 06, 07, 13, 16 | SE1 (API) + SE3 (UI); QA E2E | H2-IT `api/settings/*`; VITEST `SettingField`, `SettingsPage`; E2E `phase2/settings.spec.js` | 1–2 | Planned / **Fixme** (E2E) |
+| AC-SET-01, 03, 04, 05, 06, 07, 08, 13, 16 | SE1 (API) + SE3 (UI); QA E2E | H2-IT `api/settings/*`; VITEST `SettingField`, `SettingsPage`; E2E `phase2/settings.spec.js` | 1–2 | **Live** (Wave 2) |
 | AC-SET-02, 08, 10, 11, 14, 15 | SE1 | UNIT/H2-IT `infrastructure/settings/*`, `SettingsConsumersTest`, `SettingsParityTest` | 1–2 | Planned |
 | AC-SET-09, 12, 17 | SE1 + QA (PG-IT review) | `pgit.SettingsPropagationPgIT`, `SettingsRlsPgIT`, inventories | 2 | Planned |
-| AC-PLT-01, 03, 05, 06, 10 | SE2; QA E2E | H2-IT appliers, PG-IT bank/trigger; E2E `phase2/platform.spec.js` | 1–2 | Planned / **Fixme** |
+| AC-PLT-01, 03, 05, 06, 09, 10 | SE2; QA E2E | H2-IT appliers, PG-IT bank/trigger; QA H2-IT `PlatformBoundaryQaTest`; E2E `phase2/platform.spec.js` | 1–2 | **Live** (Wave 2) |
 | AC-PLT-02, 04, 07, 08, 09, 11 | SE2 (+ Supervisor for the registry) | `PlatformRoleTriggerPgIT`, `PermissionCheckerPlatformTest`, `TenantContextCallSiteRegistryTest` | 1–2 | Planned |
-| AC-ADM-01, 03, 04, 05, 07, 08, 10 | SE3; QA E2E | H2-IT dashboard/actions/visibility; E2E `phase2/admin-dashboard.spec.js` | 1–2 | Planned / **Fixme** |
+| AC-ADM-01, 03, 04, 05, 07, 08, 10 | SE3; QA E2E | H2-IT dashboard/actions/visibility; QA PG-IT `UserAdminActionsRlsPgIT`; E2E `phase2/admin-dashboard.spec.js` | 1–2 | **Live** (Wave 2) |
 | AC-ADM-02, 06, 09, 11 | SE3 + QA (PG-IT) | `pgit.DashboardIsolationPgIT`, `UserAdminActionsTest`, VITEST components | 1–2 | Planned |
-| AC-EXT-02, 03, 04, 05, 07, 11, 13, 16 | SE4; QA E2E | UNIT classifier/breaker; H2-IT parse fallback; E2E `phase2/extraction-fallback.spec.js` with fake-LLM modes | 1–4 | Planned / **Fixme** |
+| AC-EXT-02, 03, 04, 05, 11 | SE4; QA E2E | UNIT classifier/breaker; H2-IT parse fallback; QA H2-IT `ExtractionModeResolutionApiTest`; E2E `phase2/extraction-fallback.spec.js` with fake-LLM modes (API level) | 2 | **Live** (Wave 2); **Bug** BUG-03 (UNIT, disabled) |
+| AC-EXT-02b (badge), 07, 13, 16 | SE4 (+ SE3 UI) | E2E `phase2/extraction-fallback.spec.js` | 4 | **Fixme** (UI not merged) |
 | AC-EXT-01, 06, 09, 10, 12, 14, 15 | SE4 | UNIT/H2-IT `infrastructure/transform/code/*` | 1–2 | Planned |
-| AC-EXT-08 (corpus ≥ 95 %) | SE4 builds the engine; **QA curates the corpus and expected outputs** | `CodeExtractionCorpusTest` + `src/test/resources/extraction-corpus/` | 1 (engine), 2 (corpus) | Planned |
+| AC-EXT-08 (corpus ≥ 95 %) | SE4 builds the engine; **QA curates the corpus and expected outputs** | `ExtractionCorpusTest` (9 generated cases, SE4) + `QaExtractionCorpusTest` (9 QA cases incl. 2 negative, `src/test/resources/extraction-corpus/qa/`) | 1 (engine), 2 (corpus) | **Live** (18 of the ≥ 40 documents) |
 | AC-EXT-17 | SE2 | `InferSchemaUseCaseTest`, `SummarizeExtractionUseCaseTest` | 4 | Planned |
-| AC-REL-02, 03, 06, 07 | SE5; QA E2E | H2-IT system/announcements; VITEST banner; E2E `phase2/releases.spec.js` | 1–2 | Planned / **Fixme** |
+| AC-REL-02, 03, 06, 07, 07a, 07b | SE5; QA E2E | H2-IT system/announcements; VITEST banner; E2E `phase2/releases.spec.js` | 1–2 | **Live** (Wave 2) |
 | AC-REL-01, 04, 05, 08, 09, 11 | SE5 | scripts, `MigrationPolicyTest`, `FlywayVersionRangeTest`, `DeployedVersionRecorderPgIT`, actionlint, terraform | 1–2 | Planned |
 | AC-REL-10 | SE5 | runbook rehearsal | later | Planned (needs AWS) |
 | AC-INT-01, 02, 32 | SE1 (vault, settings) + SE4 (connections API) + SE3 (UI) | `SecretVaultTest`, `ConnectionSecretLeakTest`, `SecretAtRestPgIT`; E2E | 3 | Planned / **Fixme** |
@@ -271,7 +272,7 @@ Status: **Live** = automated and running; **Fixme** = E2E placeholder exists
 | AC-INT-28…30 | SE5 (agent) | `agent/` module tests; H2-IT protocol; E2E agent process | 3–4 | Planned / **Fixme** |
 | AC-INT-31 | SE3 | VITEST Integrations pages; E2E | 3 | Planned / **Fixme** |
 | AC-X-01, 02 | Supervisor (shared files) + each owner | `RoutePermissionCoverageTest`, RLS inventories | every wave | Live (existing tests) |
-| AC-X-03 | QA (+ auth owner for BUG-01) | `01-auth.spec.js`, `04-known-bugs.spec.js` | 1 | **Bug** (BUG-01) |
+| AC-X-03 | QA (+ auth owner for BUG-01) | `01-auth.spec.js`, `04-known-bugs.spec.js`; PG-IT `MfaLoginPgIT` | 1 | **Live** (BUG-01 fixed) |
 | AC-X-04 | SE5 + QA | `security.yml`, `zap-baseline.yml` | 4 | Live (existing) / Planned (integration API) |
 | AC-X-05 | SE3 + QA | `phase2/a11y.spec.js` | 4 | Planned |
 | HARNESS-*, SMK-* | QA | `e2e/tests/00…03` | 1 | **Live** |
@@ -280,12 +281,21 @@ Status: **Live** = automated and running; **Fixme** = E2E placeholder exists
 
 | ID | Sev | Finding | Evidence | Suggested owner |
 |---|---|---|---|---|
-| **BUG-01** | **P1** | Under the production two-role model (backend as `modocument_app`), `POST /api/auth/mfa/verify` answers **502 "The database request failed."** — "new row violates row-level security policy for table auditevent". `MfaUseCase.verify` is `@Transactional` and starts with no tenant bound. `JpaAuditRecorder` binds the event's bank only around `writer.append()`, but the `LOGIN_SUCCESS` INSERT is flushed at COMMIT, after the binding is gone. **No MFA user, so no ADMIN, can complete sign-in in production.** Password-only logins work because `AuthUseCase` is not transactional. H2 tests have no RLS, and no PgIT signs in with MFA. | `e2e/tests/04-known-bugs.spec.js` BUG-01 (fails with `E2E_DB_APP_ROLE=rls`) | Supervisor to assign (audit and auth path). Add a PgIT next to `TenantIsolationGatePgIT`. |
-| BUG-02 | P4 | After a successful forced password change, the login page shows "Your session expired. Please sign in again." (`/login?expired=1`). `ForceChangePasswordPage` calls `logout()` with the token the change just revoked, and the 401 triggers `client.js`'s expired-session redirect. | `04-known-bugs.spec.js` BUG-02 | SE3 |
+| **BUG-01** (fixed, Wave 2) | **P1** | Under the production two-role model (backend as `modocument_app`), `POST /api/auth/mfa/verify` answers **502 "The database request failed."** — "new row violates row-level security policy for table auditevent". `MfaUseCase.verify` is `@Transactional` and starts with no tenant bound. `JpaAuditRecorder` binds the event's bank only around `writer.append()`, but the `LOGIN_SUCCESS` INSERT is flushed at COMMIT, after the binding is gone. **No MFA user, so no ADMIN, can complete sign-in in production.** Password-only logins work because `AuthUseCase` is not transactional. H2 tests have no RLS, and no PgIT signs in with MFA. | `e2e/tests/04-known-bugs.spec.js` BUG-01 (fails with `E2E_DB_APP_ROLE=rls`) | Supervisor to assign (audit and auth path). Add a PgIT next to `TenantIsolationGatePgIT`. |
+| BUG-02 (fixed, Wave 2) | P4 | After a successful forced password change, the login page shows "Your session expired. Please sign in again." (`/login?expired=1`). `ForceChangePasswordPage` calls `logout()` with the token the change just revoked, and the 401 triggers `client.js`'s expired-session redirect. | `04-known-bugs.spec.js` BUG-02 | SE3 |
 | OBS-01 | P2 (product gap) | A fresh install has exactly one bank admin, and every user-security change needs a different approver, so the product can never add a second user without database access. The E2E suite seeds the checker by SQL. Bank onboarding (SE2, ≥ 2 admins) fixes this for new banks but not for the DEFAULT bank of a fresh install. | `e2e/lib/db.js` | SE2 (e.g. a second bootstrap approver) |
-| OBS-02 | P3 | The bootstrap admin is not forced to change the env-provided password (`MustChangePassword=false`), unlike admin-created users and the planned platform admins | `BootstrapAdminRunner` | SE2 |
+| OBS-02 (fixed, Wave 2) | P3 | The bootstrap admin is not forced to change the env-provided password (`MustChangePassword=false`), unlike admin-created users and the planned platform admins | `BootstrapAdminRunner` | SE2 |
 | OBS-03 | P2 for EXT | The AI client has no explicit retry or timeout configuration, so the Spring AI 1.0.1 defaults apply: 10 attempts with 2 s ×5 backoff up to 3 min on 5xx, and no read timeout. A 500 reaches the fallback only after about 19 min, and a hung model never times out. Set `spring.ai.retry.*` and a read timeout in the circuit-breaker work. | `application.yml` (no `spring.ai.retry`) | SE4 |
 | OBS-04 | P3 | The MFA verify throttle is 5 per minute per client IP. Behind a bank's NAT, a handful of simultaneous sign-ins lock each other out. It should become a setting (AC-SET-11) with a realistic default. | `MfaRateLimiter` | SE1 |
+
+## 8b. Defects and observations from Wave 2 (QA round 2)
+
+| ID | Sev | Finding | Evidence | Suggested owner |
+|---|---|---|---|---|
+| **BUG-03** | P3 | A model read timeout sometimes surfaces as a bare `java.util.concurrent.CancellationException` (Spring's JDK request factory cancels the response future) instead of `ResourceAccessException(HttpTimeoutException)`. `AiFailureClassifier` does not know it: `isReplyProblem` is **true** (the parse stage sends a corrective re-prompt to the hung endpoint, doubling the wait before the code fallback: 2 × 120 s in production), `countsForCircuit` is **false** (a hung model never opens the breaker) and the reason is ERROR, not TIMEOUT. It also makes `IngestionFallbackIntegrationTest.aModelThatNeverAnswersTimesOutAndFallsBackToCode` flaky ("expected: 1 but was: 2" calls; seen in a full `mvn -B verify`, passes alone). | UNIT `AiTimeoutCancellationBug03Test` (`@Disabled("BUG-03…")`; fails when enabled); log excerpt in the test's Javadoc | SE4 (classifier: treat `CancellationException` in the chain as a timeout) |
+| BUG-04 | P4 | After a forced password change the login page never shows the inline "Password changed — sign in again with your new password." notice (the toast does show). `ForceChangePasswordPage` awaits `logout()`: `setUser(null)` re-renders the route's `ProtectedRoute`, which redirects to `/login` without state before the page's own `navigate('/login', {state:{notice}})` runs. | E2E `04-known-bugs.spec.js` BUG-04 (`test.fixme`) | SE3 |
+| OBS-05 | P3 | The Wave-0 route skeleton for the integration hub (`/api/admin/integrations/**`, `/api/integration/v1/**`, `/api/agent/v1/**`, 501 + `@RequiresPermission`) is not on the merged branch: those routes answer 404. Contracts §3 say the skeleton fixes route coverage and `openapi-routes.txt` up front. `PlatformBoundaryQaTest#aPlatformAdminGetsNoIntegrationAdminRouteOnceTheyExist` accepts 403 or 404 until they land. | `docs/api/openapi-routes.txt` has no integration routes | Supervisor |
+| OBS-06 | P3 | The E2E stack had no platform admins (no `MODOCUMENT_PLATFORM_ADMIN_*`), so no platform spec, maintenance banner or RELEASE announcement could run. QA added them to `run-local.sh` and `docker-compose.e2e.yml` (optional there). The CI env-file generator in `e2e/README.md` now lists them; SE5 should add them to the job. | `e2e/run-local.sh` | SE5 (CI job) |
 
 ## 9. Sign-off record
 

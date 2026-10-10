@@ -42,3 +42,10 @@ regexes = [
     '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiJjYW5hcnkifQ\.c2lnbmF0dXJl''',
     '''0123456789abcdef0123456789abcdef''',
 ]
+# 4. The bank simulator's SFTP host keys (phase 2 Wave 3 QA harness). TEST
+#    ONLY and committed on purpose: an SFTP connection pins the server's
+#    host-key fingerprint, so it must be known before the throwaway server
+#    starts (e2e/bank-simulator/README.md). Exactly these two files.
+paths = [
+    '''^e2e/bank-simulator/sftp/host-keys/ssh_host_(ed25519|rsa)_key\.TEST-ONLY$''',
+]

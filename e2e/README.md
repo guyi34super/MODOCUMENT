@@ -15,13 +15,25 @@ e2e/
   global-setup.js         waits for SPA + API + fake LLM, registers the bootstrap admin
   run-local.sh            Docker-free runner (build, DB, stub, backend, SPA, tests, teardown)
   stubs/fake-llm.mjs      fake LLM: POST /v1/chat/completions + control plane
+  bank-simulator/         Wave-3 "bank": bank DB, REST stub + webhook verifier, SFTP
+                          (own README; `npm run test:bank-sim` = its node:test suites)
   lib/                    env, TOTP (RFC 6238), API client + sign-in, account book,
                           seeding (API first, SQL only for the fresh-install deadlock),
-                          fake-LLM control, Playwright fixtures
+                          fake-LLM control, Playwright fixtures; phase2.js (settings,
+                          dashboard, onboarding, announcements, extraction helpers);
+                          integration.js + banksim.js (Wave 3, written against the contracts)
   fixtures/               employees.csv, pdf.js (free-text PDF writer for the AI path)
   tests/                  00-harness, 01-auth, 02-templates-ingestion, 03-session (@smoke)
-                          04-known-bugs (@bug), phase2/* (test.fixme, @phase2 @waveN)
+                          04-known-bugs (@bug), phase2/* (@phase2 @waveN: Wave 2 live,
+                          Wave 3 = integration-hub.spec.js, fixme until E2E_WAVE3=1)
 ```
+
+Phase-2 status (Wave 2 QA round): settings, admin dashboard, user actions,
+shared templates, platform owner, extraction fallback (API level) and
+releases/announcements specs are **live**. Still `fixme`: the Wave-4 UI parts
+of extraction (provenance badge, low-confidence callout, extraction section,
+AI_PARTIAL) and the whole Wave-3 integration hub (`test.fixme(!E2E_WAVE3,
+'waiting for Wave 3 merge')`).
 
 ## Run it locally (no Docker)
 
@@ -36,8 +48,20 @@ e2e/run-local.sh                          # build everything, run the whole suit
 e2e/run-local.sh --grep @smoke            # anything after the script goes to `playwright test`
 SKIP_BUILD=1 e2e/run-local.sh             # reuse target/*.jar and frontend/dist
 E2E_KEEP=1 e2e/run-local.sh               # keep the database and run dir afterwards
-E2E_DB_APP_ROLE=owner e2e/run-local.sh    # BUG-01 workaround, see "Known bugs"
+E2E_DB_APP_ROLE=owner e2e/run-local.sh    # the old BUG-01 workaround (fixed; kept as a switch)
+E2E_BANK_SIM=1 e2e/run-local.sh           # + bank simulator (bank DB + REST stub; Wave 3)
+E2E_WAVE3=1 E2E_BANK_SIM=1 e2e/run-local.sh   # + switch the Wave-3 integration specs on
 ```
+
+Per run, the script also generates the two bootstrap **platform admins**
+(`MODOCUMENT_PLATFORM_ADMIN_EMAILS/PASSWORDS` for the backend,
+`E2E_PLATFORM_ADMIN_{1,2}_{EMAIL,PASSWORD}` for the suite; fixtures
+`platformApi` / `platformCheckerApi`) and sets two more E2E-only
+relaxations: the AI read timeout is 5 s (so the fake LLM's `timeout` mode
+reaches the code fallback inside a test). The bootstrap admin's password is
+temporary since phase 2 (OBS-02): `SMK-AUTH-01` replaces it, and
+`bootstrapPassword()` (lib/seed.js) is the CURRENT one — use it whenever a
+spec clones the bootstrap admin's row.
 
 What the script does, in order: builds the jar (`mvn -B -q -DskipTests
 package`, extra flags via `E2E_MVN_ARGS`, e.g. `-o`) and the SPA (`npm run
@@ -95,7 +119,8 @@ Control plane:
 - `GET /__mode` returns the current mode.
 - `GET /__stats` returns `{calls, byKind, byMode, last[]}`; use it to prove
   "CODE_ONLY never calls the LLM".
-- `POST /__reset` clears the stats.
+- `POST /__reset` clears the stats **and resets the mode to the default**:
+  call it before `setMode()`, never after.
 - `GET /health` is the liveness check.
 
 From specs, use the `llm` fixture (`lib/llm.js`). It resets the mode to `ok`
@@ -142,12 +167,15 @@ Run it alone with `FAKE_LLM_PORT=18089 node stubs/fake-llm.mjs`.
 
 | ID | Severity | What | Workaround |
 |---|---|---|---|
-| BUG-01 | P1 | `POST /api/auth/mfa/verify` returns 502 when the backend runs as `modocument_app`, as production does. The `LOGIN_SUCCESS` audit row is flushed at commit outside the tenant binding, so RLS rejects it. No MFA user, and therefore no admin, can sign in. | `E2E_DB_APP_ROLE=owner` (the backend runs as the schema owner and RLS is bypassed) |
-| BUG-02 | P4 | After a successful forced password change, the login page says "Your session expired". `logout()` is called with the token the change just revoked, and the 401 triggers the expired-session redirect. | none needed |
+| BUG-01 | P1 | **Fixed (Wave 2)** — kept as a regression test. `POST /api/auth/mfa/verify` returned 502 under `modocument_app` (LOGIN_SUCCESS audit flushed outside the tenant binding). | — |
+| BUG-02 | P4 | **Fixed (Wave 2)** — kept as a regression test. "Your session expired" after a forced password change. | — |
+| BUG-04 | P4 | Open (`test.fixme`, phase-2 QA rule for new bugs). After a forced password change the inline "Password changed — sign in again" notice never shows (ProtectedRoute redirects before the page navigates with state); the toast does show. | none needed |
 
-These tests fail until the bug is fixed. That is intended: do not mark them
-fixme. With `E2E_DB_APP_ROLE=rls` (the default), `SMK-AUTH-01` also fails
-because of BUG-01, and the other 01-auth tests do not run.
+An open bug's test fails until the bug is fixed; from phase 2 Wave 2 on, a
+NEWLY found bug's test is committed as `test.fixme` (with the repro in the
+test) and switched on by the fix. BUG-03 (AI timeout surfacing as
+`CancellationException`) is a backend unit-level bug: see
+`AiTimeoutCancellationBug03Test` and test plan §8b.
 
 ## CI (for SE5 to add — QA does not own workflows)
 
@@ -181,6 +209,10 @@ It honours the same `E2E_*` contract as `run-local.sh`. A job to add to
             echo "E2E_BOOTSTRAP_ADMIN_EMAIL=e2e-admin-${GITHUB_RUN_ID}@e2e.modocument.test"
             echo "E2E_BOOTSTRAP_ADMIN_PASSWORD=E2e-$(openssl rand -base64 18 | tr -d '/+=\n')-7q"
             echo "E2E_AI_KEY=e2e-$(openssl rand -hex 8)"
+            echo "E2E_PLATFORM_ADMIN_1_EMAIL=e2e-platform1-${GITHUB_RUN_ID}@e2e.modocument.test"
+            echo "E2E_PLATFORM_ADMIN_1_PASSWORD=E2p-$(openssl rand -base64 18 | tr -d '/+=,\n')-7q"
+            echo "E2E_PLATFORM_ADMIN_2_EMAIL=e2e-platform2-${GITHUB_RUN_ID}@e2e.modocument.test"
+            echo "E2E_PLATFORM_ADMIN_2_PASSWORD=E2p-$(openssl rand -base64 18 | tr -d '/+=,\n')-8q"
             echo "E2E_RUN_ID=${GITHUB_RUN_ID}"
           } > e2e/.run/ci.env
           while IFS='=' read -r name value; do
@@ -208,18 +240,11 @@ It honours the same `E2E_*` contract as `run-local.sh`. A job to add to
         run: docker compose -f docker-compose.e2e.yml --env-file e2e/.run/ci.env down -v
 ```
 
-While BUG-01 is open, the gate can run in workaround mode. Append these
-lines to the env file:
-
-```
-E2E_DB_APP_ROLE=owner
-E2E_APP_DB_USER=modocument
-E2E_APP_DB_USER_PASSWORD=<the E2E_POSTGRES_PASSWORD value>
-```
-
-and pass `E2E_PLAYWRIGHT_ARGS=--grep-invert @bug`. Remove all of this when
-BUG-01 is fixed. For a per-PR smoke job, set `E2E_PLAYWRIGHT_ARGS=--grep
-@smoke`; the full suite runs on main and nightly.
+BUG-01 is fixed: the gate runs production-shaped (`E2E_DB_APP_ROLE=rls`).
+The owner-mode switch (`E2E_DB_APP_ROLE=owner`, `E2E_APP_DB_USER=modocument`,
+`E2E_APP_DB_USER_PASSWORD=<E2E_POSTGRES_PASSWORD>`) stays for debugging only.
+For a per-PR smoke job, set `E2E_PLAYWRIGHT_ARGS=--grep @smoke`; the full
+suite runs on main and nightly.
 
 ## Troubleshooting
 
