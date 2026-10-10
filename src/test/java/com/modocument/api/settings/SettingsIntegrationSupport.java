@@ -113,21 +113,12 @@ public abstract class SettingsIntegrationSupport {
     private Bank ensurePlatformBank() {
         return banks.findByCode(PLATFORM_CODE).orElseGet(() -> {
             // A fixed id: survives an H2 schema recreated by another context,
-            // so a cached directory id stays right. From ws21 on the lookup
-            // also requires Bank.Kind = PLATFORM: set it whenever the column
-            // exists.
-            Integer kindColumns = jdbc.queryForObject("SELECT COUNT(*) FROM "
-                    + "INFORMATION_SCHEMA.COLUMNS WHERE UPPER(TABLE_NAME) = 'BANK' "
-                    + "AND UPPER(COLUMN_NAME) = 'KIND'", Integer.class);
-            if (kindColumns != null && kindColumns > 0) {
-                jdbc.update("INSERT INTO Bank (BankId, Code, Name, CreatedDate, Kind) "
-                        + "VALUES (?, ?, 'MO Intelligence', CURRENT_TIMESTAMP, 'PLATFORM')",
-                        PLATFORM_BANK_ID, PLATFORM_CODE);
-            } else {
-                jdbc.update("INSERT INTO Bank (BankId, Code, Name, CreatedDate) "
-                        + "VALUES (?, ?, 'MO Intelligence', CURRENT_TIMESTAMP)",
-                        PLATFORM_BANK_ID, PLATFORM_CODE);
-            }
+            // so a cached directory id stays right. The lookup requires
+            // Bank.Kind = PLATFORM (ws21); Status is NOT NULL without a
+            // column default in the entity-built H2 schema.
+            jdbc.update("INSERT INTO Bank (BankId, Code, Name, CreatedDate, Kind, Status) "
+                    + "VALUES (?, ?, 'MO Intelligence', CURRENT_TIMESTAMP, 'PLATFORM', 'ACTIVE')",
+                    PLATFORM_BANK_ID, PLATFORM_CODE);
             return banks.findByCode(PLATFORM_CODE).orElseThrow();
         });
     }
