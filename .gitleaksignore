@@ -27,3 +27,12 @@ fdc6f3bdcb7dd933ffb00c487341b8773c87beb3:src/test/java/com/modocument/infrastruc
 # "revocation/expiry/CIDR/scope" after the word "credentials" matched
 # generic-api-key. No secret; the sentence was reworded in a later commit.
 adbaf9ba400200c19fe618a62e195f7bd959e297:src/test/java/com/modocument/api/integration/IntegrationApiSecurityTest.java:generic-api-key:69
+# Phase 2 (ws21/ws22) false positives, generic-api-key:
+# - PASSWORD_ALPHABET: the public character set of the temporary-password
+#   generator (no ambiguous glyphs), not a secret — three copies in history;
+# - SECRET_FILE: the NAME of a fake upload ("payroll-secret-ws21.csv") that
+#   PlatformBankApiTest proves a platform admin cannot read.
+6445042541eb6e41b962a866107900d958de8d5c:frontend/src/utils/temporaryPassword.js:generic-api-key:2
+43d127e347b12fa11a97096171a624e78de37aef:frontend/src/pages/PlatformCommon.jsx:generic-api-key:6
+5e550dcc4f144579cc8cfff4170b4e9936ec04fc:frontend/src/pages/AdminUsersPage.jsx:generic-api-key:17
+7c6c27de4767cd03f25d0df0dee4feddea37d856:src/test/java/com/modocument/api/PlatformBankApiTest.java:generic-api-key:55
