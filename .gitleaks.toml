@@ -4,10 +4,11 @@
 # finding anywhere else is a real failure: rotate the credential and rewrite
 # or accept the history consciously, never widen this allowlist casually.
 #
-# Companion file: .gitleaksignore pins six historical findings by exact
+# Companion file: .gitleaksignore pins seven historical findings by exact
 # fingerprint (commit:file:rule:line) — four from the log-redaction and MFA
-# tests, two from the ws17 ApiDocsExposureTest fixture — so re-introducing
-# the same strings in NEW commits still fails the scan.
+# tests, two from the ws17 ApiDocsExposureTest fixture, one dummy MFA key in
+# the ws16 SecretFileEnvironmentPostProcessorTest — so re-introducing the
+# same strings in NEW commits still fails the scan.
 
 title = "MoDocument gitleaks config"
 

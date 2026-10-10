@@ -18,3 +18,8 @@ b427e6ef797867e9e388f99247fb65c8199ec2c0:src/test/java/com/modocument/infrastruc
 # them (production requires its own MODOCUMENT_JWT_SECRET / MODOCUMENT_MFA_KEY).
 60e55703877515abebccfdce4d0b1acc8ccbcac3:src/test/java/com/modocument/api/contract/ApiDocsExposureTest.java:generic-api-key:37
 60e55703877515abebccfdce4d0b1acc8ccbcac3:src/test/java/com/modocument/api/contract/ApiDocsExposureTest.java:generic-api-key:38
+# ws16 SecretFileEnvironmentPostProcessorTest: the dummy MFA key
+# "same-mfa-key-0123456789abcdefghijklmnop" proving that an env value and a
+# _FILE value that agree are tolerated. Readable placeholder, never used as a
+# key outside that unit test; flagged by gitleaks >= 8.24 (generic-api-key).
+fdc6f3bdcb7dd933ffb00c487341b8773c87beb3:src/test/java/com/modocument/infrastructure/security/SecretFileEnvironmentPostProcessorTest.java:generic-api-key:115
