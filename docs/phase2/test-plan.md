@@ -258,22 +258,23 @@ Status: **Live** = automated and running; **Fixme** = E2E placeholder exists
 | AC-ADM-01, 03, 04, 05, 07, 08, 10 | SE3; QA E2E | H2-IT dashboard/actions/visibility; QA PG-IT `UserAdminActionsRlsPgIT`; E2E `phase2/admin-dashboard.spec.js` | 1–2 | **Live** (Wave 2) |
 | AC-ADM-02, 06, 09, 11 | SE3 + QA (PG-IT) | `pgit.DashboardIsolationPgIT`, `UserAdminActionsTest`, VITEST components | 1–2 | Planned |
 | AC-EXT-02, 03, 04, 05, 11 | SE4; QA E2E | UNIT classifier/breaker; H2-IT parse fallback; QA H2-IT `ExtractionModeResolutionApiTest`; E2E `phase2/extraction-fallback.spec.js` with fake-LLM modes (API level) | 2 | **Live** (Wave 2); **Bug** BUG-03 (UNIT, disabled) |
-| AC-EXT-02b (badge), 07, 13, 16 | SE4 (+ SE3 UI) | E2E `phase2/extraction-fallback.spec.js` | 4 | **Fixme** (UI not merged) |
+| AC-EXT-02b (badge), 07, 16 | SE4 (+ SE3 UI) | VITEST `IngestionJobPage.test.jsx`, `TemplateExtractionSection.test.jsx`; E2E `phase2/extraction-fallback.spec.js` | 4 | **Live** (Wave 4, on SE4's Wave-4 branch) |
+| AC-EXT-13 (AI_PARTIAL) | SE4 | H2-IT parse step; E2E needs a multi-batch document and a one-shot fake-LLM failure | 4 | **Fixme** (E2E) |
 | AC-EXT-01, 06, 09, 10, 12, 14, 15 | SE4 | UNIT/H2-IT `infrastructure/transform/code/*` | 1–2 | Planned |
-| AC-EXT-08 (corpus ≥ 95 %) | SE4 builds the engine; **QA curates the corpus and expected outputs** | `ExtractionCorpusTest` (9 generated cases, SE4) + `QaExtractionCorpusTest` (9 QA cases incl. 2 negative, `src/test/resources/extraction-corpus/qa/`) | 1 (engine), 2 (corpus) | **Live** (18 of the ≥ 40 documents) |
+| AC-EXT-08 (corpus ≥ 95 %) | SE4 builds the engine; **QA curates the corpus and expected outputs** | `ExtractionCorpusTest` (31 engineer documents, SE4) + `QaExtractionCorpusTest` (9 QA documents incl. 2 negative, `src/test/resources/extraction-corpus/qa/`); a test enforces ≥ 40 documents, ≥ 95 % overall and ≥ 90 % per strategy | 1 (engine), 2–4 (corpus) | **Live** (40 documents, Wave 4) |
 | AC-EXT-17 | SE2 | `InferSchemaUseCaseTest`, `SummarizeExtractionUseCaseTest` | 4 | Planned |
 | AC-REL-02, 03, 06, 07, 07a, 07b | SE5; QA E2E | H2-IT system/announcements; VITEST banner; E2E `phase2/releases.spec.js` | 1–2 | **Live** (Wave 2) |
 | AC-REL-01, 04, 05, 08, 09, 11 | SE5 | scripts, `MigrationPolicyTest`, `FlywayVersionRangeTest`, `DeployedVersionRecorderPgIT`, actionlint, terraform | 1–2 | Planned |
 | AC-REL-10 | SE5 | runbook rehearsal | later | Planned (needs AWS) |
-| AC-INT-01, 02, 32 | SE1 (vault, settings) + SE4 (connections API) + SE3 (UI) | `SecretVaultTest`, `ConnectionSecretLeakTest`, `SecretAtRestPgIT`; E2E | 3 | Planned / **Fixme** |
-| AC-INT-17 | SE1 | `OutboundHostPolicyBankAwareTest`, `EgressRuleApplierTest`; E2E | 3 | Planned / **Fixme** |
-| AC-INT-03…16 | SE4 (+ QA bank simulator, connector contract tests) | CONN-IT `*ConnIT`, PG-IT scheduler/outbox; E2E `phase2/integration-hub.spec.js` | 3–4 | Planned / **Fixme** |
-| AC-INT-18…27 | SE2 | H2-IT auth, scope, idempotency and cross-bank tests; PG-IT RLS; E2E | 3 | Planned / **Fixme** |
-| AC-INT-28…30 | SE5 (agent) | `agent/` module tests; H2-IT protocol; E2E agent process | 3–4 | Planned / **Fixme** |
-| AC-INT-31 | SE3 | VITEST Integrations pages; E2E | 3 | Planned / **Fixme** |
+| AC-INT-01, 02, 32 | SE1 (vault, settings) + SE4 (connections API) + SE3 (UI) | `ConnectorSecretVaultTest`, `IntegrationApiTest`, settings tests; E2E AC-INT-01/02 | 3–4 | **Live** (Wave 4) |
+| AC-INT-17 | SE1 | `BankEgressGuardTest`, `EgressRuleIntegrationTest`, `EgressRulePgIT`; QA `IntegrationHubSecurityQaTest`; E2E AC-INT-17/17b | 3–4 | **Live**; BUG-06 open (P4) |
+| AC-INT-03…16 | SE4 (+ QA bank simulator) | connector unit tests (JDK HTTP stub, embedded MINA, H2), `DatabaseConnectorPgIT`, `IntegrationHubPgIT`, QA `ConnectorSecurityQaTest`, `IntegrationReadOnlyQaPgIT`; E2E `phase2/integration-hub.spec.js` | 3–4 | **Live** (AC-INT-15 SFTP runs against the compose simulator or a local MINA stand-in); BUG-08 open (P3) |
+| AC-INT-18…27 | SE2 | `IntegrationApiSecurityTest`, `ApiClientAuthPgIT`, QA `IntegrationHubSecurityQaTest`; E2E | 3–4 | **Live** (AC-INT-21 E2E needs the nginx mTLS listener) |
+| AC-INT-28…30 | SE5 (agent) | `agent/` module tests; `IntegrationAgentApiTest`, `AgentProtocol*Test`; E2E with the agent jar as a local process | 3–4 | **Live** |
+| AC-INT-31 | SE3 | VITEST Integrations pages; E2E (connections, flow builder, API clients) | 3–4 | **Live** |
 | AC-X-01, 02 | Supervisor (shared files) + each owner | `RoutePermissionCoverageTest`, RLS inventories | every wave | Live (existing tests) |
 | AC-X-03 | QA (+ auth owner for BUG-01) | `01-auth.spec.js`, `04-known-bugs.spec.js`; PG-IT `MfaLoginPgIT` | 1 | **Live** (BUG-01 fixed) |
-| AC-X-04 | SE5 + QA | `security.yml`, `zap-baseline.yml` | 4 | Live (existing) / Planned (integration API) |
+| AC-X-04 | SE5 + QA | `security.yml`, `zap-baseline.yml` (+ `.zap/integration-seed.py` for the integration API, Wave 4) | 4 | Live; ZAP not run in the sandbox (workflow validated with actionlint) |
 | AC-X-05 | SE3 + QA | `phase2/a11y.spec.js` | 4 | Planned |
 | HARNESS-*, SMK-* | QA | `e2e/tests/00…03` | 1 | **Live** |
 
@@ -297,8 +298,20 @@ Status: **Live** = automated and running; **Fixme** = E2E placeholder exists
 | OBS-05 | P3 | The Wave-0 route skeleton for the integration hub (`/api/admin/integrations/**`, `/api/integration/v1/**`, `/api/agent/v1/**`, 501 + `@RequiresPermission`) is not on the merged branch: those routes answer 404. Contracts §3 say the skeleton fixes route coverage and `openapi-routes.txt` up front. `PlatformBoundaryQaTest#aPlatformAdminGetsNoIntegrationAdminRouteOnceTheyExist` accepts 403 or 404 until they land. | `docs/api/openapi-routes.txt` has no integration routes | Supervisor |
 | OBS-06 | P3 | The E2E stack had no platform admins (no `MODOCUMENT_PLATFORM_ADMIN_*`), so no platform spec, maintenance banner or RELEASE announcement could run. QA added them to `run-local.sh` and `docker-compose.e2e.yml` (optional there). The CI env-file generator in `e2e/README.md` now lists them; SE5 should add them to the job. | `e2e/run-local.sh` | SE5 (CI job) |
 
+## 8c. Defects and observations from Wave 4 (QA round 4)
+
+Full list with repro steps and the go/no-go: `docs/qa/phase2-signoff.md`.
+
+| ID | Sev | Finding | Evidence | Suggested owner |
+|---|---|---|---|---|
+| BUG-06 | P4 | A REST_API/WEBHOOK connection whose base URL is the cloud metadata endpoint (`169.254.169.254`, `fd00:ec2::254`) is accepted at submit (202) and can be approved; only the connect-time egress guard refuses it. | `IntegrationHubSecurityQaTest#bug06MetadataDestinationRefusedAtSubmit` (`@Disabled`) | SE4 (ConnectionValidator) / SE1 |
+| BUG-07 | P4 | Renaming a connection answers 200 with the version from before the rename (JPA bumps `@Version` at commit); sending it back as `expectedVersion` gives 409. | `IntegrationHubSecurityQaTest#bug07RenameAnswersTheCommittedVersion` (`@Disabled`); E2E AC-INT-01 re-reads | SE4 |
+| BUG-08 | P3 | Raising or clearing the row cap of an ENABLED outbound flow is applied directly (200); the security plan (S37) treats it as a widening that needs a second admin. | `IntegrationHubSecurityQaTest#bug08RaisingTheRowCapIsAWidening` (`@Disabled`) | SE4 |
+| OBS-07..15 | P3–P4 | See `docs/qa/phase2-signoff.md` §4 (DNS re-resolution window, no FILE_TOO_LARGE event, no webhook secret overlap, S28 signing not built, agent h2c on plain http, code-extraction gaps found by SE4). | | |
+
 ## 9. Sign-off record
 
 | Wave | Date | Result | Waivers | QA | Supervisor |
 |---|---|---|---|---|---|
 | 1 | | | BUG-01 (owner mode for the smoke gate) pending decision | | |
+| 4 | 2026-10-10 | QA: **GO** for v1.1.0-rc.1 (no open P1/P2; see `docs/qa/phase2-signoff.md`) | BUG-03, BUG-04, BUG-06, BUG-07, BUG-08 (P3/P4); AWS-only checks listed in the sign-off | QA | |

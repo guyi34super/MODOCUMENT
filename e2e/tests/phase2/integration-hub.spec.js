@@ -413,7 +413,7 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
     const outbound = await createFlow(adminApi, {
       direction: 'OUTBOUND', connectionId: sftp.id, templateId: template.templateId, trigger: 'EVENT',
       events: ['INGESTION_VALIDATED'], payloadKinds: ['VALIDATED_RECORDS'], format: 'CSV',
-      targetSpec: { folder: 'outbound', fileNamePattern: 'results-{jobId}.csv' },
+      targetSpec: { folder: 'outbound', fileNamePattern: 'results-{base}.csv' }, // {base} = validated-records-job-<id>
     });
     await enableFlow(adminApi, checkerApi, outbound.id);
 
@@ -423,14 +423,14 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
     });
     await enableFlow(adminApi, checkerApi, inbound.id);
     const pulled = await waitForRun(adminApi, (await runFlow(adminApi, inbound.id)).id);
-    expect(pulled.status).toBe('SUCCEEDED');
+    expect(pulled.status, `${pulled.error ?? ''} ${JSON.stringify(pulled.events ?? [])}`).toBe('SUCCEEDED');
     expect(pulled.recordsIn).toBeGreaterThan(0); // the seeded file (one file = one ingestion)
 
     // Bank side, read over SFTP without Docker (the CI runner has no docker
     // CLI): a list-only dry run of a throwaway inbound flow on the folder —
     // the connector's preview lists names and sizes and moves nothing.
     const listing = (folder) => sftpListing(adminApi, sftp.id, template.templateId, folder);
-    await eventually(async () => (await listing('outbound')).some((name) => /^results-\d+\.csv$/.test(name)), {
+    await eventually(async () => (await listing('outbound')).some((name) => /^results-validated-records-job-\d+\.csv$/.test(name)), {
       what: 'result file in outbound/', timeoutMs: 120_000,
     });
     expect(await listing('inbound/processed')).toContain('customers-2024-06-01.csv');
