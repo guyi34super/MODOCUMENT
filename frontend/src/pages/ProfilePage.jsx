@@ -78,10 +78,14 @@ export default function ProfilePage() {
     try {
       await toast.promise(authApi.changePassword(currentPassword, newPassword), {
         loading: 'Changing password…',
-        success: 'Password changed',
+        success: 'Password changed — sign in with your new password',
       });
-      setCurrentPassword('');
-      setNewPassword('');
+      // The change ended every session server-side (BUG-02): sign out
+      // locally and sign in again, instead of the next call bouncing to
+      // "session expired".
+      await logout({ revoke: false });
+      navigate('/login', { replace: true, state: { notice: 'password-changed' } });
+      return;
     } catch {
       // The error toast is already shown.
     } finally {

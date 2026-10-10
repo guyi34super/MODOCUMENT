@@ -23,6 +23,13 @@ public class CreateTemplateRequest {
     @Valid
     private List<CreateTemplateFieldDto> fields;
 
+    /**
+     * ws22: {@code PRIVATE} (default when absent) or {@code BANK} — sharing
+     * with the bank at creation requires template:publish (403 otherwise).
+     */
+    @Size(max = 10)
+    private String visibility;
+
     public CreateTemplateRequest() {
     }
 
@@ -54,5 +61,13 @@ public class CreateTemplateRequest {
 
     public void setFields(List<CreateTemplateFieldDto> fields) {
         this.fields = fields;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
+    public void setVisibility(String visibility) {
+        this.visibility = visibility;
     }
 }

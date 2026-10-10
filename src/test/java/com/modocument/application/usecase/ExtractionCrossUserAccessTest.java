@@ -94,7 +94,7 @@ class ExtractionCrossUserAccessTest {
     void bobCannotReferenceAlicesTemplate() {
         // Template 7 belongs to Alice only — the owner-scoped lookup returns
         // empty for Bob, on the source and on the job alike.
-        when(templates.getByIdAndOwner(7, ALICE))
+        when(templates.getAccessible(7, ALICE, com.modocument.domain.entity.Bank.DEFAULT_BANK_ID))
                 .thenReturn(java.util.Optional.of(new Template(7, "Employees", null)));
 
         SaveExtractionSourceRequest request = websiteRequest();

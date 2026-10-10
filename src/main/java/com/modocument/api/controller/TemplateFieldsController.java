@@ -35,9 +35,9 @@ public class TemplateFieldsController {
     }
 
     /**
-     * Always scoped to one caller-owned template — a global list would leak
-     * every user's field definitions, so {@code templateId} is required and
-     * ownership is enforced.
+     * Always scoped to one template the caller can read (own, or shared with
+     * their bank — ws22) — a global list would leak every user's field
+     * definitions, so {@code templateId} is required.
      */
     @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/TemplateFields/GetAll")
@@ -46,7 +46,7 @@ public class TemplateFieldsController {
         if (templateId == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "templateId is required."));
         }
-        ownership.require(templateId);
+        ownership.requireReadable(templateId);
         return ResponseEntity.ok(repo.listByTemplateId(templateId));
     }
 
@@ -57,8 +57,8 @@ public class TemplateFieldsController {
         if (itemOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        // A field belongs to whoever owns its template.
-        ownership.require(itemOpt.get().getTemplateId());
+        // A field is readable wherever its template is (owner, or bank-shared).
+        ownership.requireReadable(itemOpt.get().getTemplateId());
         TemplateFields item = itemOpt.get();
         TemplateFields dto = new TemplateFields();
         dto.setTemplateFieldsId(item.getTemplateFieldsId());
@@ -73,11 +73,15 @@ public class TemplateFieldsController {
     @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PostMapping("/TemplateFields/Create")
     public ResponseEntity<?> create(@Valid @RequestBody TemplateFields dto) {
-        ownership.require(dto.getTemplateId());
+        // Changing a template's definition: owner (PRIVATE) / template:publish (BANK).
+        ownership.requireWritable(dto.getTemplateId());
         TemplateFields entity = new TemplateFields();
         entity.setTemplateId(dto.getTemplateId());
         entity.setBankId(ownership.requireBankId());
         entity.setFieldName(dto.getFieldName());
+        // The data type the editor sends (it was dropped, so every field
+        // created here hit the TemplateDataTypes foreign key with id 0).
+        entity.setTemplateDataTypeId(dto.getTemplateDataTypeId());
         // Explicit PII tag (ws12, PRIV-004); left null, the classifier tags
         // it on first use and the result shows up here for correction.
         entity.setPiiKind(dto.getPiiKind());
@@ -94,11 +98,15 @@ public class TemplateFieldsController {
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        // Must own both the current template and any template it's being moved to.
-        ownership.require(existingOpt.get().getTemplateId());
-        ownership.require(dto.getTemplateId());
+        // Must be allowed to change both the current template and any
+        // template the field is being moved to.
+        ownership.requireWritable(existingOpt.get().getTemplateId());
+        ownership.requireWritable(dto.getTemplateId());
         TemplateFields existing = existingOpt.get();
         existing.setFieldName(dto.getFieldName());
+        if (dto.getTemplateDataTypeId() > 0) {
+            existing.setTemplateDataTypeId(dto.getTemplateDataTypeId());
+        }
         existing.setTemplateId(dto.getTemplateId());
         existing.setPiiKind(dto.getPiiKind());
 
@@ -123,7 +131,7 @@ public class TemplateFieldsController {
         if (existing.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        ownership.require(existing.get().getTemplateId());
+        ownership.requireWritable(existing.get().getTemplateId());
         repo.delete(id);
         return ResponseEntity.noContent().build();
     }

@@ -294,4 +294,15 @@ describe('LoginPage', () => {
     expect(await screen.findByLabelText('Email')).toBeInTheDocument();
     expect(screen.queryByText(/session expired/i)).not.toBeInTheDocument();
   });
+
+  it('BUG-02: after a password change it says so neutrally, without the expiry banner', async () => {
+    stubFetch({ providers: [] });
+
+    renderLogin({ pathname: '/login', state: { notice: 'password-changed' } });
+
+    expect(
+      await screen.findByText('Password changed — sign in again with your new password.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/session expired/i)).not.toBeInTheDocument();
+  });
 });

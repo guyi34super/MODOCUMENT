@@ -7,10 +7,13 @@ import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.ChangeType;
 import com.modocument.domain.model.Permission;
+import com.modocument.application.dto.TemplateDto;
+import com.modocument.application.dto.TemplateVisibilityRequest;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.usecase.DeleteTemplateUseCase;
 import com.modocument.application.usecase.PendingChangeUseCase;
+import com.modocument.application.usecase.TemplateVisibilityUseCase;
 import com.modocument.application.usecase.UpdateTemplateUseCase;
 import com.modocument.domain.entity.Template;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,7 +30,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 
 /**
  * Template CRUD. Update and delete are maker/checker-gated (ws10, SEC-023):
@@ -36,12 +38,21 @@ import java.util.Optional;
  * user's approval; a single-user dev setup can turn the gate off, and the
  * same use cases then apply directly. User-security changes have no such
  * switch — only template changes are configurable.
+ *
+ * <p>ws22 bank-shared templates (docs/phase2/template-visibility.md): reads
+ * list and return the caller's own templates plus those shared with their
+ * bank ({@link TemplateDto} adds visibility, ownedByMe, editable,
+ * ownerName); changes follow TemplateOwnership.requireWritable (owner for
+ * PRIVATE, template:publish for BANK); sharing itself is
+ * {@code PUT /Templates/{id}/Visibility} (template:publish, direct, audited
+ * TEMPLATE_VISIBILITY_CHANGED).
  */
 @RestController
 @Tag(name = "Templates", description = "Template CRUD (maker-checker gated)")
 public class TemplateController {
 
     private final TemplateRepository repo;
+    private final TemplateVisibilityUseCase templateViews;
     private final UpdateTemplateUseCase updateTemplate;
     private final DeleteTemplateUseCase deleteTemplate;
     private final PendingChangeUseCase pendingChanges;
@@ -49,13 +60,15 @@ public class TemplateController {
     private final ObjectMapper objectMapper;
     private final boolean makerCheckerForTemplates;
 
-    public TemplateController(TemplateRepository repo, UpdateTemplateUseCase updateTemplate,
+    public TemplateController(TemplateRepository repo, TemplateVisibilityUseCase templateViews,
+                              UpdateTemplateUseCase updateTemplate,
                               DeleteTemplateUseCase deleteTemplate,
                               PendingChangeUseCase pendingChanges,
                               CurrentUserProvider currentUser, ObjectMapper objectMapper,
                               @Value("${modocument.security.maker-checker.template-changes:true}")
                               boolean makerCheckerForTemplates) {
         this.repo = repo;
+        this.templateViews = templateViews;
         this.updateTemplate = updateTemplate;
         this.deleteTemplate = deleteTemplate;
         this.pendingChanges = pendingChanges;
@@ -64,22 +77,36 @@ public class TemplateController {
         this.makerCheckerForTemplates = makerCheckerForTemplates;
     }
 
+    /** Own templates plus those shared with the caller's bank (ws22). */
     @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/Templates/GetAll")
     public ResponseEntity<?> getAll() {
-        return ResponseEntity.ok(repo.listByOwner(currentUser.requireUserId()));
+        return ResponseEntity.ok(templateViews.list());
     }
 
     @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/Templates/GetById/{id}")
     public ResponseEntity<?> getTemplateById(@PathVariable int id) {
-        Optional<Template> item = repo.getByIdAndOwner(id, currentUser.requireUserId());
-        if (item.isEmpty()) {
+        try {
+            return ResponseEntity.ok(templateViews.get(id));
+        } catch (NoSuchElementException e) {
             return notFound(id);
         }
-        Template dto = new Template(item.get().getTemplateId(), item.get().getName(),
-                item.get().getDescription());
-        return ResponseEntity.ok(dto);
+    }
+
+    /**
+     * Share a template with the caller's bank ({@code BANK}) or make it its
+     * owner's alone again ({@code PRIVATE}); template:publish (bank ADMIN)
+     * only. Direct (no maker/checker: sharing changes who may USE the
+     * template, not what it extracts) and audited TEMPLATE_VISIBILITY_CHANGED.
+     * 404 for a template the caller cannot read, 409 when unsharing a
+     * template colleagues still have unfinished uploads on.
+     */
+    @RequiresPermission(Permission.TEMPLATE_PUBLISH)
+    @PutMapping("/Templates/{id}/Visibility")
+    public ResponseEntity<TemplateDto> setVisibility(
+            @PathVariable int id, @Valid @RequestBody TemplateVisibilityRequest request) {
+        return ResponseEntity.ok(templateViews.changeVisibility(id, request.parsed()));
     }
 
     @RequiresPermission(Permission.TEMPLATE_WRITE)

@@ -81,11 +81,21 @@ public class ExtractionJobUseCase {
         }
         Integer effectiveTemplateId = templateId != null ? templateId : source.getTemplateId();
         if (templateId != null) {
-            // The template must exist AND belong to the caller — otherwise a user
-            // could stamp their own jobs against someone else's template. (The
-            // source's own templateId was checked when the source was saved.)
-            templates.getByIdAndOwner(templateId, currentUser.requireUserId()).orElseThrow(
+            // The template must exist AND be usable by the caller (own, or
+            // shared with their bank — ws22 read/use rule) — otherwise a user
+            // could stamp their own jobs against someone else's private
+            // template. (The source's own templateId is re-checked below.)
+            templates.getAccessible(templateId, currentUser.requireUserId(),
+                    currentUser.requireBankId()).orElseThrow(
                     () -> new NoSuchElementException("Template " + templateId + " not found."));
+        } else if (effectiveTemplateId != null
+                && templates.getAccessible(effectiveTemplateId, currentUser.requireUserId(),
+                currentUser.requireBankId()).isEmpty()) {
+            // ws22: the source's template was usable when the source was saved
+            // but no longer is (made private again, or deleted): the job runs
+            // without it rather than deriving a spec from fields the caller
+            // may not read any more.
+            effectiveTemplateId = null;
         }
         ExtractionJob job = new ExtractionJob();
         job.setOwnerUserId(currentUser.requireUserId());

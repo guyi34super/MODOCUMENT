@@ -68,7 +68,7 @@ class BridgeToTemplateUseCaseTest {
         job.setStatus(ExtractionJobStatus.COMPLETED);
         job = extractionJobs.save(job);
 
-        when(templates.getByIdAndOwner(1, USER)).thenReturn(Optional.of(new Template(1, "T", "T")));
+        when(templates.getAccessible(1, USER, com.modocument.domain.entity.Bank.DEFAULT_BANK_ID)).thenReturn(Optional.of(new Template(1, "T", "T")));
         TemplateFields nameField = mock(TemplateFields.class);
         when(nameField.getFieldName()).thenReturn("Name");
         when(templateFields.listByTemplateId(1)).thenReturn(List.of(nameField));

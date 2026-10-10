@@ -28,6 +28,13 @@ public interface IngestionJobRepository {
     /** Jobs referencing a template — used before deleting the template. */
     int countByTemplateId(int templateId);
 
+    /**
+     * ws22: not-yet-finished jobs (PENDING / RUNNING) of users OTHER than
+     * {@code ownerUserId} on the template — a bank-shared template in active
+     * use by colleagues cannot be deleted or made private (409).
+     */
+    int countActiveByTemplateIdOfOtherUsers(int templateId, int ownerUserId);
+
     /** Removes the job row entirely (ws14 job deletion, gate C5). */
     void delete(IngestionJob job);
 

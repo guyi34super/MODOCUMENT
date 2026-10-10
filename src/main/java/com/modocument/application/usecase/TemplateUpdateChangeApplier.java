@@ -3,35 +3,30 @@ package com.modocument.application.usecase;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.modocument.application.port.CurrentUserProvider;
-import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.entity.PendingChange;
 import com.modocument.domain.model.ChangeType;
 import org.springframework.stereotype.Component;
 
-import java.util.NoSuchElementException;
-
 /**
- * TEMPLATE_UPDATE under dual control (ws10). SUBMIT verifies the maker
- * owns the template (a foreign one is a 404, exactly like the direct
- * endpoint); APPLY delegates to {@link UpdateTemplateUseCase} scoped to the
- * MAKER's ownership — the checker approves the maker's change, they do not
- * acquire edit rights over the template.
+ * TEMPLATE_UPDATE under dual control (ws10). SUBMIT verifies the maker may
+ * change the template (ws22 {@link TemplateOwnership#requireWritable}: a
+ * template they cannot read is a 404, a bank-shared one without
+ * template:publish a 403 — exactly like the direct endpoint); APPLY
+ * delegates to {@link UpdateTemplateUseCase} judged for the MAKER — the
+ * checker approves the maker's change, they do not lend the maker their
+ * rights.
  */
 @Component
 public class TemplateUpdateChangeApplier implements PendingChangeApplier {
 
-    private final TemplateRepository templates;
-    private final CurrentUserProvider currentUser;
+    private final TemplateOwnership ownership;
     private final UpdateTemplateUseCase updateTemplate;
     private final ObjectMapper objectMapper;
 
-    public TemplateUpdateChangeApplier(TemplateRepository templates,
-                                       CurrentUserProvider currentUser,
+    public TemplateUpdateChangeApplier(TemplateOwnership ownership,
                                        UpdateTemplateUseCase updateTemplate,
                                        ObjectMapper objectMapper) {
-        this.templates = templates;
-        this.currentUser = currentUser;
+        this.ownership = ownership;
         this.updateTemplate = updateTemplate;
         this.objectMapper = objectMapper;
     }
@@ -46,9 +41,7 @@ public class TemplateUpdateChangeApplier implements PendingChangeApplier {
         int templateId = ChangePayloads.requireInt(payload, "templateId");
         String name = ChangePayloads.requireText(payload, "name", 255);
         String description = ChangePayloads.optionalText(payload, "description", 255);
-        templates.getByIdAndOwner(templateId, currentUser.requireUserId())
-                .orElseThrow(() -> new NoSuchElementException(
-                        "Template " + templateId + " not found."));
+        ownership.requireWritable(templateId);
 
         ObjectNode stored = objectMapper.createObjectNode();
         stored.put("templateId", templateId);

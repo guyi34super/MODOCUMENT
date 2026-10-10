@@ -43,7 +43,7 @@ public class ValidationRuleController {
     @RequiresPermission(Permission.VALIDATION_READ)
     @GetMapping("/ValidationRules/GetByTemplate/{templateId}")
     public ResponseEntity<?> getByTemplate(@PathVariable int templateId) {
-        ownership.require(templateId);
+        ownership.requireReadable(templateId);
         return ResponseEntity.ok(repo.getRulesByTemplate(templateId));
     }
 
@@ -53,7 +53,8 @@ public class ValidationRuleController {
         if (request.getFieldName() == null || request.getFieldName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "fieldName is required."));
         }
-        ownership.require(request.getTemplateId());
+        // A rule is part of the template's definition: owner / template:publish.
+        ownership.requireWritable(request.getTemplateId());
         Optional<RuleType> ruleType = CreateTemplateWithFieldsUseCase.parseRuleType(request.getRuleType());
         if (ruleType.isEmpty()) {
             return ResponseEntity.badRequest()
@@ -110,7 +111,7 @@ public class ValidationRuleController {
             return ResponseEntity.badRequest()
                     .body(Map.of("error", "Unknown rule type '" + ruleType + "'."));
         }
-        ownership.require(templateId);
+        ownership.requireWritable(templateId);
         return repo.delete(templateId, fieldName, parsed.get())
                 ? ResponseEntity.noContent().build()
                 : ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)

@@ -93,6 +93,17 @@ describe('Layout sidebar', () => {
       '/admin/alerts'
     );
     expect(screen.getByText('Administration')).toBeInTheDocument();
+    // Phase 2 (ws22): the admin dashboard and the bank settings.
+    expect(screen.getByRole('link', { name: 'Admin dashboard' })).toHaveAttribute(
+      'href',
+      '/admin'
+    );
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/admin/settings'
+    );
+    // The user workspace stays at "/" for admins too.
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
   });
 
   it('shows Approvals but not Users to APPROVERs', () => {
@@ -114,6 +125,8 @@ describe('Layout sidebar', () => {
     expect(screen.queryByRole('link', { name: 'Users' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Approvals' })).not.toBeInTheDocument();
     expect(screen.queryByText('Administration')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Admin dashboard' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument();
   });
 
   /** ws21: the platform owner sees the Platform console, never the domain sections. */
@@ -133,9 +146,14 @@ describe('Layout sidebar', () => {
       'href',
       '/admin/changes'
     );
+    // ws22: the platform layer of the settings screen (not the bank one).
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/platform/settings'
+    );
     expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
     for (const hidden of ['Home', /Design Templates/, 'Blueprints', 'Extraction Jobs',
-      'Security alerts', 'Releases']) {
+      'Security alerts', 'Releases', 'Admin dashboard']) {
       expect(screen.queryByRole('link', { name: hidden })).not.toBeInTheDocument();
     }
     expect(screen.queryByText('Document Flow')).not.toBeInTheDocument();

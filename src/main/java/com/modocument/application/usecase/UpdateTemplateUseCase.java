@@ -8,35 +8,38 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.NoSuchElementException;
 
 /**
- * Renames/redescribes a template, owner-scoped (extracted from
- * TemplateController for ws10: the maker/checker TEMPLATE_UPDATE applier
- * and the config-off direct endpoint share this ONE implementation, so the
- * ownership rule and the C7 old/new audit can never diverge).
+ * Renames/redescribes a template (extracted from TemplateController for
+ * ws10: the maker/checker TEMPLATE_UPDATE applier and the config-off direct
+ * endpoint share this ONE implementation, so the write rule and the C7
+ * old/new audit can never diverge). ws22: the write rule is
+ * {@link TemplateOwnership#requireWritableBy} — the owner of a PRIVATE
+ * template, a template:publish holder for a BANK-shared one.
  */
 @Service
 public class UpdateTemplateUseCase {
 
+    private final TemplateOwnership ownership;
     private final TemplateRepository templates;
     private final AuditRecorder audit;
 
-    public UpdateTemplateUseCase(TemplateRepository templates, AuditRecorder audit) {
+    public UpdateTemplateUseCase(TemplateOwnership ownership, TemplateRepository templates,
+                                 AuditRecorder audit) {
+        this.ownership = ownership;
         this.templates = templates;
         this.audit = audit;
     }
 
     /**
-     * @param ownerUserId whose template this must be: the caller on the
-     *     direct path, the MAKER when an approved pending change applies —
-     *     a template the owner does not own is a 404, never an edit.
+     * @param actingUserId who changes it: the caller on the direct path, the
+     *     MAKER when an approved pending change applies — a template that
+     *     user cannot read is a 404, a shared one without template:publish a
+     *     403, never an edit.
      */
     @Transactional
-    public Template handle(int templateId, String name, String description, int ownerUserId) {
-        Template existing = templates.getByIdAndOwner(templateId, ownerUserId)
-                .orElseThrow(() -> new NoSuchElementException(
-                        "Template " + templateId + " not found."));
+    public Template handle(int templateId, String name, String description, int actingUserId) {
+        Template existing = ownership.requireWritableBy(templateId, actingUserId);
         // Exemplar of the C7 old/new pattern other domains should copy: a
         // small field-level snapshot before and after, via AuditRecorder's
         // one-liner (actor/bank/request enrichment happens in the recorder).

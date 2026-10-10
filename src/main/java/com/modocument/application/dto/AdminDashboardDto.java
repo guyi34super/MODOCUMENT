@@ -14,9 +14,9 @@ import java.util.Map;
  *
  * <p>Sections owned by later workstreams are already in the shape and stay
  * zero/null until their data exists: {@code ingestion.parsedBy} (ws23),
- * {@code templates.shared} (ws22 visibility, wave 2), {@code settings}
- * (ws20), {@code version.deployedAt} (ws24) and {@code integrations}
- * (ws25/ws26).
+ * {@code settings.clamped} (ws20), {@code version.deployedAt} (ws24) and
+ * {@code integrations} (ws25/ws26 — every counter null, i.e. "not tracked
+ * yet", until the hub exists).
  *
  * @param generatedAt when these numbers were computed (cached up to 30 s)
  */
@@ -95,10 +95,19 @@ public record AdminDashboardDto(Instant generatedAt, BankInfo bank, Users users,
     public record Version(String version, String commit, Instant deployedAt) {
     }
 
-    public record Runs(long ok, long failed) {
+    /** Null counters: not tracked yet. */
+    public record Runs(Long ok, Long failed) {
     }
 
-    public record Integrations(Runs runs24h, long deadLetters, long agentsOffline,
-                               long apiCalls24h) {
+    /**
+     * Integration hub tiles (ws25/ws26). A null counter means "not tracked
+     * yet" (the hub has not landed) and renders as "—", unlike a real zero.
+     */
+    public record Integrations(Runs runs24h, Long deadLetters, Long agentsOffline,
+                               Long apiCalls24h) {
+
+        public static Integrations notTrackedYet() {
+            return new Integrations(new Runs(null, null), null, null, null);
+        }
     }
 }

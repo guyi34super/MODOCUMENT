@@ -45,13 +45,20 @@ export function AuthProvider({ children }) {
     setUser(loggedIn);
   }, []);
 
-  const logout = useCallback(async () => {
-    try {
-      // Best-effort server-side revocation (access-token jti + refresh
-      // family); the local session is cleared regardless.
-      await authApi.logout();
-    } catch {
-      /* already signed out server-side, or offline */
+  /**
+   * Ends the session. `revoke: false` skips the server call — for when the
+   * server already ended it (a password change kills every token): calling
+   * logout with the dead token would only earn a 401 (BUG-02).
+   */
+  const logout = useCallback(async ({ revoke = true } = {}) => {
+    if (revoke) {
+      try {
+        // Best-effort server-side revocation (access-token jti + refresh
+        // family); the local session is cleared regardless.
+        await authApi.logout();
+      } catch {
+        /* already signed out server-side, or offline */
+      }
     }
     clearSession();
     clearCaches();

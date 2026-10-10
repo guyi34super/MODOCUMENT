@@ -82,8 +82,8 @@ class RoutePermissionCoverageTest {
      */
     private static final Set<Permission> RESERVED = EnumSet.of(
             // ws20 landed SETTINGS_READ/SETTINGS_WRITE, PLATFORM_SETTINGS and
-            // PLATFORM_READ; ws21 landed PLATFORM_BANKS.
-            Permission.TEMPLATE_PUBLISH,                                // ws22
+            // PLATFORM_READ; ws21 landed PLATFORM_BANKS; ws22 landed
+            // TEMPLATE_PUBLISH (PUT /Templates/{id}/Visibility).
             Permission.PLATFORM_ANNOUNCE,                               // ws24
             Permission.INTEGRATION_ADMIN, Permission.INTEGRATION_RUN,   // ws25
             Permission.INTEGRATION_INGEST, Permission.INTEGRATION_RESULTS,

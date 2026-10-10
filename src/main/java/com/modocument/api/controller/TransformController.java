@@ -72,8 +72,10 @@ public class TransformController {
             uploadOwnership.require(request.getFileName());
 
             int templateId = transformService.getTemplateId(request);
-            // The transform target template must belong to the caller.
-            int owner = ownership.require(templateId);
+            // The transform target template must be usable by the caller: own,
+            // or shared with their bank (ws22 read/use rule).
+            ownership.requireReadable(templateId);
+            int owner = ownership.requireUserId();
 
             List<String> fieldNames = templateFieldsRepository.listByTemplateId(templateId).stream()
                     .map(tf -> tf.getFieldName() == null ? "" : tf.getFieldName())

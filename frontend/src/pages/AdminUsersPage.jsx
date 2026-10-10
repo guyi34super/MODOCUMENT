@@ -7,34 +7,9 @@ import { useToast } from '../context/ToastContext';
 import PageHeader from '../components/PageHeader';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import CreateUserForm, { rolesFor } from '../components/CreateUserForm';
 import { Button, Card, ErrorBanner, Field, Spinner, inputClass } from '../components/ui';
-
-const ROLES = ['ADMIN', 'APPROVER', 'READ_WRITE', 'READ_ONLY'];
-
-/** ws21: the platform bank holds platform administrators and nobody else. */
-const PLATFORM_ROLES = ['PLATFORM_ADMIN'];
-
-/** The roles the caller's bank can hand out (the server enforces the same rule). */
-const rolesFor = (role) => (role === 'PLATFORM_ADMIN' ? PLATFORM_ROLES : ROLES);
-
-const emptyForm = { email: '', displayName: '', role: 'READ_ONLY', temporaryPassword: '' };
-
-const blankFormFor = (role) => ({ ...emptyForm, role: rolesFor(role).at(-1) });
-
-/** No 0/O, 1/l/I lookalikes: the password is read out or typed by a person. */
-const PASSWORD_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-
-/** Four hyphenated groups of four random characters (~90 bits, 19 chars). */
-function generateTemporaryPassword() {
-  const random = new Uint32Array(16);
-  crypto.getRandomValues(random);
-  let password = '';
-  random.forEach((value, i) => {
-    if (i > 0 && i % 4 === 0) password += '-';
-    password += PASSWORD_ALPHABET[value % PASSWORD_ALPHABET.length];
-  });
-  return password;
-}
+import { generateTemporaryPassword } from '../utils/temporaryPassword';
 
 function formatDate(value) {
   if (!value) return '—';
@@ -69,10 +44,8 @@ export default function AdminUsersPage() {
 
   const [users, setUsers] = useState(null);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const roles = rolesFor(me?.role);
-  const [form, setForm] = useState(() => blankFormFor(me?.role));
   // 'users' | 'review' — the access-review worksheet view (SEC-013).
   const [view, setView] = useState('users');
   const [review, setReview] = useState(null);
@@ -102,27 +75,6 @@ export default function AdminUsersPage() {
       setReview(await adminApi.accessReview());
     } catch (err) {
       setError(err.message);
-    }
-  };
-
-  const submitCreate = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await toast.promise(adminApi.createUser(form), {
-        loading: 'Submitting user creation…',
-        success: (result) =>
-          isPendingChange(result)
-            ? `Creating ${form.email} was submitted for approval — a second administrator must approve it (change #${result.pendingChangeId})`
-            : `User ${form.email} created — they must change the temporary password on first login`,
-      });
-      setForm(blankFormFor(me?.role));
-      setShowCreate(false);
-      load();
-    } catch {
-      // The error toast is already shown.
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -297,53 +249,13 @@ export default function AdminUsersPage() {
       {showCreate && (
         <Card className="mb-5">
           <h2 className="mb-3 text-lg font-normal">Create user</h2>
-          <form onSubmit={submitCreate} className="space-y-4">
-            <Field label="Email">
-              <input
-                type="email"
-                required
-                className={inputClass}
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-              />
-            </Field>
-            <Field label="Display name">
-              <input
-                className={inputClass}
-                value={form.displayName}
-                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-              />
-            </Field>
-            <Field label="Role" hint="Least privilege: pick the lowest role that does the job.">
-              <select
-                className={inputClass}
-                value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}
-              >
-                {roles.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field
-              label="Temporary password"
-              hint="At least 12 characters. The user must replace it on first login."
-            >
-              <input
-                type="password"
-                required
-                minLength={12}
-                className={inputClass}
-                value={form.temporaryPassword}
-                onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })}
-              />
-            </Field>
-            <Button type="submit" disabled={busy}>
-              {busy ? 'Creating…' : 'Create user'}
-            </Button>
-          </form>
+          <CreateUserForm
+            roles={roles}
+            onSubmitted={() => {
+              setShowCreate(false);
+              load();
+            }}
+          />
         </Card>
       )}
 

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { Badge, Button, Callout, Card, ErrorBanner, KpiTile, StatCard } from './ui';
+import { Badge, Button, Callout, Card, ErrorBanner, KpiTile, StatCard, Switch, Tag } from './ui';
 
 describe('Callout', () => {
   it('renders title and children', () => {
@@ -128,6 +128,54 @@ describe('KpiTile', () => {
   it('shows a dash when the value is not known', () => {
     render(<KpiTile label="Parsed by code" value={null} />);
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('exposes the E2E hooks: kpi-<metric> on the tile, kpi-value on the number', () => {
+    render(
+      <MemoryRouter>
+        <KpiTile testId="kpi-users-active" label="Active users" value={7} />
+        <KpiTile testId="kpi-pending-approvals" label="Pending" value={2} to="/admin/changes" />
+      </MemoryRouter>
+    );
+    expect(
+      within(screen.getByTestId('kpi-users-active')).getByTestId('kpi-value')
+    ).toHaveTextContent('7');
+    expect(screen.getByTestId('kpi-pending-approvals').tagName).toBe('A');
+    expect(
+      within(screen.getByTestId('kpi-pending-approvals')).getByTestId('kpi-value')
+    ).toHaveTextContent('2');
+  });
+});
+
+describe('Tag', () => {
+  it('renders its text with a tone and an explanation', () => {
+    render(
+      <Tag tone="warning" title="A second administrator must approve a change.">
+        Requires approval
+      </Tag>
+    );
+    const tag = screen.getByText('Requires approval');
+    expect(tag.className).toContain('bg-amber-100');
+    expect(tag).toHaveAttribute('title', 'A second administrator must approve a change.');
+  });
+});
+
+describe('Switch', () => {
+  it('is a named switch that reports the next state', async () => {
+    const onChange = vi.fn();
+    render(<Switch label="Share with bank" checked={false} onChange={onChange} />);
+
+    const toggle = screen.getByRole('switch', { name: 'Share with bank' });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await userEvent.click(toggle);
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('does nothing when disabled', async () => {
+    const onChange = vi.fn();
+    render(<Switch label="Locked" checked disabled onChange={onChange} />);
+    await userEvent.click(screen.getByRole('switch', { name: 'Locked' }));
+    expect(onChange).not.toHaveBeenCalled();
   });
 });
 

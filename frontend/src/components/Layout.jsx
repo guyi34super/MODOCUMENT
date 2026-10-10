@@ -14,6 +14,8 @@ const sections = [
     links: [
       { to: '/platform', label: 'Overview', end: true, roles: PLATFORM_ONLY },
       { to: '/platform/banks', label: 'Banks', roles: PLATFORM_ONLY },
+      // ws20/ws22: platform defaults and the bounds banks may choose from.
+      { to: '/platform/settings', label: 'Settings', roles: PLATFORM_ONLY },
     ],
   },
   {
@@ -50,8 +52,12 @@ const sections = [
     // change:approve regardless — hiding links is UX, not security).
     label: 'Administration',
     links: [
+      // Phase 2 (ws22): the bank admin's overview + quick actions.
+      { to: '/admin', label: 'Admin dashboard', roles: ['ADMIN'], end: true },
       // PLATFORM_ADMIN: their own platform bank's admins + platform approvals.
       { to: '/admin/users', label: 'Users', roles: ['ADMIN', 'PLATFORM_ADMIN'] },
+      // Phase 2 (ws20/ws22): bank settings within the platform's limits.
+      { to: '/admin/settings', label: 'Settings', roles: ['ADMIN'] },
       {
         to: '/admin/changes',
         label: 'Approvals',

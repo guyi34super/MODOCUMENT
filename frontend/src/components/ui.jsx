@@ -138,14 +138,17 @@ const KPI_TONES = {
  * success | warning | danger: a coloured left edge and value) and an
  * optional `to` route that turns the whole tile into a link to the page
  * behind the number. `value` null/undefined renders "—" (not loaded yet, or
- * not tracked).
+ * not tracked). `testId` lands on the tile (E2E: `kpi-<metric>`); the value
+ * itself is always `data-testid="kpi-value"`.
  */
-export function KpiTile({ label, value, hint, to, tone = 'neutral' }) {
+export function KpiTile({ label, value, hint, to, tone = 'neutral', testId }) {
   const colors = KPI_TONES[tone] || KPI_TONES.neutral;
   const body = (
     <>
       <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
-      <p className={`mt-1 text-3xl font-semibold ${colors.value}`}>{value ?? '—'}</p>
+      <p data-testid="kpi-value" className={`mt-1 text-3xl font-semibold ${colors.value}`}>
+        {value ?? '—'}
+      </p>
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </>
   );
@@ -157,6 +160,7 @@ export function KpiTile({ label, value, hint, to, tone = 'neutral' }) {
       <Link
         to={to}
         data-tone={tone}
+        data-testid={testId}
         className={`${frame} transition-colors hover:bg-pill/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
       >
         {body}
@@ -164,8 +168,64 @@ export function KpiTile({ label, value, hint, to, tone = 'neutral' }) {
     );
   }
   return (
-    <div data-tone={tone} className={frame}>
+    <div data-tone={tone} data-testid={testId} className={frame}>
       {body}
     </div>
+  );
+}
+
+const TAG_TONES = {
+  neutral: 'bg-neutral-100 text-muted',
+  info: 'bg-pill text-accent',
+  success: 'bg-success-bg text-success-ink',
+  warning: 'bg-amber-100 text-amber-800',
+  danger: 'bg-danger-bg text-danger-ink',
+};
+
+/**
+ * A small text badge ("Shared", "Locked", "Requires approval", …) — Badge's
+ * look for free text instead of a job status. `tone`: neutral | info |
+ * success | warning | danger; `title` explains it on hover.
+ */
+export function Tag({ tone = 'neutral', title, className = '', children }) {
+  return (
+    <span
+      title={title}
+      className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${
+        TAG_TONES[tone] || TAG_TONES.neutral
+      } ${className}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * An on/off switch: role="switch" + aria-checked, named by `label`
+ * (aria-label) or by `labelledBy` (the id of a visible label). `onChange`
+ * receives the new state.
+ */
+export function Switch({ checked, onChange, label, labelledBy, disabled = false, id }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      id={id}
+      aria-checked={Boolean(checked)}
+      aria-label={labelledBy ? undefined : label}
+      aria-labelledby={labelledBy}
+      disabled={disabled}
+      onClick={() => onChange?.(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked ? 'bg-accent' : 'bg-neutral-300'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`inline-block size-4 rounded-full bg-white shadow transition-transform ${
+          checked ? 'translate-x-4' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
   );
 }

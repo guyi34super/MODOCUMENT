@@ -95,8 +95,14 @@ class ExtractionJobUseCaseTest {
         return field;
     }
 
+    private void templateFiveUsable() {
+        when(templates.getAccessible(5, USER, com.modocument.domain.entity.Bank.DEFAULT_BANK_ID))
+                .thenReturn(Optional.of(new Template(5, "Staff", null)));
+    }
+
     @Test
     void createInheritsSourceTemplateAndDerivesDataSpecFromItsFields() {
+        templateFiveUsable();
         source.setTemplateId(5);
         sources.save(source);
         when(templateFields.listByTemplateId(5)).thenReturn(List.of(
@@ -109,8 +115,22 @@ class ExtractionJobUseCaseTest {
                 .isEqualTo("EmployeeId (Text), HireDate (Date), Notes");
     }
 
+    /** ws22: the source's (once shared) template is no longer readable by the caller. */
+    @Test
+    void createDropsAnInheritedTemplateTheCallerCanNoLongerUse() {
+        source.setTemplateId(5);
+        sources.save(source);
+        when(templateFields.listByTemplateId(5)).thenReturn(List.of(field("Secret", "Text")));
+
+        ExtractionJob job = useCase.create(source.getId(), null, null, false, null);
+
+        assertThat(job.getTemplateId()).isNull();
+        assertThat(job.getDataSpec()).isNull();
+    }
+
     @Test
     void createPrefersExplicitDataSpecTextOverTemplateDerivation() {
+        templateFiveUsable();
         source.setTemplateId(5);
         sources.save(source);
 
@@ -125,12 +145,12 @@ class ExtractionJobUseCaseTest {
 
     @Test
     void createChecksRequestTemplateOwnershipAndDerivesItsSpec() {
-        when(templates.getByIdAndOwner(9, USER)).thenReturn(Optional.empty());
+        when(templates.getAccessible(9, USER, com.modocument.domain.entity.Bank.DEFAULT_BANK_ID)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> useCase.create(source.getId(), 9, null, false, null))
                 .isInstanceOf(NoSuchElementException.class)
                 .hasMessageContaining("Template 9");
 
-        when(templates.getByIdAndOwner(9, USER))
+        when(templates.getAccessible(9, USER, com.modocument.domain.entity.Bank.DEFAULT_BANK_ID))
                 .thenReturn(Optional.of(new Template(9, "Products", null)));
         when(templateFields.listByTemplateId(9)).thenReturn(List.of(field("Sku", "Text")));
 

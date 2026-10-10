@@ -144,4 +144,18 @@ describe('AuthContext', () => {
     expect(result.current.user.displayName).toBe('Renamed');
     expect(getStoredUser().displayName).toBe('Renamed');
   });
+
+  it('logout({ revoke: false }) signs out locally without calling the server (BUG-02)', async () => {
+    localStorage.setItem('modoc.token', 'dead-token');
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 3 }));
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await act(() => result.current.logout({ revoke: false }));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(getToken()).toBeNull();
+  });
 });

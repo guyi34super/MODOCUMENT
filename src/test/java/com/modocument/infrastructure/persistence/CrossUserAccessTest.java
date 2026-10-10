@@ -30,6 +30,8 @@ class CrossUserAccessTest {
 
     private static final int ALICE = 101;
     private static final int BOB = 202;
+    private static final int BANK = 1;
+    private static final int OTHER_BANK = 999_001;
 
     @Autowired
     private TemplateRepository templates;
@@ -42,12 +44,31 @@ class CrossUserAccessTest {
     void aTemplateIsInvisibleToAnotherUser() {
         Template alices = new Template(0, "Alice's template", null);
         alices.setOwnerUserId(ALICE);
+        alices.setBankId(BANK);
         templates.add(alices);
         int id = alices.getTemplateId();
 
-        assertThat(templates.getByIdAndOwner(id, ALICE)).isPresent();
-        assertThat(templates.getByIdAndOwner(id, BOB)).isEmpty();
-        assertThat(templates.listByOwner(BOB))
+        // PRIVATE (the default): Bob, same bank, neither finds nor lists it.
+        assertThat(templates.getAccessible(id, ALICE, BANK)).isPresent();
+        assertThat(templates.getAccessible(id, BOB, BANK)).isEmpty();
+        assertThat(templates.listAccessible(BOB, BANK))
+                .noneMatch(t -> t.getTemplateId() == id);
+    }
+
+    @Test
+    void aBankSharedTemplateReachesTheSameBankOnly() {
+        Template shared = new Template(0, "Alice's shared template", null);
+        shared.setOwnerUserId(ALICE);
+        shared.setBankId(BANK);
+        shared.setVisibility(com.modocument.domain.model.TemplateVisibility.BANK);
+        templates.add(shared);
+        int id = shared.getTemplateId();
+
+        assertThat(templates.getAccessible(id, BOB, BANK)).isPresent();
+        assertThat(templates.listAccessible(BOB, BANK)).anyMatch(t -> t.getTemplateId() == id);
+        // Another bank's user never sees it (on H2 this predicate is the only wall).
+        assertThat(templates.getAccessible(id, BOB, OTHER_BANK)).isEmpty();
+        assertThat(templates.listAccessible(BOB, OTHER_BANK))
                 .noneMatch(t -> t.getTemplateId() == id);
     }
 
