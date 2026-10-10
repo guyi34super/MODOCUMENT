@@ -5,7 +5,8 @@ import java.util.regex.PatternSyntaxException;
 
 /**
  * Compile-time check for UI-supplied regex patterns. Runtime ReDoS protection
- * is separate: RegexRule matches through a 200 ms DeadlineCharSequence.
+ * is separate: RegexRule matches through {@link SafeRegex}'s 200 ms deadline,
+ * and extraction-hint patterns are vetted further by {@link SafeRegex#check}.
  */
 public final class RegexPatternChecker {
 

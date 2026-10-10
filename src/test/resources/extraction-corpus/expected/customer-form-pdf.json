@@ -1,0 +1,20 @@
+{
+  "name": "customer-form-pdf",
+  "file": "customer-form.pdf",
+  "strategy": "KEY_VALUE",
+  "minConfidence": 0.85,
+  "maxConfidence": 1.0,
+  "fields": [
+    {"name": "Customer Name", "type": "TEXT"},
+    {"name": "DateOfBirth", "type": "DATE"},
+    {"name": "Account Number", "type": "TEXT"},
+    {"name": "Branch", "type": "TEXT"},
+    {"name": "Email", "type": "TEXT", "aliases": ["Email Address"]},
+    {"name": "Account Type", "type": "TEXT"},
+    {"name": "Currency", "type": "TEXT"},
+    {"name": "Monthly Income", "type": "NUMBER"}
+  ],
+  "rows": [
+    ["Jane Doe", "1985-12-31", "000123456", "Port Louis", "jane.doe@example.com", "Savings", "MUR", "45000.00"]
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "remittance-regex-pdf",
+  "file": "remittance.pdf",
+  "strategy": "FIELD_REGEX",
+  "minConfidence": 0.85,
+  "maxConfidence": 1.0,
+  "fields": [
+    {"name": "Reference", "type": "TEXT", "valuePattern": "REF-(\\d{4}-\\d{4})"},
+    {"name": "Amount", "type": "NUMBER", "valuePattern": "MUR ([\\d,]+\\.\\d{2})"},
+    {"name": "Payment Date", "type": "DATE", "valuePattern": "received on (\\d{4}-\\d{2}-\\d{2})"},
+    {"name": "Payer", "type": "TEXT", "valuePattern": "from ([A-Z][A-Z ]+[A-Z])\\."}
+  ],
+  "rows": [
+    ["2024-0001", "1250.00", "2024-01-15", "BLUE OCEAN TRADING"],
+    ["2024-0002", "980.40", "2024-01-17", "KESTREL PARTNERS"],
+    ["2024-0003", "12000.00", "2024-01-18", "SUNRISE FOODS"],
+    ["2024-0004", "75.25", "2024-01-22", "ISLAND DIVE CENTRE"],
+    ["2024-0005", "3410.90", "2024-01-26", "NORTH COAST HOTELS"]
+  ]
+}
