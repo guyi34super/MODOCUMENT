@@ -1,0 +1,21 @@
+{
+  "name": "semicolon-statement-csv",
+  "file": "semicolon-statement.csv",
+  "strategy": "DELIMITED",
+  "minConfidence": 0.85,
+  "maxConfidence": 1.0,
+  "fields": [
+    {"name": "Transaction Date", "type": "DATE", "aliases": ["Date"]},
+    {"name": "Description", "type": "TEXT"},
+    {"name": "Amount", "type": "NUMBER"},
+    {"name": "Balance", "type": "NUMBER"}
+  ],
+  "rows": [
+    ["2024-01-03", "Opening deposit", "1000.00", "1000.00"],
+    ["2024-01-05", "Salary; January", "2500.00", "3500.00"],
+    ["2024-01-08", "Grocery store purchase", "-45.10", "3454.90"],
+    ["2024-01-15", "ATM withdrawal", "-200.00", "3254.90"],
+    ["2024-01-22", "Transfer to \"Savings\"", "-500.00", "2754.90"],
+    ["2024-01-29", "Interest", "12.35", "2767.25"]
+  ]
+}

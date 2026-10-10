@@ -1,0 +1,21 @@
+{
+  "name": "cp1252-customers-csv",
+  "file": "cp1252-customers.csv",
+  "strategy": "DELIMITED",
+  "minConfidence": 0.85,
+  "maxConfidence": 1.0,
+  "fields": [
+    {"name": "Customer Name", "type": "TEXT"},
+    {"name": "City", "type": "TEXT"},
+    {"name": "Balance", "type": "NUMBER"},
+    {"name": "Opened", "type": "DATE", "dateFormats": ["dd.MM.yyyy"]}
+  ],
+  "rows": [
+    ["Zoë Lefèvre", "Curepipe", "12500.00", "2021-04-03"],
+    ["José Müller", "Port Louis", "980.5", "2019-11-15"],
+    ["Ana Šimek", "Moka", "1000", "2022-12-01"],
+    ["Björn Ångström", "Quatre Bornes", "0.75", "2020-02-28"],
+    ["O'Neil, Seán", "Mahébourg", "-3250.40", "2023-07-07"],
+    ["François Dupré", "Rose-Hill", "42.10", "2018-09-30"]
+  ]
+}

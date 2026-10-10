@@ -1,0 +1,25 @@
+{
+  "name": "employees-table-pdf",
+  "file": "employees-table.pdf",
+  "strategy": "FIXED_WIDTH",
+  "minConfidence": 0.85,
+  "maxConfidence": 1.0,
+  "fields": [
+    {"name": "Full Name", "type": "TEXT", "aliases": ["Name"]},
+    {"name": "Date of Birth", "type": "DATE"},
+    {"name": "Department", "type": "TEXT"},
+    {"name": "Salary", "type": "NUMBER"}
+  ],
+  "rows": [
+    ["Alice Smith", "1990-01-15", "Finance", "1234.56"],
+    ["Bob Lee", "1985-12-01", "IT", "999.00"],
+    ["Chandra Ramgoolam", "1979-02-28", "Risk Management", "12500.00"],
+    ["Diane Ng", "1992-03-03", "Operations", "2075.10"],
+    ["Ethan Ho", "1988-06-30", "IT", "3400.00"],
+    ["Fatima Rawat", "1995-09-09", "Finance", "1980.25"],
+    ["George Li", "1983-11-21", "Legal", "4150.00"],
+    ["Hana Bhujun", "1990-07-07", "Operations", "2210.75"],
+    ["Ivan Petit", "1987-04-12", "Risk Management", "5005.05"],
+    ["Julie Tang", "1993-05-05", "HR", "1875.00"]
+  ]
+}
