@@ -1,8 +1,10 @@
 # Dependabot (SEC-010 / SUP-S05 / gate E3): weekly update PRs across all five
 # ecosystems, with minor+patch bumps grouped into one PR per ecosystem to keep
-# review load sane. Security updates always arrive individually and
-# immediately regardless of the weekly schedule. Majors stay ungrouped so
-# breaking changes get their own review. Every Dependabot PR runs the full
+# review load sane. Version updates wait out a 7-day cooldown after a release
+# (a freshly published package may be malicious or broken and is often
+# yanked within days); security updates are not subject to the cooldown and
+# always arrive individually and immediately regardless of the schedule.
+# Majors stay ungrouped so breaking changes get their own review. Every Dependabot PR runs the full
 # ci.yml + security.yml gauntlet before merge.
 version: 2
 updates:
@@ -11,6 +13,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     groups:
       maven-minor-patch:
         update-types:
@@ -22,6 +26,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     groups:
       npm-minor-patch:
         update-types:
@@ -33,6 +39,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     groups:
       actions-minor-patch:
         update-types:
@@ -47,6 +55,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     groups:
       docker-minor-patch:
         update-types:
@@ -66,6 +76,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     groups:
       terraform-minor-patch:
         update-types:

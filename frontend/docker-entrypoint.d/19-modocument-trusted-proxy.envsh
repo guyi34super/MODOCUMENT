@@ -27,6 +27,11 @@
 #                                   chain is client -> CloudFront -> ALB and
 #                                   the rightmost untrusted XFF hop is a
 #                                   CloudFront edge node, not the user.
+#   MODOCUMENT_PUBLIC_HOST          both modes; the host[:port] users reach
+#       the app on (Dockerfile default localhost:3000; ECS: the app domain).
+#       frontend/nginx.conf sends it as Host / X-Forwarded-Host so the app
+#       never sees a client-chosen host. Pasted into nginx config, so it must
+#       be a plain DNS name or IPv4 address with an optional :port.
 #
 # Outputs:
 #   MODOCUMENT_NGX_FORWARDED_FOR / MODOCUMENT_NGX_FORWARDED_PROTO (exported):
@@ -110,6 +115,28 @@ modoc_tp_is_ipv6() {
     fi
 }
 
+# <name>[:<port>]: dot-separated labels of letters, digits and inner hyphens
+# (a dotted-quad IPv4 address fits too), port 1-65535. Nothing else — the
+# value is pasted into nginx config.
+modoc_tp_is_host() {
+    case $1 in
+        *:*:*) return 1 ;;
+        *:*) modoc_tp_name=${1%:*} modoc_tp_port=${1#*:} ;;
+        *) modoc_tp_name=$1 modoc_tp_port= ;;
+    esac
+    case $modoc_tp_name in
+        '' | *[!A-Za-z0-9.-]* | [.-]* | *[.-] | *..* | *.-* | *-.*) return 1 ;;
+    esac
+    [ "${#modoc_tp_name}" -le 253 ] || return 1
+    if [ -n "$modoc_tp_port" ] || [ "$modoc_tp_name" != "$1" ]; then
+        case $modoc_tp_port in
+            '' | *[!0-9]* | 0* | ??????*) return 1 ;;
+        esac
+        [ "$modoc_tp_port" -le 65535 ] || return 1
+    fi
+    return 0
+}
+
 # <IPv4>/<1-32> or <IPv6>/<1-128>. /0 is refused: trusting every address
 # would let any client choose its own IP again.
 modoc_tp_is_cidr() {
@@ -131,6 +158,10 @@ modoc_tp_is_cidr() {
         return 1
     fi
 }
+
+if ! modoc_tp_is_host "${MODOCUMENT_PUBLIC_HOST:-}"; then
+    modoc_tp_die "MODOCUMENT_PUBLIC_HOST '${MODOCUMENT_PUBLIC_HOST:-}' is not a host name or IPv4 address with an optional :port (e.g. localhost:3000, app.example.com)."
+fi
 
 # Separators: commas and/or whitespace. Split with an explicit IFS and
 # globbing off, so a stray '*' can never expand to file names.
@@ -237,5 +268,6 @@ fi
 
 unset modoc_tp_me modoc_tp_conf modoc_tp_cidrs modoc_tp_enabled modoc_tp_header \
     modoc_tp_valid modoc_tp_cidr modoc_tp_ifs modoc_tp_octet modoc_tp_compressed \
-    modoc_tp_groups modoc_tp_group modoc_tp_addr modoc_tp_len
-unset -f modoc_tp_log modoc_tp_die modoc_tp_is_ipv4 modoc_tp_is_ipv6 modoc_tp_is_cidr
+    modoc_tp_groups modoc_tp_group modoc_tp_addr modoc_tp_len modoc_tp_name modoc_tp_port
+unset -f modoc_tp_log modoc_tp_die modoc_tp_is_ipv4 modoc_tp_is_ipv6 modoc_tp_is_cidr \
+    modoc_tp_is_host

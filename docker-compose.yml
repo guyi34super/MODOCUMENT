@@ -10,6 +10,12 @@ services:
     # a load balancer you control sits in front (web-hardening.md §5e).
     ports:
       - "3000:8080"
+    environment:
+      # The host[:port] users reach the app on. nginx sends it to the API as
+      # Host / X-Forwarded-Host (never the client's Host header), so OIDC
+      # redirect URIs are http://<this>/login/oauth2/code/… — keep it in line
+      # with the published port and the IdP's registered redirect URIs.
+      MODOCUMENT_PUBLIC_HOST: ${MODOCUMENT_PUBLIC_HOST:-localhost:3000}
     # Defence in depth for a non-root process that binds no privileged port:
     # no Linux capabilities at all, and no way to regain privileges through
     # setuid binaries.

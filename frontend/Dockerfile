@@ -15,13 +15,18 @@ FROM nginxinc/nginx-unprivileged:alpine
 # nginx.conf is installed as a TEMPLATE: the image's own entrypoint step
 # (/docker-entrypoint.d/20-envsubst-on-templates.sh) renders it into
 # /etc/nginx/conf.d/default.conf at container start, substituting ONLY
-# variables matching NGINX_ENVSUBST_FILTER — nginx's own $host,
-# $remote_addr, ... are never touched. MODOCUMENT_API_UPSTREAM is where the
-# API lives: the compose service `app:8080` by default; an ECS awsvpc task
+# variables matching NGINX_ENVSUBST_FILTER — nginx's own variables
+# ($remote_addr, $scheme, ...) are never touched. MODOCUMENT_API_UPSTREAM is
+# where the API lives: the compose service `app:8080` by default; an ECS awsvpc task
 # (one shared network namespace, no `app` hostname, 8080 already taken by
 # this nginx) sets 127.0.0.1:<app port> — infra/terraform/modules/ecs-app.
+# MODOCUMENT_PUBLIC_HOST is the host[:port] users reach the app on, sent to
+# the API as Host / X-Forwarded-Host instead of the client's Host header
+# (OIDC redirect URIs are built from it): compose's localhost:3000 by
+# default; ECS sets the app domain. Validated by the entrypoint script below.
 ENV NGINX_ENVSUBST_FILTER=^MODOCUMENT_ \
-    MODOCUMENT_API_UPSTREAM=app:8080
+    MODOCUMENT_API_UPSTREAM=app:8080 \
+    MODOCUMENT_PUBLIC_HOST=localhost:3000
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 # Proxy mode (sourced by the image entrypoint just before the template step):
 # unset MODOCUMENT_TRUSTED_PROXY_CIDRS = edge mode, the template renders

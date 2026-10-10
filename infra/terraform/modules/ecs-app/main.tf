@@ -291,7 +291,10 @@ resource "aws_ecs_task_definition" "this" {
         # Trusted-proxy mode (see the header): the ALB may report the client
         # and the scheme; anyone else is this hop's own connection.
         { name = "MODOCUMENT_TRUSTED_PROXY_CIDRS", value = join(",", var.trusted_proxy_cidrs) },
-        { name = "MODOCUMENT_CLIENT_IP_HEADER", value = var.client_ip_header }
+        { name = "MODOCUMENT_CLIENT_IP_HEADER", value = var.client_ip_header },
+        # Sent to the app as Host / X-Forwarded-Host instead of the client's
+        # Host header (OIDC redirect URIs: https://<public_host>/…).
+        { name = "MODOCUMENT_PUBLIC_HOST", value = var.public_host }
       ]
       # Start once the app answers its health check (compose: depends_on
       # service_healthy).

@@ -31,6 +31,11 @@ Notes:
 - `dependency-review` only runs on PRs — mark it required; GitHub treats a
   check that is skipped on non-PR events correctly because only PRs merge
   into a protected `main`.
+  On a **private** repository it only works once Dependency graph and
+  GitHub Code Security are enabled (Settings → Code security); without
+  them it fails with "Dependency review is not supported on this
+  repository" (security roadmap, "Remaining"). Enable those first, or
+  making it required blocks every PR.
 - Administrators should **not** be exempted ("Do not allow bypassing the
   above settings"), otherwise the second-person guarantee has a hole.
 

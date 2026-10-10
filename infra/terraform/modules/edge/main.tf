@@ -205,10 +205,8 @@ resource "random_password" "origin_verify" {
 #     when ecs-app's client_ip_header = "CloudFront-Viewer-Address"
 #     (frontend/docker-entrypoint.d/19-modocument-trusted-proxy.envsh).
 #   * The viewer's Host header (all viewer headers, cookies, query strings —
-#     as before, now Host too): the app builds OIDC redirect URIs and other
-#     absolute URLs from X-Forwarded-Host = nginx's $host, which would
-#     otherwise be the ALB's DNS name. It also makes CloudFront verify the
-#     origin certificate against the app domain — the ALB's ACM certificate
+#     as before, now Host too): this makes CloudFront verify the origin
+#     certificate against the app domain — the ALB's ACM certificate
 #     (var alb_certificate_arn in the env) must cover var.domain_aliases;
 #     with the origin's own DNS name (*.elb.amazonaws.com) as the expected
 #     name no ACM certificate could ever match (CloudFront answers 502).

@@ -318,7 +318,7 @@ the nginx image's entrypoint just before its envsubst step):
 | Switch | `MODOCUMENT_TRUSTED_PROXY_CIDRS` unset | set (Terraform: the VPC CIDR = the ALB) |
 | `X-Forwarded-For` to the app | `$remote_addr` (the TCP peer) | the client: realip `set_real_ip_from <cidr>` + `real_ip_header X-Forwarded-For` + `real_ip_recursive on` (rightmost hop that is not a trusted proxy); with `MODOCUMENT_CLIENT_IP_HEADER=CloudFront-Viewer-Address` the viewer address CloudFront stamps (production) |
 | `X-Forwarded-Proto` to the app | `$scheme` | the ALB's value (`http`/`https` only) when the TCP peer is trusted, else `$scheme` |
-| `X-Forwarded-Host` | `$host` | `$host` (production: the viewer's Host, forwarded by the edge origin request policy) |
+| `Host` and `X-Forwarded-Host` to the app | `MODOCUMENT_PUBLIC_HOST` (default `localhost:3000`) | `MODOCUMENT_PUBLIC_HOST` = the ecs-app module's `public_host` (`app_domain` in both envs) |
 
 Both modes still OVERWRITE the headers towards the app. Untrusted peers
 cannot spoof these: a client-prepended `X-Forwarded-For` entry is never reached
@@ -352,6 +352,27 @@ Verified through a stub upstream (nginx 1.24): a client sending
 `X-Forwarded-Port: 443`, `X-Forwarded-Prefix: /evil` and
 `X-Forwarded-Ssl: on` reached the app as only `X-Forwarded-For: 127.0.0.1`,
 `X-Forwarded-Proto: http`, `X-Forwarded-Host: 127.0.0.1`.
+
+**The host the app sees is configured, not taken from the client (fixed
+10 Oct 2026; Semgrep `generic.nginx.security.request-host-used`).** nginx
+used to forward its `$host` (the client's `Host` header) as `Host` and
+`X-Forwarded-Host`, and the app builds OIDC redirect URIs and other absolute
+URLs from `X-Forwarded-Host`. The IdPs reject unregistered redirect URIs, so
+this was not a token leak, but the app should never build URLs from a
+client-chosen host. `$host` also drops the port, so compose built
+`http://localhost/login/oauth2/code/keycloak` instead of the
+`http://localhost:3000/…` URI the shipped realm registers. Both headers are
+now `MODOCUMENT_PUBLIC_HOST` (frontend image default `localhost:3000`, set
+in `docker-compose.yml`; ECS: the ecs-app module's `public_host`, which both
+envs set to `app_domain`). The entrypoint script accepts only a DNS name or
+IPv4 address with an optional `:port`, and stops the container on anything
+else. Verified (10 Oct 2026) in all three proxy modes, by rendering the
+template with the real entrypoint script and sending requests through a
+stub upstream: a
+client sending `Host: evil.example:9999`, `X-Forwarded-Host: evil2.example`
+and `Forwarded: host=evil3` reached the app with `Host` and
+`X-Forwarded-Host` equal to the configured value; `MODOCUMENT_PUBLIC_HOST=evil;`
+was refused at start; `scripts/check-nginx-headers.sh` green on each render.
 
 Verified (9 Oct 2026) twice: nginx 1.24 with the image's own entrypoint,
 `15-local-resolvers` and `20-envsubst-on-templates` scripts under busybox

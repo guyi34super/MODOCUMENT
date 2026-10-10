@@ -150,6 +150,7 @@ module "ecs_app" {
   # edge module's origin request policy adds (the rightmost untrusted
   # X-Forwarded-For hop would be a CloudFront edge node, not the user).
   trusted_proxy_cidrs = [var.vpc_cidr]
+  public_host         = var.app_domain
   client_ip_header    = "CloudFront-Viewer-Address"
 
   min_tasks = 2

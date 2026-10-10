@@ -144,6 +144,7 @@ module "ecs_app" {
   # appends the client to X-Forwarded-For, so the rightmost untrusted hop IS
   # the client (client_ip_header keeps its X-Forwarded-For default).
   trusted_proxy_cidrs = [var.vpc_cidr]
+  public_host         = var.app_domain
 
   instance_type = var.instance_type
   min_instances = 1

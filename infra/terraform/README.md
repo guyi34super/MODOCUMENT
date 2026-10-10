@@ -162,9 +162,11 @@ AWS apply or Docker host is listed under each.
    parses that header (IPv4 and CloudFront's unbracketed IPv6 `addr:port`,
    which realip itself cannot parse) **only** when the peer is the trusted
    ALB and the whole value is one well-formed `address:port` — otherwise it
-   falls back to the realip result. Forwarding `Host` also gives the app the
-   real domain in `X-Forwarded-Host` (OIDC redirect URIs) and lets CloudFront
-   verify the ALB certificate against `app_domain` (prereq above). Staging
+   falls back to the realip result. Forwarding `Host` also lets CloudFront
+   verify the ALB certificate against `app_domain` (prereq above). The app
+   itself never sees a client-chosen host: nginx sends `public_host`
+   (`MODOCUMENT_PUBLIC_HOST`, set to `app_domain` by both envs) as `Host` and
+   `X-Forwarded-Host`, which is where OIDC redirect URIs come from. Staging
    (no CloudFront) uses the `X-Forwarded-For` default: there the ALB is the
    first hop and the rightmost untrusted address is the client. Unset (docker-compose)
    = edge mode: the rendered config is directive-for-directive identical to

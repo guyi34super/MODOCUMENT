@@ -95,6 +95,16 @@ variable "trusted_proxy_cidrs" {
   }
 }
 
+variable "public_host" {
+  description = "Host name users reach the app on (the app domain). The frontend nginx sends it to the app as Host / X-Forwarded-Host (MODOCUMENT_PUBLIC_HOST) instead of the client's Host header, so OIDC redirect URIs and other absolute URLs always use it."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*(:[1-9][0-9]{0,4})?$", var.public_host))
+    error_message = "public_host must be a DNS name with an optional :port, e.g. app.example.com."
+  }
+}
+
 variable "client_ip_header" {
   description = "Where the frontend nginx takes the client address from when the peer is a trusted proxy (MODOCUMENT_CLIENT_IP_HEADER): X-Forwarded-For (ALB is the first hop — staging) or CloudFront-Viewer-Address (client -> CloudFront -> ALB — production; needs the edge module's origin request policy)."
   type        = string

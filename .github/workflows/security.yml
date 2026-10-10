@@ -29,6 +29,11 @@ jobs:
   # else; see the comments in those files.
   gitleaks:
     runs-on: ubuntu-latest
+    # On pull_request the action lists the PR's commits through the API to
+    # scan exactly that range; without pull-requests: read it fails (403).
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
