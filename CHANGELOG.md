@@ -38,8 +38,22 @@ All notable changes to MoDocument are recorded here. The format follows
 - In progress (phase 2): editable settings with guardrails, a platform owner
   console, the admin dashboard, code-based extraction fallback, in-app release
   notices and the bank integration hub.
+- Platform owner console (`/platform`): an overview of every customer bank
+  (counts only), onboarding a bank with its first users, suspending and
+  reactivating a bank, and a break-glass administrator. Onboarding,
+  suspension and the break-glass administrator need a second platform admin's
+  approval.
+- An optional second bootstrap administrator
+  (`MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_EMAIL` / `_PASSWORD`), so a fresh
+  install can approve its first user change. The app warns at startup while
+  the default bank has fewer than two administrators or approvers.
 
 ### Changed
+- Bootstrap administrators must change their configured password at first
+  sign-in. `MODOCUMENT_BOOTSTRAP_ADMIN_SKIP_PASSWORD_CHANGE=true` turns this
+  off on dev stacks only.
+- Users of a suspended bank cannot sign in or refresh a session, and their
+  live sessions end when the suspension is approved.
 - Terraform (not yet applied): the ECS service rolls back a failed deployment
   automatically (deployment circuit breaker). CI now owns task-definition
   revisions, so Terraform ignores them.

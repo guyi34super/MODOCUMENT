@@ -25,6 +25,13 @@ public final class StubBankDirectory implements BankDirectory, PlatformBankLooku
         return this;
     }
 
+    /** A SUSPENDED customer bank (ws21 suspension tests). */
+    public StubBankDirectory suspended(int bankId) {
+        banks.put(bankId, new BankRef(bankId, "BANK" + bankId, "Bank " + bankId,
+                BankKind.CUSTOMER, BankStatus.SUSPENDED));
+        return this;
+    }
+
     public StubBankDirectory platform(int bankId) {
         banks.put(bankId, new BankRef(bankId, "MOI-PLATFORM", "MO Intelligence Platform",
                 BankKind.PLATFORM, BankStatus.ACTIVE));

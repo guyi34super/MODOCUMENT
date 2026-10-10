@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.security;
 
+import com.modocument.application.port.BankDirectory;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.core.OAuth2Error;
@@ -22,12 +23,17 @@ import java.util.UUID;
  *   <li>its user is disabled (ws09 leaver switch — the flag alone makes the
  *       account inert on the very next request, independent of the version
  *       bump the disable also performs), or</li>
- *   <li>its user no longer exists.</li>
+ *   <li>its user no longer exists, or</li>
+ *   <li>its user's bank is SUSPENDED (ws21; the suspension also bumps every
+ *       user's TokenVersion, so this is defense in depth — answered with
+ *       the same generic description as a revocation).</li>
  * </ul>
  *
  * <p>Deliberately ONE cheap primary-key-driven DB read per request and no
  * cache: a revocation must take effect on the very next request, and the
- * query is two unique-index probes.
+ * query is two unique-index probes. The bank status comes from the
+ * {@link BankDirectory} (short-TTL cache; the Bank table is RLS-protected
+ * and no tenant is bound while the token is being validated).
  */
 @Component
 public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
@@ -37,13 +43,16 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
 
     private static final String QUERY =
             "SELECT u.TokenVersion AS currentVersion, u.Disabled AS disabled, "
+                    + "u.BankId AS bankId, "
                     + "EXISTS (SELECT 1 FROM RevokedToken r WHERE r.Jti = ?) AS revoked "
                     + "FROM AppUsers u WHERE u.AppUserId = ?";
 
     private final JdbcTemplate jdbc;
+    private final BankDirectory bankDirectory;
 
-    public RevocationValidator(JdbcTemplate jdbc) {
+    public RevocationValidator(JdbcTemplate jdbc, BankDirectory bankDirectory) {
         this.jdbc = jdbc;
+        this.bankDirectory = bankDirectory;
     }
 
     @Override
@@ -60,7 +69,7 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
         try {
             status = jdbc.queryForObject(QUERY, (rs, rowNum) ->
                     new Status(rs.getInt("currentVersion"), rs.getBoolean("disabled"),
-                            rs.getBoolean("revoked")), jti, userId);
+                            rs.getInt("bankId"), rs.getBoolean("revoked")), jti, userId);
         } catch (EmptyResultDataAccessException userGone) {
             return failure("Token user no longer exists.");
         }
@@ -78,6 +87,11 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
         int tokenVersion = claim instanceof Number number ? number.intValue() : 0;
         if (tokenVersion < status.currentVersion()) {
             return failure("Token was invalidated by a credential or role change.");
+        }
+        if (bankDirectory.isSuspended(status.bankId())) {
+            // Deliberately the generic revocation wording: the response
+            // must not tell a caller that their bank was suspended.
+            return failure("Token has been revoked.");
         }
         return OAuth2TokenValidatorResult.success();
     }
@@ -98,6 +112,6 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
                 new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, reason, null));
     }
 
-    private record Status(int currentVersion, boolean disabled, boolean revoked) {
+    private record Status(int currentVersion, boolean disabled, int bankId, boolean revoked) {
     }
 }

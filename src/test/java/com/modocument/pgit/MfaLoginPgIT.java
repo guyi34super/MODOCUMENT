@@ -35,6 +35,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * family, the TOTP counter) must pass the RLS WITH CHECK even though the
  * verify call is anonymous until it succeeds — the H2 suite cannot see
  * that, and a 502 here once locked every MFA user (every admin) out.
+ *
+ * <p>Phase 2 (OBS-02): the bootstrap admin's password comes from deployment
+ * configuration, so the first session is good for the forced password
+ * change only; the change itself (PASSWORD_CHANGED, TokenVersion bump,
+ * refresh revocation) must also pass RLS, and the next sign-in — TOTP
+ * already active — opens a normal session.
  */
 class MfaLoginPgIT extends PgItSupport {
 
@@ -42,6 +48,7 @@ class MfaLoginPgIT extends PgItSupport {
             Pattern.compile("^(jdbc:postgresql://[^/]+/)([^?]*)(\\?.*)?$");
     private static final String EMAIL = "mfa-admin@example.com";
     private static final String PASSWORD = "Mfa-Login-Passphrase-2026!";
+    private static final String NEW_PASSWORD = "Mfa-Login-Rotated-Passphrase-77!";
 
     private final ObjectMapper json = new ObjectMapper();
     private final HttpClient http = HttpClient.newHttpClient();
@@ -88,6 +95,9 @@ class MfaLoginPgIT extends PgItSupport {
                 .isEqualTo(200);
         String accessToken = json.readTree(verified.body()).path("token").asText();
         assertThat(accessToken).isNotBlank();
+        assertThat(json.readTree(verified.body()).at("/user/mustChangePassword").asBoolean())
+                .as("bootstrap passwords are temporary (OBS-02)")
+                .isTrue();
         String refreshCookie = verified.headers().firstValue("Set-Cookie").orElseThrow()
                 .split(";", 2)[0];
 
@@ -117,6 +127,42 @@ class MfaLoginPgIT extends PgItSupport {
             assertThat(rs.next()).isTrue();
             assertThat(rs.getInt(1)).isEqualTo(1);
         }
+
+        // OBS-02: until the bootstrap password is changed, nothing else opens.
+        HttpResponse<String> gated = http.send(HttpRequest.newBuilder(
+                        URI.create(base + "/api/admin/users"))
+                .header("Authorization", "Bearer " + accessToken).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(gated.statusCode()).isEqualTo(403);
+        assertThat(gated.body()).contains("PASSWORD_CHANGE_REQUIRED");
+
+        HttpResponse<String> changed = http.send(HttpRequest.newBuilder(
+                        URI.create(base + "/api/auth/password"))
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of(
+                        "currentPassword", PASSWORD, "newPassword", NEW_PASSWORD))))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(changed.statusCode())
+                .as("password change under RLS: %s", changed.body())
+                .isEqualTo(204);
+
+        // Signed in again: TOTP is active now, so no enrolment — the next
+        // step's code (the first one is spent: replay protection).
+        JsonNode second = post("/api/auth/login", null,
+                Map.of("email", EMAIL, "password", NEW_PASSWORD), 200);
+        assertThat(second.path("mfaRequired").asBoolean()).isTrue();
+        assertThat(second.path("enrollmentRequired").asBoolean()).isFalse();
+        String nextCode = Totp.codeAt(secret, Totp.counterAt(Instant.now().getEpochSecond()) + 1);
+        JsonNode session = post("/api/auth/mfa/verify", null,
+                Map.of("challenge", second.path("challenge").asText(), "code", nextCode), 200);
+        assertThat(session.at("/user/mustChangePassword").asBoolean()).isFalse();
+        HttpResponse<String> users = http.send(HttpRequest.newBuilder(
+                        URI.create(base + "/api/admin/users"))
+                .header("Authorization", "Bearer " + session.path("token").asText())
+                .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(users.statusCode()).isEqualTo(200);
     }
 
     private void boot() throws Exception {

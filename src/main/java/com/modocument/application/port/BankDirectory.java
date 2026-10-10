@@ -44,9 +44,22 @@ public interface BankDirectory {
         return find(bankId).map(BankRef::kind).orElse(BankKind.CUSTOMER);
     }
 
-    /** Whether the bank is SUSPENDED (an unknown id is not). */
+    /** Whether the bank is SUSPENDED (an unknown id is not). Cached for up to one TTL. */
     default boolean isSuspended(int bankId) {
         return find(bankId).map(BankRef::isSuspended).orElse(false);
+    }
+
+    /**
+     * {@link #isSuspended} from a fresh read (the cached entry is dropped
+     * first). For the rare, session-opening decisions — sign-in, MFA verify,
+     * token refresh, OIDC login (ws21 suspension) — that must not trust an
+     * entry written up to one TTL ago on another instance. Per-request token
+     * validation uses the cached {@link #isSuspended}: a suspension also
+     * bumps every user's TokenVersion, which kills live tokens immediately.
+     */
+    default boolean isSuspendedUncached(int bankId) {
+        refresh(bankId);
+        return isSuspended(bankId);
     }
 
     /** Drops the cached entry, so the next lookup reads the database again. */

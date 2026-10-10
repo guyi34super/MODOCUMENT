@@ -73,7 +73,7 @@ class BootstrapPlatformRunnerTest {
 
     private BootstrapPlatformRunner runner(String emails, String passwords) {
         return new BootstrapPlatformRunner(users, banks, passwordEncoder, passwordPolicy, audit,
-                transactionManager, CODE, emails, passwords);
+                transactionManager, CODE, emails, passwords, false, false);
     }
 
     private BootstrapPlatformRunner configured() {
@@ -101,6 +101,32 @@ class BootstrapPlatformRunnerTest {
 
         assertThat(auditCount("PLATFORM_BOOTSTRAPPED", platform.getBankId())).isEqualTo(1);
         assertThat(auditCount("BOOTSTRAP_ADMIN_CREATED", platform.getBankId())).isEqualTo(2);
+    }
+
+    /** OBS-02: the dev-only switch drops the forced change (never the TOTP)... */
+    @Test
+    void theDevOnlySkipSwitchKeepsTheConfiguredPasswords() {
+        new BootstrapPlatformRunner(users, banks, passwordEncoder, passwordPolicy, audit,
+                transactionManager, CODE, emailA + "," + emailB, PASSWORD_1 + "," + PASSWORD_2,
+                true, true).run(null);
+
+        Bank platform = banks.findByCode(CODE).orElseThrow();
+        assertThat(users.findByBankIdOrderByEmailAsc(platform.getBankId()))
+                .hasSize(2)
+                .allSatisfy(admin -> assertThat(admin.isMustChangePassword()).isFalse());
+    }
+
+    /** ... and is refused outright on a production-shaped deployment. */
+    @Test
+    void theSkipSwitchIsRefusedWithoutDevPaths() {
+        BootstrapPlatformRunner prod = new BootstrapPlatformRunner(users, banks, passwordEncoder,
+                passwordPolicy, audit, transactionManager, CODE, emailA + "," + emailB,
+                PASSWORD_1 + "," + PASSWORD_2, false, true);
+
+        assertThatThrownBy(() -> prod.run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("MODOCUMENT_BOOTSTRAP_ADMIN_SKIP_PASSWORD_CHANGE");
+        assertThat(banks.findByCode(CODE)).isEmpty();
     }
 
     @Test

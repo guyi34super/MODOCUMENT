@@ -6,6 +6,7 @@ import com.modocument.application.usecase.AuthUseCase;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.BankKind;
+import com.modocument.domain.model.BankStatus;
 import com.modocument.domain.model.Role;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -293,6 +294,64 @@ class OidcLoginServiceTest {
                 .hasMessageContaining("platform bank");
         verify(users, never()).save(any(AppUser.class));
         verify(auth, never()).openOidcSession(any(), any(), any(), any());
+    }
+
+    // ------------------------------------------------- ws21 bank suspension
+
+    @Test
+    void anAccountOfASuspendedBankGetsNoSessionAndTheReasonIsMachineReadable() {
+        AppUser linked = localUser(42, "ana@acme.example");
+        linked.setAuthProvider("keycloak");
+        linked.setProviderSubject("sub-1");
+        when(users.findByAuthProviderAndProviderSubject("keycloak", "sub-1"))
+                .thenReturn(Optional.of(linked));
+        when(banks.findById(7)).thenReturn(Optional.of(suspendedBank(7)));
+
+        assertThatThrownBy(() -> service.login("keycloak", oidcUser(Map.of(
+                "sub", "sub-1", "email", "ana@acme.example")), null, null))
+                .isInstanceOfSatisfying(OidcLoginService.OidcLoginException.class, refusal ->
+                        assertThat(refusal.reason()).isEqualTo("bank_suspended"));
+        verify(auth, never()).openOidcSession(any(), any(), any(), any());
+    }
+
+    @Test
+    void aSuspendedBanksAccountIsNotLinkedByTheEmailFallback() {
+        AppUser local = localUser(42, "ana@acme.example");
+        when(users.findByAuthProviderAndProviderSubject("keycloak", "sub-1"))
+                .thenReturn(Optional.empty());
+        when(users.findByEmailIgnoreCase("ana@acme.example")).thenReturn(Optional.of(local));
+        when(banks.findById(7)).thenReturn(Optional.of(suspendedBank(7)));
+
+        assertThatThrownBy(() -> service.login("keycloak", oidcUser(Map.of(
+                "sub", "sub-1", "email", "ana@acme.example")), null, null))
+                .isInstanceOf(OidcLoginService.OidcLoginException.class);
+        assertThat(local.getAuthProvider()).isNull();
+        verify(users, never()).save(any(AppUser.class));
+    }
+
+    @Test
+    void aProviderMappedToASuspendedBankProvisionsNobody() {
+        when(users.findByAuthProviderAndProviderSubject("keycloak", "sub-1"))
+                .thenReturn(Optional.empty());
+        when(users.findByEmailIgnoreCase("ana@acme.example")).thenReturn(Optional.empty());
+        Bank acme = suspendedBank(7);
+        when(banks.findByCode("ACME")).thenReturn(Optional.of(acme));
+        when(banks.findById(7)).thenReturn(Optional.of(acme));
+
+        assertThatThrownBy(() -> service.login("keycloak", oidcUser(Map.of(
+                "sub", "sub-1", "email", "ana@acme.example")), null, null))
+                .isInstanceOf(OidcLoginService.OidcLoginException.class)
+                .hasMessageContaining("suspended");
+        verify(users, never()).save(any(AppUser.class));
+        verify(auth, never()).openOidcSession(any(), any(), any(), any());
+    }
+
+    private static Bank suspendedBank(int bankId) {
+        Bank bank = new Bank("ACME", "Acme Bank");
+        bank.setBankId(bankId);
+        bank.setStatus(BankStatus.SUSPENDED);
+        bank.setSuspendedAt(Instant.now());
+        return bank;
     }
 
     @Test

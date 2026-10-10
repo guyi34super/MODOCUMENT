@@ -3,13 +3,26 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 // Nav mirrors the product journey: Home, then the numbered document flow,
-// then the extraction toolset and account.
+// then the extraction toolset and account. ws21: a PLATFORM_ADMIN sees the
+// Platform section instead of every domain section (`hideFor`) — it holds no
+// domain permission, so those pages would only answer 403.
+const PLATFORM_ONLY = ['PLATFORM_ADMIN'];
+
 const sections = [
   {
+    label: 'Platform',
+    links: [
+      { to: '/platform', label: 'Overview', end: true, roles: PLATFORM_ONLY },
+      { to: '/platform/banks', label: 'Banks', roles: PLATFORM_ONLY },
+    ],
+  },
+  {
+    hideFor: PLATFORM_ONLY,
     links: [{ to: '/', label: 'Home', end: true }],
   },
   {
     label: 'Document Flow',
+    hideFor: PLATFORM_ONLY,
     links: [
       { to: '/templates', label: 'Design Templates', step: 1 },
       { to: '/validation', label: 'Set Field Rules', step: 2 },
@@ -18,6 +31,7 @@ const sections = [
   },
   {
     label: 'Document Creation',
+    hideFor: PLATFORM_ONLY,
     links: [
       { to: '/creation/blueprints', label: 'Blueprints' },
       { to: '/creation/documents', label: 'My Documents' },
@@ -25,6 +39,7 @@ const sections = [
   },
   {
     label: 'Data Extraction',
+    hideFor: PLATFORM_ONLY,
     links: [
       { to: '/extraction/sources', label: 'Extraction Sources' },
       { to: '/extraction/jobs', label: 'Extraction Jobs' },
@@ -35,8 +50,13 @@ const sections = [
     // change:approve regardless — hiding links is UX, not security).
     label: 'Administration',
     links: [
-      { to: '/admin/users', label: 'Users', roles: ['ADMIN'] },
-      { to: '/admin/changes', label: 'Approvals', roles: ['ADMIN', 'APPROVER'] },
+      // PLATFORM_ADMIN: their own platform bank's admins + platform approvals.
+      { to: '/admin/users', label: 'Users', roles: ['ADMIN', 'PLATFORM_ADMIN'] },
+      {
+        to: '/admin/changes',
+        label: 'Approvals',
+        roles: ['ADMIN', 'APPROVER', 'PLATFORM_ADMIN'],
+      },
       // ws11: the document release queue sits beside the changes queue.
       { to: '/approvals/releases', label: 'Releases', roles: ['ADMIN', 'APPROVER'] },
       // ws14: retention purge evidence + data-subject requests.
@@ -160,6 +180,7 @@ export default function Layout() {
         } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         {sections
+          .filter((section) => !section.hideFor?.includes(user?.role))
           .map((section) => ({
             ...section,
             links: section.links.filter(
