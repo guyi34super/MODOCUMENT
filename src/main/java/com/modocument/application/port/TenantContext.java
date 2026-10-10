@@ -32,7 +32,8 @@ import java.util.concurrent.Callable;
  * context outside a web request (grep for the class name to re-audit):
  * <ul>
  *   <li>{@code IdentityContextFilter} — request threads, from the JWT
- *       bank_id claim (cleared in a finally block).</li>
+ *       bank_id claim, or (ws26) the authenticated API client's bank
+ *       (cleared in a finally block).</li>
  *   <li>{@code ExecuteExtractionTaskUseCase#run} — extraction worker
  *       threads: {@code runAsSystem} to resolve whose job a queued task is,
  *       then {@code runAs(job.getBankId())} for the actual work.</li>
@@ -99,6 +100,20 @@ import java.util.concurrent.Callable;
  *       opens, {@code runAs(platformBankId)} to write AI_CIRCUIT_OPENED in
  *       the platform bank (skipped when no platform bank exists). No
  *       customer data is read or written.</li>
+ *   <li>{@code ApiClientAuthenticator#lookupAsSystem} — ws26 machine
+ *       identity: {@code runAsSystem} in its own read-only REQUIRES_NEW
+ *       transaction to fetch ONE ApiClient (by ClientId, API-key prefix,
+ *       certificate fingerprint) plus that client's ApiClientSecret hashes,
+ *       before any tenant exists (OAuth2 token endpoint, API-key and
+ *       client-certificate authentication, the client-token branch of
+ *       RevocationValidator, and the "certificate already registered"
+ *       check). Identifying/credential columns only; the request then runs
+ *       under the client's bank (IdentityContextFilter).</li>
+ *   <li>{@code AgentApiClientIssuer#issueAgentClient} — ws26: when the
+ *       caller (SE5's public agent enrolment) has bound no tenant,
+ *       {@code runAs(bankId)} to write the agent's new ApiClient row, its
+ *       secret hash and the API_CLIENT_CREATED audit in that bank; a caller
+ *       bound to another bank is refused.</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker

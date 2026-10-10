@@ -49,6 +49,12 @@ public class PasswordChangeRequiredGate {
      * anonymous callers (nothing to gate without an identity).
      */
     public boolean callerMustChange() {
+        if (com.modocument.infrastructure.security.client.ClientAuthentication.current()
+                .isPresent()) {
+            // ws26: a machine caller has no password; its creator's
+            // temporary password does not gate the integration API.
+            return false;
+        }
         int userId;
         try {
             userId = currentUser.requireUserId();

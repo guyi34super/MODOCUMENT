@@ -24,6 +24,7 @@ undecided request (`CANCELLED`).
 | `BANK_CREATE`      | Onboard a customer bank with ≥ 2 first users (≥ 1 ADMIN, ≥ 2 ADMIN/APPROVER), each with MustChangePassword (ws21) | `platform:banks` | `POST /api/platform/banks` → 202 | `change:approve` (a second platform admin) |
 | `BANK_SUSPEND`     | Suspend a customer bank: every user's TokenVersion bumped, refresh tokens revoked, sign-in refused (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/suspend` → 202 | `change:approve` (a second platform admin) |
 | `BANK_ADMIN_ADD`   | Break-glass: a new ADMIN (MustChangePassword) in a customer bank (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/admins` → 202 | `change:approve` (a second platform admin) |
+| `API_CLIENT_CREATE` | A machine identity for a bank system (ws26); payload `{name, authMethod, scopes, allowedCidrs, expiresAt, certFingerprint?, certSubject?}` — no secret at submit. APPLY generates the client id and secret, stores the Argon2id hash, seals the plaintext (SecretVault) for the **maker's** one-time read within 24 h (`GET …/api-clients/{id}/initial-secret`) and sets the change's target to the new client; audited `API_CLIENT_CREATED` | `integration:admin` | `POST /api/admin/integrations/api-clients` → 202 | `change:approve` (same bank) |
 
 Everything can also be submitted through the generic
 `POST /api/admin/changes` (`{changeType, payload, comment}`); the use case
@@ -43,6 +44,12 @@ renaming a user (`PATCH /api/admin/users/{id}`, display name only, audit
 `USER_PASSWORD_RESET` follows `USER_CREATE`: the temporary password is
 checked against the password policy and hashed at submit; the queue holds
 `{userId, targetEmail, passwordHash}` and the hash never leaves the backend.
+API clients (ws26) follow the same rule: creating one is `API_CLIENT_CREATE`,
+while **revoking** (`POST …/api-clients/{id}/revoke`: REVOKED + TokenVersion
+bump, audit `API_CLIENT_REVOKED`) and **rotating** the secret
+(`POST …/{id}/rotate`, the old secret valid 24 h more, audit
+`API_CLIENT_ROTATED`) are direct, single-admin operations — neither widens
+what the client may do.
 
 The platform owner's bank changes (ws21, details in
 [docs/platform/platform-owner.md](../platform/platform-owner.md)) follow the

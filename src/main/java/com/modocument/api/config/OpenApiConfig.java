@@ -79,7 +79,13 @@ public class OpenApiConfig {
             "/api/auth/refresh",
             "/api/auth/mfa/verify",
             "/api/auth/providers",
-            "/api/probe/synthetic");
+            "/api/probe/synthetic",
+            // ws26: OAuth2 client credentials — the client authenticates in
+            // the request (Basic, form secret or client certificate).
+            "/api/integration/oauth/token");
+
+    /** ws26 machine API: every operation is metered per client (MachineApiInterceptor). */
+    static final String MACHINE_API_PREFIX = "/api/integration/v1/";
 
     /**
      * Anonymous routes with their own per-IP/account throttle
@@ -91,7 +97,8 @@ public class OpenApiConfig {
             "/api/auth/login",
             "/api/auth/refresh",
             "/api/auth/mfa/verify",
-            "/api/probe/synthetic");
+            "/api/probe/synthetic",
+            "/api/integration/oauth/token");
 
     private static final String UNAUTHORIZED = "Unauthorized";
     private static final String FORBIDDEN = "Forbidden";
@@ -119,7 +126,15 @@ public class OpenApiConfig {
             additive only (new endpoints, new optional fields, new response \
             fields). A breaking change ships under a new /api/v2 namespace \
             alongside v1. Deprecated operations are flagged deprecated: true \
-            in this spec and kept for at least 6 months before removal.""";
+            in this spec and kept for at least 6 months before removal.
+
+            Integration API (/api/integration/v1, for bank systems): callable \
+            ONLY by API clients — an OAuth2 client-credentials token from \
+            POST /api/integration/oauth/token (sent as Bearer), an \
+            "Authorization: ApiKey <prefix>.<secret>" header, or a mutual-TLS \
+            client certificate; user tokens are refused there, and client \
+            credentials are refused everywhere else. POSTs require an \
+            Idempotency-Key header. Guide: docs/integration/developer-guide.md.""";
 
     @Bean
     public OpenAPI moDocumentOpenApi(ObjectProvider<BuildProperties> buildProperties,
@@ -206,6 +221,7 @@ public class OpenApiConfig {
                         addRef(op, "403", FORBIDDEN);
                     }
                     boolean throttled = THROTTLED_PUBLIC_PATHS.contains(path)
+                            || path.startsWith(MACHINE_API_PREFIX)
                             || apiRateLimit.bucketFor(entry.getKey().name(), path) != null
                             || llmPatterns.stream().anyMatch(p ->
                                     p.matches(PathContainer.parsePath(path)));
