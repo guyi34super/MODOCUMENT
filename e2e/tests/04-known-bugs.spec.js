@@ -3,7 +3,7 @@
 // docs/phase2/test-plan.md §8 carry the write-up. Do not mark them
 // fixme/skip to get a green run — use the documented workaround switch
 // instead and keep the failure visible. BUG-01 and BUG-02 are fixed (Wave 1
-// and 2); their tests stay as regression tests.
+// and 2), BUG-04 in Wave 4; their tests stay as regression tests.
 //
 // Since OBS-02 the bootstrap password is temporary and SMK-AUTH-01 replaces
 // it: seeded clones copy the CURRENT hash, hence bootstrapPassword().
@@ -82,9 +82,8 @@ test.describe('known bugs @bug', () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
-  // fixme per the phase-2 QA rule for newly found bugs (Supervisor decides
-  // when it is switched on); P4, cosmetic — the toast still confirms.
-  test.fixme('BUG-04 after a forced password change the login page shows the "Password changed" notice', async ({
+  // Fixed in Wave 4 (SE3); kept as a regression test.
+  test('BUG-04 after a forced password change the login page shows the "Password changed" notice', async ({
     page,
   }) => {
     registerBootstrapAdmin();
@@ -102,12 +101,13 @@ test.describe('known bugs @bug', () => {
     await page.getByRole('button', { name: 'Change password' }).click();
     saveAccount(email, { password: newPassword, role: 'READ_WRITE', origin: 'sql-seed' });
 
-    // Observed: plain login page, no notice. ForceChangePasswordPage awaits
-    // logout({revoke:false}) — setUser(null) re-renders the route's
-    // ProtectedRoute, which redirects to /login WITHOUT state — and only then
-    // calls navigate('/login', {state:{notice:'password-changed'}}) from an
-    // unmounted component. LoginPage reads location.state.notice, so the
-    // role=status notice is never rendered.
+    // Was: plain login page, no notice. ForceChangePasswordPage awaited
+    // logout({revoke:false}) — setUser(null) re-rendered the route's
+    // ProtectedRoute, which redirected to /login WITHOUT state — and only then
+    // called navigate('/login', {state:{notice:'password-changed'}}) from an
+    // unmounted component. Fix: logout({notice}) commits the notice with the
+    // sign-out and ProtectedRoute's redirect carries it.
     await expect(page.getByRole('status').filter({ hasText: 'Password changed — sign in again' })).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
   });
 });
