@@ -154,6 +154,9 @@ services:
       E2E_PLAYWRIGHT_ARGS: ${E2E_PLAYWRIGHT_ARGS:-}
     volumes:
       - ./e2e:/e2e
+      # releases.spec.js compares the SPA's shown version with the frontend
+      # package version (E2E_ROOT/../frontend/package.json).
+      - ./frontend/package.json:/frontend/package.json:ro
       # Linux node_modules stay inside the container, not in the checkout.
       - e2e-node-modules:/e2e/node_modules
     ipc: host
