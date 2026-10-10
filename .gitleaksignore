@@ -23,3 +23,7 @@ b427e6ef797867e9e388f99247fb65c8199ec2c0:src/test/java/com/modocument/infrastruc
 # _FILE value that agree are tolerated. Readable placeholder, never used as a
 # key outside that unit test; flagged by gitleaks >= 8.24 (generic-api-key).
 fdc6f3bdcb7dd933ffb00c487341b8773c87beb3:src/test/java/com/modocument/infrastructure/security/SecretFileEnvironmentPostProcessorTest.java:generic-api-key:115
+# ws26 IntegrationApiSecurityTest class Javadoc: the PROSE fragment
+# "revocation/expiry/CIDR/scope" after the word "credentials" matched
+# generic-api-key. No secret; the sentence was reworded in a later commit.
+adbaf9ba400200c19fe618a62e195f7bd959e297:src/test/java/com/modocument/api/integration/IntegrationApiSecurityTest.java:generic-api-key:69

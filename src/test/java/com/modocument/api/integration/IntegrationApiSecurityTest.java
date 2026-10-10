@@ -66,7 +66,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Machine identity + Integration API v1 end to end on H2 (ws26): the
  * API_CLIENT_CREATE maker/checker flow and the one-time secret, all three
  * authentication methods, and the mandatory security properties — user and
- * client credentials never cross over, revocation/expiry/CIDR/scope refusals,
+ * client tokens are never interchangeable, and revoked, expired, wrong-network
+ * and missing-scope callers are refused,
  * spoofed mTLS headers ignored, cross-bank ids 404, idempotent replay.
  *
  * <p>SE1's SecretVault and SE4's RecordsIngestion / IntegrationEventLog are
