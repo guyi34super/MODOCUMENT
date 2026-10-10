@@ -1,7 +1,9 @@
-// Bank Integration Hub helpers (Wave 3) — written against the Wave-0/3
-// contracts (docs/phase2/contracts.md §3, §7.3, §7.4), BEFORE the features
-// merged. When a shape differs at merge, fix it HERE, once, and keep the
-// specs as they are.
+// Bank Integration Hub helpers (Wave 3) — first written against the
+// Wave-0/3 contracts (docs/phase2/contracts.md §3, §7.3, §7.4), aligned with
+// the merged API in Wave 4 (api/controller/Integration*, EgressRuleController,
+// ApiClientAdminController, IntegrationAgentAdminController,
+// AgentProtocolController; docs/integration/developer-guide.md). When a shape
+// moves again, fix it HERE, once, and keep the specs as they are.
 import { ApiClient, approveChange } from './api.js';
 import { uniqueName } from './seed.js';
 
@@ -11,16 +13,21 @@ const ADMIN = '/api/admin/integrations';
 
 /**
  * A DIRECT connection to a private address (the simulator on 127.0.0.1)
- * needs an APPROVED BankEgressRule (SE1): the bank admin requests it, a
- * platform admin submits the approval (202 EGRESS_RULE_APPROVE) and the
- * second platform admin applies it. Returns the EgressRuleView.
+ * needs an APPROVED BankEgressRule (SE1): the bank admin requests it
+ * (200, PENDING; `reason` is required), a platform admin submits the
+ * approval (202 EGRESS_RULE_APPROVE) and the second platform admin applies
+ * it. A destination that is already requested or approved answers 409: the
+ * existing rule is reused. Returns the EgressRuleView.
  */
 export async function approvedEgressRule(bankAdmin, platformMaker, platformChecker, { host, port }) {
   const requested = await bankAdmin.request('POST', `${ADMIN}/egress-rules`, {
-    json: { host, port },
-    expect: [200, 201, 202],
+    json: { host, port, reason: 'E2E bank simulator' },
+    expect: [200, 201, 202, 409],
   });
-  const rule = requested.body;
+  const existing = async () => (await bankAdmin.get(`${ADMIN}/egress-rules`))
+    .find((r) => r.host === host && r.port === port && ['PENDING', 'APPROVED'].includes(r.status));
+  const rule = requested.status === 409 ? await existing() : requested.body;
+  if (rule.status === 'APPROVED') return rule;
   const approval = await platformMaker.request('POST', `/api/platform/egress-rules/${rule.id}/approve`, {
     expect: 202,
   });
@@ -110,7 +117,9 @@ export async function waitForFlowRun(api, flowId, predicate, { timeoutMs = 120_0
 
 /**
  * Creates an API client through maker/checker (API_CLIENT_CREATE); the MAKER
- * then reads the one-time secret. Returns {view, clientId, secret}.
+ * then reads the one-time secret. Returns {view, clientId, secret}. For an
+ * API_KEY client the "secret" IS the whole key the system presents,
+ * `mdk_<prefix>.<secret>` (ApiClientProvisioning), so use it as is.
  */
 export async function createApiClient(maker, checker, request) {
   const name = request.name ?? uniqueName(`E2E client ${request.authMethod}`);
@@ -163,11 +172,16 @@ export function apiKeyClient(key) {
   return client;
 }
 
-/** POST /api/integration/v1/records with an Idempotency-Key; raw response. */
+/**
+ * POST /api/integration/v1/records; raw response. Every POST of the v1 API
+ * needs an Idempotency-Key (400 IDEMPOTENCY_KEY_REQUIRED otherwise): a fresh
+ * one is generated unless the caller passes its own, or `null` to send none.
+ */
 export async function postRecords(client, { templateId, records, idempotencyKey, externalBatchId }) {
+  const key = idempotencyKey === undefined ? uniqueName('idem') : idempotencyKey;
   return client.request('POST', '/api/integration/v1/records', {
     json: { templateId, externalBatchId: externalBatchId ?? uniqueName('batch'), records },
-    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+    headers: key ? { 'Idempotency-Key': key } : {},
   });
 }
 

@@ -154,6 +154,29 @@ export function keyValuePdf() {
   ]);
 }
 
+/**
+ * A key:value PDF the code extractor reads, but with a weaker score than
+ * keyValuePdf(): one record lacks its currency and one amount is not a
+ * number (lower coverage and value shape). For AC-EXT-07 (low confidence).
+ */
+export function patchyKeyValuePdf() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'modoc-e2e-kv-'));
+  return writeTextPdf(path.join(dir, `${uniqueName('remittance-patchy')}.pdf`), [
+    'Remittance register',
+    '',
+    `Reference: INV-${Date.now()}-A`,
+    'Amount: 125.50',
+    'Currency: MUR',
+    '',
+    `Reference: INV-${Date.now()}-B`,
+    'Amount: to be confirmed',
+    '',
+    `Reference: INV-${Date.now()}-C`,
+    'Amount: 12',
+    'Currency: ??',
+  ]);
+}
+
 /** Template for keyValuePdf(), with an optional extraction mode (ws23). */
 export async function keyValueTemplate(api, extractionMode = null) {
   return api.post('/Templates/CreateWithFields', {
@@ -169,9 +192,9 @@ export async function keyValueTemplate(api, extractionMode = null) {
 }
 
 /** Uploads the key:value PDF and waits until the job is VALIDATED or FAILED. */
-export async function uploadAndSettle(api, templateId, { timeoutMs = 150_000 } = {}) {
+export async function uploadAndSettle(api, templateId, { timeoutMs = 150_000, filePath = null } = {}) {
   const created = await uploadForIngestion(api, {
-    filePath: keyValuePdf(),
+    filePath: filePath ?? keyValuePdf(),
     templateId,
     runUntil: 'VALIDATED',
     wait: false,

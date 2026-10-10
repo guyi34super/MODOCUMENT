@@ -15,7 +15,7 @@
 #                                        # bypassed) — the old BUG-01 workaround
 #   E2E_BANK_SIM=1 e2e/run-local.sh      # also start the Wave-3 bank simulator
 #                                        # (bank DB + REST stub; no SFTP without Docker)
-#   E2E_WAVE3=1 E2E_BANK_SIM=1 e2e/run-local.sh  # ... and switch the Wave-3 specs on
+#                                        # + the connector agent jar for the agent specs
 #
 # PostgreSQL: E2E_PG_HOST/E2E_PG_PORT/E2E_PG_SUPERUSER (default
 # 127.0.0.1:55432, postgres — the sandbox scratch cluster, started here if it
@@ -115,6 +115,11 @@ if [ "${SKIP_BUILD:-0}" != "1" ]; then
   log "building backend jar (tests skipped)"
   (cd "$REPO_ROOT" && mvn -B -q -DskipTests ${E2E_MVN_ARGS:-} package) >"$RUN_DIR/build-backend.log" 2>&1 \
     || { tail -50 "$RUN_DIR/build-backend.log"; die "backend build failed"; }
+  if [ "${E2E_BANK_SIM:-0}" = "1" ]; then
+    log "building the connector agent jar (tests skipped)"
+    (cd "$REPO_ROOT" && mvn -B -q -DskipTests ${E2E_MVN_ARGS:-} -f agent/pom.xml package) >"$RUN_DIR/build-agent.log" 2>&1 \
+      || { tail -50 "$RUN_DIR/build-agent.log"; die "agent build failed"; }
+  fi
   log "building frontend"
   (cd "$REPO_ROOT/frontend" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run build) \
     >"$RUN_DIR/build-frontend.log" 2>&1 || { tail -50 "$RUN_DIR/build-frontend.log"; die "frontend build failed"; }
@@ -247,6 +252,10 @@ log "starting backend on :$APP_PORT (database role mode: $E2E_DB_APP_ROLE)"
   export MODOCUMENT_JWT_SECRET="$JWT_SECRET"
   export MODOCUMENT_MFA_KEY="$MFA_KEY"
   export MODOCUMENT_CONNECTOR_KEY="$CONNECTOR_KEY"
+  # The connector agent calls the backend directly here: its JDK HttpClient
+  # offers an h2c upgrade on plain http, which `vite preview` never answers
+  # (in production it speaks HTTPS to the ALB, where this does not arise).
+  export MODOCUMENT_AGENT_PUBLIC_URL="http://127.0.0.1:$APP_PORT"
   export MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL="$ADMIN_EMAIL"
   export MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD="$ADMIN_PASSWORD"
   export MODOCUMENT_PLATFORM_ADMIN_EMAILS="$PLATFORM_ADMIN_1_EMAIL,$PLATFORM_ADMIN_2_EMAIL"
@@ -255,7 +264,12 @@ log "starting backend on :$APP_PORT (database role mode: $E2E_DB_APP_ROLE)"
   export MODOCUMENT_AI_API_KEY="$AI_KEY"
   export MODOCUMENT_STORAGE_ROOT="$RUN_DIR/storage"
   export MODOCUMENT_CORS_ALLOWED_ORIGINS="http://127.0.0.1:$WEB_PORT"
-  export SPRING_APPLICATION_JSON='{"modocument":{"security":{"rate-limit":{"auth":{"per-ip-max":1000,"per-email-max":200},"mfa":{"per-ip-max":200,"per-user-max":60}}},"ai":{"http":{"read-timeout":"5s"}}}}'
+  # The bank simulator's REST stub is plain http on loopback: with
+  # E2E_BANK_SIM=1 (only) the connectors may call http:// targets. Every
+  # other integration guard (egress rules, redirects, caps) stays on.
+  PLAIN_HTTP=false
+  [ "${E2E_BANK_SIM:-0}" = "1" ] && PLAIN_HTTP=true
+  export SPRING_APPLICATION_JSON='{"modocument":{"security":{"rate-limit":{"auth":{"per-ip-max":1000,"per-email-max":200},"mfa":{"per-ip-max":200,"per-user-max":60}}},"ai":{"http":{"read-timeout":"5s"}},"integration":{"connectors":{"allow-plain-http":'"$PLAIN_HTTP"'}}}}'
   exec setsid java ${E2E_JAVA_OPTS:--Xmx1536m} -jar "$JAR" \
     --server.port="$APP_PORT" --server.address=127.0.0.1
 ) >"$RUN_DIR/backend.log" 2>&1 &
@@ -293,6 +307,7 @@ set +e
 (
   cd "$SCRIPT_DIR"
   export E2E_BASE_URL="http://127.0.0.1:$WEB_PORT"
+  export E2E_API_URL="http://127.0.0.1:$APP_PORT"   # the agent's MoDocument URL (see above)
   export E2E_LLM_URL="http://127.0.0.1:$LLM_PORT"
   export E2E_DB_URL="postgres://$DB_OWNER:$OWNER_PASSWORD@$PG_HOST:$PG_PORT/$DB_NAME"
   export E2E_BOOTSTRAP_ADMIN_EMAIL="$ADMIN_EMAIL"
@@ -306,6 +321,12 @@ set +e
   export E2E_DB_APP_ROLE
   export E2E_BACKEND_LOG="$RUN_DIR/backend.log"
   for assignment in "${BANK_SIM_EXPORTS[@]}"; do export "${assignment?}"; done
+  # The on-prem agent runs as a local java process (no container here):
+  # agent/target/modocument-agent-*.jar, built by `mvn -B -f agent/pom.xml package`.
+  if [ -z "${E2E_AGENT_JAR:-}" ]; then
+    AGENT_JAR="$(ls -1 "$REPO_ROOT"/agent/target/modocument-agent-*.jar 2>/dev/null | grep -v -- '-plain' | head -1 || true)"
+    [ -n "$AGENT_JAR" ] && export E2E_AGENT_JAR="$AGENT_JAR"
+  fi
   npx --no-install playwright test "$@"
 )
 TEST_STATUS=$?

@@ -7,17 +7,23 @@
 // first, and the code extractor's KEY_VALUE strategy can stand in for it.
 // API contract (SE4, live): job DTO parsedBy, parseStrategy, parseConfidence,
 // parseFallbackReason; template DTO extractionMode.
-// UI contract (SE4/SE3, Wave 4 — NOT merged yet, so those parts stay fixme):
-// IngestionJobPage badge data-testid="parse-provenance" ("Extracted by code —
-// AI unavailable (error)"), low-confidence callout data-testid="low-confidence",
-// TemplateEditorPage role=combobox name="Extraction mode".
+// UI contract (SE4, Wave 4, live): IngestionJobPage badge
+// data-testid="parse-provenance" ("Extracted by code — AI unavailable
+// (error)"), low-confidence callout data-testid="low-confidence"; job DTO
+// parseMinConfidence / parseLowConfidence; TemplateEditorPage combobox
+// "Extraction mode" with "Inherit bank default (…)", button "Save mode", and
+// per-field hints behind "Edit hints for <field>" (Label pattern, …, "Save
+// hints"); TemplateDto.defaultExtractionMode.
 //
 // Stack config (run-local.sh / compose): the AI read timeout is 5 s, so the
 // `timeout` mode reaches the fallback inside a test. ORDER MATTERS: the
 // circuit-breaker test (AC-EXT-11) runs last because it leaves the breaker
 // OPEN for 120 s.
-import { test, expect } from '../../lib/fixtures.js';
-import { keyValueTemplate, uploadAndSettle } from '../../lib/phase2.js';
+import { test, expect, openAs } from '../../lib/fixtures.js';
+import { bankSetting, keyValueTemplate, patchyKeyValuePdf, putBankSetting, resetBankSetting, uploadAndSettle } from '../../lib/phase2.js';
+import { BOOTSTRAP, OPERATOR } from '../../lib/seed.js';
+
+const MIN_CONFIDENCE = 'extraction.code.minConfidence';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -45,8 +51,17 @@ test.describe('code extraction fallback @phase2 @wave2', () => {
     expect((await llm.stats()).byMode.error500, 'the model was tried first').toBeGreaterThan(0);
   });
 
-  test.fixme('AC-EXT-02b the job page shows the "Extracted by code" badge (Wave 4 UI)', async () => {
-    // waiting for SE4's IngestionJobPage badge (data-testid="parse-provenance").
+  test('AC-EXT-02b the job page shows the "Extracted by code" badge', async ({ page, operatorApi, llm }) => {
+    const template = await keyValueTemplate(operatorApi);
+    await llm.reset();
+    await llm.setMode('error500');
+    const job = await uploadAndSettle(operatorApi, template.templateId);
+    expectExtractedByCode(job, 'ERROR');
+
+    await openAs(page, OPERATOR(), `/ingestion/${job.ingestionJobId}`);
+    await expect(page.getByTestId('parse-provenance')).toHaveText('Extracted by code — AI unavailable (error)');
+    await expect(page.getByTestId('parse-confidence')).toContainText('%');
+    await expect(page.getByTestId('low-confidence')).toHaveCount(0);
   });
 
   test('AC-EXT-03 timeout and invalid JSON map to TIMEOUT and INVALID_OUTPUT', async ({ operatorApi, llm }) => {
@@ -85,13 +100,78 @@ test.describe('code extraction fallback @phase2 @wave2', () => {
     expect((await llm.stats()).calls).toBeGreaterThan(0);
   });
 
-  test.fixme('AC-EXT-07 a low-confidence code result in CODE_ONLY is flagged LOW_CONFIDENCE (Wave 4 callout)', async () => {});
+  test('AC-EXT-07 a low-confidence code result in CODE_ONLY is kept, flagged and called out', async ({
+    page,
+    adminApi,
+    operatorApi,
+  }) => {
+    // Raise the bank's threshold (OPERATIONAL setting: applies at once) above
+    // what the key:value strategy scores, so the CODE_ONLY result is "low".
+    const before = await bankSetting(adminApi, MIN_CONFIDENCE);
+    const raised = await putBankSetting(adminApi, MIN_CONFIDENCE, 0.95, { expectedVersion: before.version });
+    expect(raised.status).toBe(200);
+    try {
+      const template = await keyValueTemplate(operatorApi, 'CODE_ONLY');
+      // A patchy document: the clean one scores the 0.95 maximum.
+      const job = await uploadAndSettle(operatorApi, template.templateId, { filePath: patchyKeyValuePdf() });
+      expect(job.status, job.errorMessage ?? '').not.toBe('FAILED');
+      expect(job.parsedBy).toBe('CODE');
+      expect(job.parseFallbackReason).toBe('MODE_CODE_ONLY');
+      expect(job.parseMinConfidence).toBeCloseTo(0.95, 5);
+      expect(job.parseConfidence).toBeLessThan(0.95);
+      expect(job.parseLowConfidence).toBe(true);
+
+      await openAs(page, OPERATOR(), `/ingestion/${job.ingestionJobId}`);
+      const callout = page.getByTestId('low-confidence');
+      await expect(callout).toBeVisible();
+      await expect(callout).toContainText('below this bank');
+      await expect(callout).toContainText('95%');
+    } finally {
+      await resetBankSetting(adminApi, MIN_CONFIDENCE);
+    }
+  });
 
   test.fixme('AC-EXT-13 AI_PARTIAL: a failed batch is re-parsed by code, the rest stays AI (Wave 4)', async () => {
     // multi-batch document; llm.setMode('error500', { count: 1 }) -> parsedBy AI_PARTIAL.
   });
 
-  test.fixme('AC-EXT-16 template extraction section saves mode and per-field aliases/patterns/date formats (Wave 4 UI)', async () => {});
+  test('AC-EXT-16 template extraction section: mode under maker/checker, per-field hints with field-level errors', async ({
+    page,
+    adminApi,
+  }) => {
+    const template = await keyValueTemplate(adminApi);
+    const view = await adminApi.get(`/Templates/GetById/${template.templateId}`);
+    expect(view.extractionMode ?? null).toBeNull();
+    expect(view.defaultExtractionMode).toBe('AI_WITH_CODE_FALLBACK'); // the inherited bank default
+
+    await openAs(page, BOOTSTRAP(), `/templates/${template.templateId}`);
+    const section = page.getByTestId('template-extraction');
+    const mode = section.getByRole('combobox', { name: 'Extraction mode' });
+    await expect(mode).toBeVisible();
+    await expect(mode.locator('option').first()).toHaveText(/^Inherit bank default \(.+\)$/);
+    await mode.selectOption('CODE_ONLY');
+    await section.getByRole('button', { name: 'Save mode' }).click();
+    // Template changes are maker/checker in production: 202 -> "Pending approval".
+    await expect(section.getByText('Pending approval')).toBeVisible();
+
+    // Per-field hints: a broken pattern is refused with the field's own message.
+    await section.getByRole('button', { name: 'Edit hints for Reference' }).click();
+    const labelPattern = section.getByLabel('Label pattern');
+    await labelPattern.fill('Ref([');
+    await section.getByRole('button', { name: 'Save hints' }).click();
+    await expect(labelPattern).toHaveAttribute('aria-invalid', 'true');
+    // The server's 400 is split per field: the message sits under THIS input.
+    const errorId = (await labelPattern.getAttribute('aria-describedby')).split(' ').find((id) => id.endsWith('-error'));
+    const fieldError = page.locator(`[id="${errorId}"]`);
+    await expect(fieldError).toHaveAttribute('role', 'alert');
+    await expect(fieldError).not.toBeEmpty();
+    await expect(section.getByLabel('Value pattern')).not.toHaveAttribute('aria-invalid', 'true');
+
+    await labelPattern.fill('Ref(erence)?');
+    await section.getByLabel('Aliases').fill('Ref No\nInvoice');
+    await section.getByRole('button', { name: 'Save hints' }).click();
+    await expect(page.getByText('Extraction hints of "Reference" saved')).toBeVisible();
+  });
 
   // LAST in the file: leaves the breaker OPEN for its 120 s open duration.
   test('AC-EXT-11 repeated LLM failures open the circuit breaker; later uploads fall back without calling the LLM', async ({

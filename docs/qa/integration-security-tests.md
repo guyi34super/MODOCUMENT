@@ -5,8 +5,9 @@ Owner: QA. Scope: the integration hub of phase 2 (plan §6, contracts §3,
 before Wave 3 exits (test plan §4, "the security set passes"), with concrete
 inputs, the expected result, the test level and **the engineer whose suite
 owns the case**. QA's own E2E coverage of the same cases is in
-`e2e/tests/phase2/integration-hub.spec.js` (fixme until the merge) against
-the bank simulator (`e2e/bank-simulator/`).
+`e2e/tests/phase2/integration-hub.spec.js` (live since Wave 4) against
+the bank simulator (`e2e/bank-simulator/`). **Where each case is tested now,
+and its status, is in §12 (Wave 4 coverage map).**
 
 Levels: UNIT (no Spring), H2-IT (Spring + MockMvc on H2), PG-IT (`-Ppostgres-it`,
 RLS enforced as `modocument_app`), CONN-IT (`-Pconnectors-it`, Testcontainers /
@@ -140,6 +141,81 @@ General expectations for every refusal below:
 ## Exit criteria
 
 All S-cases automated at their stated level and green in CI; the E2E groups
-in `integration-hub.spec.js` switched on (`E2E_WAVE3=1`) and green against
-the bank simulator; no open P1/P2 security bug. QA re-runs ZAP baseline on
-`/api/integration/v1/**` in Wave 4 (test plan AC-X-04).
+in `integration-hub.spec.js` live and green against the bank simulator; no
+open P1/P2 security bug. QA re-runs ZAP baseline on `/api/integration/v1/**`
+in Wave 4 (test plan AC-X-04): the baseline workflow now seeds the
+integration routes (`.zap/integration-seed.py`).
+
+**Wave 4 result:** 48 of 49 cases PASS at an automated level; S28 is a GAP
+(the optional API-key request signing was not built). S2 and S37 pass their
+security property but carry open low-severity bugs (BUG-06, BUG-08). No
+P1/P2 security bug is open. Details in §12 and `docs/qa/phase2-signoff.md`.
+
+## 12. Wave 4 coverage map (QA)
+
+Which test proves each case on the merged code (after the Wave-3 merge
+`0254229` and SE4's Wave-4 branch). Abbreviations: **QA-H2** =
+`api.integration.IntegrationHubSecurityQaTest` (H2, SSRF policy ON,
+API-client export cap 1), **QA-CONN** =
+`infrastructure.integration.connector.ConnectorSecurityQaTest`, **QA-PG** =
+`pgit.IntegrationReadOnlyQaPgIT`, **API-SEC** =
+`api.integration.IntegrationApiSecurityTest`, **INT-API** =
+`integration.IntegrationApiTest`, **ENGINE** = `integration.IntegrationEngineTest`,
+**GUARD** = `infrastructure.integration.egress.BankEgressGuardTest`, **E2E** =
+`e2e/tests/phase2/integration-hub.spec.js`, **agent/** = the agent module's
+tests. Test names planned above that were never created (e.g.
+`OutboundHostPolicyBankAwareTest`, `JdbcIdentifiersTest`, `ClientRevocationTest`)
+are replaced by the real ones. PASS = automated and green; GAP = not
+automatable because the feature does not exist.
+
+| ID | Tests (class#method) | Status |
+|---|---|---|
+| S1 | GUARD#aPrivateDestinationWithoutARuleIsRefusedNamingTheHost; QA-H2#s01PrivateDestinationWithoutARuleNeverOpensASocket (a listener sees **no** TCP connection until a rule is approved); E2E AC-INT-17 | PASS (refused at connect, not at submit, which the case allows) |
+| S2 | GUARD#metadataEndpointsAreAlwaysRefused; `EgressRuleIntegrationTest#cidrRequestsAreCanonicalAndMalformedRequestsAreRefused` (a rule for 169.254.169.254 → 400); QA-H2#s02MetadataDestinationIsRefusedAtConnectEvenWithARule; E2E AC-INT-17 | PASS; **BUG-06** (P4): the URL is accepted at submit (QA-H2#bug06MetadataDestinationRefusedAtSubmit, `@Disabled`) |
+| S3 | GUARD#theWrongPortIsRefused, #aCidrRuleCoversTheAddressesInsideItOnly, #anIpLiteralHostRuleMatchesTheResolvedAddress; QA-H2#s01 (next port refused) | PASS |
+| S4 | GUARD#aNameResolvingToAPublicAndAnUnapprovedPrivateAddressIsRefused, #loopbackNeedsARuleToo (fake resolver; the guard resolves on every call, right before connecting) | PASS (OBS-09: the HTTP/JDBC/SFTP client resolves again; the JVM DNS cache narrows the window) |
+| S5 | `RestApiIntegrationConnectorTest#redirectsAreNeverFollowed`, #aNextLinkToAnotherHostIsRefused | PASS |
+| S6 | `EgressRuleIntegrationTest#aRequestedDestinationOpensOnlyAfterTwoPlatformAdminsApproveAndUntilRevoked`, #onlyIntegrationAdminsAndPlatformAdminsReachTheirRoutes; `pgit.EgressRulePgIT`; E2E AC-INT-17b | PASS |
+| S7 | `DatabaseIntegrationConnectorTest#identifierInjectionIsRefusedBeforeAnySqlIsSent`; QA-H2#s07IdentifierInjectionIsRefusedAtFlowSave (every plan input × table/columns/watermark/keyColumns); agent/`DatabaseConnectorSqlTest#anythingButAPlainIdentifierIsRefused` | PASS (a TRAILING NUL is trimmed with the other control characters before validation, and the trimmed name is what is used) |
+| S8 | `DatabaseIntegrationConnectorTest` (`sql` key); QA-H2#s08FreeSqlKeysAreRefused | PASS |
+| S9 | QA-PG#theReadPathCannotWriteEvenThroughAView (PostgreSQL refuses an INSERT the read triggers); QA-CONN#s09DatabaseReadsRunOnAReadOnlyConnection | PASS |
+| S10 | `DatabaseIntegrationConnectorTest#dangerousDriverOptionsAndRawUrlsAreRefused`; INT-API#invalidConnectionsAreRefusedAtSubmit; QA-H2#s10JdbcUrlInjectionIsRefusedAtSubmit | PASS |
+| S11 | `SftpIntegrationConnectorTest#anUnpinnedHostKeyIsNeverAccepted`; QA-H2#s11SftpWithoutAPinnedHostKeyIsRefusedAtSubmit | PASS |
+| S12 | `SftpIntegrationConnectorTest#aChangedHostKeyIsRefusedBeforeAuthenticating`; agent/`SftpConnectorTest#anUnknownHostKeyIsRefused` | PASS |
+| S13 | `SftpIntegrationConnectorTest#pathTraversalIsRefused`; QA-H2#s13SftpPathTraversalIsRefusedAtFlowSave; QA-CONN#s13ASymlinkLeavingTheSftpFolderIsNotRead; agent/`AllowListRefusalTest#sftpFoldersOutsideTheListOrEscapingTheConnectionFolderAreRefused` | PASS |
+| S14 | `SftpIntegrationConnectorTest#readMatchesTheGlobDownloadsAndMovesToProcessed` (the over-cap file is skipped and left in place) | PASS (OBS-10: no `FILE_TOO_LARGE` run event, only a log line) |
+| S15 | `SftpIntegrationConnectorTest#writeUploadsToATempNameThenRenamesAndIsIdempotent`; agent/`SftpConnectorTest#writesUnderTheFinalNameViaATemporaryFile` | PASS |
+| S16 | API-SEC#recordsAreIdempotent; E2E AC-INT-24 | PASS |
+| S17 | API-SEC#recordsAreIdempotent (409 `IDEMPOTENCY_KEY_REUSED`); E2E AC-INT-24 | PASS |
+| S18 | QA-H2#s18IdempotencyKeysArePerClient; `pgit.ApiClientAuthPgIT#apiKeyClientsAuthenticateUnderRlsAndSeeOnlyTheirBank` | PASS |
+| S19 | ENGINE#failingDeliveriesRetryWithTheSameKeyThenGoDead; `RestApiIntegrationConnectorTest#pushSendsTheBatchWithItsIdempotencyKeyAndApiKey`; QA-H2#s24 (the replay keeps the key); bank-sim `server.test.mjs` | PASS |
+| S20 | `WebhookIntegrationConnectorTest#deliveriesAreSignedOverTimestampDotBody`; E2E AC-INT-10/13 (the bank's verifier accepts every delivery) | PASS |
+| S21 | bank-sim `signature.test.mjs`; E2E AC-INT-08; QA-CONN#s21AWebhookRetryIsSignedAtSendTime | PASS |
+| S22 | `WebhookIntegrationConnectorTest#theVerifierRejectsTamperedBodiesAndStaleTimestamps` (`MessageDigest.isEqual`); `signature.test.mjs` | PASS |
+| S23 | QA-CONN#s21 (a rotated secret does not verify the old signature); INT-API (a secret change is an `INTEGRATION_CONNECTION_CHANGE`) | PASS (OBS-11: no overlap window, the new webhook secret applies at once) |
+| S24 | ENGINE#failingDeliveriesRetryWithTheSameKeyThenGoDead; QA-H2#s24ADeadLetterRaisesTheHighAlert (DEAD, `INTEGRATION_DELIVERY_DEAD`, HIGH alert `integration-dead-letter`, replay through `POST …/runs/{id}/retry` delivers with the same key) | PASS |
+| S25 | API-SEC#revocationIsImmediateForTokensAndKeys; `pgit.ApiClientAuthPgIT#oauthTokensWorkUnderRlsUntilRevoked`; E2E AC-INT-25 | PASS |
+| S26 | API-SEC#anExpiredClientIsA401; QA-H2#s26AnExpiredClientGetsNoToken; E2E AC-INT-25 | PASS |
+| S27 | API-SEC#theTokenEndpointFollowsRfc6749; QA-H2#s27AuthenticationFailuresAreIndistinguishable, #s27RepeatedClientAuthFailuresRaiseTheAlert; E2E AC-INT-19 (audit row) | PASS |
+| S28 | none | **GAP**: API-key request signing (optional in AC-INT-20) was not built and is not in the developer guide. Deferred (OBS-12). |
+| S29 | API-SEC#certificateClientsAuthenticateOnlyThroughTheTrustedProxy; `ClientCredentialPrimitivesTest#certificateHeadersCountOnlyFromATrustedSocketPeer`; `scripts/check-nginx-headers.sh` | PASS (E2E AC-INT-21 needs the nginx mTLS listener: compose or AWS) |
+| S30 | API-SEC#anotherBanksJobIsA404AndOwnJobsAreReadable; API-SEC#certificateClientsAuthenticateOnlyThroughTheTrustedProxy (one certificate, one client); E2E AC-INT-23 | PASS |
+| S31 | API-SEC#theCallerAddressMustBeInsideAllowedCidrs | PASS |
+| S32 | INT-API#outboundEnablingNeedsASecondAdminAndWideningAsksAgain (`maskPii` true by default); ENGINE#validatedRecordsLeaveMaskedAndAreLoggedAsExports; E2E AC-INT-14 | PASS |
+| S33 | INT-API#outboundEnablingNeedsASecondAdminAndWideningAsksAgain (masking off → 202); QA-H2#s33TurningTheMaskingDefaultOffNeedsASecondAdmin; E2E AC-INT-14 | PASS |
+| S34 | ENGINE#validatedRecordsLeaveMaskedAndAreLoggedAsExports (`EXPORT_RUN`); QA-H2#s34AnOutboundPayloadAboveTheRowCapNeverLeaves; `AgentRunServiceTest` (agent deliveries audited `EXPORT_RUN` on `IntegrationFlow:<id>`, SE4 Wave 4) | PASS |
+| S35 | QA-H2#s35ResultsAreMaskedCappedAndOnlyReleasedDocumentsExist; API-SEC#anotherBanksJobIsA404AndOwnJobsAreReadable (only valid rows) | PASS |
+| S36 | INT-API#outboundEnablingNeedsASecondAdminAndWideningAsksAgain; E2E AC-INT-10 | PASS |
+| S37 | INT-API (masking off); QA-H2#s37WideningAnEnabledOutboundFlowNeedsApprovalAgain (payload kind, target) | PASS except the row cap: **BUG-08** (P3), QA-H2#bug08RaisingTheRowCapIsAWidening `@Disabled` |
+| S38 | QA-H2#s38AStaleEnableApprovalIsRefused | PASS |
+| S39 | agent/`AllowListRefusalTest` (5 cases); E2E AC-INT-30 (refused BY the agent) | PASS |
+| S40 | agent/`SecretsNeverLoggedTest`; E2E AC-INT-30 (no password in any cloud row or the backend log) | PASS |
+| S41 | `IntegrationAgentApiTest#registerApproveReadTokenOnceEnrolAndRevoke`, #anExpiredTokenCanNeitherBeReadNorUsed; `AgentEnrolmentTokenTest`; QA-H2#s41EnrolmentGuessesAreUniformAndRateLimited; E2E AC-INT-28 | PASS |
+| S42 | QA-H2#s42AgentAndSystemClientsStayInTheirLanes; `AgentProtocolControllerTest#onlyAnEnrolledAgentClientBoundToThatAgentGetsThrough`; `ApiClientProvisioningTest#agentClientsGetAgentConnectOnlyAndTheirSecretOnce` | PASS |
+| S43 | API-SEC#userTokensAndClientCredentialsNeverCrossOver; E2E AC-INT-19 | PASS |
+| S44 | API-SEC#userTokensAndClientCredentialsNeverCrossOver | PASS |
+| S45 | QA-H2#s45ForgedClaimsGrantNothing | PASS |
+| S46 | API-SEC#aMissingScopeIsA403; QA-H2#s46ScopesAreNotWidenedByTheRoute | PASS |
+| S47 | INT-API#aNewConnectionNeedsASecondAdminAndItsSecretIsNeverReturned; E2E AC-INT-02 (responses, audit, pending change, config, backend log) | PASS |
+| S48 | `ConnectorSecretVaultTest#aCiphertextOfBankACannotBeOpenedAsBankB` (and 11 more); E2E AC-INT-02 (on PostgreSQL the stored column is base64 ciphertext with a key version) | PASS |
+| S49 | `ApiClientProvisioningTest#applyHashesTheSecretAndSealsItForTheMakerOnly`; API-SEC#makerCheckerCreatesTheClientAndOnlyTheMakerReadsTheSecretOnce; E2E AC-INT-18 | PASS |

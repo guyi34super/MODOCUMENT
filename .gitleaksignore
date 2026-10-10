@@ -52,3 +52,14 @@ ef559f610bbbec426bf91cd9d86fbb18c936817d:src/test/java/com/modocument/integratio
 # ws26 agent AgentTls: a format CHECK and error message naming the PKCS#8
 # PEM header ("-----BEGIN PRIVATE KEY-----"); no key material.
 a54677aaa63bfa24f93a63fdb64b6b12e76a5e19:agent/src/main/java/com/modocument/agent/cloud/AgentTls.java:private-key:168
+# QA Wave 4 IntegrationHubSecurityQaTest: the dummy webhook HMAC secret
+# "0123456789abcdef0123" (the same test value IntegrationEngineTest uses) and a
+# deliberately unknown API-key prefix "mdk_UNKNOWNPREFIX0000.secret"; neither
+# is a credential.
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:384
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:589
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:599
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:637
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:653
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:682
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:735

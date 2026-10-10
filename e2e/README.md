@@ -24,16 +24,17 @@ e2e/
                           integration.js + banksim.js (Wave 3, written against the contracts)
   fixtures/               employees.csv, pdf.js (free-text PDF writer for the AI path)
   tests/                  00-harness, 01-auth, 02-templates-ingestion, 03-session (@smoke)
-                          04-known-bugs (@bug), phase2/* (@phase2 @waveN: Wave 2 live,
-                          Wave 3 = integration-hub.spec.js, fixme until E2E_WAVE3=1)
+                          04-known-bugs (@bug), phase2/* (@phase2 @waveN; all live
+                          since Wave 4 except AC-EXT-13)
 ```
 
-Phase-2 status (Wave 2 QA round): settings, admin dashboard, user actions,
-shared templates, platform owner, extraction fallback (API level) and
-releases/announcements specs are **live**. Still `fixme`: the Wave-4 UI parts
-of extraction (provenance badge, low-confidence callout, extraction section,
-AI_PARTIAL) and the whole Wave-3 integration hub (`test.fixme(!E2E_WAVE3,
-'waiting for Wave 3 merge')`).
+Phase-2 status (Wave 4 QA round): every phase-2 spec is **live**, including
+the integration hub (no `E2E_WAVE3` switch any more: the connections/flows
+and agent groups skip without the bank simulator) and the Wave-4 extraction
+UI (provenance badge, low-confidence callout, extraction section). Still
+`fixme`: AC-EXT-13 (AI_PARTIAL needs a multi-batch document). Skipped
+without the right stack: AC-INT-15 (SFTP: `E2E_BANK_SIM_SFTP_*`, the compose
+simulator) and AC-INT-21 (nginx mTLS listener: `E2E_MTLS_URL`).
 
 ## Run it locally (no Docker)
 
@@ -49,8 +50,7 @@ e2e/run-local.sh --grep @smoke            # anything after the script goes to `p
 SKIP_BUILD=1 e2e/run-local.sh             # reuse target/*.jar and frontend/dist
 E2E_KEEP=1 e2e/run-local.sh               # keep the database and run dir afterwards
 E2E_DB_APP_ROLE=owner e2e/run-local.sh    # the old BUG-01 workaround (fixed; kept as a switch)
-E2E_BANK_SIM=1 e2e/run-local.sh           # + bank simulator (bank DB + REST stub; Wave 3)
-E2E_WAVE3=1 E2E_BANK_SIM=1 e2e/run-local.sh   # + switch the Wave-3 integration specs on
+E2E_BANK_SIM=1 e2e/run-local.sh           # + bank simulator (bank DB + REST stub) and the agent jar
 ```
 
 Per run, the script also generates the two bootstrap **platform admins**
@@ -210,10 +210,9 @@ COMPOSE_FILE=docker-compose.e2e.yml:docker-compose.e2e-bank-sim.yml \
   --abort-on-container-exit --exit-code-from e2e
 ```
 
-Known gap: `AC-INT-15` checks the bank side of the SFTP flow with
-`docker exec` into the SFTP container. The Playwright container has no
-Docker CLI (and gets no Docker socket), so that step cannot pass in CI.
-List the folders over SFTP instead.
+`AC-INT-15` reads the bank side of the SFTP flow over SFTP (a list-only dry
+run of a throwaway inbound flow), so it needs no Docker CLI in the runner.
+`E2E_WAVE3` is no longer read by the suite.
 
 BUG-01 is fixed: the gate runs production-shaped (`E2E_DB_APP_ROLE=rls`).
 The owner-mode switch (`E2E_DB_APP_ROLE=owner`, `E2E_APP_DB_USER=modocument`,

@@ -2,11 +2,16 @@
 // SE3 pages, SE4 connectors/flows, SE5 agent). Acceptance criteria:
 // docs/phase2/test-plan.md §5.6; security cases: docs/qa/integration-security-tests.md.
 //
-// WRITTEN AHEAD OF THE MERGE against docs/phase2/contracts.md §3, §7.3, §7.4,
-// so every group is `test.fixme('waiting for Wave 3 merge')` until the stack
-// reports the features. Switch a group on with E2E_WAVE3=1 (or delete the
-// fixme line) in the PR that merges it; fix shape drift in lib/integration.js,
-// not here.
+// Written ahead of the merge against docs/phase2/contracts.md §3, §7.3, §7.4
+// and aligned with the merged API in Wave 4 (QA): every group is LIVE. The API
+// clients group needs only the stack; the connections/flows group skips
+// without the bank simulator (E2E_BANK_SIM=1), the agent group also without
+// the agent jar (E2E_AGENT_JAR; run-local.sh finds agent/target/*.jar). Fix
+// shape drift in lib/integration.js, not here.
+//
+// What still needs more than run-local.sh: AC-INT-15 (SFTP: the atmoz/sftp
+// container of the compose bank simulator) and AC-INT-21 (the nginx mTLS
+// listener: E2E_MTLS_URL + E2E_MTLS_CA). Both skip with a reason here.
 //
 // Needs the bank simulator (e2e/bank-simulator, README): E2E_BANK_SIM=1 for
 // run-local.sh (bank DB + REST stub; SFTP needs the compose stack), which
@@ -16,13 +21,11 @@
 //   REST:     /oauth/token, GET /api/customers (paged), POST /api/results,
 //             POST /webhooks/modocument (verifies X-MoDocument-Signature)
 //   SFTP:     inbound/ (seeded customers-2024-06-01.csv), outbound/, pinned host key
-// UI contract (SE3): connections wizard steps as role=heading "Type", "Mode",
-// "Details", "Credentials", "Test"; role=button "Test connection" ->
-// role=status containing "Connection OK"; flow builder checkboxes
-// "Validated records", "Rejected rows", "Job status & errors", "Released
-// documents", "Events"; role=switch "Mask personal data" (checked by
-// default); role=button "Dry run" -> table of <= 20 rows; API client secret
-// shown once in data-testid="client-secret" with role=button "Copy".
+// UI contract (SE3, as merged): connections list row button "Test <name>" ->
+// role=status containing "Connection OK"; flow builder role=switch "Mask
+// personal data (PII)" (checked by default); role=button "Dry run / preview"
+// -> section "Dry run result" with a table of <= 20 rows; API client rows
+// carry a status chip ("Active").
 import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -54,11 +57,14 @@ import { onboardBank } from '../../lib/phase2.js';
 import { BOOTSTRAP, uniqueName } from '../../lib/seed.js';
 
 const run = promisify(execFile);
-const WAVE3 = process.env.E2E_WAVE3 === '1';
 const ADMIN = '/api/admin/integrations';
 
-/** Bank-side DB coordinates as MoDocument's connection sees them (host from the app's point of view). */
-function bankDbConfig() {
+/**
+ * Bank-side DB coordinates as MoDocument's connection sees them (host from
+ * the app's point of view). The user name is a CONFIG value; only the
+ * password is a secret (DatabaseIntegrationConnector).
+ */
+function bankDbConfig(account = READER()) {
   return {
     host: process.env.E2E_BANK_SIM_DB_HOST_FOR_APP ?? '127.0.0.1',
     port: Number(process.env.E2E_BANK_SIM_DB_PORT_FOR_APP ?? 55433),
@@ -66,17 +72,24 @@ function bankDbConfig() {
     database: process.env.E2E_BANK_SIM_DB_NAME ?? 'bank',
     schema: 'integration',
     sslmode: 'disable',
+    username: account.username,
   };
 }
 
-const READER = () => ({
-  username: process.env.E2E_BANK_SIM_DB_READER ?? 'modoc_reader',
-  password: process.env.E2E_BANK_SIM_DB_READER_PASSWORD,
-});
-const WRITER = () => ({
-  username: process.env.E2E_BANK_SIM_DB_WRITER ?? 'modoc_writer',
-  password: process.env.E2E_BANK_SIM_DB_WRITER_PASSWORD,
-});
+function READER() {
+  return {
+    username: process.env.E2E_BANK_SIM_DB_READER ?? 'modoc_reader',
+    password: process.env.E2E_BANK_SIM_DB_READER_PASSWORD,
+  };
+}
+function WRITER() {
+  return {
+    username: process.env.E2E_BANK_SIM_DB_WRITER ?? 'modoc_writer',
+    password: process.env.E2E_BANK_SIM_DB_WRITER_PASSWORD,
+  };
+}
+/** The connection secret of a DATABASE connection: the password only. */
+const dbSecret = (account) => ({ password: account.password });
 
 /** The bank-shared template every machine path uses (machine jobs need BANK templates, §7.1). */
 async function customersTemplate(adminApi) {
@@ -98,9 +111,27 @@ const RECORDS = [
   { CustomerId: 'API-0002', FullName: 'Kevin Li', Email: 'kevin@bank-sim.test', Segment: 'SME', Balance: '98200.00' },
 ];
 
+/**
+ * The file names in an SFTP folder of the bank simulator, read over SFTP: a
+ * throwaway (never enabled) inbound flow's dry run, which lists names and
+ * sizes and moves nothing (SftpIntegrationConnector#listFiles). Replaces the
+ * former `docker exec … ls`, which needs a Docker CLI the CI runner lacks.
+ */
+async function sftpListing(adminApi, connectionId, templateId, folder) {
+  const probe = await createFlow(adminApi, {
+    name: uniqueName(`E2E sftp listing ${folder}`), direction: 'INBOUND', connectionId, templateId,
+    trigger: 'MANUAL', payloadKinds: ['VALIDATED_RECORDS'], format: 'CSV', sourceSpec: { folder, glob: '*' },
+  });
+  try {
+    const preview = await adminApi.post(`${ADMIN}/flows/${probe.id}/preview`);
+    return (preview.rows ?? []).map((row) => row.fileName);
+  } finally {
+    await adminApi.request('DELETE', `${ADMIN}/flows/${probe.id}`);
+  }
+}
+
 // ===========================================================================
 test.describe('integration hub — connections and flows @phase2 @wave3', () => {
-  test.fixme(!WAVE3, 'waiting for Wave 3 merge');
   test.describe.configure({ mode: 'serial' });
   test.beforeEach(async () => {
     test.skip(!env.bankSim, 'bank simulator not started (E2E_BANK_SIM=1)');
@@ -127,10 +158,10 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
     }
   });
 
-  test('AC-INT-01 creating a connection needs approval; disabling is immediate', async ({ adminApi, checkerApi }) => {
+  test('AC-INT-01 creating a connection needs approval; deleting an unused one is immediate', async ({ adminApi, checkerApi }) => {
     const name = uniqueName('E2E bank DB');
     const submitted = await adminApi.request('POST', `${ADMIN}/connections`, {
-      json: { name, type: 'DATABASE', mode: 'DIRECT', config: bankDbConfig(), authType: 'PASSWORD', secret: READER() },
+      json: { name, type: 'DATABASE', mode: 'DIRECT', config: bankDbConfig(), authType: 'BASIC', secret: dbSecret(READER()) },
     });
     expect(submitted.status).toBe(202);
     expect(submitted.body.changeType).toBe('INTEGRATION_CONNECTION_CHANGE');
@@ -138,20 +169,35 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
     expect(self.status).toBe(409);
     expect((await adminApi.get(`${ADMIN}/connections`)).find((c) => c.name === name)?.status ?? 'absent').not.toBe('OK');
 
-    ({ view: dbConnection } = await createConnection(adminApi, checkerApi, {
-      type: 'DATABASE', config: bankDbConfig(), authType: 'PASSWORD', secret: READER(),
-    }));
-    expect(dbConnection).toMatchObject({ type: 'DATABASE', mode: 'DIRECT', secretSet: true });
+    // The checker applies the change that is already waiting.
+    await checkerApi.post(`/api/admin/changes/${submitted.body.pendingChangeId}/approve`, { comment: 'e2e' });
+    dbConnection = (await adminApi.get(`${ADMIN}/connections`)).find((c) => c.name === name);
+    expect(dbConnection).toMatchObject({ type: 'DATABASE', mode: 'DIRECT', secretSet: true, status: 'UNTESTED' });
 
-    // Disabling a (throwaway) connection is direct: 200, no pending change.
+    // Renaming is direct (200); a host or credential change is maker/checker (202).
+    const renamed = await adminApi.request('PUT', `${ADMIN}/connections/${dbConnection.id}`, {
+      json: { ...dbConnection, name: `${name} (renamed)`, expectedVersion: dbConnection.version },
+    });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name).toBe(`${name} (renamed)`);
+    // BUG-07: the 200 carries the version from BEFORE the rename (JPA bumps
+    // it at commit), so re-read the connection for the next edit.
+    const current = await adminApi.get(`${ADMIN}/connections/${dbConnection.id}`);
+    const moved = await adminApi.request('PUT', `${ADMIN}/connections/${dbConnection.id}`, {
+      json: { ...current, config: { ...current.config, port: 1 }, expectedVersion: current.version },
+    });
+    expect(moved.status).toBe(202);
+    expect(moved.body.changeType).toBe('INTEGRATION_CONNECTION_CHANGE');
+    await adminApi.post(`/api/admin/changes/${moved.body.pendingChangeId}/cancel`, {}).catch(() => {});
+    dbConnection = await adminApi.get(`${ADMIN}/connections/${dbConnection.id}`);
+    expect(dbConnection.config.port).not.toBe('1');
+
+    // Deleting a (throwaway) connection no flow uses is direct: 204, no pending change.
     const { view: throwaway } = await createConnection(adminApi, checkerApi, {
       type: 'REST_API', config: { baseUrl: env.bankSim.restURL }, authType: 'NONE',
     });
-    const disabled = await adminApi.request('PUT', `${ADMIN}/connections/${throwaway.id}`, {
-      json: { ...throwaway, status: 'DISABLED', expectedVersion: throwaway.version },
-    });
-    expect([200, 204]).toContain(disabled.status);
-    expect((await adminApi.get(`${ADMIN}/connections/${throwaway.id}`)).status).toBe('DISABLED');
+    expect((await adminApi.request('DELETE', `${ADMIN}/connections/${throwaway.id}`)).status).toBe(204);
+    expect((await adminApi.request('GET', `${ADMIN}/connections/${throwaway.id}`)).status).toBe(404);
   });
 
   test('AC-INT-02 connection secrets are write-only (never returned, never logged)', async ({ adminApi }) => {
@@ -169,6 +215,17 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
       [`%${password}%`]
     )).rows);
     expect(hits).toEqual([]);
+    // S48: what IS stored is ciphertext (base64, key version set), never the password.
+    const sealed = await withDb(async (db) => (await db.query(
+      'SELECT SecretCiphertext AS c, SecretKeyVersion AS v FROM IntegrationConnection WHERE IntegrationConnectionId = $1',
+      [dbConnection.id]
+    )).rows[0]);
+    expect(sealed.c).toMatch(/^[A-Za-z0-9+/=]{40,}$/);
+    expect(Buffer.from(sealed.c, 'base64').toString('latin1')).not.toContain(password);
+    expect(sealed.v).toBeGreaterThanOrEqual(1);
+    if (process.env.E2E_BACKEND_LOG) {
+      expect(fs.readFileSync(process.env.E2E_BACKEND_LOG, 'utf8')).not.toContain(password);
+    }
   });
 
   test('AC-INT-03 test connection succeeds against the simulator DB and fails safely on a wrong password', async ({
@@ -178,15 +235,20 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
   }) => {
     const ok = await testConnection(adminApi, dbConnection.id);
     expect(ok).toMatchObject({ ok: true });
+    // Wrong credentials. The local scratch cluster trusts loopback logins (no
+    // password check), so the bad credential here is an unknown ROLE with a
+    // wrong password: the server refuses it on any cluster.
     const { view: wrong } = await createConnection(adminApi, checkerApi, {
-      type: 'DATABASE', config: bankDbConfig(), authType: 'PASSWORD', secret: { ...READER(), password: 'not-the-password' },
+      type: 'DATABASE', config: { ...bankDbConfig(), username: 'e2e_no_such_role' }, authType: 'BASIC',
+      secret: { password: 'not-the-password' },
     });
     const failed = await testConnection(adminApi, wrong.id);
     expect(failed.ok).toBe(false);
-    expect(failed.message).not.toMatch(/not-the-password|at org\.|Exception|password authentication failed for user/i);
+    expect(failed.message).toBeTruthy();
+    expect(failed.message).not.toMatch(/not-the-password|at org\.|at com\.|Exception|\.java:/i);
 
     await openAs(page, BOOTSTRAP(), `/admin/integrations/connections`);
-    await page.getByRole('row').filter({ hasText: dbConnection.name }).getByRole('button', { name: 'Test connection' }).click();
+    await page.getByRole('button', { name: `Test ${dbConnection.name}`, exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Connection OK' })).toBeVisible();
   });
 
@@ -211,7 +273,7 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
     await openAs(page, BOOTSTRAP(), `/admin/integrations/flows/${flow.id}`);
     await expect(page.getByRole('switch', { name: 'Mask personal data' })).toBeChecked();
     await page.getByRole('button', { name: 'Dry run' }).click();
-    const rows = page.getByRole('table').last().getByRole('row');
+    const rows = page.getByRole('region', { name: 'Dry run result' }).getByRole('row');
     await expect(rows.nth(1)).toBeVisible();
     expect(await rows.count()).toBeLessThanOrEqual(21); // header + 20
   });
@@ -252,16 +314,19 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
   }) => {
     await bankRest.reset();
     const { view: writer } = await createConnection(adminApi, checkerApi, {
-      type: 'DATABASE', config: bankDbConfig(), authType: 'PASSWORD', secret: WRITER(),
+      type: 'DATABASE', config: bankDbConfig(WRITER()), authType: 'BASIC', secret: dbSecret(WRITER()),
     });
     const { view: hook } = await createConnection(adminApi, checkerApi, {
-      type: 'WEBHOOK', config: { baseUrl: env.bankSim.restURL }, authType: 'HMAC', secret: { webhookSecret: env.bankSim.webhookSecret },
+      type: 'WEBHOOK', config: { url: env.bankSim.restURL }, authType: 'HMAC_SIGNATURE', secret: { hmacSecret: env.bankSim.webhookSecret },
     });
     const table = await createFlow(adminApi, {
       direction: 'OUTBOUND', connectionId: writer.id, templateId: template.templateId, trigger: 'EVENT',
       events: ['INGESTION_VALIDATED'], payloadKinds: ['VALIDATED_RECORDS'], format: 'JSON', maskPii: false,
       targetSpec: { table: 'staging_results', mode: 'UPSERT', keyColumns: ['external_ref'] },
-      fieldMapping: [{ from: 'CustomerId', to: 'customer_id' }, { from: 'FullName', to: 'full_name' }, { from: 'Email', to: 'email' }],
+      fieldMapping: [
+        { from: 'CustomerId', to: 'external_ref' }, { from: 'CustomerId', to: 'customer_id' },
+        { from: 'FullName', to: 'full_name' }, { from: 'Email', to: 'email' },
+      ],
     });
     const webhook = await createFlow(adminApi, {
       direction: 'OUTBOUND', connectionId: hook.id, templateId: template.templateId, trigger: 'EVENT',
@@ -304,8 +369,8 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
   test('AC-INT-14 outbound payloads are PII-masked by default', async ({ adminApi, checkerApi }) => {
     await bankRest.reset();
     const { view: rest } = await createConnection(adminApi, checkerApi, {
-      type: 'REST_API', config: { baseUrl: env.bankSim.restURL }, authType: 'API_KEY_HEADER',
-      secret: { headerName: 'X-Api-Key', apiKey: process.env.E2E_BANK_SIM_API_KEY },
+      type: 'REST_API', config: { baseUrl: env.bankSim.restURL, apiKeyHeader: 'X-Api-Key' }, authType: 'API_KEY_HEADER',
+      secret: { apiKey: process.env.E2E_BANK_SIM_API_KEY },
     });
     const flow = await createFlow(adminApi, {
       direction: 'OUTBOUND', connectionId: rest.id, templateId: template.templateId, trigger: 'MANUAL',
@@ -319,9 +384,14 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
     for (const record of pushed) {
       expect(String(record.Email ?? record.email)).not.toMatch(/^[^*]{2,}@/); // local part masked
     }
-    // Turning masking off is SECURITY tier: maker/checker.
-    const unmask = await adminApi.request('PUT', `${ADMIN}/flows/${flow.id}`, { json: { ...flow, maskPii: false, expectedVersion: flow.version } });
+    // Turning masking off is SECURITY tier: maker/checker (the enabled flow is
+    // disabled until a second admin approves).
+    const enabled = await adminApi.get(`${ADMIN}/flows/${flow.id}`);
+    expect(enabled.enabled).toBe(true);
+    const unmask = await adminApi.request('PUT', `${ADMIN}/flows/${flow.id}`, { json: { ...enabled, maskPii: false, expectedVersion: enabled.version } });
     expect(unmask.status).toBe(202);
+    expect(unmask.body.changeType).toBe('INTEGRATION_FLOW_ENABLE');
+    expect((await adminApi.get(`${ADMIN}/flows/${flow.id}`)).enabled).toBe(false);
   });
 
   test('AC-INT-15 an SFTP inbound file is processed and the result file dropped back', async ({ adminApi, checkerApi }) => {
@@ -329,48 +399,73 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
     const fingerprint = fs.readFileSync(new URL('../../bank-simulator/sftp/host-keys/host-key-fingerprints.TEST-ONLY.txt', import.meta.url), 'utf8')
       .split('\n').find((l) => l.startsWith('ssh-ed25519')).split(' ')[1];
     const { view: sftp } = await createConnection(adminApi, checkerApi, {
-      type: 'SFTP', config: { host: env.bankSim.sftpHost, port: env.bankSim.sftpPort, hostKeyFingerprint: fingerprint, folder: '/' },
-      authType: 'PASSWORD', secret: { username: process.env.E2E_BANK_SIM_SFTP_USER ?? 'bank', password: process.env.E2E_BANK_SIM_SFTP_PASSWORD },
+      type: 'SFTP',
+      config: {
+        host: env.bankSim.sftpHost, port: env.bankSim.sftpPort, hostKeyFingerprint: fingerprint, folder: '/',
+        username: process.env.E2E_BANK_SIM_SFTP_USER ?? 'bank', sftpAuth: 'PASSWORD',
+      },
+      authType: 'BASIC', secret: { password: process.env.E2E_BANK_SIM_SFTP_PASSWORD },
     });
     expect((await testConnection(adminApi, sftp.id)).ok).toBe(true);
+
+    // The result flow is enabled FIRST, so the job the inbound pull validates
+    // fans out to it.
+    const outbound = await createFlow(adminApi, {
+      direction: 'OUTBOUND', connectionId: sftp.id, templateId: template.templateId, trigger: 'EVENT',
+      events: ['INGESTION_VALIDATED'], payloadKinds: ['VALIDATED_RECORDS'], format: 'CSV',
+      targetSpec: { folder: 'outbound', fileNamePattern: 'results-{base}.csv' }, // {base} = validated-records-job-<id>
+    });
+    await enableFlow(adminApi, checkerApi, outbound.id);
+
     const inbound = await createFlow(adminApi, {
       direction: 'INBOUND', connectionId: sftp.id, templateId: template.templateId, trigger: 'MANUAL',
       payloadKinds: ['VALIDATED_RECORDS'], format: 'CSV', sourceSpec: { folder: 'inbound', glob: '*.csv', afterRead: 'MOVE' },
     });
     await enableFlow(adminApi, checkerApi, inbound.id);
     const pulled = await waitForRun(adminApi, (await runFlow(adminApi, inbound.id)).id);
-    expect(pulled.status).toBe('SUCCEEDED');
-    expect(pulled.recordsIn).toBe(4);
+    expect(pulled.status, `${pulled.error ?? ''} ${JSON.stringify(pulled.events ?? [])}`).toBe('SUCCEEDED');
+    expect(pulled.recordsIn).toBeGreaterThan(0); // the seeded file (one file = one ingestion)
 
-    const outbound = await createFlow(adminApi, {
-      direction: 'OUTBOUND', connectionId: sftp.id, templateId: template.templateId, trigger: 'EVENT',
-      events: ['INGESTION_VALIDATED'], payloadKinds: ['VALIDATED_RECORDS'], format: 'CSV',
-      targetSpec: { folder: 'outbound', fileNamePattern: 'results-{jobId}.csv' },
+    // Bank side, read over SFTP without Docker (the CI runner has no docker
+    // CLI): a list-only dry run of a throwaway inbound flow on the folder —
+    // the connector's preview lists names and sizes and moves nothing.
+    const listing = (folder) => sftpListing(adminApi, sftp.id, template.templateId, folder);
+    await eventually(async () => (await listing('outbound')).some((name) => /^results-validated-records-job-\d+\.csv$/.test(name)), {
+      what: 'result file in outbound/', timeoutMs: 120_000,
     });
-    await enableFlow(adminApi, checkerApi, outbound.id);
-    // Bank side (looked at from inside the SFTP container, not through
-    // MoDocument): the file moved to processed/ and a result file landed in outbound/.
-    const container = process.env.E2E_BANK_SIM_SFTP_CONTAINER ?? 'modocument-e2e-bank-sftp-1';
-    const home = `/home/${process.env.E2E_BANK_SIM_SFTP_USER ?? 'bank'}`;
-    const listing = async (dir) => (await run('docker', ['exec', container, 'ls', `${home}/${dir}`])).stdout;
-    await eventually(async () => /results-\d+\.csv/.test(await listing('outbound')), { what: 'result file in outbound/', timeoutMs: 120_000 });
     expect(await listing('inbound/processed')).toContain('customers-2024-06-01.csv');
+    expect(await listing('inbound')).not.toContain('customers-2024-06-01.csv');
   });
 
-  test('AC-INT-17 a DIRECT connection to a private IP without an approved egress rule is refused', async ({ adminApi }) => {
-    const refused = await adminApi.request('POST', `${ADMIN}/connections`, {
-      json: { name: uniqueName('ssrf'), type: 'REST_API', mode: 'DIRECT', config: { baseUrl: 'http://10.20.30.40:8080' }, authType: 'NONE' },
+  test('AC-INT-17 a DIRECT connection to a private IP without an approved egress rule is refused', async ({ adminApi, checkerApi }) => {
+    // S1: 10.20.30.40 has no approved rule. The merged API validates the URL
+    // shape at submit and refuses the destination at connect time
+    // (BankEgressGuard, right before any socket is opened).
+    const { view: privateIp } = await createConnection(adminApi, checkerApi, {
+      type: 'REST_API', config: { baseUrl: 'http://10.20.30.40:8080' }, authType: 'NONE',
     });
-    // Refused at submit (preferred) or at test time — never a successful call.
-    if (refused.status === 202) {
-      test.info().annotations.push({ type: 'note', description: 'refused at connect time, not at submit' });
-    } else {
-      expect(refused.status).toBe(400);
-    }
-    const metadata = await adminApi.request('POST', `${ADMIN}/connections`, {
-      json: { name: uniqueName('imds'), type: 'REST_API', mode: 'DIRECT', config: { baseUrl: 'http://169.254.169.254/latest/meta-data/' }, authType: 'NONE' },
+    const refused = await testConnection(adminApi, privateIp.id);
+    expect(refused.ok).toBe(false);
+    expect(refused.message).toMatch(/not an allowed egress target/i);
+    expect(refused.message).toMatch(/no approved egress rule/i);
+
+    // S2: the cloud metadata endpoint is refused ALWAYS (no rule can open it),
+    // and an egress rule for it cannot even be requested.
+    const imdsRule = await adminApi.request('POST', `${ADMIN}/egress-rules`, {
+      json: { host: '169.254.169.254', port: 80, reason: 'e2e: must be refused' },
     });
-    expect(metadata.status).toBe(400);
+    expect(imdsRule.status).toBe(400);
+    const { view: imds } = await createConnection(adminApi, checkerApi, {
+      type: 'REST_API', config: { baseUrl: 'http://169.254.169.254/latest/meta-data' }, authType: 'NONE',
+    });
+    const metadata = await testConnection(adminApi, imds.id);
+    expect(metadata.ok).toBe(false);
+    expect(metadata.message).toMatch(/cloud metadata endpoint/i);
+    // BUG-06 (P4): the metadata URL is accepted at submit (202) and only
+    // refused at connect; the security plan (S2) wants 400 at submit. The
+    // refusal above is what protects the instance; see
+    // IntegrationSecurityQaTest#bug06MetadataDestinationRefusedAtSubmit.
+    for (const id of [privateIp.id, imds.id]) await adminApi.request('DELETE', `${ADMIN}/connections/${id}`);
   });
 
   test('AC-INT-08 a stale webhook timestamp is rejected by the documented verifier', async () => {
@@ -390,7 +485,6 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
 
 // ===========================================================================
 test.describe('integration hub — API clients and Integration API v1 @phase2 @wave3', () => {
-  test.fixme(!WAVE3, 'waiting for Wave 3 merge');
   test.describe.configure({ mode: 'serial' });
 
   let template;
@@ -410,7 +504,7 @@ test.describe('integration hub — API clients and Integration API v1 @phase2 @w
     expect(JSON.stringify(await adminApi.get(`${ADMIN}/api-clients`))).not.toContain(oauth.secret);
 
     await openAs(page, BOOTSTRAP(), '/admin/integrations/api-clients');
-    await expect(page.getByRole('row').filter({ hasText: oauth.view.name })).toContainText('ACTIVE');
+    await expect(page.getByRole('row').filter({ hasText: oauth.view.name })).toContainText(/active/i);
   });
 
   test('AC-INT-19 OAuth2 client credentials: token, records upload, results read', async () => {
@@ -432,15 +526,22 @@ test.describe('integration hub — API clients and Integration API v1 @phase2 @w
     expect(JSON.stringify(results)).not.toContain('asha@bank-sim.test'); // masked per client setting
 
     // A wrong secret: 401 (and an API_CLIENT_AUTH_FAILED audit).
-    expect((await clientToken(oauth.clientId, 'wrong-secret', { expect: undefined })).status).toBe(401);
+    const wrong = await clientToken(oauth.clientId, 'wrong-secret', { expect: 401 });
+    expect(wrong.body).toMatchObject({ error: 'invalid_client' });
+    const audited = await withDb(async (db) => (await db.query(
+      "SELECT COUNT(*)::int AS n FROM AuditEvent WHERE Action = 'API_CLIENT_AUTH_FAILED' AND EntityId = $1",
+      [String(oauth.view.id)]
+    )).rows[0].n);
+    expect(audited).toBeGreaterThanOrEqual(1);
     // A client token never reaches user routes.
     expect((await client.request('GET', '/Templates/GetAll')).status).toBe(403);
   });
 
   test('AC-INT-20 API key client sends records and reads results', async ({ adminApi, checkerApi }) => {
     apiKey = await createApiClient(adminApi, checkerApi, { authMethod: 'API_KEY', scopes: ['INTEGRATION_INGEST', 'INTEGRATION_RESULTS'] });
-    const key = `${apiKey.view.keyPrefix}.${apiKey.secret}`;
-    const client = apiKeyClient(key);
+    // The one-time secret of an API-key client is the whole key, <keyPrefix>.<secret>.
+    expect(apiKey.secret.startsWith(`${apiKey.view.keyPrefix}.`)).toBe(true);
+    const client = apiKeyClient(apiKey.secret);
     const posted = await postRecords(client, { templateId: template.templateId, records: RECORDS });
     expect(posted.status).toBe(202);
     const job = await waitForClientJob(client, posted.body.jobId);
@@ -500,12 +601,12 @@ test.describe('integration hub — API clients and Integration API v1 @phase2 @w
     expect((await client.request('GET', `/api/integration/v1/jobs/${jobId}`)).status).toBe(200);
     await adminApi.post(`${ADMIN}/api-clients/${oauth.view.id}/revoke`);
     expect((await client.request('GET', `/api/integration/v1/jobs/${jobId}`)).status).toBe(401);
-    expect((await apiKeyClient(`${apiKey.view.keyPrefix}.${apiKey.secret}`).request('GET', '/api/integration/v1/templates')).status).toBe(200);
+    expect((await apiKeyClient(apiKey.secret).request('GET', '/api/integration/v1/templates')).status).toBe(200);
 
     const expiring = await createApiClient(adminApi, checkerApi, {
-      authMethod: 'API_KEY', scopes: ['INTEGRATION_RESULTS'], expiresAt: new Date(Date.now() + 15_000).toISOString(),
+      authMethod: 'API_KEY', scopes: ['INTEGRATION_RESULTS'], expiresAt: new Date(Date.now() + 30_000).toISOString(),
     });
-    const short = apiKeyClient(`${expiring.view.keyPrefix}.${expiring.secret}`);
+    const short = apiKeyClient(expiring.secret);
     await eventually(async () => (await short.request('GET', '/api/integration/v1/templates')).status === 401, {
       what: 'expired client refused', timeoutMs: 60_000,
     });
@@ -514,7 +615,6 @@ test.describe('integration hub — API clients and Integration API v1 @phase2 @w
 
 // ===========================================================================
 test.describe('integration hub — on-prem agent @phase2 @wave3', () => {
-  test.fixme(!WAVE3, 'waiting for Wave 3 merge');
   test.describe.configure({ mode: 'serial' });
   test.beforeEach(async () => {
     test.skip(!process.env.E2E_AGENT_JAR || !env.bankSim, 'needs the agent jar (E2E_AGENT_JAR) and the bank simulator');
@@ -527,6 +627,13 @@ test.describe('integration hub — on-prem agent @phase2 @wave3', () => {
   test.afterAll(() => {
     agentProcess?.kill('SIGTERM');
   });
+  // The agent's own log is the first thing to read when an agent test fails.
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus && agentLog.length) {
+      await testInfo.attach('agent.log', { body: agentLog.join(''), contentType: 'text/plain' });
+      console.log(`--- agent log (last 4 KB) ---\n${agentLog.join('').slice(-4096)}`);
+    }
+  });
 
   test('AC-INT-28 an agent enrols once with its one-time token', async ({ adminApi, checkerApi }) => {
     const { view, enrolment } = await registerAgent(adminApi, checkerApi);
@@ -536,16 +643,36 @@ test.describe('integration hub — on-prem agent @phase2 @wave3', () => {
     // The enrolment token is readable once.
     expect([404, 410]).toContain((await adminApi.request('GET', `${ADMIN}/agents/${view.id}/enrolment`)).status);
 
-    // The agent process: outbound HTTPS only; the bank DB password lives in ITS env.
-    agentProcess = spawn('java', ['-jar', process.env.E2E_AGENT_JAR], {
+    // The agent process (a local java process here, the container elsewhere):
+    // outbound calls only; the bank DB password lives in ITS environment
+    // (MODOCUMENT_SECRET_<REF>, agent/README.md), the bank's allow-list in a
+    // file only the "bank" writes. Plain http to MoDocument is allowed for
+    // this loopback stack only (MODOCUMENT_ALLOW_INSECURE_HTTP).
+    const db = bankDbConfig();
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'modoc-agent-'));
+    const allowList = path.join(home, 'allowlist.yml');
+    fs.writeFileSync(allowList, [
+      'destinations:',
+      `  - host: ${db.host}`,
+      `    ports: [${db.port}]`,
+      'database:',
+      '  tables:',
+      '    - integration.customers',
+      '',
+    ].join('\n'));
+    const childEnv = { ...process.env };
+    for (const key of Object.keys(childEnv)) if (key.startsWith('E2E_')) delete childEnv[key]; // the agent knows nothing of the suite
+    agentProcess = spawn('java', ['-Xmx256m', '-jar', process.env.E2E_AGENT_JAR], {
       env: {
-        ...process.env,
-        MODOCUMENT_AGENT_CLOUD_URL: env.baseURL,
-        MODOCUMENT_AGENT_ENROLMENT_TOKEN: enrolment.token,
+        ...childEnv,
+        MODOCUMENT_URL: process.env.E2E_API_URL ?? env.baseURL,
+        MODOCUMENT_ALLOW_INSECURE_HTTP: 'true',
+        MODOCUMENT_ENROLMENT_TOKEN: enrolment.token,
         MODOCUMENT_AGENT_NAME: view.name,
-        BANK_DB_PASSWORD: READER().password,
-        MODOCUMENT_AGENT_ALLOWED_TABLES: 'integration.customers',
-        MODOCUMENT_AGENT_ALLOWED_HOSTS: '127.0.0.1',
+        MODOCUMENT_AGENT_STATE_DIR: path.join(home, 'state'),
+        MODOCUMENT_AGENT_ALLOWLIST: allowList,
+        MODOCUMENT_SECRETS_DIR: path.join(home, 'secrets'),
+        MODOCUMENT_SECRET_BANK_DB_PASSWORD: READER().password,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -567,9 +694,15 @@ test.describe('integration hub — on-prem agent @phase2 @wave3', () => {
     expect(agent.version).toBeTruthy();
     expect(new Date(agent.lastHeartbeatAt).getTime()).toBeGreaterThan(Date.now() - 120_000);
     const { view: viaAgent } = await createConnection(adminApi, checkerApi, {
-      type: 'DATABASE', mode: 'AGENT', agentId: agent.id, config: bankDbConfig(), authType: 'PASSWORD', secretRef: 'BANK_DB_PASSWORD',
+      type: 'DATABASE', mode: 'AGENT', agentId: agent.id, config: bankDbConfig(), authType: 'BASIC', secretRef: 'BANK_DB_PASSWORD',
     });
-    expect(viaAgent.secretSet).toBe(false);
+    // secretSet is true for an AGENT connection too (it means "credentials are
+    // configured"); what matters is that only the NAME is stored, no ciphertext.
+    expect(viaAgent).toMatchObject({ mode: 'AGENT', agentId: agent.id, secretRef: 'BANK_DB_PASSWORD' });
+    const stored = await withDb(async (db) => (await db.query(
+      'SELECT SecretCiphertext FROM IntegrationConnection WHERE IntegrationConnectionId = $1', [viaAgent.id]
+    )).rows[0]);
+    expect(stored.secretciphertext).toBeNull();
     const template = await customersTemplate(adminApi);
     const flow = await createFlow(adminApi, {
       direction: 'INBOUND', connectionId: viaAgent.id, templateId: template.templateId, trigger: 'MANUAL',
@@ -598,7 +731,7 @@ test.describe('integration hub — on-prem agent @phase2 @wave3', () => {
 
     // The cloud asks for a table outside the agent's local allow-list: refused BY THE AGENT.
     const { view: viaAgent } = await createConnection(adminApi, checkerApi, {
-      type: 'DATABASE', mode: 'AGENT', agentId: agent.id, config: bankDbConfig(), authType: 'PASSWORD', secretRef: 'BANK_DB_PASSWORD',
+      type: 'DATABASE', mode: 'AGENT', agentId: agent.id, config: bankDbConfig(), authType: 'BASIC', secretRef: 'BANK_DB_PASSWORD',
     });
     const template = await customersTemplate(adminApi);
     const sneaky = await createFlow(adminApi, {
