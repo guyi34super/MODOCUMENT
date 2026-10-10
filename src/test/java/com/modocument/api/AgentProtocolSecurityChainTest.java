@@ -1,22 +1,17 @@
 package com.modocument.api;
 
-import com.modocument.api.security.PermissionChecker;
 import com.modocument.application.port.integration.AgentRunPort;
-import com.modocument.application.port.integration.ClientPrincipal;
-import com.modocument.application.port.integration.CurrentClientProvider;
+import com.modocument.application.port.integration.ApiClientIssuer;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.entity.IntegrationAgent;
-import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.Role;
 import com.modocument.domain.model.integration.AgentStatus;
 import com.modocument.domain.model.integration.ApiAuthMethod;
-import com.modocument.domain.model.integration.ApiClientKind;
 import com.modocument.domain.model.integration.ConnectionType;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
 import com.modocument.infrastructure.persistence.IntegrationAgentJpaRepository;
-import com.modocument.infrastructure.security.JwtService;
 import com.modocument.testsupport.PlatformBankFixture;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,19 +20,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -48,13 +44,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * The agent protocol through the REAL filter chain and method security
- * (H2): the long-poll's DeferredResult completes and its async dispatch is
- * still authorized; the heartbeat lands on the agent row.
- *
- * <p>Agent client tokens are SE2's (parallel Wave 3 branch), so the caller
- * here is a bank user's JWT with the {@code @perm} checker answering yes
- * and a mocked {@link CurrentClientProvider} naming the agent's client — the
- * pieces SE2's client authentication supplies after the merge.
+ * (H2): an agent ApiClient issued through {@link ApiClientIssuer} gets its
+ * token from {@code POST /api/integration/oauth/token}; the long-poll's
+ * DeferredResult completes and its async dispatch is still authorized; the
+ * heartbeat lands on the agent row; a revoked agent is refused.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -70,21 +63,20 @@ class AgentProtocolSecurityChainTest {
     @Autowired
     private IntegrationAgentJpaRepository agents;
     @Autowired
-    private JwtService jwtService;
+    private ApiClientIssuer issuer;
+    @Autowired
+    private JdbcTemplate jdbc;
 
-    @MockitoBean(name = "perm")
-    private PermissionChecker perm;
-    @MockitoBean
-    private CurrentClientProvider clients;
     @MockitoBean
     private AgentRunPort runs;
 
     private Bank bank;
     private AppUser user;
     private IntegrationAgent agent;
+    private String token;
 
     @BeforeEach
-    void seed() {
+    void seed() throws Exception {
         PlatformBankFixture.ensurePlatformBank(banks);
         String tag = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
         bank = banks.save(new Bank("APC" + tag, "Agent chain " + tag));
@@ -93,20 +85,24 @@ class AgentProtocolSecurityChainTest {
         agent.setBankId(bank.getBankId());
         agent.setName("chain " + tag);
         agent.setStatus(AgentStatus.ONLINE);
-        agent.setApiClientId(812);
         agent.setCreatedByUserId(user.getAppUserId());
         agent.setCreatedAt(Instant.now());
         agent = agents.save(agent);
 
-        when(perm.has(anyString())).thenAnswer(call -> Permission.AGENT_CONNECT.name().equals(call.getArgument(0)));
-        when(clients.current()).thenReturn(Optional.of(new ClientPrincipal(812, bank.getBankId(), "agt_chain",
-                ApiClientKind.AGENT, ApiAuthMethod.OAUTH2_CLIENT_CREDENTIALS, Set.of(Permission.AGENT_CONNECT),
-                user.getAppUserId(), agent.getIntegrationAgentId())));
+        ApiClientIssuer.Issued client = issuer.issueAgentClient(bank.getBankId(),
+                agent.getIntegrationAgentId(), agent.getName(),
+                ApiAuthMethod.OAUTH2_CLIENT_CREDENTIALS, null);
+        agent.setApiClientId(client.apiClientId());
+        agent = agents.save(agent);
+        token = clientToken(client);
     }
 
     @AfterEach
     void cleanUp() {
         agents.delete(agent);
+        for (String table : List.of("ApiClientInitialSecret", "ApiClientSecret", "ApiClient")) {
+            jdbc.update("DELETE FROM " + table + " WHERE BankId = ?", bank.getBankId());
+        }
         users.delete(user);
         banks.delete(bank);
     }
@@ -146,6 +142,18 @@ class AgentProtocolSecurityChainTest {
     }
 
     private String bearer() {
-        return "Bearer " + jwtService.issueToken(user);
+        return "Bearer " + token;
+    }
+
+    private String clientToken(ApiClientIssuer.Issued client) throws Exception {
+        String basic = Base64.getEncoder().encodeToString(
+                (client.clientId() + ":" + client.secret()).getBytes(StandardCharsets.UTF_8));
+        String body = mvc.perform(post("/api/integration/oauth/token")
+                        .header("Authorization", "Basic " + basic)
+                        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                        .content("grant_type=client_credentials"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return new ObjectMapper().readTree(body).path("access_token").asText();
     }
 }

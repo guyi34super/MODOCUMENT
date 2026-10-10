@@ -36,3 +36,7 @@ adbaf9ba400200c19fe618a62e195f7bd959e297:src/test/java/com/modocument/api/integr
 43d127e347b12fa11a97096171a624e78de37aef:frontend/src/pages/PlatformCommon.jsx:generic-api-key:6
 5e550dcc4f144579cc8cfff4170b4e9936ec04fc:frontend/src/pages/AdminUsersPage.jsx:generic-api-key:17
 7c6c27de4767cd03f25d0df0dee4feddea37d856:src/test/java/com/modocument/api/PlatformBankApiTest.java:generic-api-key:55
+# ws26 agent SecretsNeverLoggedTest: the CANARY database password the test
+# feeds the agent to prove it never reaches logs or reported errors. A
+# made-up literal, never a credential of any system.
+f8dc6cbeb4daef58e48c6af7a08b08b9c05c0d27:agent/src/test/java/com/modocument/agent/SecretsNeverLoggedTest.java:generic-api-key:31

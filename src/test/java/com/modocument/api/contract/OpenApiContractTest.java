@@ -85,7 +85,9 @@ class OpenApiContractTest {
             "/api/auth/providers",
             "/api/probe/synthetic",
             // ws26: the client authenticates inside the request.
-            "/api/integration/oauth/token");
+            "/api/integration/oauth/token",
+            // ws26: the one-time enrolment token in the body is the credential.
+            "/api/agent/v1/enroll");
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -234,7 +236,8 @@ class OpenApiContractTest {
         // Anonymous routes with their own per-IP/account throttles.
         expected.addAll(Set.of(
                 "POST /api/auth/login", "POST /api/auth/refresh", "POST /api/auth/mfa/verify",
-                "GET /api/probe/synthetic", "POST /api/integration/oauth/token"));
+                "GET /api/probe/synthetic", "POST /api/integration/oauth/token",
+                "POST /api/agent/v1/enroll"));
         assertThat(documented).containsExactlyElementsOf(expected);
     }
 

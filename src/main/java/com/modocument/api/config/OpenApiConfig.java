@@ -82,7 +82,10 @@ public class OpenApiConfig {
             "/api/probe/synthetic",
             // ws26: OAuth2 client credentials — the client authenticates in
             // the request (Basic, form secret or client certificate).
-            "/api/integration/oauth/token");
+            "/api/integration/oauth/token",
+            // ws26: Connector Agent enrolment — the one-time token in the body
+            // is the credential (AgentEnrolmentRateLimiter, per IP).
+            "/api/agent/v1/enroll");
 
     /** ws26 machine API: every operation is metered per client (MachineApiInterceptor). */
     static final String MACHINE_API_PREFIX = "/api/integration/v1/";
@@ -98,7 +101,8 @@ public class OpenApiConfig {
             "/api/auth/refresh",
             "/api/auth/mfa/verify",
             "/api/probe/synthetic",
-            "/api/integration/oauth/token");
+            "/api/integration/oauth/token",
+            "/api/agent/v1/enroll");
 
     private static final String UNAUTHORIZED = "Unauthorized";
     private static final String FORBIDDEN = "Forbidden";
