@@ -8,8 +8,8 @@ a file in `outbound/`). **Everything here is TEST ONLY**: throwaway data,
 per-run credentials, and an SFTP host key that is committed on purpose so a
 connection can pin it.
 
-Specs: `e2e/tests/phase2/integration-hub.spec.js` (all `test.fixme('waiting
-for Wave 3 merge')` until the features merge). Security cases:
+Specs: `e2e/tests/phase2/integration-hub.spec.js` (live since Wave 4; the
+connections/flows and agent groups skip without the simulator). Security cases:
 [`docs/qa/integration-security-tests.md`](../../docs/qa/integration-security-tests.md).
 
 ```
@@ -57,7 +57,7 @@ constant-time. `npm run test:bank-sim` (in `e2e/`) runs the node:test suites.
 
 ```bash
 E2E_BANK_SIM=1 e2e/run-local.sh                 # starts it next to the stack
-E2E_WAVE3=1 E2E_BANK_SIM=1 e2e/run-local.sh     # ... and switches the Wave-3 specs on
+# the integration specs are live (Wave 4); E2E_BANK_SIM=1 also builds the agent jar
 ```
 
 `run-local.sh` creates `bank_sim_<run>` on the same scratch PostgreSQL with
@@ -92,7 +92,6 @@ add `include: [e2e/bank-simulator/docker-compose.bank-sim.yml]` to
 give the `e2e` service:
 
 ```
-E2E_WAVE3=1
 E2E_BANK_SIM_REST_URL=http://bank-rest:18090
 E2E_BANK_SIM_DB_URL=postgres://bankadmin:${BANK_SIM_DB_ADMIN_PASSWORD}@bank-db:5432/bank
 E2E_BANK_SIM_DB_HOST_FOR_APP=bank-db   E2E_BANK_SIM_DB_PORT_FOR_APP=5432   E2E_BANK_SIM_DB_NAME=bank

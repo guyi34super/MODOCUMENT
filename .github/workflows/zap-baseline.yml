@@ -78,6 +78,11 @@ jobs:
           allow_issue_writing: false
           artifact_name: zap-baseline-report
           fail_action: true
+          # Wave 4 (QA): the spider never reaches the integration API, so a
+          # hook seeds /api/integration/v1/*, /api/integration/oauth/token
+          # and /api/agent/v1/enroll (anonymous / invalid credentials only)
+          # into the passive scan. The workspace is mounted at /zap/wrk.
+          cmd_options: '--hook=/zap/wrk/.zap/integration-seed.py'
 
       - name: Stack logs on failure
         if: failure()
