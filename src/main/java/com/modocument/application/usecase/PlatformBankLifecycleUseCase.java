@@ -70,8 +70,8 @@ import java.util.function.Supplier;
  * audit — the approval rolls back and a compensating system transaction
  * deletes the new bank and its first users again, audited
  * {@value #ONBOARDING_REVERTED} in the platform bank, so a failed approval
- * never leaves a committed bank behind (the change is FAILED; the maker can
- * submit the same code again). A process crash between the two commits is
+ * never leaves a committed bank behind (the change ends FAILED, or stays
+ * REQUESTED when only the bookkeeping failed, and the code is free again). A process crash between the two commits is
  * the one window this cannot close; the BANK_ONBOARDED row then has no
  * CHANGE_APPROVED partner. Suspension and break-glass leave nothing to
  * compensate (re-approval answers "already suspended" / "already exists").
@@ -255,8 +255,8 @@ public class PlatformBankLifecycleUseCase {
         });
     }
 
-    /** Compensating cleanup; package-private for the atomicity test. */
-    void revertOnboarding(Bank bank, List<Integer> userIds, int platformBankId, int makerUserId,
+    /** The compensating cleanup (registered runAsSystem call site). */
+    private void revertOnboarding(Bank bank, List<Integer> userIds, int platformBankId, int makerUserId,
                           int checkerUserId) {
         int bankId = bank.getBankId();
         try {
