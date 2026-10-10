@@ -239,13 +239,16 @@ public class PendingChangeUseCase {
     /**
      * The caller's bank's changes, newest first, optionally filtered by
      * status. Holders of CHANGE_APPROVE review everything; a maker without
-     * it sees only their own submissions.
+     * it (any maker permission: users, templates, bank settings, platform
+     * settings) sees only their own submissions.
      */
     @Transactional(readOnly = true)
     public List<PendingChangeDto> list(String status) {
         boolean approver = perm.has(Permission.CHANGE_APPROVE.name());
         boolean maker = perm.has(Permission.USER_ADMIN.name())
-                || perm.has(Permission.TEMPLATE_WRITE.name());
+                || perm.has(Permission.TEMPLATE_WRITE.name())
+                || perm.has(Permission.SETTINGS_WRITE.name())
+                || perm.has(Permission.PLATFORM_SETTINGS.name());
         if (!approver && !maker) {
             throw new AccessDeniedException("Listing pending changes requires an approval "
                     + "or maker permission.");
