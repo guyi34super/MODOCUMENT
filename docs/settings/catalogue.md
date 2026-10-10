@@ -53,6 +53,61 @@ Changes reach every application task within one poll interval
 `ConfigRevision` counter and every task reloads its in-memory snapshot when
 the counter moves.
 
+## Who reads what
+
+Every consumer reads its setting **per call** from the in-memory snapshot
+(`SettingsReader`, no database access), so a change applies on the next
+request — no restart. The yml/`@Value` beans stay as they were: they are the
+shipped default the resolution falls back to. **Parity:** with nothing
+stored, every consumer behaves exactly as before the settings framework
+(`SettingsConsumersParityTest` enumerates each value).
+
+Which bank a value is read for:
+
+| Consumer | Settings | Bank |
+|---|---|---|
+| `PasswordPolicy` | `security.password.minLength` | the account's bank (`validate(password, email, bankId)`: account creation, own password change); the caller's bank for `validate(password, email)` (maker submissions, resets); the platform layer when no bank is bound (bootstrap, onboarding before the bank exists) |
+| `LoginLockoutPolicy` | `security.lockout.*` | the user's bank, on every failed sign-in |
+| `AuthUseCase` | `security.mfa.requireForAllRoles`, `security.mfa.requireForAdmins` (locked on), `security.session.idleTimeout` | the user's bank; for refresh, the token owner's bank. A PLATFORM_ADMIN always owes MFA |
+| `JwtService` | `security.jwt.ttlMinutes` | platform (an explicit legacy `ttl-hours` still pins it) |
+| `ApiRateLimitInterceptor` | `ratelimit.<bucket>` incl. `ratelimit.adminSecurity` | the caller's bank (JWT bank in `TenantContext`), per request; `ratelimit.adminJobs` is platform-wide |
+| `LlmRateLimiter` | `ratelimit.llm.perUserMax` | the thread's bank (`check(userId)` / `tryCheck(userId)`) or an explicit one (`check(userId, bankId)` / `tryCheck(userId, bankId)`) |
+| `AuthRateLimiter`, `MfaRateLimiter` | `ratelimit.auth.*`, `ratelimit.mfa.*` | platform (the caller is anonymous) |
+| `ExportGuard` | `export.cap.readWrite`, `export.cap.admin` | the caller's bank; other roles keep their yml cap (none = 0) |
+| `RetentionPurgeJob` / `RetentionProperties` | `retention.customerDataDays` | each bank's own cutoff inside the per-bank sweep (1–30 days: a bank can only shorten retention) |
+| `AlertRuleCatalogue` | `alerts.<rule>.threshold` / `.window` | platform; a STORED value overlays the yml rule, rebuilt on `SettingsChangedEvent` |
+| `WebhookAlertChannel`, `EmailAlertChannel` | `alerts.webhook.minSeverity`, `alerts.email.minSeverity` | platform |
+| `MaskingPolicy` | `privacy.masking.screenWorking` | the caller's bank |
+| `ChatEditTableUseCase` | `chatEdit.fullTableMaxChangeRatio` | the caller's bank |
+| `AiSectionSplitter`, `AiDocumentComposer` | `doccreation.sectionAiEnabled`, `doccreation.generateAiEnabled`, AND `ai.enabled` | the caller's bank |
+| `ParsingSettings.forBank(id)` | `parsing.*` (batch size/concurrency platform-wide) | fresh `ParsingProperties` copy per job; `excelForBank(id)` for the Excel switch |
+| `MappingSettings.forBank(id)` | `mapping.llmFallbackEnabled`, `mapping.confidenceThreshold` | fresh `MappingProperties` copy; `AutoMapUseCase` resolves once per mapping run |
+
+Stay yml-only on purpose: the locked switches (`ratelimit.enabled`,
+`retention.enabled`, `privacy.tokenizePii`), the restart-only rate-limit
+window, every limiter's key bound, and `parsing.llmSinglePassMaxRows`.
+Settings without a property (extraction mode and code confidence, the AI
+circuit breaker, the integration tab) are read by their own workstreams.
+
+**Change notification.** Each task publishes `SettingsChangedEvent` after it
+loads a new snapshot — after a settings write commits on that task, and
+when its `ConfigRevisionPoller` sees another task's write. Consumers that
+pre-compute (the alert catalogue) rebuild on it; all others just read the
+next value.
+
+### MFA verify per address (QA finding OBS-04)
+
+`ratelimit.mfa.perIpMax` ships at **30 per minute** (was 5; limits 1–120);
+`ratelimit.mfa.perUserMax` stays **5 per minute** (limits 1–20). A bank's
+staff sign in from behind one NAT address, and at 5/min colleagues finishing
+their sign-in in the same minute locked each other out. The per-address
+limit is only a flood guard: every verify attempt needs a challenge, which
+needs the account's password, and the per-user limit bounds the guesses
+against any one account (at most 25 over a 5-minute challenge, about
+7.5 × 10⁻⁵ success odds with the ±1-step window) however many addresses an
+attacker uses. Keep the per-user limit strict; raise the per-address limit
+further only for very large NATs. Tests: `MfaRateLimiterTest`.
+
 ## Never in the UI
 
 Secrets and infrastructure wiring stay in environment configuration: JWT and
@@ -66,9 +121,10 @@ the integration hub's `SecretVault`.)
 ## The catalogue
 
 Limits are `hardMin – hardMax` for ranged settings and the allowed values
-for switches and choices. Settings marked "consumer lands later" are
-catalogued now with their code default; the code that reads them arrives
-with its workstream.
+for switches and choices. Settings without a property start from their code
+default (see "Who reads what" for the consumer). Every WINDOWED alert rule of
+application.yml has exactly one threshold and one window setting
+(`SettingsCatalogueSafetyTest` keeps the two in sync).
 
 <!-- BEGIN GENERATED: SettingsCatalogueDocTest -->
 | Key | Tab | Scope | Tier | Type | Default | Limits | Locked | Restart | Property (shipped default) |
@@ -78,7 +134,7 @@ with its workstream.
 | `security.lockout.baseMinutes` | Sign-in & passwords | BANK | SECURITY | INT | 1 minutes | 1 – 60 |  |  | `modocument.security.lockout.base-minutes` |
 | `security.lockout.capMinutes` | Sign-in & passwords | BANK | SECURITY | INT | 30 minutes | 30 – 1440 |  |  | `modocument.security.lockout.cap-minutes` |
 | `security.session.idleTimeout` | Sign-in & passwords | BANK | SECURITY | DURATION | 12h | 15m – 12h |  |  | `modocument.security.session.idle-timeout` |
-| `security.mfa.requireForAllRoles` | Sign-in & passwords | BANK | SECURITY | BOOLEAN | false | true, false |  |  | — (code default; consumer lands later) |
+| `security.mfa.requireForAllRoles` | Sign-in & passwords | BANK | SECURITY | BOOLEAN | false | true, false |  |  | — (code default) |
 | `security.mfa.requireForAdmins` | Sign-in & passwords | BANK | SECURITY | BOOLEAN | true | true | **locked** |  | `modocument.security.mfa.require-for-admin` |
 | `security.jwt.ttlMinutes` | Sign-in & passwords | PLATFORM | SECURITY | INT | 15 minutes | 5 – 15 |  |  | `modocument.security.jwt.ttl-minutes` |
 | `ratelimit.enabled` | Rate limits | BANK | SECURITY | BOOLEAN | true | true | **locked** |  | `modocument.ratelimit.enabled` |
@@ -93,10 +149,11 @@ with its workstream.
 | `ratelimit.passwordChange` | Rate limits | BANK | SECURITY | INT | 5 per user per window | 1 – 10 |  |  | `modocument.ratelimit.password-change` |
 | `ratelimit.mfaCode` | Rate limits | BANK | SECURITY | INT | 10 per user per window | 1 – 20 |  |  | `modocument.ratelimit.mfa-code` |
 | `ratelimit.adminJobs` | Rate limits | PLATFORM | SECURITY | INT | 10 per user per window | 1 – 50 |  |  | `modocument.ratelimit.admin-jobs` |
+| `ratelimit.adminSecurity` | Rate limits | BANK | SECURITY | INT | 10 per user per window | 1 – 100 |  |  | `modocument.ratelimit.admin-security` |
 | `ratelimit.llm.perUserMax` | Rate limits | BANK | SECURITY | INT | 60 per user per hour | 1 – 600 |  |  | `modocument.security.rate-limit.llm.per-user-max` |
 | `ratelimit.auth.perIpMax` | Rate limits | PLATFORM | SECURITY | INT | 30 per 15 minutes | 1 – 120 |  |  | `modocument.security.rate-limit.auth.per-ip-max` |
 | `ratelimit.auth.perEmailMax` | Rate limits | PLATFORM | SECURITY | INT | 10 per 15 minutes | 1 – 40 |  |  | `modocument.security.rate-limit.auth.per-email-max` |
-| `ratelimit.mfa.perIpMax` | Rate limits | PLATFORM | SECURITY | INT | 5 per minute | 1 – 20 |  |  | `modocument.security.rate-limit.mfa.per-ip-max` |
+| `ratelimit.mfa.perIpMax` | Rate limits | PLATFORM | SECURITY | INT | 30 per minute | 1 – 120 |  |  | `modocument.security.rate-limit.mfa.per-ip-max` |
 | `ratelimit.mfa.perUserMax` | Rate limits | PLATFORM | SECURITY | INT | 5 per minute | 1 – 20 |  |  | `modocument.security.rate-limit.mfa.per-user-max` |
 | `export.cap.readWrite` | Data protection | BANK | SECURITY | INT | 5000 rows | 0 – 50000 |  |  | `modocument.export.caps.READ_WRITE` |
 | `export.cap.admin` | Data protection | BANK | SECURITY | INT | 50000 rows | 0 – 500000 |  |  | `modocument.export.caps.ADMIN` |
@@ -104,7 +161,7 @@ with its workstream.
 | `retention.customerDataDays` | Data protection | BANK | SECURITY | INT | 30 days | 1 – 30 |  |  | `modocument.retention.customer-data-days` |
 | `privacy.masking.screenWorking` | Data protection | BANK | SECURITY | BOOLEAN | false | true, false |  |  | `modocument.privacy.masking.screen-working` |
 | `privacy.tokenizePii` | Data protection | BANK | SECURITY | BOOLEAN | true | true | **locked** |  | `aifiles.privacy.tokenize-pii` |
-| `ai.enabled` | Data protection | BANK | SECURITY | BOOLEAN | true | true, false |  |  | — (code default; consumer lands later) |
+| `ai.enabled` | Data protection | BANK | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
 | `alerts.loginFailuresPerUser.threshold` | Security alerts | PLATFORM | SECURITY | INT | 5 events | 1 – 20 |  |  | `modocument.alerts.rules[login-failures-per-user].threshold` |
 | `alerts.loginFailuresPerUser.window` | Security alerts | PLATFORM | SECURITY | DURATION | 5m | 1m – 1h |  |  | `modocument.alerts.rules[login-failures-per-user].window` |
 | `alerts.loginFailuresPerIp.threshold` | Security alerts | PLATFORM | SECURITY | INT | 5 events | 1 – 20 |  |  | `modocument.alerts.rules[login-failures-per-ip].threshold` |
@@ -115,10 +172,12 @@ with its workstream.
 | `alerts.adminActionBurst.window` | Security alerts | PLATFORM | SECURITY | DURATION | 10m | 1m – 1h |  |  | `modocument.alerts.rules[admin-action-burst].window` |
 | `alerts.exportBurst.threshold` | Security alerts | PLATFORM | SECURITY | INT | 5 events | 1 – 20 |  |  | `modocument.alerts.rules[export-burst].threshold` |
 | `alerts.exportBurst.window` | Security alerts | PLATFORM | SECURITY | DURATION | 10m | 1m – 1h |  |  | `modocument.alerts.rules[export-burst].window` |
+| `alerts.parseFallbackSurge.threshold` | Security alerts | PLATFORM | SECURITY | INT | 20 events | 1 – 80 |  |  | `modocument.alerts.rules[parse-fallback-surge].threshold` |
+| `alerts.parseFallbackSurge.window` | Security alerts | PLATFORM | SECURITY | DURATION | 1h | 1m – 1h |  |  | `modocument.alerts.rules[parse-fallback-surge].window` |
 | `alerts.webhook.minSeverity` | Security alerts | PLATFORM | SECURITY | ENUM | INFO | INFO, LOW, MEDIUM |  |  | `modocument.alerts.webhook.min-severity` |
 | `alerts.email.minSeverity` | Security alerts | PLATFORM | SECURITY | ENUM | INFO | INFO, LOW, MEDIUM |  |  | `modocument.alerts.email.min-severity` |
-| `extraction.defaultMode` | AI & extraction | BANK | OPERATIONAL | ENUM | AI_WITH_CODE_FALLBACK | AI_WITH_CODE_FALLBACK, CODE_ONLY, AI_ONLY |  |  | — (code default; consumer lands later) |
-| `extraction.code.minConfidence` | AI & extraction | BANK | OPERATIONAL | DECIMAL | 0.75 | 0.5 – 0.95 |  |  | — (code default; consumer lands later) |
+| `extraction.defaultMode` | AI & extraction | BANK | OPERATIONAL | ENUM | AI_WITH_CODE_FALLBACK | AI_WITH_CODE_FALLBACK, CODE_ONLY, AI_ONLY |  |  | — (code default) |
+| `extraction.code.minConfidence` | AI & extraction | BANK | OPERATIONAL | DECIMAL | 0.75 | 0.5 – 0.95 |  |  | — (code default) |
 | `parsing.deterministicEnabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | `modocument.parsing.deterministic-enabled` |
 | `parsing.combinedExtractionMapping` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | `modocument.parsing.combined-extraction-mapping` |
 | `parsing.excel.llmEnabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | false | true, false |  |  | `modocument.parsing.excel.llm-enabled` |
@@ -127,18 +186,18 @@ with its workstream.
 | `chatEdit.fullTableMaxChangeRatio` | AI & extraction | BANK | OPERATIONAL | DECIMAL | 0.6 | 0.1 – 1 |  |  | `modocument.chat-edit.full-table-max-change-ratio` |
 | `doccreation.sectionAiEnabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | `modocument.doccreation.section-ai-enabled` |
 | `doccreation.generateAiEnabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | `modocument.doccreation.generate-ai-enabled` |
-| `ai.circuitBreaker.failureThreshold` | AI & extraction | PLATFORM | OPERATIONAL | INT | 5 failures | 1 – 50 |  |  | — (code default; consumer lands later) |
-| `ai.circuitBreaker.openDuration` | AI & extraction | PLATFORM | OPERATIONAL | DURATION | 2m | 10s – 30m |  |  | — (code default; consumer lands later) |
+| `ai.circuitBreaker.failureThreshold` | AI & extraction | PLATFORM | OPERATIONAL | INT | 5 failures | 1 – 50 |  |  | — (code default) |
+| `ai.circuitBreaker.openDuration` | AI & extraction | PLATFORM | OPERATIONAL | DURATION | 2m | 10s – 30m |  |  | — (code default) |
 | `parsing.llmBatchSize` | AI & extraction | PLATFORM | OPERATIONAL | INT | 50 rows | 5 – 500 |  |  | `modocument.parsing.llm-batch-size` |
 | `parsing.llmBatchConcurrency` | AI & extraction | PLATFORM | OPERATIONAL | INT | 8 batches | 1 – 32 |  |  | `modocument.parsing.llm-batch-concurrency` |
-| `integration.maxRowsPerRun` | Integrations | BANK | OPERATIONAL | INT | 50000 rows | 1 – 500000 |  |  | — (code default; consumer lands later) |
-| `integration.runTimeout` | Integrations | BANK | OPERATIONAL | DURATION | 15m | 1m – 2h |  |  | — (code default; consumer lands later) |
-| `integration.minScheduleInterval` | Integrations | BANK | OPERATIONAL | DURATION | 5m | 5m – 1d |  |  | — (code default; consumer lands later) |
-| `integration.webhookRetryAttempts` | Integrations | BANK | OPERATIONAL | INT | 5 attempts | 0 – 10 |  |  | — (code default; consumer lands later) |
-| `integration.outboundPiiMasking` | Integrations | BANK | SECURITY | BOOLEAN | true | true, false |  |  | — (code default; consumer lands later) |
-| `integration.clientTokenTtl` | Integrations | BANK | SECURITY | DURATION | 15m | 5m – 15m |  |  | — (code default; consumer lands later) |
-| `integration.auth.allowOauth2` | Integrations | PLATFORM | SECURITY | BOOLEAN | true | true, false |  |  | — (code default; consumer lands later) |
-| `integration.auth.allowApiKeys` | Integrations | PLATFORM | SECURITY | BOOLEAN | true | true, false |  |  | — (code default; consumer lands later) |
-| `integration.auth.allowMtls` | Integrations | PLATFORM | SECURITY | BOOLEAN | true | true, false |  |  | — (code default; consumer lands later) |
-| `integration.agentHeartbeatTimeout` | Integrations | BANK | OPERATIONAL | DURATION | 2m | 1m – 1h |  |  | — (code default; consumer lands later) |
+| `integration.maxRowsPerRun` | Integrations | BANK | OPERATIONAL | INT | 50000 rows | 1 – 500000 |  |  | — (code default) |
+| `integration.runTimeout` | Integrations | BANK | OPERATIONAL | DURATION | 15m | 1m – 2h |  |  | — (code default) |
+| `integration.minScheduleInterval` | Integrations | BANK | OPERATIONAL | DURATION | 5m | 5m – 1d |  |  | — (code default) |
+| `integration.webhookRetryAttempts` | Integrations | BANK | OPERATIONAL | INT | 5 attempts | 0 – 10 |  |  | — (code default) |
+| `integration.outboundPiiMasking` | Integrations | BANK | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
+| `integration.clientTokenTtl` | Integrations | BANK | SECURITY | DURATION | 15m | 5m – 15m |  |  | — (code default) |
+| `integration.auth.allowOauth2` | Integrations | PLATFORM | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
+| `integration.auth.allowApiKeys` | Integrations | PLATFORM | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
+| `integration.auth.allowMtls` | Integrations | PLATFORM | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
+| `integration.agentHeartbeatTimeout` | Integrations | BANK | OPERATIONAL | DURATION | 2m | 1m – 1h |  |  | — (code default) |
 <!-- END GENERATED -->

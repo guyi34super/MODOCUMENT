@@ -11,7 +11,15 @@ import { Button, Card, ErrorBanner, Field, Spinner, inputClass } from '../compon
 
 const ROLES = ['ADMIN', 'APPROVER', 'READ_WRITE', 'READ_ONLY'];
 
+/** ws21: the platform bank holds platform administrators and nobody else. */
+const PLATFORM_ROLES = ['PLATFORM_ADMIN'];
+
+/** The roles the caller's bank can hand out (the server enforces the same rule). */
+const rolesFor = (role) => (role === 'PLATFORM_ADMIN' ? PLATFORM_ROLES : ROLES);
+
 const emptyForm = { email: '', displayName: '', role: 'READ_ONLY', temporaryPassword: '' };
+
+const blankFormFor = (role) => ({ ...emptyForm, role: rolesFor(role).at(-1) });
 
 /** No 0/O, 1/l/I lookalikes: the password is read out or typed by a person. */
 const PASSWORD_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
@@ -63,7 +71,8 @@ export default function AdminUsersPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState(emptyForm);
+  const roles = rolesFor(me?.role);
+  const [form, setForm] = useState(() => blankFormFor(me?.role));
   // 'users' | 'review' — the access-review worksheet view (SEC-013).
   const [view, setView] = useState('users');
   const [review, setReview] = useState(null);
@@ -107,7 +116,7 @@ export default function AdminUsersPage() {
             ? `Creating ${form.email} was submitted for approval — a second administrator must approve it (change #${result.pendingChangeId})`
             : `User ${form.email} created — they must change the temporary password on first login`,
       });
-      setForm(emptyForm);
+      setForm(blankFormFor(me?.role));
       setShowCreate(false);
       load();
     } catch {
@@ -311,7 +320,7 @@ export default function AdminUsersPage() {
                 value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value })}
               >
-                {ROLES.map((role) => (
+                {roles.map((role) => (
                   <option key={role} value={role}>
                     {role}
                   </option>
@@ -378,7 +387,7 @@ export default function AdminUsersPage() {
                               }
                             }}
                           >
-                            {ROLES.map((role) => (
+                            {roles.map((role) => (
                               <option key={role} value={role}>
                                 {role}
                               </option>

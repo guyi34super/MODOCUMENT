@@ -4,11 +4,14 @@ import com.modocument.application.port.PlatformBankLookup;
 import com.modocument.application.port.TenantContext;
 import com.modocument.domain.entity.BankSetting;
 import com.modocument.domain.entity.ConfigRevision;
+import com.modocument.domain.model.settings.SettingsChangedEvent;
 import com.modocument.infrastructure.persistence.BankSettingJpaRepository;
 import com.modocument.infrastructure.persistence.ConfigRevisionJpaRepository;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -47,6 +50,12 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <p>The ConfigRevision row is ensured at startup (the migration seeds it
  * on PostgreSQL; the H2 test schema starts empty).
+ *
+ * <p><b>Change notification:</b> every reload after startup publishes a
+ * {@link SettingsChangedEvent} once the new snapshot is in force, so the few
+ * consumers that pre-compute from settings (the alert rule catalogue)
+ * rebuild. Reloads happen after a write COMMITS and on a poll that saw a new
+ * revision, so listeners never run inside the writer's transaction.
  */
 @Component
 public class SettingsCache {
@@ -59,12 +68,25 @@ public class SettingsCache {
     private final PlatformBankLookup platformBanks;
     private final TransactionTemplate readOnlyNewTx;
     private final TransactionTemplate writeNewTx;
+    private final ApplicationEventPublisher events;
+    private final Object reloadLock = new Object();
     private final AtomicReference<SettingsSnapshot> current =
             new AtomicReference<>(SettingsSnapshot.EMPTY);
 
+    /** A cache that notifies nobody (a second "task" in the propagation tests). */
     public SettingsCache(BankSettingJpaRepository rows, ConfigRevisionJpaRepository revisions,
                          SettingsCatalogue catalogue, PlatformBankLookup platformBanks,
                          PlatformTransactionManager transactionManager) {
+        this(rows, revisions, catalogue, platformBanks, transactionManager, event -> {
+        });
+    }
+
+    @Autowired
+    public SettingsCache(BankSettingJpaRepository rows, ConfigRevisionJpaRepository revisions,
+                         SettingsCatalogue catalogue, PlatformBankLookup platformBanks,
+                         PlatformTransactionManager transactionManager,
+                         ApplicationEventPublisher events) {
+        this.events = events;
         this.rows = rows;
         this.revisions = revisions;
         this.catalogue = catalogue;
@@ -87,7 +109,9 @@ public class SettingsCache {
     void start() {
         try {
             ensureRevisionRow();
-            SettingsSnapshot loaded = reload();
+            // No event: nothing has consumed a snapshot yet, and listeners
+            // are not registered while singletons are still being created.
+            SettingsSnapshot loaded = load();
             log.info("Settings snapshot loaded: revision {}, {} stored value(s)",
                     loaded.revision(), loaded.size());
         } catch (RuntimeException e) {
@@ -101,16 +125,28 @@ public class SettingsCache {
         return current.get();
     }
 
-    /** Re-reads every stored setting now (SYSTEM, own read-only transaction). */
-    public synchronized SettingsSnapshot reload() {
-        OptionalInt platformBankId = platformBanks.platformBankId();
-        SettingsSnapshot next = asSystem(() -> readOnlyNewTx.execute(status -> {
-            long revision = readRevision();
-            List<BankSetting> all = rows.findAll();
-            return SettingsSnapshot.build(revision, platformBankId, all, catalogue);
-        }));
-        current.set(next);
+    /**
+     * Re-reads every stored setting now (SYSTEM, own read-only transaction)
+     * and then publishes {@link SettingsChangedEvent} — outside the load lock,
+     * so a listener reading settings never waits on another reload.
+     */
+    public SettingsSnapshot reload() {
+        SettingsSnapshot next = load();
+        events.publishEvent(new SettingsChangedEvent(next.revision()));
         return next;
+    }
+
+    private SettingsSnapshot load() {
+        synchronized (reloadLock) {
+            OptionalInt platformBankId = platformBanks.platformBankId();
+            SettingsSnapshot next = asSystem(() -> readOnlyNewTx.execute(status -> {
+                long revision = readRevision();
+                List<BankSetting> all = rows.findAll();
+                return SettingsSnapshot.build(revision, platformBankId, all, catalogue);
+            }));
+            current.set(next);
+            return next;
+        }
     }
 
     /**

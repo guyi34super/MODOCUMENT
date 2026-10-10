@@ -92,9 +92,17 @@ public class OidcLoginSuccessHandler implements AuthenticationSuccessHandler {
             throws IOException {
         log.warn("OIDC login via '{}' failed after IdP authentication: {}",
                 registrationId, cause.getMessage());
+        Map<String, Object> values = new java.util.LinkedHashMap<>();
+        values.put("method", "oidc");
+        values.put("provider", registrationId);
+        if (cause instanceof OidcLoginService.OidcLoginException refusal
+                && refusal.reason() != null) {
+            // ws21: e.g. bank_suspended — in the audit row only, never the redirect.
+            values.put("reason", refusal.reason());
+        }
         AuditEventSpec.Builder failed = AuditEventSpec
                 .builder("LOGIN_FAILED", AuditOutcome.FAILED)
-                .newValues(Map.of("method", "oidc", "provider", registrationId));
+                .newValues(values);
         if (email != null && !email.isBlank()) {
             failed.actorEmail(email.trim().toLowerCase(java.util.Locale.ROOT));
         }

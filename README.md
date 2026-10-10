@@ -384,9 +384,12 @@ export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
 export MODOCUMENT_MFA_KEY=$(openssl rand -base64 48)
 export POSTGRES_PASSWORD=$(openssl rand -hex 24)
 export MODOCUMENT_APP_DB_PASSWORD=$(openssl rand -hex 24)
-# First-run administrator (self-registration is disabled):
+# First-run administrators (self-registration is disabled). Every user
+# change needs a second approver, so seed the second admin too:
 export MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 export MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD=<a-strong-password>
+export MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_EMAIL=admin2@example.com
+export MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_PASSWORD=<another-strong-password>
 docker compose up --build
 
 # with LOCAL AI (the default endpoint): add the ollama service, then pull
@@ -451,6 +454,28 @@ curl -X POST http://localhost:8080/api/auth/login \
 
 curl http://localhost:8080/Templates/GetAll -H "Authorization: Bearer <token>"
 ```
+
+#### First run: two administrators
+
+Creating, re-roling or disabling a user is maker/checker: a **second**
+administrator must approve it. A fresh install with a single administrator
+could therefore never add anyone, so seed the second one at the same time:
+
+| Variable | |
+|---|---|
+| `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD` | First ADMIN (required on an empty database in production). |
+| `MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_PASSWORD` | Optional second ADMIN — set both or neither. |
+
+Both passwords also accept the `_FILE` form (Docker secrets), must pass the
+password policy, and are **temporary**: each administrator must choose a
+new password (and enrol TOTP) at first sign-in.
+`MODOCUMENT_BOOTSTRAP_ADMIN_SKIP_PASSWORD_CHANGE=true` keeps the configured
+passwords on throwaway dev stacks only (refused unless
+`modocument.security.permit-dev-paths=true`). Seeding runs once, on an empty
+user table; at every startup the app warns loudly while the default bank has
+fewer than two enabled ADMIN/APPROVER accounts — on a running install the
+platform owner can add a break-glass administrator
+([docs/platform/platform-owner.md](docs/platform/platform-owner.md)).
 
 Endpoints: `POST /api/auth/login`, `POST /api/auth/refresh`,
 `POST /api/auth/logout`, `GET /api/auth/me`, `PUT /api/auth/profile`,

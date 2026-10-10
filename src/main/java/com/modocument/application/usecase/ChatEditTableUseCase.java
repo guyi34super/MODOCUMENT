@@ -13,11 +13,14 @@ import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
+import com.modocument.domain.model.settings.SettingKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 
@@ -49,6 +52,8 @@ public class ChatEditTableUseCase {
     private final PiiTokenizer tokenizer;
     private final com.modocument.application.port.CurrentUserProvider currentUser;
     private final ChatEditProperties properties;
+    /** Null = the yml ratio only (unit-test wiring). */
+    private final SettingsReader settings;
 
     public ChatEditTableUseCase(IngestionJobRepository jobs,
                                 List<PromptStrategy> promptStrategies,
@@ -56,12 +61,24 @@ public class ChatEditTableUseCase {
                                 PiiTokenizer tokenizer,
                                 com.modocument.application.port.CurrentUserProvider currentUser,
                                 ChatEditProperties properties) {
+        this(jobs, promptStrategies, aiFilesService, tokenizer, currentUser, properties, null);
+    }
+
+    @Autowired
+    public ChatEditTableUseCase(IngestionJobRepository jobs,
+                                List<PromptStrategy> promptStrategies,
+                                AiFilesService aiFilesService,
+                                PiiTokenizer tokenizer,
+                                com.modocument.application.port.CurrentUserProvider currentUser,
+                                ChatEditProperties properties,
+                                SettingsReader settings) {
         this.jobs = jobs;
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
         this.tokenizer = tokenizer;
         this.currentUser = currentUser;
         this.properties = properties;
+        this.settings = settings;
     }
 
     public IngestionJob handle(int jobId, String instruction) {
@@ -174,7 +191,7 @@ public class ChatEditTableUseCase {
         long total = (long) current.getRows().size() * current.getColumns().size();
         if (!ChatEditScopeResolver.isBulkInstruction(instruction)
                 && total > 0
-                && (double) changed / total > properties.getFullTableMaxChangeRatio()) {
+                && (double) changed / total > maxChangeRatio()) {
             throw new IllegalStateException("The assistant tried to change " + changed + " of " + total
                     + " cells, which looks broader than the instruction asked for; nothing was changed. "
                     + "Target specific rows or columns, or say \"all\"/\"every\" for a deliberate bulk change.");
@@ -491,5 +508,16 @@ public class ChatEditTableUseCase {
                 .filter(s -> s.getType().equals(type))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(type + " prompt not registered."));
+    }
+
+    /**
+     * ws20: the largest share of cells a non-bulk full-table edit may change —
+     * the setting {@code chatEdit.fullTableMaxChangeRatio} of the caller's
+     * bank, read per edit; with nothing stored the yml value.
+     */
+    public double maxChangeRatio() {
+        return settings == null ? properties.getFullTableMaxChangeRatio()
+                : settings.getDecimalForCurrentBank(SettingKeys.CHAT_EDIT_MAX_CHANGE_RATIO)
+                .doubleValue();
     }
 }

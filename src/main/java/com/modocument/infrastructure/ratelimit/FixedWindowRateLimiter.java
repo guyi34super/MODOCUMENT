@@ -14,6 +14,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * windows are swept, so a flood of distinct keys (spoofed IPs, say) cannot
  * grow it without bound. Thread-safe: the window swap is a single atomic
  * {@code compute} and the counter is an {@link AtomicInteger}.
+ *
+ * <p><b>Per-call limits (ws20).</b> {@code maxPermits} is the default; the
+ * {@link #tryAcquire(String, long, int)} overload takes the limit in force
+ * for THIS call (an editable per-bank setting), compared against the same
+ * window counter. A limit lowered mid-window therefore applies at once to
+ * what was already spent; window length and map bound stay fixed.
  */
 public final class FixedWindowRateLimiter {
 
@@ -38,6 +44,17 @@ public final class FixedWindowRateLimiter {
      *         has already spent its permits for the current window.
      */
     public boolean tryAcquire(String key, long nowMillis) {
+        return tryAcquire(key, nowMillis, maxPermits);
+    }
+
+    /**
+     * Consumes one permit for {@code key} against a per-call limit (values
+     * below 1 count as 1 — a configured bucket never blocks everything).
+     *
+     * @return true if the key is within {@code permits} for the current window
+     */
+    public boolean tryAcquire(String key, long nowMillis, int permits) {
+        int limit = Math.max(1, permits);
         if (windows.size() > maxKeys) {
             windows.values().removeIf(w -> nowMillis - w.startMillis >= windowMillis);
         }
@@ -45,7 +62,12 @@ public final class FixedWindowRateLimiter {
                 existing == null || nowMillis - existing.startMillis >= windowMillis
                         ? new Window(nowMillis)
                         : existing);
-        return window.count.incrementAndGet() <= maxPermits;
+        return window.count.incrementAndGet() <= limit;
+    }
+
+    /** The default limit this limiter was built with. */
+    public int maxPermits() {
+        return maxPermits;
     }
 
     /**

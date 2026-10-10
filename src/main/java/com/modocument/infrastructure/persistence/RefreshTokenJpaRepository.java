@@ -26,4 +26,14 @@ public interface RefreshTokenJpaRepository extends JpaRepository<RefreshToken, U
     @Query("UPDATE RefreshToken t SET t.revokedAt = :when "
             + "WHERE t.userId = :userId AND t.revokedAt IS NULL")
     int revokeAllForUser(@Param("userId") int userId, @Param("when") Instant when);
+
+    /**
+     * ws21 bank suspension: revokes every live refresh token of every account
+     * of the bank (RefreshToken carries no BankId; the bank is resolved
+     * through AppUsers).
+     */
+    @Modifying(flushAutomatically = true)
+    @Query("UPDATE RefreshToken t SET t.revokedAt = :when WHERE t.revokedAt IS NULL "
+            + "AND t.userId IN (SELECT u.appUserId FROM AppUser u WHERE u.bankId = :bankId)")
+    int revokeAllForBank(@Param("bankId") int bankId, @Param("when") Instant when);
 }

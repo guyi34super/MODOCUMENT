@@ -116,6 +116,43 @@ describe('Layout sidebar', () => {
     expect(screen.queryByText('Administration')).not.toBeInTheDocument();
   });
 
+  /** ws21: the platform owner sees the Platform console, never the domain sections. */
+  it('shows a PLATFORM_ADMIN only the Platform section, users, approvals and account', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 9, role: 'PLATFORM_ADMIN' }));
+    renderLayout();
+
+    expect(screen.getByText('Platform')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/platform');
+    expect(screen.getByRole('link', { name: 'Banks' })).toHaveAttribute(
+      'href',
+      '/platform/banks'
+    );
+    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/admin/users');
+    expect(screen.getByRole('link', { name: 'Approvals' })).toHaveAttribute(
+      'href',
+      '/admin/changes'
+    );
+    expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
+    for (const hidden of ['Home', /Design Templates/, 'Blueprints', 'Extraction Jobs',
+      'Security alerts', 'Releases']) {
+      expect(screen.queryByRole('link', { name: hidden })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText('Document Flow')).not.toBeInTheDocument();
+    expect(screen.queryByText('Data Extraction')).not.toBeInTheDocument();
+  });
+
+  it('never shows the Platform section to a bank ADMIN', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 1, role: 'ADMIN' }));
+    renderLayout();
+
+    expect(screen.queryByText('Platform')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
+    expect(screen.getByText('Document Flow')).toBeInTheDocument();
+  });
+
   it('closes the drawer on Escape and on a backdrop click', async () => {
     stubViewport(false);
     renderLayout();

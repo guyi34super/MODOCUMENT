@@ -1,8 +1,11 @@
 package com.modocument.infrastructure.ratelimit;
 
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.application.port.SettingsReader;
+import com.modocument.domain.model.settings.SettingKeys;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -62,34 +65,60 @@ import java.util.TreeMap;
  *   <li>The multipart ingestion create is an upload, but counts against the
  *       ingestion bucket only.</li>
  * </ul>
+ *
+ * <p><b>Editable limits (ws20).</b> Each bucket's permit count is a setting
+ * ({@code ratelimit.<bucket>}, see docs/settings/catalogue.md) resolved PER
+ * REQUEST for the caller's bank (the JWT bank bound in
+ * {@code TenantContext}); {@code admin-jobs} is platform-wide because each
+ * run sweeps every bank. With nothing stored the limit is the
+ * {@code modocument.ratelimit.*} value, exactly as before. The window, the
+ * key bound and the on/off switch (locked on) stay yml-only.
  */
 @Component
 public class ApiRateLimitInterceptor implements HandlerInterceptor {
 
     private final CurrentUserProvider currentUser;
     private final ApiRateLimitProperties properties;
+    /** Null = the yml limits only (unit-test wiring). */
+    private final SettingsReader settings;
     private final Map<String, Bucket> bucketsByRoute = new LinkedHashMap<>();
+    private final Map<String, Bucket> bucketsByName = new LinkedHashMap<>();
 
     public ApiRateLimitInterceptor(CurrentUserProvider currentUser,
                                    ApiRateLimitProperties properties) {
+        this(currentUser, properties, null);
+    }
+
+    @Autowired
+    public ApiRateLimitInterceptor(CurrentUserProvider currentUser,
+                                   ApiRateLimitProperties properties,
+                                   SettingsReader settings) {
         this.currentUser = currentUser;
         this.properties = properties;
+        this.settings = settings;
 
-        Bucket uploads = bucket("uploads", "file upload", properties.getUploads());
-        Bucket ingestion = bucket("ingestion", "ingestion job", properties.getIngestion());
-        Bucket transform = bucket("transform", "transform", properties.getTransform());
-        Bucket exports = bucket("exports", "export", properties.getExports());
+        Bucket uploads = bucket("uploads", "file upload", properties.getUploads(),
+                SettingKeys.RATELIMIT_UPLOADS);
+        Bucket ingestion = bucket("ingestion", "ingestion job", properties.getIngestion(),
+                SettingKeys.RATELIMIT_INGESTION);
+        Bucket transform = bucket("transform", "transform", properties.getTransform(),
+                SettingKeys.RATELIMIT_TRANSFORM);
+        Bucket exports = bucket("exports", "export", properties.getExports(),
+                SettingKeys.RATELIMIT_EXPORTS);
         Bucket docGenerate = bucket("doc-generate", "document generation",
-                properties.getDocGenerate());
-        Bucket extraction = bucket("extraction", "extraction job", properties.getExtraction());
-        Bucket dsr = bucket("dsr", "data-subject-rights", properties.getDsr());
+                properties.getDocGenerate(), SettingKeys.RATELIMIT_DOC_GENERATE);
+        Bucket extraction = bucket("extraction", "extraction job", properties.getExtraction(),
+                SettingKeys.RATELIMIT_EXTRACTION);
+        Bucket dsr = bucket("dsr", "data-subject-rights", properties.getDsr(),
+                SettingKeys.RATELIMIT_DSR);
         Bucket passwordChange = bucket("password-change", "password change",
-                properties.getPasswordChange());
-        Bucket mfaCode = bucket("mfa-code", "MFA code", properties.getMfaCode());
+                properties.getPasswordChange(), SettingKeys.RATELIMIT_PASSWORD_CHANGE);
+        Bucket mfaCode = bucket("mfa-code", "MFA code", properties.getMfaCode(),
+                SettingKeys.RATELIMIT_MFA_CODE);
         Bucket adminJobs = bucket("admin-jobs", "background job run",
-                properties.getAdminJobs());
+                properties.getAdminJobs(), SettingKeys.RATELIMIT_ADMIN_JOBS);
         Bucket adminSecurity = bucket("admin-security", "credential reset",
-                properties.getAdminSecurity());
+                properties.getAdminSecurity(), SettingKeys.RATELIMIT_ADMIN_SECURITY);
 
         // File uploads: standalone data files, document assets (several
         // files per call) and .docx blueprints (parsed + section-split).
@@ -139,11 +168,17 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
         // password or queues a maker/checker request).
         route("POST", "/api/admin/users/{id}/password-reset", adminSecurity);
         route("POST", "/api/admin/users/{id}/mfa-reset", adminSecurity);
+        // ws21 platform requests that hash temporary passwords at submit
+        // (Argon2id per first user / break-glass admin).
+        route("POST", "/api/platform/banks", adminSecurity);
+        route("POST", "/api/platform/banks/{id}/admins", adminSecurity);
     }
 
-    private Bucket bucket(String name, String label, int maxPermits) {
-        return new Bucket(name, label, new FixedWindowRateLimiter(
+    private Bucket bucket(String name, String label, int maxPermits, String settingKey) {
+        Bucket bucket = new Bucket(name, label, settingKey, new FixedWindowRateLimiter(
                 maxPermits, properties.getWindowMillis(), properties.getMaxKeys()));
+        bucketsByName.put(name, bucket);
+        return bucket;
     }
 
     private void route(String method, String pattern, Bucket bucket) {
@@ -159,6 +194,26 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
         Map<String, String> routes = new TreeMap<>();
         bucketsByRoute.forEach((route, bucket) -> routes.put(route, bucket.name()));
         return Collections.unmodifiableMap(routes);
+    }
+
+    /** Bucket name → the setting key holding its permit count (contract tests). */
+    public Map<String, String> settingKeys() {
+        Map<String, String> keys = new TreeMap<>();
+        bucketsByName.forEach((name, bucket) -> keys.put(name, bucket.settingKey()));
+        return Collections.unmodifiableMap(keys);
+    }
+
+    /**
+     * The permit count of bucket {@code name} for a bank's users: the bank's
+     * setting, else the platform's, else the yml value.
+     */
+    public int limitFor(String name, int bankId) {
+        Bucket bucket = bucketsByName.get(name);
+        if (bucket == null) {
+            throw new IllegalArgumentException("Unknown rate-limit bucket '" + name + "'.");
+        }
+        return settings == null ? bucket.limiter().maxPermits()
+                : settings.getInt(bucket.settingKey(), bankId);
     }
 
     /** The bucket name metering {@code method pattern}, or null when unmetered. */
@@ -183,7 +238,7 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
         }
         String key = "user:" + currentUser.requireUserId();
         long now = System.currentTimeMillis();
-        if (!bucket.limiter().tryAcquire(key, now)) {
+        if (!bucket.limiter().tryAcquire(key, now, currentLimit(bucket))) {
             throw new TooManyRequestsException(
                     "You have reached the " + bucket.label()
                             + " request limit for now. Please try again later.",
@@ -192,12 +247,19 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
         return true;
     }
 
+    /** The caller's bank's limit (TenantContext), read per request. */
+    private int currentLimit(Bucket bucket) {
+        return settings == null ? bucket.limiter().maxPermits()
+                : settings.getIntForCurrentBank(bucket.settingKey());
+    }
+
     /** HEAD runs the GET handler, so it spends the GET bucket. */
     private static String normalize(String method) {
         String upper = method.toUpperCase(Locale.ROOT);
         return "HEAD".equals(upper) ? "GET" : upper;
     }
 
-    private record Bucket(String name, String label, FixedWindowRateLimiter limiter) {
+    private record Bucket(String name, String label, String settingKey,
+                          FixedWindowRateLimiter limiter) {
     }
 }

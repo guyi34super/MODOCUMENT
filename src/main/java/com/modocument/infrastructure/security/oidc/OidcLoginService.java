@@ -8,6 +8,7 @@ import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.model.BankKind;
+import com.modocument.domain.model.BankStatus;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
@@ -41,6 +42,12 @@ import java.util.Map;
  * identity that resolves to a PLATFORM_ADMIN (or any account of the platform
  * bank) is refused — platform admins sign in with their local password and
  * the always-on TOTP second factor only.
+ *
+ * <p>Bank suspension (ws21): an identity whose account belongs to a
+ * SUSPENDED bank — or a brand-new identity whose provider maps to one — is
+ * refused before anything is linked or provisioned; the handler audits
+ * LOGIN_FAILED with reason {@code bank_suspended} and redirects without
+ * detail, like every other OIDC refusal.
  *
  * <p>Registered only by {@link OidcClientConfig}, i.e. only when OIDC
  * providers are configured.
@@ -107,9 +114,11 @@ public class OidcLoginService {
             user = users.findByEmailIgnoreCase(email).orElse(null);
             if (user != null) {
                 // Checked BEFORE linking: a disabled account must not even
-                // acquire a fresh IdP binding — nor may a platform account.
+                // acquire a fresh IdP binding — nor may a platform account,
+                // nor an account of a suspended bank.
                 refuseIfDisabled(user, registrationId);
                 refuseIfPlatformAccount(user, registrationId);
+                refuseIfBankSuspended(user.getBankId(), user.getEmail(), registrationId);
                 linkByEmail(user, registrationId, subject);
             } else {
                 user = createUser(registrationId, provider, subject, email, oidcUser);
@@ -121,6 +130,7 @@ public class OidcLoginService {
             refuseIfDisabled(user, registrationId);
         }
         refuseIfPlatformAccount(user, registrationId);
+        refuseIfBankSuspended(user.getBankId(), user.getEmail(), registrationId);
         applyRoleClaim(user, registrationId, provider, oidcUser);
         updateDisplayName(user, oidcUser);
         return user;
@@ -147,6 +157,20 @@ public class OidcLoginService {
             throw new OidcLoginException("Account '" + user.getEmail()
                     + "' is a platform account; refusing OIDC login via '" + registrationId
                     + "'.");
+        }
+    }
+
+    /**
+     * ws21: no session — and no new link or JIT account — for a suspended
+     * bank. Read here as SYSTEM (inside {@link #login}'s runAsSystem).
+     */
+    private void refuseIfBankSuspended(int bankId, String email, String registrationId) {
+        boolean suspended = banks.findById(bankId)
+                .map(bank -> bank.getStatus() == BankStatus.SUSPENDED)
+                .orElse(false);
+        if (suspended) {
+            throw new OidcLoginException("Account '" + email + "' belongs to a suspended bank; "
+                    + "refusing OIDC login via '" + registrationId + "'.", "bank_suspended");
         }
     }
 
@@ -194,6 +218,7 @@ public class OidcLoginService {
                     + "' maps to the platform bank '" + bank.getCode()
                     + "'; OIDC never provisions into it.");
         }
+        refuseIfBankSuspended(bank.getBankId(), email, registrationId);
         Role role = provider.getDefaultRole() == null ? Role.READ_ONLY : provider.getDefaultRole();
         AppUser user = new AppUser();
         user.setEmail(email);
@@ -325,8 +350,21 @@ public class OidcLoginService {
 
     /** An OIDC identity that cannot be mapped to an account (no detail leaks to the browser). */
     public static class OidcLoginException extends RuntimeException {
+
+        /** Machine-readable refusal reason for the audit row, or null. */
+        private final String reason;
+
         public OidcLoginException(String message) {
+            this(message, null);
+        }
+
+        public OidcLoginException(String message, String reason) {
             super(message);
+            this.reason = reason;
+        }
+
+        public String reason() {
+            return reason;
         }
     }
 }

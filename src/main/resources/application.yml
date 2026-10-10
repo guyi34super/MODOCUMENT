@@ -414,14 +414,40 @@ modocument:
         window: 5m
         severity: MEDIUM
       # ws20/ws21: the platform owner changed a global default or the range
-      # a bank may choose from (affects every bank), or the platform was
-      # bootstrapped.
+      # a bank may choose from (affects every bank), bootstrapped the
+      # platform, onboarded / suspended / reactivated a bank, added a
+      # break-glass admin to one, or (ws25, wave 3) approved an egress rule.
+      # Grouped per audited entity (the bank, the setting): each bank
+      # lifecycle action is audited in the customer bank AND the platform
+      # bank, so both sides get their own alert.
       - name: platform-change
-        description: Platform setting, bank bound or platform bootstrap by the platform owner
+        description: Platform setting, bank bound, bank lifecycle, egress approval or platform bootstrap by the platform owner
         trigger: IMMEDIATE
-        actions: [PLATFORM_SETTING_UPDATED, PLATFORM_BOOTSTRAPPED]
-        group-by: ACTOR
+        actions: [PLATFORM_SETTING_UPDATED, PLATFORM_BOOTSTRAPPED, BANK_ONBOARDED, BANK_SUSPENDED, BANK_REACTIVATED, BANK_ADMIN_ADDED, EGRESS_RULE_APPROVED]
+        group-by: ENTITY
         window: 5m
+        severity: HIGH
+      # ws23: many jobs of one bank fell back from AI to code extraction
+      # (provider outage, quota, invalid output) - code-extracted data needs
+      # review, and a silent provider failure must reach a person. Threshold
+      # and window are platform settings (alerts.parseFallbackSurge.*).
+      - name: parse-fallback-surge
+        description: Surge of ingestion jobs parsed by the code fallback instead of the AI
+        trigger: WINDOWED
+        actions: [INGESTION_PARSE_FALLBACK]
+        group-by: BANK
+        threshold: ${MODOCUMENT_ALERT_PARSE_FALLBACK_SURGE_THRESHOLD:20}
+        window: 1h
+        severity: MEDIUM
+      # ws23: the AI circuit breaker opened (consecutive transport/5xx/timeout
+      # failures) - every AI feature degrades to its code fallback until the
+      # trial call succeeds.
+      - name: ai-circuit-opened
+        description: AI circuit breaker opened - AI calls suspended, code fallbacks in use
+        trigger: IMMEDIATE
+        actions: [AI_CIRCUIT_OPENED]
+        group-by: BANK
+        window: 15m
         severity: HIGH
   settings:
     # ws20 editable settings (docs/settings/catalogue.md). The catalogue,

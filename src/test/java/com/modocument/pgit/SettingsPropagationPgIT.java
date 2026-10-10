@@ -3,9 +3,11 @@ package com.modocument.pgit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.port.PlatformBankLookup;
+import com.modocument.application.security.PasswordPolicy;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.model.Role;
 import com.modocument.domain.model.settings.SettingKeys;
+import com.modocument.domain.model.settings.SettingsChangedEvent;
 import com.modocument.infrastructure.persistence.BankSettingJpaRepository;
 import com.modocument.infrastructure.persistence.ConfigRevisionJpaRepository;
 import com.modocument.infrastructure.security.JwtService;
@@ -22,6 +24,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.sql.Connection;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -38,6 +42,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * change (direct) and a security change (maker/checker approved by a second
  * admin). The writes run as the bank's tenant (RLS WITH CHECK), the reloads
  * as SYSTEM.
+ *
+ * <p>Wave 2: the change reaches a CONSUMER on task B too (a PasswordPolicy
+ * reading task B's resolver), and task B announces each reload with a
+ * {@link SettingsChangedEvent} — what the alert catalogue rebuilds on.
  */
 class SettingsPropagationPgIT extends PgSpringItSupport {
 
@@ -84,11 +92,13 @@ class SettingsPropagationPgIT extends PgSpringItSupport {
 
     @Test
     void aChangeOnOneTaskIsVisibleOnAnotherAfterOnePoll() throws Exception {
+        List<Object> eventsB = new ArrayList<>();
         SettingsCache cacheB = new SettingsCache(rows, revisions, catalogue, platformBanks,
-                transactionManager);
+                transactionManager, eventsB::add);
         cacheB.reload();
         SettingsResolver resolverB = new SettingsResolver(catalogue, cacheB);
         ConfigRevisionPoller pollerB = new ConfigRevisionPoller(cacheB);
+        PasswordPolicy passwordPolicyB = new PasswordPolicy(12, resolverB);
         assertThat(resolverB.getEnum(SettingKeys.EXTRACTION_DEFAULT_MODE, BANK))
                 .isEqualTo("AI_WITH_CODE_FALLBACK");
 
@@ -108,7 +118,10 @@ class SettingsPropagationPgIT extends PgSpringItSupport {
         assertThat(resolverB.getEnum(SettingKeys.EXTRACTION_DEFAULT_MODE, BANK))
                 .isEqualTo("CODE_ONLY");
         assertThat(cacheB.current().revision()).isEqualTo(cacheA.current().revision());
+        assertThat(eventsB).last().isEqualTo(new SettingsChangedEvent(cacheB.current().revision()));
+        int eventsAfterPoll = eventsB.size();
         assertThat(cacheB.refreshIfChanged()).as("nothing new: no reload").isFalse();
+        assertThat(eventsB).as("no reload, no event").hasSize(eventsAfterPoll);
 
         // Security: maker/checker on PostgreSQL, then one poll on task B.
         String submitted = mvc.perform(put("/api/admin/settings")
@@ -124,8 +137,14 @@ class SettingsPropagationPgIT extends PgSpringItSupport {
                 .andExpect(status().isOk());
         assertThat(resolverA.getInt(SettingKeys.PASSWORD_MIN_LENGTH, BANK)).isEqualTo(18);
         assertThat(resolverB.getInt(SettingKeys.PASSWORD_MIN_LENGTH, BANK)).isEqualTo(12);
+        assertThat(passwordPolicyB.minLength(BANK)).isEqualTo(12);
         pollerB.poll();
         assertThat(resolverB.getInt(SettingKeys.PASSWORD_MIN_LENGTH, BANK)).isEqualTo(18);
+        // The consumer on task B follows without a restart; other banks do not move.
+        assertThat(passwordPolicyB.minLength(BANK)).isEqualTo(18);
+        assertThat(passwordPolicyB.minLength(BANK + 1)).isEqualTo(12);
+        assertThat(eventsB).last()
+                .isEqualTo(new SettingsChangedEvent(cacheB.current().revision()));
     }
 
     private String token(int userId) {

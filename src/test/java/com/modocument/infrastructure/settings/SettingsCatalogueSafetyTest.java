@@ -188,8 +188,74 @@ class SettingsCatalogueSafetyTest {
                 .findFirst().orElseThrow();
         assertThat(platform.trigger()).isEqualTo(AlertRule.Trigger.IMMEDIATE);
         assertThat(platform.actions())
-                .containsExactlyInAnyOrder("PLATFORM_SETTING_UPDATED", "PLATFORM_BOOTSTRAPPED");
+                .containsExactlyInAnyOrder("PLATFORM_SETTING_UPDATED", "PLATFORM_BOOTSTRAPPED",
+                        "BANK_ONBOARDED", "BANK_SUSPENDED", "BANK_REACTIVATED",
+                        "BANK_ADMIN_ADDED", "EGRESS_RULE_APPROVED");
+        assertThat(platform.groupBy()).isEqualTo(AlertRule.GroupBy.ENTITY);
         assertThat(platform.severity()).isEqualTo(AlertSeverity.HIGH);
+        AlertRule privileged = rules.stream()
+                .filter(rule -> rule.name().equals("privileged-change"))
+                .findFirst().orElseThrow();
+        assertThat(privileged.actions()).contains("USER_PASSWORD_RESET", "USER_MFA_RESET");
+        // ws23 actions alert as soon as the extraction workstream audits them.
+        AlertRule surge = rules.stream()
+                .filter(rule -> rule.name().equals("parse-fallback-surge"))
+                .findFirst().orElseThrow();
+        assertThat(surge.trigger()).isEqualTo(AlertRule.Trigger.WINDOWED);
+        assertThat(surge.actions()).containsExactly("INGESTION_PARSE_FALLBACK");
+        assertThat(surge.threshold()).isEqualTo(20);
+        assertThat(surge.window()).isEqualTo(java.time.Duration.ofHours(1));
+        assertThat(surge.severity()).isEqualTo(AlertSeverity.MEDIUM);
+        AlertRule circuit = rules.stream()
+                .filter(rule -> rule.name().equals("ai-circuit-opened"))
+                .findFirst().orElseThrow();
+        assertThat(circuit.trigger()).isEqualTo(AlertRule.Trigger.IMMEDIATE);
+        assertThat(circuit.actions()).containsExactly("AI_CIRCUIT_OPENED");
+        assertThat(circuit.severity()).isEqualTo(AlertSeverity.HIGH);
+    }
+
+    /**
+     * Alert tuning is generated per WINDOWED rule: every windowed rule of the
+     * shipped catalogue has a threshold AND a window setting naming it, and
+     * every alert-tuning setting names a shipped windowed rule. Adding a
+     * windowed rule to application.yml without its two settings (or
+     * renaming a rule) fails here.
+     */
+    @Test
+    void everyShippedWindowedRuleHasItsThresholdAndWindowSettings() {
+        AlertProperties properties = Binder.get(shipped)
+                .bind("modocument.alerts", Bindable.of(AlertProperties.class))
+                .orElseThrow(() -> new AssertionError("modocument.alerts missing"));
+        Set<String> windowed = new HashSet<>();
+        for (AlertRule rule : new AlertRuleCatalogue(properties).all()) {
+            if (rule.trigger() == AlertRule.Trigger.WINDOWED) {
+                windowed.add(rule.name());
+            }
+        }
+        Pattern tuning = Pattern.compile(
+                "^modocument\\.alerts\\.rules\\[([^\\]]+)]\\.(threshold|window)$");
+        Set<String> thresholds = new HashSet<>();
+        Set<String> windows = new HashSet<>();
+        for (SettingDefinition definition : SettingDefinitions.ALL) {
+            if (definition.propertyName() == null) {
+                continue;
+            }
+            Matcher matcher = tuning.matcher(definition.propertyName());
+            if (matcher.matches()) {
+                (matcher.group(2).equals("threshold") ? thresholds : windows)
+                        .add(matcher.group(1));
+                assertThat(definition.group()).as(definition.key())
+                        .isEqualTo(SettingGroup.SECURITY_ALERTS);
+            }
+        }
+        assertThat(thresholds)
+                .as("alertThreshold(...) settings in SettingDefinitions vs WINDOWED rules in "
+                        + "application.yml")
+                .isEqualTo(windowed);
+        assertThat(windows)
+                .as("alertWindow(...) settings in SettingDefinitions vs WINDOWED rules in "
+                        + "application.yml")
+                .isEqualTo(windowed);
     }
 
     @Test

@@ -35,6 +35,7 @@ public final class SettingKeys {
     public static final String RATELIMIT_PASSWORD_CHANGE = "ratelimit.passwordChange";
     public static final String RATELIMIT_MFA_CODE = "ratelimit.mfaCode";
     public static final String RATELIMIT_ADMIN_JOBS = "ratelimit.adminJobs";
+    public static final String RATELIMIT_ADMIN_SECURITY = "ratelimit.adminSecurity";
     public static final String RATELIMIT_LLM_PER_USER = "ratelimit.llm.perUserMax";
     public static final String RATELIMIT_AUTH_PER_IP = "ratelimit.auth.perIpMax";
     public static final String RATELIMIT_AUTH_PER_EMAIL = "ratelimit.auth.perEmailMax";
@@ -66,6 +67,10 @@ public final class SettingKeys {
     public static final String ALERT_ADMIN_BURST_WINDOW = "alerts.adminActionBurst.window";
     public static final String ALERT_EXPORT_BURST_THRESHOLD = "alerts.exportBurst.threshold";
     public static final String ALERT_EXPORT_BURST_WINDOW = "alerts.exportBurst.window";
+    public static final String ALERT_PARSE_FALLBACK_SURGE_THRESHOLD =
+            "alerts.parseFallbackSurge.threshold";
+    public static final String ALERT_PARSE_FALLBACK_SURGE_WINDOW =
+            "alerts.parseFallbackSurge.window";
     public static final String ALERT_WEBHOOK_MIN_SEVERITY = "alerts.webhook.minSeverity";
     public static final String ALERT_EMAIL_MIN_SEVERITY = "alerts.email.minSeverity";
 

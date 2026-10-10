@@ -1,6 +1,9 @@
 package com.modocument.application.privacy;
 
+import com.modocument.application.port.SettingsReader;
 import com.modocument.domain.model.Role;
+import com.modocument.domain.model.settings.SettingKeys;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -49,9 +52,22 @@ public class MaskingPolicy {
     }
 
     private final MaskingProperties properties;
+    /** Null = the yml switch only (unit-test wiring, the canonical matrix). */
+    private final SettingsReader settings;
 
     public MaskingPolicy(MaskingProperties properties) {
+        this(properties, null);
+    }
+
+    /**
+     * ws20: SCREEN_WORKING follows the setting {@code privacy.masking.screenWorking}
+     * of the caller's bank ({@code TenantContext}), read per call; with
+     * nothing stored, {@code modocument.privacy.masking.screen-working}.
+     */
+    @Autowired
+    public MaskingPolicy(MaskingProperties properties, SettingsReader settings) {
         this.properties = properties;
+        this.settings = settings;
     }
 
     /**
@@ -62,9 +78,21 @@ public class MaskingPolicy {
     public boolean mask(Channel channel, Role role) {
         return switch (channel) {
             case EXPORT, REPORT, SCREEN_READONLY -> true;
-            case SCREEN_WORKING -> properties.isScreenWorking();
+            case SCREEN_WORKING -> screenWorkingMasked();
             case DSR -> false;
         };
+    }
+
+    /** Whether the caller's bank force-masks the owner's own editing wizard. */
+    public boolean screenWorkingMasked() {
+        return settings == null ? properties.isScreenWorking()
+                : settings.getBoolForCurrentBank(SettingKeys.MASKING_SCREEN_WORKING);
+    }
+
+    /** {@link #screenWorkingMasked()} for one bank. */
+    public boolean screenWorkingMasked(int bankId) {
+        return settings == null ? properties.isScreenWorking()
+                : settings.getBool(SettingKeys.MASKING_SCREEN_WORKING, bankId);
     }
 
     /**

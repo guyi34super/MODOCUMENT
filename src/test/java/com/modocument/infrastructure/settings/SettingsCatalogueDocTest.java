@@ -61,7 +61,7 @@ class SettingsCatalogueDocTest {
                     .append(definition.locked() ? "**locked**" : "").append(" | ")
                     .append(definition.requiresRestart() ? "yes" : "").append(" | ")
                     .append(definition.propertyName() == null
-                            ? "— (code default; consumer lands later)"
+                            ? "— (code default)"
                             : "`" + definition.propertyName() + "`")
                     .append(" |\n");
         }
