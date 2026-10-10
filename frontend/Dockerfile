@@ -49,7 +49,9 @@ COPY --from=build /build/dist /usr/share/nginx/html
 # Explicit even though the base image already sets it: the image never
 # runs as root, whatever a later edit adds above.
 USER 101
-EXPOSE 8080
+# 8080: browsers and every API call. 8443 (ws26): the mTLS API server, the
+# target of the ALB's optional api.<domain> listener (frontend/nginx.conf).
+EXPOSE 8080 8443
 
 # OCI image labels (ws24) from release.yml's build args, the same ones the
 # API image takes (empty for a plain build). The bundle's own version is
