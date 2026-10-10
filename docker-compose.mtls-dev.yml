@@ -1,0 +1,55 @@
+# LOCAL DEVELOPMENT ONLY (Wave 4): a mutual-TLS listener for the
+# integration and agent APIs, standing in for the AWS ALB's api.<domain>
+# mTLS listener. Overlay for docker-compose.yml:
+#
+#   scripts/dev-mtls-certs.sh          # throwaway dev CA, server + "agent" certs in .mtls-dev/
+#   docker compose -f docker-compose.yml -f docker-compose.mtls-dev.yml up -d
+#   curl --cacert .mtls-dev/ca.crt \
+#        --cert .mtls-dev/clients/agent/agent.crt --key .mtls-dev/clients/agent/agent.key \
+#        https://localhost:8443/api/integration/oauth/token -d grant_type=client_credentials
+#
+# docs/integration/developer-guide.md, "Local mTLS listener".
+#
+# Topology, as on ECS: the listener (nginx, `ssl_verify_client optional`
+# against the dev CA, frontend/nginx.mtls-dev.conf) runs in the APP
+# container's network namespace, so the app sees it as 127.0.0.1, the only
+# peer whose X-Amzn-Mtls-Clientcert-* headers it trusts
+# (MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS). Browsers keep using
+# http://localhost:3000, where the frontend nginx still clears those headers.
+# Published on loopback only.
+
+services:
+  app:
+    environment:
+      MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS: 127.0.0.1/32
+    ports:
+      # The mTLS listener's port (it shares this container's network).
+      - "127.0.0.1:8443:8443"
+
+  mtls-dev:
+    # Pinned by digest, like the E2E images; the tag stays for readability.
+    image: nginxinc/nginx-unprivileged:alpine@sha256:b9241c6e7b8e9a862f129d8d4199ab64b10390949a78bdd5603379b32c844083
+    network_mode: "service:app"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      NGINX_ENVSUBST_FILTER: ^MODOCUMENT_
+      MODOCUMENT_API_UPSTREAM: 127.0.0.1:8080
+      MODOCUMENT_PUBLIC_HOST: localhost:8443
+      # The verified leaf only (a map in the template); the ALB's other
+      # client-certificate headers are cleared, the app does not use them.
+      MODOCUMENT_NGX_MTLS_LEAF: $$modocument_dev_mtls_leaf
+      MODOCUMENT_NGX_MTLS_SERIAL: '""'
+      MODOCUMENT_NGX_MTLS_ISSUER: '""'
+      MODOCUMENT_NGX_MTLS_SUBJECT: '""'
+      MODOCUMENT_NGX_MTLS_VALIDITY: '""'
+    volumes:
+      - ./frontend/nginx.mtls-dev.conf:/etc/nginx/templates/default.conf.template:ro
+      - ./frontend/security-headers.conf:/etc/nginx/snippets/security-headers.conf:ro
+      # Never ca.key: the listener needs the CA certificate only.
+      - ./.mtls-dev/ca.crt:/etc/nginx/mtls/ca.crt:ro
+      - ./.mtls-dev/server.crt:/etc/nginx/mtls/server.crt:ro
+      - ./.mtls-dev/server.key:/etc/nginx/mtls/server.key:ro
+    depends_on:
+      app:
+        condition: service_healthy

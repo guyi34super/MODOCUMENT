@@ -98,7 +98,10 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: nginx security headers (E1)
-        run: ../scripts/check-nginx-headers.sh
+        run: |
+          ../scripts/check-nginx-headers.sh
+          # Wave 4: the local mTLS listener (docker-compose.mtls-dev.yml).
+          ../scripts/check-nginx-headers.sh nginx.mtls-dev.conf
 
   # Playwright end-to-end suite on the compose stack (docker-compose.e2e.yml:
   # PostgreSQL with RLS, the app and frontend images, the fake LLM, the

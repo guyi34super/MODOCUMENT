@@ -26,3 +26,7 @@ hs_err_pid*
 
 # Claude Code session worktrees (local orchestration scratch, never committed)
 .claude/worktrees/
+
+# Throwaway dev CA and certificates of the local mTLS listener
+# (scripts/dev-mtls-certs.sh, docker-compose.mtls-dev.yml)
+.mtls-dev/
