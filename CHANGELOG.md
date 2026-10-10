@@ -88,8 +88,17 @@ All notable changes to MoDocument are recorded here. The format follows
   runs inside its network; enrolled from the dashboard with a one-time
   token, limited by a bank-controlled local allow-list. Released as an image
   and a jar with each version.
+- Admin dashboard: integration counts for the bank (runs in the last 24 h,
+  dead letters, offline agents, Integration API calls) and the share of
+  uploads parsed by AI or by code over 7 days.
 
 ### Changed
+- Accessibility of the admin, settings, platform and integration pages:
+  every table is named, colour-only status has a text equivalent, a skip
+  link, status and error announcements, and keyboard focus that stays
+  in place in the connection wizard and the flow builder.
+- The Agents page offers the one-time enrolment command only while it can
+  still be read, and shows when it expires.
 - Bootstrap administrators must change their configured password at first
   sign-in. `MODOCUMENT_BOOTSTRAP_ADMIN_SKIP_PASSWORD_CHANGE=true` turns this
   off on dev stacks only.
@@ -112,6 +121,8 @@ All notable changes to MoDocument are recorded here. The format follows
 - An AI model that stopped answering could be retried and recorded as a
   generic error; it is now recorded as a timeout, counts toward the AI
   circuit breaker and goes straight to the code fallback.
+- After a forced password change, the sign-in page shows the "Password
+  changed" notice again.
 
 ## [1.0.0] - 2026-10-10
 
