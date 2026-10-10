@@ -95,6 +95,54 @@ describe('IntegrationConnectionsPage', () => {
     expect(screen.queryByRole('button', { name: 'New connection' })).not.toBeInTheDocument();
   });
 
+  it('can be completed with the keyboard alone', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const open = await screen.findByRole('button', { name: 'New connection' });
+    open.focus();
+    await user.keyboard('{Enter}');
+    const dialog = screen.getByRole('dialog', { name: 'New connection' });
+    expect(within(dialog).getByRole('heading', { name: 'Type' })).toHaveFocus();
+    // The step list says which step is current in words, not only in colour.
+    expect(within(dialog).getByRole('list', { name: 'Wizard steps' })).toHaveTextContent(
+      '1. Type (current step)'
+    );
+
+    // Arrow keys move through the type radios; Tab reaches Next; Enter advances.
+    await user.tab();
+    expect(within(dialog).getByRole('radio', { name: /^REST API/ })).toHaveFocus();
+    await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}');
+    expect(within(dialog).getByRole('radio', { name: /^Webhook/ })).toBeChecked();
+    await user.tab(); // Cancel
+    await user.tab(); // Next
+    expect(within(dialog).getByRole('button', { name: 'Next' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(within(dialog).getByRole('heading', { name: 'Mode' })).toHaveFocus();
+    expect(within(dialog).getByRole('list', { name: 'Wizard steps' })).toHaveTextContent(
+      '1. Type (done)'
+    );
+
+    // Mode keeps Direct; Enter in a text field submits the step (implicit submission).
+    await user.tab();
+    await user.keyboard('{Enter}');
+    await waitFor(() =>
+      expect(within(dialog).getByRole('heading', { name: 'Details' })).toHaveFocus()
+    );
+    await user.click(within(dialog).getByLabelText('Connection name'));
+    await user.keyboard('Bank hooks');
+    await user.click(within(dialog).getByLabelText(/Webhook URL/));
+    await user.keyboard('https://hooks.bank.example/modoc{Enter}');
+    expect(within(dialog).getByRole('heading', { name: 'Credentials' })).toHaveFocus();
+    await user.click(within(dialog).getByLabelText('Signing secret (HMAC)'));
+    await user.keyboard('hmac-secret{Enter}');
+    expect(within(dialog).getByRole('heading', { name: 'Review & test' })).toHaveFocus();
+
+    // Escape closes the dialog and focus returns to the button that opened it.
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(open).toHaveFocus();
+  });
+
   it('walks the wizard for a direct database connection and sends it for approval', async () => {
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: 'New connection' }));

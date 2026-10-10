@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useId, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { isPendingChange } from '../api/changes';
 import { getTemplates } from '../api/cache';
@@ -266,6 +266,23 @@ function FlowBuilder({ flowId }) {
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [sent, setSent] = useState(null);
+  // Keyboard flow through the mapping table: after "Add row" focus lands on
+  // the new row's first field; after a removal on the next row's remove
+  // button (or "Add row" when none is left), never on <body>.
+  const mappingRef = useRef(null);
+  const addRowRef = useRef(null);
+  const [mappingFocus, setMappingFocus] = useState(null); // { row, field: 'from' | 'remove' }
+
+  useEffect(() => {
+    if (!mappingFocus) return;
+    const { row, field } = mappingFocus;
+    const target =
+      field === 'from'
+        ? mappingRef.current?.querySelector(`[data-mapping-from="${row}"]`)
+        : mappingRef.current?.querySelector(`[data-mapping-remove="${row}"]`);
+    (target || addRowRef.current)?.focus();
+    setMappingFocus(null);
+  }, [mappingFocus]);
 
   useEffect(() => {
     listConnections()
@@ -641,10 +658,14 @@ function FlowBuilder({ flowId }) {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-medium">Field mapping</h2>
           <Button
+            ref={addRowRef}
             type="button"
             size="sm"
             variant="secondary"
-            onClick={() => update({ fieldMapping: [...form.fieldMapping, { from: '', to: '' }] })}
+            onClick={() => {
+              update({ fieldMapping: [...form.fieldMapping, { from: '', to: '' }] });
+              setMappingFocus({ row: form.fieldMapping.length, field: 'from' });
+            }}
           >
             Add row
           </Button>
@@ -656,13 +677,15 @@ function FlowBuilder({ flowId }) {
         {form.fieldMapping.length === 0 ? (
           <p className="text-sm text-muted">No mapping yet.</p>
         ) : (
-          <table className="w-full text-sm" aria-label="Field mapping">
+          <table ref={mappingRef} className="w-full text-sm" aria-label="Field mapping">
             <thead>
               <tr className="text-left text-xs text-muted">
-                <th className="py-1 pr-2 font-medium">From</th>
-                <th className="py-1 pr-2 font-medium">To</th>
-                <th className="py-1 pr-2 font-medium">Match</th>
-                <th />
+                <th scope="col" className="py-1 pr-2 font-medium">From</th>
+                <th scope="col" className="py-1 pr-2 font-medium">To</th>
+                <th scope="col" className="py-1 pr-2 font-medium">Match</th>
+                <th scope="col">
+                  <span className="sr-only">Remove</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -670,6 +693,7 @@ function FlowBuilder({ flowId }) {
                 <tr key={i}>
                   <td className="py-1 pr-2">
                     <input
+                      data-mapping-from={i}
                       aria-label={`Mapping ${i + 1} from`}
                       className={inputClass}
                       value={m.from}
@@ -704,10 +728,15 @@ function FlowBuilder({ flowId }) {
                       type="button"
                       size="sm"
                       variant="danger"
+                      data-mapping-remove={i}
                       aria-label={`Remove mapping ${i + 1}`}
-                      onClick={() =>
-                        update({ fieldMapping: form.fieldMapping.filter((_, j) => j !== i) })
-                      }
+                      onClick={() => {
+                        update({ fieldMapping: form.fieldMapping.filter((_, j) => j !== i) });
+                        // The row that moves up into this slot, else the one
+                        // above; with no row left the effect falls back to "Add row".
+                        const left = form.fieldMapping.length - 1;
+                        setMappingFocus({ row: Math.min(i, left - 1), field: 'remove' });
+                      }}
                     >
                       ×
                     </Button>
@@ -774,11 +803,16 @@ function FlowBuilder({ flowId }) {
 
       {preview && (
         <section aria-label="Dry run result" className="space-y-2">
-          <Callout variant="info" title="Dry run — nothing was written">
-            The first {preview.rows?.length ?? 0} row(s) this flow would {outbound ? 'send' : 'receive'}
-            {form.maskPii ? ', masked as configured' : ''}.
-          </Callout>
+          {/* Announced when the dry run finishes (focus stays on the button). */}
+          <div role="status">
+            <Callout variant="info" title="Dry run — nothing was written">
+              The first {preview.rows?.length ?? 0} row(s) this flow would{' '}
+              {outbound ? 'send' : 'receive'}
+              {form.maskPii ? ', masked as configured' : ''}.
+            </Callout>
+          </div>
           <DataTable
+            caption="Dry run: first rows read"
             columns={(preview.columns || []).map((c) => ({ key: c, label: c }))}
             rows={(preview.rows || []).slice(0, 20)}
             emptyMessage="The dry run found no rows."

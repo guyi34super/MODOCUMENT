@@ -348,6 +348,9 @@ export default function ConnectionWizard({ open, onClose, connection, agents = [
             }`}
           >
             {i + 1}. {label}
+            {/* Done/current are colours; say them in words too. */}
+            {i < step && <span className="sr-only"> (done)</span>}
+            {i === step && <span className="sr-only"> (current step)</span>}
           </li>
         ))}
       </ol>

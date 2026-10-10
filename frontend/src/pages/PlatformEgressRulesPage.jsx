@@ -126,7 +126,7 @@ export default function PlatformEgressRulesPage() {
       <SentForApproval what={sent?.what} change={sent?.change} onDismiss={() => setSent(null)} />
       {!rules && !error && <Spinner label="Loading egress rules…" />}
       {rules && (
-        <DataTable columns={columns} rows={rules} emptyMessage={`No ${status.toLowerCase()} egress rules.`} />
+        <DataTable caption="Egress rules" columns={columns} rows={rules} emptyMessage={`No ${status.toLowerCase()} egress rules.`} />
       )}
 
       <ConfirmDialog

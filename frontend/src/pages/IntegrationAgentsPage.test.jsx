@@ -131,6 +131,25 @@ describe('IntegrationAgentsPage', () => {
     expect(document.body.textContent).not.toContain(TOKEN);
   });
 
+  it('announces a copy without ever putting the secret in the live region', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    getAgentEnrolment.mockResolvedValue({ token: TOKEN, expiresAt, dockerCommand: COMMAND });
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Get enrolment command for new-agent' })
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Enrol "new-agent"' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Copy docker command' }));
+
+    expect(writeText).toHaveBeenCalledWith(COMMAND);
+    const announcer = within(dialog).getByTestId('secret-announcer');
+    expect(announcer).toHaveAttribute('aria-live', 'polite');
+    expect(announcer).toHaveTextContent('Docker command copied to the clipboard.');
+    expect(announcer.textContent).not.toContain(TOKEN);
+  });
+
   it('counts down to "Expired"', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const expiresAt = new Date(Date.now() + 2000).toISOString();

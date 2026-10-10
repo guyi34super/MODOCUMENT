@@ -28,6 +28,8 @@ const SEVERITY_STYLES = {
   CRITICAL: 'border-l-danger-ink bg-danger-bg text-danger-ink',
 };
 
+const SEVERITY_WORDS = { INFO: 'Information', WARNING: 'Warning', CRITICAL: 'Critical' };
+
 function readDismissed() {
   try {
     const parsed = JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]');
@@ -165,7 +167,11 @@ export default function AnnouncementBanner() {
             }`}
           >
             <div className="min-w-0 flex-1">
-              <p className="font-semibold">{a.title}</p>
+              <p id={`announcement-title-${a.id}`} className="font-semibold">
+                {/* The severity is a colour; say it in words too. */}
+                <span className="sr-only">{SEVERITY_WORDS[a.severity] || SEVERITY_WORDS.INFO}: </span>
+                {a.title}
+              </p>
               {a.body && <p className="mt-0.5 whitespace-pre-line break-words">{a.body}</p>}
               {a.kind === 'MAINTENANCE' && a.maintenanceStartsAt && a.maintenanceEndsAt && (
                 <p className="mt-0.5">
@@ -192,6 +198,7 @@ export default function AnnouncementBanner() {
               <button
                 type="button"
                 aria-label="Dismiss"
+                aria-describedby={`announcement-title-${a.id}`}
                 title="Dismiss"
                 onClick={() => dismiss(a.id)}
                 className="-mr-1 cursor-pointer rounded px-1.5 text-lg leading-none opacity-70 hover:opacity-100"

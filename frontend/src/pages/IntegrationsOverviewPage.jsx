@@ -147,6 +147,7 @@ function Overview() {
           </Link>
         </div>
         <DataTable
+          caption="Last runs"
           columns={[
             {
               key: 'id',

@@ -105,6 +105,16 @@ describe('AnnouncementBanner', () => {
     );
   });
 
+  it('states the severity in words and ties each Dismiss to its announcement', async () => {
+    renderBanner();
+
+    const maintenance = await screen.findByTestId('announcement-maintenance');
+    expect(maintenance).toHaveTextContent('Critical: Planned maintenance on Sunday');
+    const info = screen.getByTestId('announcement-info');
+    const dismiss = within(info).getByRole('button', { name: 'Dismiss' });
+    expect(dismiss).toHaveAccessibleDescription(/^Information: /);
+  });
+
   it('never offers to dismiss maintenance and shows its window in local time', async () => {
     renderBanner();
 
