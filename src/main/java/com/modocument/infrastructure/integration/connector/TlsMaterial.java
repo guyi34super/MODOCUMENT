@@ -54,7 +54,9 @@ public final class TlsMaterial {
                 trustManagers = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
                 trustManagers.init(trust);
             }
-            SSLContext context = SSLContext.getInstance("TLS");
+            // TLSv1.3 context: negotiates TLS 1.3, falls back to TLS 1.2 for
+            // servers without 1.3; SSL and TLS 1.0/1.1 are never offered.
+            SSLContext context = SSLContext.getInstance("TLSv1.3");
             context.init(keyManagers == null ? null : keyManagers.getKeyManagers(),
                     trustManagers == null ? null : trustManagers.getTrustManagers(),
                     new SecureRandom());
