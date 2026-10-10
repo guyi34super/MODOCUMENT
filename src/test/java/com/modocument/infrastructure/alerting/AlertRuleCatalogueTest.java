@@ -98,6 +98,25 @@ class AlertRuleCatalogueTest {
                 assertThat(rule.window()).isBetween(Duration.ofMinutes(1), Duration.ofHours(24)));
     }
 
+    /** Contracts §5: any platform-owner change is one HIGH alert, no threshold. */
+    @Test
+    void aPlatformAdminsChangeMatchesTheHighPlatformChangeRule() throws Exception {
+        AlertRule rule = shippedCatalogue().get("platform-change");
+
+        assertThat(rule).isNotNull();
+        assertThat(rule.trigger()).isEqualTo(AlertRule.Trigger.IMMEDIATE);
+        assertThat(rule.severity()).isEqualTo(AlertSeverity.HIGH);
+        assertThat(rule.threshold()).isEqualTo(1);
+        for (String action : List.of("PLATFORM_SETTING_UPDATED", "PLATFORM_BOOTSTRAPPED",
+                "BANK_ONBOARDED", "BANK_SUSPENDED", "BANK_REACTIVATED", "BANK_ADMIN_ADDED",
+                "EGRESS_RULE_APPROVED")) {
+            assertThat(rule.matches(facts(action, AuditOutcome.SUCCESS, "PLATFORM_ADMIN")))
+                    .as(action).isTrue();
+        }
+        assertThat(rule.matches(facts("SETTING_UPDATED", AuditOutcome.SUCCESS, "ADMIN")))
+                .as("a bank's own setting change is not a platform change").isFalse();
+    }
+
     @Test
     void matchingHonoursActionsOutcomesRolesAndNeverAlertsOnItsOwnEvents() {
         AlertProperties.Rule raw = rule("admin-burst", AlertRule.Trigger.WINDOWED, "*");
