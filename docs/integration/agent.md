@@ -32,9 +32,38 @@ agent's host. When a flow runs, the flow engine queues the run as
 |---|---|---|
 | Long-poll | `GET /api/agent/v1/tasks?wait=25` | Server cap 30 s. No request thread waits: a `DeferredResult` is answered by a scheduler that re-tries the claim every 2 s. |
 | Inbound (READ) | `POST /runs/{id}/records` (pages ≤ 1000), then `POST /runs/{id}/result` | Records feed the normal ingestion pipeline. |
-| Outbound (WRITE) | `GET /runs/{id}/payload`, write locally, `POST /runs/{id}/result` | The payload is already masked and capped by MoDocument. |
+| Outbound (WRITE) | `GET /runs/{id}/payload`, write locally, `POST /runs/{id}/result` | The payload is already masked and capped by MoDocument. A successful result is logged as `EXPORT_RUN` on the flow, like a DIRECT delivery (`mode: AGENT`, the agent id, the format and the row count the agent reports). |
 | Connection test | `POST /runs/{id}/result` | `operation = TEST` |
 | Liveness | `POST /heartbeat` every 30 s | Version and per-connection health. The answer carries `latestVersion`. |
+
+### SFTP file records
+
+An SFTP READ run sends **one record per file** in
+`POST /runs/{id}/records`. The shape is fixed by
+`application/port/integration/AgentSftpFile` (constants `FILE_NAME`,
+`REMOTE_PATH`, `SIZE`, `CONTENT_BASE64`); `AgentRunService` parses every
+record with `AgentSftpFile.fromRecord`, and the agent's `SftpConnector`
+writes the same four keys:
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `fileName` | string | yes | The file's name: one path segment (`/` and `\` are refused). |
+| `remotePath` | string | no | Where the file was on the bank's server; logged on the run. Defaults to `fileName`. |
+| `size` | number | no | Byte count before encoding. Informational: the server measures the decoded bytes. |
+| `contentBase64` | string | yes | The file, standard base64. |
+
+```json
+{"records": [{"fileName": "stmt-0131.csv", "remotePath": "stmt-0131.csv",
+              "size": 2048, "contentBase64": "RGF0ZSxEZXNjcmlwdGlvbi..."}],
+ "nextCursor": null, "last": true}
+```
+
+Each file is decoded, checked against
+`modocument.integration.connectors.max-file-bytes` (a 400 above it)
+and sent through the normal file pipeline at once, exactly like a DIRECT
+SFTP pull. The run counts files in `recordsIn`. Changing these keys is a
+protocol change for both builds (see
+[`connector-sharing.md`](connector-sharing.md)).
 
 The dashboard shows each agent as `PENDING_ENROLMENT`, `ONLINE`, `OFFLINE`
 or `REVOKED`. `OFFLINE` means the last heartbeat is older than the bank
@@ -127,12 +156,13 @@ the release version (`scripts/check-version-sync.sh`).
 
 - The agent has its own minimal connectors (DATABASE, REST_API, SFTP). One
   shared implementation with the server's `IntegrationConnector` beans is a
-  later refactor.
+  later refactor, planned in [`connector-sharing.md`](connector-sharing.md).
 - REST reads support pagination `NONE` only. Agent authentication is OAuth2
   client credentials. mTLS for the agent itself is left for later; the
   server side, the ALB listener and the nginx pass-through exist already.
 - SFTP reads upload each file as one record
-  `{fileName, remotePath, size, contentBase64}`. The flow engine turns
-  these into file ingestions.
+  `{fileName, remotePath, size, contentBase64}` (see
+  [SFTP file records](#sftp-file-records)). The flow engine turns these
+  into file ingestions.
 - Per-bank site-to-site VPN or PrivateLink for DIRECT mode is
   "implement later" per bank (root README).
