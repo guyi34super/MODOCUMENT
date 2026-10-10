@@ -1,0 +1,9 @@
+Clearing house notes - inward cheques
+
+Cheque 004512 drawn on ACCT 0012345678 for MUR 2,500.00 presented 2024-03-04; status cleared.
+Cheque 004513 drawn on ACCT 0012345678 for MUR 18,750.00 presented 2024-03-04; status cleared.
+Cheque 118802 drawn on ACCT 0098765432 for MUR 640.00 presented 2024-03-05; status cleared.
+Cheque 220145 drawn on ACCT 0055500111 for MUR 99,000.00 presented 2024-03-06; status cleared.
+Cheque 220146 drawn on ACCT 0055500111 for MUR 1,200.50 presented 2024-03-06; status cleared.
+
+End of notes.

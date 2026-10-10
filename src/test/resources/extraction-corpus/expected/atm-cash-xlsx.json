@@ -1,0 +1,92 @@
+{
+  "name": "atm-cash-xlsx",
+  "file": "atm-cash.xlsx",
+  "strategy": "NATIVE_SHEET",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "XLSX: title and currency rows above a frozen header, typed date and money cells",
+  "fields": [
+    {
+      "name": "Terminal ID",
+      "type": "TEXT"
+    },
+    {
+      "name": "Location",
+      "type": "TEXT"
+    },
+    {
+      "name": "Last Replenished",
+      "type": "DATE"
+    },
+    {
+      "name": "Loaded Amount",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Remaining Cash",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Status",
+      "type": "TEXT"
+    }
+  ],
+  "rows": [
+    [
+      "ATM-PL-001",
+      "Port Louis Caudan",
+      "2024-05-02",
+      "1850000.00",
+      "412000.00",
+      "ONLINE"
+    ],
+    [
+      "ATM-PL-002",
+      "Port Louis Central",
+      "2024-05-02",
+      "920000.00",
+      "1105000.00",
+      "ONLINE"
+    ],
+    [
+      "ATM-CU-004",
+      "Curepipe Royal Road",
+      "2024-05-02",
+      "640000.00",
+      "0.00",
+      "CASH OUT"
+    ],
+    [
+      "ATM-QB-007",
+      "Quatre Bornes St Jean",
+      "2024-05-01",
+      "1210500.00",
+      "230000.00",
+      "ONLINE"
+    ],
+    [
+      "ATM-RH-010",
+      "Rose-Hill Plaza",
+      "2024-05-02",
+      "300000.00",
+      "75500.00",
+      "LOW CASH"
+    ],
+    [
+      "ATM-GB-011",
+      "Grand Baie La Croisette",
+      "2024-05-02",
+      "2000000.00",
+      "1520000.00",
+      "ONLINE"
+    ],
+    [
+      "ATM-MB-015",
+      "Mahebourg Waterfront",
+      "2024-04-30",
+      "450000.00",
+      "98000.00",
+      "OFFLINE"
+    ]
+  ]
+}

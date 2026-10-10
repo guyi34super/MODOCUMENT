@@ -1,0 +1,84 @@
+{
+  "name": "scanned-statement-ocr-txt",
+  "file": "scanned-statement-ocr.txt",
+  "strategy": "FIXED_WIDTH",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "text dump of a scanned statement: OCR banner, account preamble, blank debit/credit cells, trailer text (QA: two multi-space preamble lines over the date gap merge Date and Particulars)",
+  "fields": [
+    {
+      "name": "Date",
+      "type": "DATE",
+      "dateFormats": [
+        "dd/MM/yyyy"
+      ]
+    },
+    {
+      "name": "Particulars",
+      "type": "TEXT"
+    },
+    {
+      "name": "Debit",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Credit",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Balance",
+      "type": "NUMBER"
+    }
+  ],
+  "rows": [
+    [
+      "2024-05-02",
+      "OPENING BALANCE",
+      "",
+      "",
+      "10512.30"
+    ],
+    [
+      "2024-05-03",
+      "POS PURCHASE WINNERS",
+      "1245.60",
+      "",
+      "9266.70"
+    ],
+    [
+      "2024-05-06",
+      "SALARY CREDIT",
+      "",
+      "32500.00",
+      "41766.70"
+    ],
+    [
+      "2024-05-09",
+      "ATM CASH WITHDRAWAL",
+      "5000.00",
+      "",
+      "36766.70"
+    ],
+    [
+      "2024-05-14",
+      "INTERNET BANKING TRF",
+      "12000.00",
+      "",
+      "24766.70"
+    ],
+    [
+      "2024-05-20",
+      "CHEQUE DEPOSIT 004512",
+      "",
+      "7800.00",
+      "32566.70"
+    ],
+    [
+      "2024-05-31",
+      "SERVICE CHARGE",
+      "75.00",
+      "",
+      "32491.70"
+    ]
+  ]
+}

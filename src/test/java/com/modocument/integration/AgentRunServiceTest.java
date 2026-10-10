@@ -209,5 +209,40 @@ class AgentRunServiceTest extends IntegrationTestSupport {
         assertThat(deliveries.findById(parked.getId()).orElseThrow().getStatus()).isEqualTo(DeliveryStatus.DELIVERED);
         assertThat(runs.findById(runId).orElseThrow().getStatus()).isEqualTo(RunStatus.SUCCEEDED);
         assertThat(Instant.now()).isNotNull();
+
+        // Like a DIRECT delivery, the agent's delivery is in the export log
+        // (EXPORT_RUN on the flow), marked as written by the agent.
+        List<Map<String, Object>> exports = jdbc.queryForList("SELECT EntityType, EntityId, NewValues "
+                + "FROM AuditEvent WHERE BankId = ? AND Action = 'EXPORT_RUN'", bankId);
+        assertThat(exports).singleElement().satisfies(row -> {
+            assertThat(row.get("EntityType")).isEqualTo("IntegrationFlow");
+            assertThat(row.get("EntityId")).isEqualTo(String.valueOf(flow.getId()));
+            Object raw = row.get("NewValues");
+            String values = (raw instanceof byte[] bytes
+                    ? new String(bytes, java.nio.charset.StandardCharsets.UTF_8) : String.valueOf(raw))
+                    .replace(" ", "");
+            assertThat(values).contains("\"flowId\":" + flow.getId())
+                    .contains("\"mode\":\"AGENT\"").contains("\"agentId\":" + AGENT)
+                    .contains("\"rowCount\":1").contains("\"format\":\"JSON\"");
+        });
+    }
+
+    @Test
+    void theSftpFileRecordIsOneSharedShape() {
+        com.modocument.application.port.integration.AgentSftpFile file =
+                com.modocument.application.port.integration.AgentSftpFile.of("stmt.csv", "inbox/stmt.csv",
+                        "a,b\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Object> record = file.toRecord();
+        assertThat(record).containsOnlyKeys("fileName", "remotePath", "size", "contentBase64");
+        assertThat(com.modocument.application.port.integration.AgentSftpFile.fromRecord(record, 1024))
+                .isEqualTo(file);
+        assertThat(file.decode(1024)).hasSize(4);
+        assertThatThrownBy(() -> file.decode(3)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("3-byte cap");
+        assertThatThrownBy(() -> com.modocument.application.port.integration.AgentSftpFile.fromRecord(
+                Map.of("fileName", "a\\b.csv", "contentBase64", "YQ=="), 1024))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(com.modocument.application.port.integration.AgentSftpFile.fromRecord(
+                Map.of("fileName", "a.csv", "contentBase64", "YQ=="), 1024).remotePath()).isEqualTo("a.csv");
     }
 }

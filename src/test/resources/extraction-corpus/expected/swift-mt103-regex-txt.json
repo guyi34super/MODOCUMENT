@@ -1,0 +1,59 @@
+{
+  "name": "swift-mt103-regex-txt",
+  "file": "swift-mt103.txt",
+  "strategy": "FIELD_REGEX",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "MT103-style messages: tag-anchored value patterns, yyMMdd dates, decimal comma amounts",
+  "fields": [
+    {
+      "name": "Transaction Reference",
+      "type": "TEXT",
+      "valuePattern": ":20:([A-Z0-9]{12})"
+    },
+    {
+      "name": "Value Date",
+      "type": "DATE",
+      "valuePattern": ":32A:(\\d{6})MUR",
+      "dateFormats": [
+        "yyMMdd"
+      ]
+    },
+    {
+      "name": "Amount",
+      "type": "NUMBER",
+      "valuePattern": ":32A:\\d{6}MUR(\\d+,\\d{2})"
+    },
+    {
+      "name": "Ordering Customer",
+      "type": "TEXT",
+      "valuePattern": ":50K:/\\d+\\n([A-Z][A-Z ]+[A-Z])"
+    }
+  ],
+  "rows": [
+    [
+      "FT24015AB001",
+      "2024-01-15",
+      "1250.00",
+      "BLUE OCEAN TRADING LTD"
+    ],
+    [
+      "FT24016AB017",
+      "2024-01-16",
+      "98000.00",
+      "KESTREL PARTNERS LLP"
+    ],
+    [
+      "FT24017AB022",
+      "2024-01-17",
+      "15500.75",
+      "SUNRISE FOODS CO"
+    ],
+    [
+      "FT24019AB040",
+      "2024-01-19",
+      "320.10",
+      "ISLAND DIVE CENTRE"
+    ]
+  ]
+}

@@ -2,6 +2,7 @@ package com.modocument.infrastructure.integration.engine;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.modocument.application.port.integration.AgentRunPort;
+import com.modocument.application.port.integration.AgentSftpFile;
 import com.modocument.application.port.integration.OutboundBatch;
 import com.modocument.application.port.integration.RecordsIngestion;
 import com.modocument.domain.entity.IntegrationConnection;
@@ -11,6 +12,7 @@ import com.modocument.domain.entity.OutboundDelivery;
 import com.modocument.domain.model.integration.ConnectionMode;
 import com.modocument.domain.model.integration.ConnectionType;
 import com.modocument.domain.model.integration.DeliveryStatus;
+import com.modocument.domain.model.integration.PayloadFormat;
 import com.modocument.domain.model.integration.RunStatus;
 import com.modocument.infrastructure.persistence.IntegrationConnectionJpaRepository;
 import com.modocument.infrastructure.persistence.IntegrationFlowJpaRepository;
@@ -48,7 +50,8 @@ import java.util.NoSuchElementException;
  *   <li>{@link #payload} (WRITE): the run's next PENDING delivery, built and
  *       keyed exactly as a DIRECT dispatch would (masked, mapped, capped).</li>
  *   <li>{@link #complete}: READ → SUCCEEDED (watermark persisted) / FAILED;
- *       WRITE → that delivery DELIVERED, or retried with backoff / DEAD; the
+ *       WRITE → that delivery DELIVERED (+ EXPORT_RUN with the flow id and
+ *       the agent id, as for DIRECT deliveries), or retried with backoff / DEAD; the
  *       run returns to AWAITING_AGENT while deliveries remain; TEST → the
  *       connection's status and last test result.</li>
  * </ul>
@@ -169,44 +172,25 @@ public class AgentRunService implements AgentRunPort {
     }
 
     /**
-     * SFTP via the agent (SE5): each record is ONE pulled file
-     * {@code {fileName, remotePath, size, contentBase64}}; it is decoded,
-     * size-capped and sent through the normal file pipeline right away (the
-     * same path as a DIRECT SFTP pull). The run counts files.
+     * SFTP via the agent (SE5): each record is ONE pulled file, shaped as
+     * {@link AgentSftpFile} ({@code {fileName, remotePath, size, contentBase64}});
+     * it is decoded, size-capped and sent through the normal file pipeline
+     * right away (the same path as a DIRECT SFTP pull). The run counts files.
      */
     private void acceptFiles(int bankId, IntegrationRun run, IntegrationFlow flow,
                              List<Map<String, Object>> records) {
         long runId = run.getId();
         String origin = "flow:" + flow.getId() + "/run:" + runId;
         for (Map<String, Object> record : records == null ? List.<Map<String, Object>>of() : records) {
-            Object name = record.get("fileName");
-            Object content = record.get("contentBase64");
-            if (!(name instanceof String fileName) || fileName.isBlank() || fileName.contains("/")
-                    || fileName.contains("\\") || !(content instanceof String base64)) {
-                throw new IllegalArgumentException("An SFTP record needs 'fileName' and 'contentBase64'.");
-            }
-            if ((long) base64.length() * 3 / 4 > maxFileBytes + 3) {
-                throw new IllegalArgumentException("'" + fileName + "' is larger than the "
-                        + maxFileBytes + "-byte cap.");
-            }
-            byte[] bytes;
-            try {
-                bytes = java.util.Base64.getDecoder().decode(base64);
-            } catch (IllegalArgumentException e) {
-                throw new IllegalArgumentException("'contentBase64' of '" + fileName + "' is not base64.");
-            }
-            if (bytes.length > maxFileBytes) {
-                throw new IllegalArgumentException("'" + fileName + "' is larger than the "
-                        + maxFileBytes + "-byte cap.");
-            }
-            Object remote = record.get("remotePath");
+            AgentSftpFile file = AgentSftpFile.fromRecord(record, maxFileBytes);
+            byte[] bytes = file.decode(maxFileBytes);
             var job = runner.ingestFile(flow, new com.modocument.application.port.integration.ReadBatch.InboundFile(
-                    remote == null ? fileName : String.valueOf(remote), fileName, bytes), origin);
+                    file.remotePath(), file.fileName(), bytes), origin);
             runs.update(bankId, runId, current -> {
                 current.setIngestionJobId(job.getIngestionJobId());
                 current.setRecordsIn(current.getRecordsIn() + 1);
             });
-            runs.log(bankId, runId, "INFO", "File " + fileName + " → ingestion job "
+            runs.log(bankId, runId, "INFO", "File " + file.fileName() + " → ingestion job "
                     + job.getIngestionJobId() + " (" + job.getCurrentStep() + ", " + job.getStatus() + ").");
         }
     }
@@ -278,7 +262,13 @@ public class AgentRunService implements AgentRunPort {
                 IntegrationFlow flow = requireFlow(bankId, run);
                 OutboundDelivery delivery = nextDelivery(bankId, runId);
                 if (success) {
-                    dispatcher.markDelivered(delivery, flow, null,
+                    // The agent wrote the payload: log it as EXPORT_RUN with the
+                    // flow id exactly like a DIRECT delivery (format as built
+                    // by payload(), rows as the agent reports them).
+                    PayloadFormat format = connectionType(bankId, run) == ConnectionType.SFTP
+                            ? flow.getFormat() : PayloadFormat.JSON;
+                    dispatcher.markDelivered(delivery, flow,
+                            new PayloadBuilder.ExportFacts(format, result.recordsOut(), agentId),
                             result.recordsOut(), result.remoteReference());
                 } else {
                     dispatcher.recordFailure(delivery, flow, clip(error));

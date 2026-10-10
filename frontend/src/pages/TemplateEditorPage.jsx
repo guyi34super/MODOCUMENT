@@ -25,6 +25,7 @@ import {
 } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import TemplateExtractionSection from './TemplateExtractionSection';
 
 // PII classification options (ws12): '' means "classify automatically on
 // first use" — the server then persists its inference, which shows up here.
@@ -56,6 +57,8 @@ export default function TemplateEditorPage() {
   // Edit mode: what the server says about this template (visibility, owner,
   // and whether the caller may change it).
   const [access, setAccess] = useState({ visibility: 'PRIVATE', editable: true });
+  // ws23: the stored extraction mode and what it inherits when unset.
+  const [extraction, setExtraction] = useState({ extractionMode: null, defaultExtractionMode: null });
 
   const [dataTypes, setDataTypes] = useState([]);
   const [name, setName] = useState('');
@@ -90,6 +93,10 @@ export default function TemplateEditorPage() {
         name: template.name || '',
         description: template.description || '',
       };
+      setExtraction({
+        extractionMode: template.extractionMode ?? null,
+        defaultExtractionMode: template.defaultExtractionMode ?? null,
+      });
       setSavedFields(fields);
       setError('');
     } catch (err) {
@@ -509,6 +516,28 @@ export default function TemplateEditorPage() {
               emptyMessage="No fields yet — add the first one above."
             />
           </Card>
+
+          <TemplateExtractionSection
+            template={{
+              templateId: Number(id),
+              // The server's name/description: saving the mode must not
+              // also save an unsaved edit of the details above.
+              name: savedDetails.current.name,
+              description: savedDetails.current.description,
+              ...extraction,
+            }}
+            fields={savedFields}
+            typeName={typeName}
+            readOnly={readOnly}
+            onTemplateSaved={(patch) => setExtraction((current) => ({ ...current, ...patch }))}
+            onFieldSaved={(updated) =>
+              setSavedFields((fields) =>
+                fields.map((f) =>
+                  f.templateFieldsId === updated.templateFieldsId ? { ...f, ...updated } : f
+                )
+              )
+            }
+          />
 
           <div className="flex justify-end">
             <Button onClick={goToRules}>

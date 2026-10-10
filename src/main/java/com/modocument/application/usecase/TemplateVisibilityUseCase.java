@@ -5,10 +5,14 @@ import com.modocument.application.port.AppUserRepository;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.IngestionJobRepository;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Template;
+import com.modocument.domain.model.ExtractionMode;
 import com.modocument.domain.model.TemplateVisibility;
+import com.modocument.domain.model.settings.SettingKeys;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +41,8 @@ public class TemplateVisibilityUseCase {
     private final AppUserRepository users;
     private final IngestionJobRepository jobs;
     private final AuditRecorder audit;
+    /** ws23/Wave 4: the bank's extraction.defaultMode, shown as what a template inherits. */
+    private SettingsReader settings;
 
     public TemplateVisibilityUseCase(TemplateRepository templates, TemplateOwnership ownership,
                                      CurrentUserProvider currentUser, AppUserRepository users,
@@ -47,6 +53,11 @@ public class TemplateVisibilityUseCase {
         this.users = users;
         this.jobs = jobs;
         this.audit = audit;
+    }
+
+    @Autowired(required = false)
+    public void setSettingsReader(SettingsReader settings) {
+        this.settings = settings;
     }
 
     /** Own templates plus every template shared with the caller's bank, oldest first. */
@@ -67,8 +78,27 @@ public class TemplateVisibilityUseCase {
     public TemplateDto get(int templateId) {
         Template template = ownership.requireReadable(templateId);
         int userId = currentUser.requireUserId();
+        int bankId = currentUser.requireBankId();
         return view(template, userId, ownership.callerCanPublish(),
-                ownerNames(List.of(template), userId, currentUser.requireBankId()));
+                ownerNames(List.of(template), userId, bankId), defaultExtractionMode(bankId));
+    }
+
+    /**
+     * The mode a template without its own inherits: the bank's
+     * {@code extraction.defaultMode}, else the shipped default. Never fails a
+     * read (an unreadable setting shows the shipped default).
+     */
+    private String defaultExtractionMode(int bankId) {
+        if (settings == null) {
+            return ExtractionMode.DEFAULT.name();
+        }
+        try {
+            ExtractionMode mode = ExtractionMode.parseLenient(
+                    settings.getEnum(SettingKeys.EXTRACTION_DEFAULT_MODE, bankId));
+            return (mode == null ? ExtractionMode.DEFAULT : mode).name();
+        } catch (RuntimeException e) {
+            return ExtractionMode.DEFAULT.name();
+        }
     }
 
     /**
@@ -113,9 +143,15 @@ public class TemplateVisibilityUseCase {
 
     private static TemplateDto view(Template template, int userId, boolean canPublish,
                                     Map<Integer, String> ownerNames) {
+        return view(template, userId, canPublish, ownerNames, null);
+    }
+
+    private static TemplateDto view(Template template, int userId, boolean canPublish,
+                                    Map<Integer, String> ownerNames, String defaultExtractionMode) {
         boolean mine = template.getOwnerUserId() == userId;
         boolean editable = template.isShared() ? canPublish : mine;
-        return TemplateDto.of(template, mine, editable, ownerNames.get(template.getOwnerUserId()));
+        return TemplateDto.of(template, mine, editable, ownerNames.get(template.getOwnerUserId()),
+                defaultExtractionMode);
     }
 
     /**

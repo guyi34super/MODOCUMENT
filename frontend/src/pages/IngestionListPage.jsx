@@ -4,7 +4,8 @@ import { getTemplates } from '../api/cache';
 import { createJobFromFile, getSupportedTypes, listJobs } from '../api/ingestion';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
-import { Badge, Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { Badge, Button, Card, ErrorBanner, Field, inputClass, Spinner, Tag } from '../components/ui';
+import { describeProvenance } from '../utils/parseProvenance';
 import { useToast } from '../context/ToastContext';
 
 export default function IngestionListPage() {
@@ -181,7 +182,26 @@ export default function IngestionListPage() {
               render: (row) =>
                 templates.find((t) => t.templateId === row.templateId)?.name ?? row.templateId,
             },
-            { key: 'currentStep', label: 'Step', render: (row) => <Badge status={row.currentStep} /> },
+            {
+              key: 'currentStep',
+              label: 'Step',
+              render: (row) => {
+                // ws23: a small "Code" / "AI + code" tag when code read the
+                // document (AI-read jobs stay unmarked: the usual case).
+                const provenance = row.parsedBy && row.parsedBy !== 'AI' ? describeProvenance(row) : null;
+                return (
+                  <span className="inline-flex flex-wrap items-center gap-1.5">
+                    <Badge status={row.currentStep} />
+                    {provenance && (
+                      <Tag tone={provenance.tone} title={provenance.label}>
+                        <span data-testid="job-parsed-by">{provenance.short}</span>
+                        <span className="sr-only">: {provenance.label}</span>
+                      </Tag>
+                    )}
+                  </span>
+                );
+              },
+            },
             { key: 'status', label: 'Status', render: (row) => <Badge status={row.status} /> },
             {
               key: 'validationErrorCount',

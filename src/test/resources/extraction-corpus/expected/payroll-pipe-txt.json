@@ -1,0 +1,92 @@
+{
+  "name": "payroll-pipe-txt",
+  "file": "payroll-pipe.txt",
+  "strategy": "DELIMITED",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "pipe delimiter, a file banner and an end-of-file line, upper-case headers matched by alias, yyyyMMdd dates (QA: HDR|.../TRL|... records that use the delimiter are read as rows)",
+  "fields": [
+    {
+      "name": "Employee Number",
+      "type": "TEXT",
+      "aliases": [
+        "EMP_NO"
+      ]
+    },
+    {
+      "name": "Employee Name",
+      "type": "TEXT",
+      "aliases": [
+        "EMP_NAME"
+      ]
+    },
+    {
+      "name": "Bank Account",
+      "type": "TEXT",
+      "aliases": [
+        "BANK_ACCOUNT"
+      ]
+    },
+    {
+      "name": "Net Pay",
+      "type": "NUMBER",
+      "aliases": [
+        "NET_PAY"
+      ]
+    },
+    {
+      "name": "Pay Date",
+      "type": "DATE",
+      "aliases": [
+        "PAY_DATE"
+      ],
+      "dateFormats": [
+        "yyyyMMdd"
+      ]
+    }
+  ],
+  "rows": [
+    [
+      "E20417",
+      "Anjali Seewoosunkur",
+      "000412377801",
+      "38250.00",
+      "2024-01-31"
+    ],
+    [
+      "E20418",
+      "Brandon Lai Cheong",
+      "000412377829",
+      "41900.50",
+      "2024-01-31"
+    ],
+    [
+      "E20419",
+      "Cathy Ramdhony",
+      "000501122004",
+      "29775.25",
+      "2024-01-31"
+    ],
+    [
+      "E20420",
+      "Didier Agathe",
+      "000623001190",
+      "52010.00",
+      "2024-01-31"
+    ],
+    [
+      "E20421",
+      "Esha Purmessur",
+      "000412378111",
+      "33400.00",
+      "2024-01-31"
+    ],
+    [
+      "E20422",
+      "Fabrice Lebon",
+      "000700045563",
+      "27980.75",
+      "2024-01-31"
+    ]
+  ]
+}

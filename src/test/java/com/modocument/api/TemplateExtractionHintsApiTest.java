@@ -100,6 +100,10 @@ class TemplateExtractionHintsApiTest {
     void theExtractionModeRoundTripsAndAnUpdateWithoutItKeepsIt() throws Exception {
         int id = createTemplate("\"code_only\"");
         assertThat(getTemplate(id).get("extractionMode").asText()).isEqualTo("CODE_ONLY");
+        // Wave 4: what a template without its own mode would inherit (the
+        // bank's extraction.defaultMode; the shipped default here).
+        assertThat(getTemplate(id).get("defaultExtractionMode").asText())
+                .isEqualTo("AI_WITH_CODE_FALLBACK");
 
         send(put("/Templates/Update"), "{\"templateId\":" + id + ",\"name\":\"ws23-renamed-"
                 + UUID.randomUUID() + "\"}")

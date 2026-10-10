@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '../context/AuthContext';
@@ -20,6 +20,7 @@ vi.mock('../api/templates', () => ({
   getAllFields: vi.fn(),
   getTemplate: vi.fn(),
   updateTemplate: vi.fn(),
+  updateField: vi.fn(),
 }));
 
 function renderEditPage() {
@@ -64,7 +65,8 @@ describe('TemplateEditorPage (edit mode)', () => {
       templateDataTypeId: 1,
       piiKind: null, // "auto": the server classifies on first use
     });
-    expect(await screen.findByText('Age')).toBeInTheDocument();
+    // The fields table (the extraction section lists the field too).
+    expect(await within(screen.getByRole('table')).findByText('Age')).toBeInTheDocument();
     expect(input).toHaveValue('');
     expect(input).toHaveFocus();
   });
@@ -198,7 +200,7 @@ describe('TemplateEditorPage (ws22 bank-shared templates)', () => {
     expect(screen.queryByRole('button', { name: 'Save details' })).toBeNull();
     expect(screen.queryByPlaceholderText('New field name')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
-    expect(screen.getByText('Amount')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('Amount')).toBeInTheDocument();
   });
 
   it('keeps a shared template editable for an administrator, with a reminder', async () => {

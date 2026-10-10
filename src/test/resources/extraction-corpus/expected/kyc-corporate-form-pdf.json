@@ -1,0 +1,57 @@
+{
+  "name": "kyc-corporate-form-pdf",
+  "file": "kyc-corporate-form.pdf",
+  "strategy": "KEY_VALUE",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "Courier PDF form: two labels on one line, an address with a comma, a currency amount",
+  "fields": [
+    {
+      "name": "Company Name",
+      "type": "TEXT"
+    },
+    {
+      "name": "Registration No",
+      "type": "TEXT"
+    },
+    {
+      "name": "Date of Incorporation",
+      "type": "DATE",
+      "dateFormats": [
+        "dd/MM/yyyy"
+      ]
+    },
+    {
+      "name": "Registered Address",
+      "type": "TEXT"
+    },
+    {
+      "name": "Business Activity",
+      "type": "TEXT"
+    },
+    {
+      "name": "Country of Operation",
+      "type": "TEXT"
+    },
+    {
+      "name": "Annual Turnover",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Risk Rating",
+      "type": "TEXT"
+    }
+  ],
+  "rows": [
+    [
+      "Lagoon Freight Services Ltd",
+      "C07012345",
+      "2007-09-03",
+      "12 Royal Street, Port Louis",
+      "Freight forwarding",
+      "Mauritius",
+      "48500000.00",
+      "Medium"
+    ]
+  ]
+}

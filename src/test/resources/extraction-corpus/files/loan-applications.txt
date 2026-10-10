@@ -1,0 +1,30 @@
+LOAN APPLICATIONS RECEIVED
+
+Application No = LA-3301
+Applicant Name = Vikram Ramsurrun
+Product - Home loan
+Amount Requested = 2500000.00
+Tenor (months) = 240
+Date Received = 2024-05-06
+
+Application No = LA-3302
+Applicant Name = Sophie Ng
+Product - Car loan
+Amount Requested = 850000.00
+Tenor (months) = 60
+Date Received = 2024-05-07
+
+Application No = LA-3303
+Applicant Name = Ibrahim Joomun
+Product - Personal loan
+Amount Requested = 150000.00
+Tenor (months) = 36
+Date Received = 2024-05-07
+
+Application No = LA-3304
+Applicant Name = Clarisse Perrine
+Product - Education loan
+Amount Requested = 400000.00
+Tenor (months) = 84
+Date Received = 2024-05-09
+

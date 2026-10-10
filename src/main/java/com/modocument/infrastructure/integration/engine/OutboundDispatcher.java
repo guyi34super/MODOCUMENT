@@ -289,6 +289,13 @@ public class OutboundDispatcher {
 
     void markDelivered(OutboundDelivery delivery, IntegrationFlow flow, OutboundBatch batch,
                        int written, String reference) {
+        markDelivered(delivery, flow, batch == null ? null : PayloadBuilder.ExportFacts.of(batch),
+                written, reference);
+    }
+
+    /** DELIVERED, plus the EXPORT_RUN row when {@code export} is known (DIRECT and agent). */
+    void markDelivered(OutboundDelivery delivery, IntegrationFlow flow,
+                       PayloadBuilder.ExportFacts export, int written, String reference) {
         tx.executeWithoutResult(status -> deliveries.findById(delivery.getId()).ifPresent(row -> {
             row.setStatus(DeliveryStatus.DELIVERED);
             row.setAttempts(row.getAttempts() + 1);
@@ -298,8 +305,8 @@ public class OutboundDispatcher {
             row.setRemoteReference(reference == null ? null
                     : reference.length() <= 300 ? reference : reference.substring(0, 300));
             deliveries.save(row);
-            if (flow != null && batch != null) {
-                payloads.recordExport(flow, row, batch);
+            if (flow != null && export != null) {
+                payloads.recordExport(flow, row, export);
             }
         }));
         if (delivery.getRunId() != null) {

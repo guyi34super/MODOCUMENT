@@ -1,0 +1,11 @@
+# Branch approval limits (effective 1 July 2024)
+
+| Branch | Branch Code | Credit Limit | Cash Limit | Notes |
+| --- | --- | --- | --- | --- |
+| Port Louis Main | BR-001 | 5000000.00 | 1000000.00 | Head Office |
+| Curepipe | BR-004 | 2000000.00 | 500000.00 |  |
+| Rose-Hill | BR-006 | 1500000.00 | 400000.00 |  |
+| Grand Baie | BR-011 | 1000000.00 | 250000.00 | Seasonal |
+| Mahebourg | BR-015 | 750000.00 | 150000.00 |  |
+
+_Approved by the Credit Committee._

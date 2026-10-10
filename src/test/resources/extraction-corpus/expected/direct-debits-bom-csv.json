@@ -1,0 +1,74 @@
+{
+  "name": "direct-debits-bom-csv",
+  "file": "direct-debits.csv",
+  "strategy": "DELIMITED",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "UTF-8 BOM, title and run-date lines, quoted thousands, record-count footer",
+  "fields": [
+    {
+      "name": "Mandate Ref",
+      "type": "TEXT"
+    },
+    {
+      "name": "Creditor",
+      "type": "TEXT"
+    },
+    {
+      "name": "Debtor Account",
+      "type": "TEXT"
+    },
+    {
+      "name": "Amount",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Collection Date",
+      "type": "DATE"
+    }
+  ],
+  "rows": [
+    [
+      "DD-2024-0001",
+      "Island Insurance Co",
+      "0001234500",
+      "1250.00",
+      "2024-02-05"
+    ],
+    [
+      "DD-2024-0002",
+      "Rogers Capital Leasing",
+      "0004455201",
+      "18400.00",
+      "2024-02-05"
+    ],
+    [
+      "DD-2024-0003",
+      "Global Gym Membership",
+      "0007788120",
+      "1999.00",
+      "2024-02-10"
+    ],
+    [
+      "DD-2024-0004",
+      "Port Louis Housing Fund",
+      "0002200455",
+      "6750.50",
+      "2024-02-15"
+    ],
+    [
+      "DD-2024-0005",
+      "Coastal Water Utilities",
+      "0003311098",
+      "412.35",
+      "2024-02-20"
+    ],
+    [
+      "DD-2024-0006",
+      "Sunrise Broadband",
+      "0009900017",
+      "1450.00",
+      "2024-02-25"
+    ]
+  ]
+}

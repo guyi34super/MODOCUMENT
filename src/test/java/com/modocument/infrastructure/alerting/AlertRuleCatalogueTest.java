@@ -98,6 +98,43 @@ class AlertRuleCatalogueTest {
                 assertThat(rule.window()).isBetween(Duration.ofMinutes(1), Duration.ofHours(24)));
     }
 
+    /**
+     * AC-EXT-15: {@code parse-fallback-surge} — 20 INGESTION_PARSE_FALLBACK
+     * audits per bank within an hour raise one MEDIUM alert (the threshold
+     * and window are the platform settings alerts.parseFallbackSurge.*).
+     */
+    @Test
+    void fallbackSurge() throws Exception {
+        AlertRule rule = shippedCatalogue().get("parse-fallback-surge");
+
+        assertThat(rule).as("parse-fallback-surge is shipped").isNotNull();
+        assertThat(rule.trigger()).isEqualTo(AlertRule.Trigger.WINDOWED);
+        assertThat(rule.actions()).containsExactly("INGESTION_PARSE_FALLBACK");
+        assertThat(rule.threshold()).isEqualTo(20);
+        assertThat(rule.window()).isEqualTo(Duration.ofHours(1));
+        assertThat(rule.severity()).isEqualTo(AlertSeverity.MEDIUM);
+        assertThat(rule.groupBy()).isEqualTo(AlertRule.GroupBy.BANK);
+
+        // Every role's fallback counts (machine-created jobs included) …
+        assertThat(rule.matches(facts("INGESTION_PARSE_FALLBACK", AuditOutcome.SUCCESS, "READ_WRITE"))).isTrue();
+        assertThat(rule.matches(facts("INGESTION_PARSE_FALLBACK", AuditOutcome.SUCCESS, null))).isTrue();
+        // … but nothing else does: a breaker opening has its own rule.
+        assertThat(rule.matches(facts("AI_CIRCUIT_OPENED", AuditOutcome.SUCCESS, "READ_WRITE"))).isFalse();
+        assertThat(rule.matches(facts("EXPORT_RUN", AuditOutcome.SUCCESS, "READ_WRITE"))).isFalse();
+
+        // Grouped per bank: two users' fallbacks in one bank are one surge
+        // (windows are counted per bank; the label names the bank).
+        AuditFacts alice = new AuditFacts(UUID.randomUUID(), Instant.now(), 3, "INGESTION_PARSE_FALLBACK",
+                AuditOutcome.SUCCESS, 41, "alice@bank.example", "READ_WRITE", "203.0.113.9", "IngestionJob", "1");
+        AuditFacts bob = new AuditFacts(UUID.randomUUID(), Instant.now(), 3, "INGESTION_PARSE_FALLBACK",
+                AuditOutcome.SUCCESS, 42, "bob@bank.example", "ADMIN", "198.51.100.7", "IngestionJob", "2");
+        AuditFacts otherBank = new AuditFacts(UUID.randomUUID(), Instant.now(), 4, "INGESTION_PARSE_FALLBACK",
+                AuditOutcome.SUCCESS, 43, "carol@other.example", "READ_WRITE", "192.0.2.1", "IngestionJob", "3");
+        assertThat(rule.groupKey(alice)).isEqualTo(rule.groupKey(bob));
+        assertThat(rule.groupLabel(alice)).isEqualTo("bank 3");
+        assertThat(rule.groupLabel(otherBank)).isEqualTo("bank 4");
+    }
+
     @Test
     void matchingHonoursActionsOutcomesRolesAndNeverAlertsOnItsOwnEvents() {
         AlertProperties.Rule raw = rule("admin-burst", AlertRule.Trigger.WINDOWED, "*");

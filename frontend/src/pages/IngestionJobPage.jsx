@@ -24,6 +24,7 @@ import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import ValidationChatDrawer from '../components/ValidationChatDrawer';
 import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import { LowConfidenceCallout, ParseProvenanceBadge } from './IngestionProvenance';
 import { useToast } from '../context/ToastContext';
 import useUnsavedGuard from '../hooks/useUnsavedGuard';
 
@@ -1670,6 +1671,7 @@ export default function IngestionJobPage() {
         subtitle={job.fileName || ''}
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
+      <ParseProvenanceBadge job={job} />
 
       {(job.status === 'RUNNING' || job.status === 'PENDING') &&
         !(
@@ -1707,6 +1709,8 @@ export default function IngestionJobPage() {
         canExport={canExport}
         onCancel={handleCancel}
       />
+
+      <LowConfidenceCallout job={job} />
 
       {job.errorMessage && (
         <div className="mb-5">
