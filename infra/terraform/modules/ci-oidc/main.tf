@@ -8,6 +8,13 @@
 #                  production) to the protected branch / environment, so a
 #                  fork or feature branch can never deploy.
 #
+# OIDC subjects (ws24): a job that declares a GitHub `environment:` gets the
+# sub claim "repo:<owner>/<repo>:environment:<name>" INSTEAD of the ref
+# form, so the release/deploy workflows (environment-gated: staging, and
+# production with required reviewers) need environment subjects. Production
+# also keeps "ref:refs/heads/main" for ONE release as a transition; the envs
+# mark that entry for removal.
+#
 # Least privilege: the deploy role may push images to the two ECR repos and
 # roll the one ECS service. It may NOT touch IAM, KMS, the backup vaults, the
 # log archive or CloudTrail — those change only through a human-applied
@@ -49,8 +56,9 @@ resource "aws_iam_role" "deploy" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
-          # e.g. "repo:guyi34super/MODOCUMENT:ref:refs/heads/main" for
-          # production, "repo:guyi34super/MODOCUMENT:*" for staging.
+          # e.g. "repo:guyi34super/MODOCUMENT:environment:production" for
+          # production, "repo:guyi34super/MODOCUMENT:environment:staging"
+          # for staging (see the envs for the transition entries).
           "token.actions.githubusercontent.com:sub" = var.github_subject_patterns
         }
       }
@@ -116,6 +124,9 @@ resource "aws_iam_role_policy" "deploy" {
           "ecr:UploadLayerPart",
           "ecr:BatchGetImage",
           "ecr:GetDownloadUrlForLayer",
+          # ws24: resolve a pushed tag to its digest, so task definitions
+          # pin images by digest (release.yml).
+          "ecr:DescribeImages",
         ]
         Resource = [
           aws_ecr_repository.app.arn,
@@ -125,6 +136,9 @@ resource "aws_iam_role_policy" "deploy" {
       {
         Sid    = "EcsRollingDeploy"
         Effect = "Allow"
+        # ws24: CI owns task-definition revisions (ecs-app header
+        # "RELEASES"): read the latest revision, register one with images
+        # pinned by digest, roll the service, wait for it to be stable.
         Action = [
           "ecs:DescribeServices",
           "ecs:DescribeTaskDefinition",

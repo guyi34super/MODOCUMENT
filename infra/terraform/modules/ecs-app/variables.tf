@@ -121,6 +121,16 @@ variable "cors_allowed_origins" {
   type        = string
 }
 
+variable "deploy_environment" {
+  description = "Deployment name passed to the app as MODOCUMENT_DEPLOY_ENVIRONMENT and reported by GET /api/system/version (ws24): staging or production."
+  type        = string
+
+  validation {
+    condition     = contains(["staging", "production"], var.deploy_environment)
+    error_message = "deploy_environment must be staging or production."
+  }
+}
+
 variable "spring_profiles" {
   description = "SPRING_PROFILES_ACTIVE for the task (empty = production defaults)."
   type        = string

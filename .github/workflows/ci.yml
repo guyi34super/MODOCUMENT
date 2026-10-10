@@ -21,6 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      # ws24: pom.xml, frontend/package.json (+ lock) and the newest released
+      # CHANGELOG.md heading carry one version (bash + awk only, seconds).
+      # release.yml runs the same script with the tag.
+      - name: Version sync
+        run: bash scripts/check-version-sync.sh
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin

@@ -4,6 +4,9 @@
 target
 wwwroot
 *.md
+# ws24: the changelog ships in the image as classpath:release/CHANGELOG.md
+# (GET /api/system/release-notes) — the only Markdown file let back in.
+!CHANGELOG.md
 docker-compose.yml
 # Local secrets / env files never enter the build context (SEC-018), and the
 # frontend has its own image and build context.

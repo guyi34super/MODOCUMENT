@@ -7,8 +7,10 @@ app_domain                 = "app.modocument.example"
 alb_certificate_arn        = "arn:aws:acm:af-south-1:111111111111:certificate/REPLACE"
 cloudfront_certificate_arn = "arn:aws:acm:us-east-1:111111111111:certificate/REPLACE"
 
-app_image      = "111111111111.dkr.ecr.af-south-1.amazonaws.com/modocument-prod/app:v1.0.0"
-frontend_image = "111111111111.dkr.ecr.af-south-1.amazonaws.com/modocument-prod/frontend:v1.0.0"
+# Released version tag as pushed by release.yml (X.Y.Z, no "v"); only the
+# service's first revision uses it — CI deploys by digest afterwards.
+app_image      = "111111111111.dkr.ecr.af-south-1.amazonaws.com/modocument-prod/app:1.0.0"
+frontend_image = "111111111111.dkr.ecr.af-south-1.amazonaws.com/modocument-prod/frontend:1.0.0"
 
 alert_email = "security@modocument.example" # gate E5 mailbox
 
