@@ -153,6 +153,9 @@ class IngestionFallbackIntegrationTest {
         assertThat(job.get("parsedBy").asText()).isEqualTo("CODE");
         assertThat(job.get("parseStrategy").asText()).isEqualTo("KEY_VALUE");
         assertThat(job.get("parseConfidence").asDouble()).isGreaterThanOrEqualTo(0.75);
+        // Wave 4: judged against the bank's threshold for the job page callout.
+        assertThat(job.get("parseMinConfidence").asDouble()).isEqualTo(0.75);
+        assertThat(job.get("parseLowConfidence").asBoolean()).isFalse();
         assertThat(job.get("parsedTable").get("rows")).hasSize(4);
         assertThat(job.get("unmappedFields")).isEmpty();
     }

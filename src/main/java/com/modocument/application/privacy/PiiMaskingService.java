@@ -111,7 +111,9 @@ public class PiiMaskingService {
                 view.parsedBy(),
                 view.parseStrategy(),
                 view.parseConfidence(),
-                view.parseFallbackReason());
+                view.parseFallbackReason(),
+                view.parseMinConfidence(),
+                view.parseLowConfidence());
     }
 
     /** Masks every view of a listing the same way as a single view. */
