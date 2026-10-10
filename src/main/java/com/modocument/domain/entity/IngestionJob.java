@@ -137,6 +137,13 @@ public class IngestionJob {
     @Column(name = "ParseFallbackReason", length = 30)
     private String parseFallbackReason;
 
+    /**
+     * ws25 (V252): who created a machine job — {@code flow:<id>/run:<id>} or
+     * {@code api-client:<id>}; null for a person's upload.
+     */
+    @Column(name = "Origin", length = 100)
+    private String origin;
+
     public IngestionJob() {
     }
 
@@ -332,5 +339,13 @@ public class IngestionJob {
 
     public void setParseFallbackReason(String parseFallbackReason) {
         this.parseFallbackReason = parseFallbackReason;
+    }
+
+    public String getOrigin() {
+        return origin;
+    }
+
+    public void setOrigin(String origin) {
+        this.origin = origin;
     }
 }
