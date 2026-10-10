@@ -207,6 +207,17 @@ export default function PlatformBankDetailPage() {
         <dd>{customer ? 'Customer bank' : 'Platform bank'}</dd>
         <dt className="text-muted">Last sign-in</dt>
         <dd>{formatDateTime(bank.lastActivityAt)}</dd>
+        {customer && (
+          <>
+            <dt className="text-muted">Settings</dt>
+            <dd>
+              <Link to={`/platform/banks/${id}/settings`} className="text-accent underline">
+                Settings set by the platform
+              </Link>{' '}
+              <span className="text-muted">(e.g. which API-client sign-in methods it may use)</span>
+            </dd>
+          </>
+        )}
       </dl>
 
       <div className="flex flex-wrap gap-3">

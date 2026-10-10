@@ -1,16 +1,15 @@
 package com.modocument.infrastructure.integration.engine;
 
-import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.TenantContext;
 import com.modocument.domain.entity.IntegrationFlow;
 import com.modocument.domain.entity.IntegrationRun;
 import com.modocument.domain.model.integration.DeliveryStatus;
 import com.modocument.domain.model.integration.FlowTrigger;
 import com.modocument.domain.model.integration.RunStatus;
-import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.persistence.IntegrationFlowJpaRepository;
 import com.modocument.infrastructure.persistence.IntegrationRunJpaRepository;
 import com.modocument.infrastructure.persistence.OutboundDeliveryJpaRepository;
+import com.modocument.infrastructure.settings.IntegrationSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -61,7 +60,7 @@ public class IntegrationScheduler {
     private final IntegrationRuns runs;
     private final IntegrationRunExecutor executor;
     private final OutboundDispatcher dispatcher;
-    private final SettingsReader settings;
+    private final IntegrationSettings settings;
     private final IntegrationEngineProperties properties;
     private final TransactionTemplate readOnly;
     private final Clock clock;
@@ -70,7 +69,7 @@ public class IntegrationScheduler {
                                 IntegrationRunJpaRepository runRepository,
                                 OutboundDeliveryJpaRepository deliveries, IntegrationRuns runs,
                                 IntegrationRunExecutor executor, OutboundDispatcher dispatcher,
-                                SettingsReader settings, IntegrationEngineProperties properties,
+                                IntegrationSettings settings, IntegrationEngineProperties properties,
                                 PlatformTransactionManager transactionManager) {
         this.flows = flows;
         this.runRepository = runRepository;
@@ -167,7 +166,7 @@ public class IntegrationScheduler {
     }
 
     private void failTimedOut(int bankId, Instant now) {
-        Duration timeout = settings.getDuration(SettingKeys.INTEGRATION_RUN_TIMEOUT, bankId);
+        Duration timeout = settings.runTimeout(bankId);
         for (IntegrationRun run : runRepository.findStale(bankId, IntegrationRuns.ACTIVE,
                 now.minus(timeout))) {
             if (IntegrationRun.OP_WRITE.equals(run.getOperation())

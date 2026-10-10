@@ -10,6 +10,8 @@ import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.PendingChangeRepository;
+import com.modocument.application.port.PlatformBankLookup;
+import com.modocument.application.security.ChangeAudience;
 import com.modocument.application.security.SodPolicy;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.PendingChange;
@@ -26,10 +28,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 /**
  * Maker/checker dual control over critical changes (ws10, gate B7,
@@ -51,6 +55,15 @@ import java.util.NoSuchElementException;
  * filters by the caller's bank anyway (H2 tests + defense in depth);
  * because AppUsers is NOT under RLS, {@link #approve} additionally asserts
  * maker and checker belong to the same bank.
+ *
+ * <p><b>Who decides</b> ({@link ChangeAudience}, every change type placed):
+ * a bank type is decided by any other CHANGE_APPROVE holder of the maker's
+ * bank; a platform type (platform settings, bank lifecycle, egress
+ * approvals) only by a second platform admin — CHANGE_APPROVE plus the
+ * type's platform permission, in the platform bank. {@link #list} shows a
+ * caller exactly the rows they may decide plus their own submissions;
+ * {@link #approve}/{@link #reject} refuse (403) a checker outside the
+ * type's audience.
  */
 @Service
 public class PendingChangeUseCase {
@@ -61,6 +74,7 @@ public class PendingChangeUseCase {
     private final AuditRecorder audit;
     private final PermissionChecker perm;
     private final SodPolicy sodPolicy;
+    private final PlatformBankLookup platformBanks;
     private final ObjectMapper objectMapper;
     private final Map<ChangeType, PendingChangeApplier> appliers;
 
@@ -74,7 +88,7 @@ public class PendingChangeUseCase {
     public PendingChangeUseCase(CurrentUserProvider currentUser, AppUserRepository users,
                                 PendingChangeRepository changes, AuditRecorder audit,
                                 PermissionChecker perm, SodPolicy sodPolicy,
-                                ObjectMapper objectMapper,
+                                PlatformBankLookup platformBanks, ObjectMapper objectMapper,
                                 List<PendingChangeApplier> applierBeans,
                                 PlatformTransactionManager transactionManager) {
         this.currentUser = currentUser;
@@ -83,6 +97,7 @@ public class PendingChangeUseCase {
         this.audit = audit;
         this.perm = perm;
         this.sodPolicy = sodPolicy;
+        this.platformBanks = platformBanks;
         this.objectMapper = objectMapper;
         EnumMap<ChangeType, PendingChangeApplier> byType = new EnumMap<>(ChangeType.class);
         for (PendingChangeApplier applier : applierBeans) {
@@ -141,6 +156,7 @@ public class PendingChangeUseCase {
     public PendingChangeDto approve(int pendingChangeId, String checkerComment) {
         PendingChange change = requireOwnBankChange(pendingChangeId);
         requireRequested(change);
+        requireCheckerAudience(change);
         int checkerId = currentUser.requireUserId();
         try {
             // The shared SoD mechanism (SEC-024 runtime layer): the same
@@ -206,6 +222,7 @@ public class PendingChangeUseCase {
     public PendingChangeDto reject(int pendingChangeId, String checkerComment) {
         PendingChange change = requireOwnBankChange(pendingChangeId);
         requireRequested(change);
+        requireCheckerAudience(change);
         change.setStatus(PendingChangeStatus.REJECTED);
         change.setCheckerUserId(currentUser.requireUserId());
         change.setCheckerComment(clean(checkerComment));
@@ -238,30 +255,26 @@ public class PendingChangeUseCase {
 
     /**
      * The caller's bank's changes, newest first, optionally filtered by
-     * status. Holders of CHANGE_APPROVE review everything; a maker without
-     * it (any maker permission: users, templates, bank settings, platform
-     * settings) sees only their own submissions.
+     * status: the rows the caller may decide ({@link ChangeAudience}) plus
+     * the caller's own submissions. Listing needs CHANGE_APPROVE or the
+     * maker permission of at least one change type.
      */
     @Transactional(readOnly = true)
     public List<PendingChangeDto> list(String status) {
-        boolean approver = perm.has(Permission.CHANGE_APPROVE.name());
-        boolean maker = perm.has(Permission.USER_ADMIN.name())
-                || perm.has(Permission.TEMPLATE_WRITE.name())
-                || perm.has(Permission.SETTINGS_WRITE.name())
-                || perm.has(Permission.PLATFORM_SETTINGS.name());
-        if (!approver && !maker) {
+        Deciders deciders = deciders();
+        if (!deciders.approver() && !deciders.maker()) {
             throw new AccessDeniedException("Listing pending changes requires an approval "
                     + "or maker permission.");
         }
         int bankId = currentUser.requireBankId();
+        int callerId = currentUser.requireUserId();
         List<PendingChange> rows = status == null || status.isBlank()
                 ? changes.listByBank(bankId)
                 : changes.listByBankAndStatus(bankId, parseStatus(status));
-        if (!approver) {
-            int callerId = currentUser.requireUserId();
-            rows = rows.stream().filter(row -> row.getMakerUserId() == callerId).toList();
-        }
-        return rows.stream().map(this::toDto).toList();
+        return rows.stream()
+                .filter(row -> row.getMakerUserId() == callerId || deciders.mayDecide(row))
+                .map(this::toDto)
+                .toList();
     }
 
     // ------------------------------------------------------------ plumbing
@@ -276,6 +289,67 @@ public class PendingChangeUseCase {
         if (!perm.has(type.makerPermission().name())) {
             throw new AccessDeniedException("Requesting a " + type.name() + " change requires "
                     + type.makerPermission().code() + ".");
+        }
+    }
+
+    /** 403 unless the caller is in the change type's checker audience. */
+    private void requireCheckerAudience(PendingChange change) {
+        if (!deciders().mayDecide(change)) {
+            throw new AccessDeniedException(ChangeAudience.of(change.getChangeType())
+                    == ChangeAudience.PLATFORM
+                    ? "A " + change.getChangeType().name() + " change is decided by a second "
+                    + "platform administrator."
+                    : "Deciding a " + change.getChangeType().name() + " change requires "
+                    + Permission.CHANGE_APPROVE.code() + ".");
+        }
+    }
+
+    /** The caller's checker/maker standing, probed once per request. */
+    private Deciders deciders() {
+        boolean approver = perm.has(Permission.CHANGE_APPROVE.name());
+        Set<Permission> makerPermissions = EnumSet.noneOf(Permission.class);
+        for (ChangeType type : ChangeType.values()) {
+            Permission permission = type.makerPermission();
+            if (!makerPermissions.contains(permission) && perm.has(permission.name())) {
+                makerPermissions.add(permission);
+            }
+        }
+        return new Deciders(approver, makerPermissions);
+    }
+
+    /**
+     * What the caller may do in the queue: {@code approver} = holds
+     * CHANGE_APPROVE; {@code makerPermissions} = the maker permissions held.
+     */
+    private final class Deciders {
+
+        private final boolean approver;
+        private final Set<Permission> makerPermissions;
+
+        private Deciders(boolean approver, Set<Permission> makerPermissions) {
+            this.approver = approver;
+            this.makerPermissions = makerPermissions;
+        }
+
+        boolean approver() {
+            return approver;
+        }
+
+        boolean maker() {
+            return !makerPermissions.isEmpty();
+        }
+
+        /** Whether the caller is in the checker audience of this (own-bank) row. */
+        boolean mayDecide(PendingChange change) {
+            if (!approver) {
+                return false;
+            }
+            ChangeType type = change.getChangeType();
+            return switch (ChangeAudience.of(type)) {
+                case BANK -> true;
+                case PLATFORM -> makerPermissions.contains(type.makerPermission())
+                        && platformBanks.isPlatformBank(change.getBankId());
+            };
         }
     }
 

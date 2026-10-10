@@ -51,7 +51,9 @@ class SettingsCatalogueDocTest {
         for (SettingDefinition definition : SettingDefinitions.ALL) {
             table.append("| `").append(definition.key()).append("` | ")
                     .append(definition.group().label()).append(" | ")
-                    .append(definition.scope()).append(" | ")
+                    .append(definition.scope())
+                    .append(definition.platformControlled() ? " (platform-set)" : "")
+                    .append(" | ")
                     .append(definition.tier()).append(" | ")
                     .append(definition.type()).append(" | ")
                     .append(definition.format(definition.codeDefault()))

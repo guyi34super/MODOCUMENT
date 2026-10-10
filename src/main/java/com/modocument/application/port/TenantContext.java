@@ -85,6 +85,16 @@ import java.util.concurrent.Callable;
  *       write commits, and by {@code ConfigRevisionPoller#poll} every
  *       {@code modocument.settings.poll-interval-ms}. Read-only; writes stay
  *       under the writer's own tenant.</li>
+ *   <li>{@code SettingChangeService#inTargetBank} (via {@code #findRow} and
+ *       {@code #write}) — phase 2 platform-controlled settings
+ *       ({@code /api/platform/banks/{id}/settings} and the
+ *       PLATFORM_SETTING_UPDATE applier when its payload names a
+ *       {@code bankId}; PLATFORM_SETTINGS, platform bank only):
+ *       {@code runAs(target customer bank)} around a REQUIRES_NEW
+ *       transaction (read-only for the version/"from" read) to read and
+ *       write that bank's BankSetting rows of platform-controlled keys, plus
+ *       the tenant-less ConfigRevision bump. Never the platform bank, never
+ *       {@code runAsSystem}; the audit rows stay in the platform bank.</li>
  *   <li>{@code PlatformBankLifecycleUseCase#requireAvailableCode} — ws21
  *       BANK_CREATE submit: {@code runAsSystem} in its own read-only
  *       transaction to check that no bank carries the requested code (the

@@ -262,6 +262,10 @@ describe('PendingChangesPage', () => {
       }),
       row(52, 'TEMPLATE_UPDATE', { templateId: 3, name: 'Loans', extractionMode: 'CODE_ONLY' }),
       row(53, 'TEMPLATE_UPDATE', { templateId: 4, name: 'Cards', extractionMode: null }),
+      row(54, 'PLATFORM_SETTING_UPDATE', {
+        bankId: 9,
+        changes: [{ key: 'integration.auth.allowApiKeys', from: null, to: false, baseVersion: 0 }],
+      }),
     ]);
     renderPage();
 
@@ -281,6 +285,7 @@ describe('PendingChangesPage', () => {
     expect(
       screen.getByText('Rename template 4 to "Cards"; extraction mode → the bank default')
     ).toBeInTheDocument();
+    expect(screen.getByText('Change 1 platform-set setting of bank 9')).toBeInTheDocument();
     // The sealed secret itself is never rendered.
     expect(document.body.textContent).not.toContain('AAAA');
   });

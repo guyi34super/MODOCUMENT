@@ -3,7 +3,6 @@ package com.modocument.infrastructure.security.client;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.BankDirectory;
-import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.TenantContext;
 import com.modocument.application.port.integration.ClientPrincipal;
 import com.modocument.domain.entity.ApiClient;
@@ -13,12 +12,12 @@ import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.integration.ApiAuthMethod;
 import com.modocument.domain.model.integration.ApiClientKind;
 import com.modocument.domain.model.integration.ApiClientStatus;
-import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.persistence.ApiClientJpaRepository;
 import com.modocument.infrastructure.persistence.ApiClientSecretJpaRepository;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.ratelimit.FixedWindowRateLimiter;
 import com.modocument.infrastructure.security.ClientIps;
+import com.modocument.infrastructure.settings.IntegrationSettings;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,8 +63,8 @@ import java.util.function.Supplier;
  * expired, the client's bank not suspended, its creator still an enabled
  * account of that bank (the leaver check: a SYSTEM client dies with the
  * user who made it — disabled or deleted; AGENT clients have no creator and
- * are exempt), the auth method still allowed
- * for the bank (platform settings {@code integration.auth.allow*}), and the
+ * are exempt), the auth method still allowed for the bank
+ * ({@code integration.auth.allow*}: platform-set, per bank), and the
  * caller's IP inside {@code AllowedCidrs} (the forwarded-aware address of
  * {@link ClientIps}). Client tokens additionally carry {@code token_ver}:
  * a revocation bumps TokenVersion, so a token stops working on its very next
@@ -95,7 +94,7 @@ public class ApiClientAuthenticator {
     private final ApiClientSecretJpaRepository secrets;
     private final AppUserJpaRepository users;
     private final PasswordEncoder passwordEncoder;
-    private final SettingsReader settings;
+    private final IntegrationSettings settings;
     private final BankDirectory bankDirectory;
     private final AuditRecorder audit;
     private final IntegrationClientProperties properties;
@@ -108,7 +107,7 @@ public class ApiClientAuthenticator {
                                   ApiClientSecretJpaRepository secrets,
                                   AppUserJpaRepository users,
                                   PasswordEncoder passwordEncoder,
-                                  SettingsReader settings,
+                                  IntegrationSettings settings,
                                   BankDirectory bankDirectory,
                                   AuditRecorder audit,
                                   IntegrationClientProperties properties,
@@ -348,17 +347,13 @@ public class ApiClientAuthenticator {
         return Result.ok(principalOf(client, scopes), client);
     }
 
-    /** Whether the bank may use {@code method} (platform settings integration.auth.allow*). */
+    /** Whether the bank may use {@code method} (integration.auth.allow*, platform-set per bank). */
     public boolean methodAllowed(ApiAuthMethod method, int bankId) {
-        String key = switch (method) {
-            case OAUTH2_CLIENT_CREDENTIALS -> SettingKeys.INTEGRATION_ALLOW_OAUTH2;
-            case API_KEY -> SettingKeys.INTEGRATION_ALLOW_API_KEYS;
-            case MTLS -> SettingKeys.INTEGRATION_ALLOW_MTLS;
-        };
         try {
-            return settings.getBool(key, bankId);
+            return settings.isAuthMethodAllowed(method, bankId);
         } catch (RuntimeException unreadable) {
-            log.warn("Could not read {} for bank {}; refusing the method", key, bankId);
+            log.warn("Could not read {} for bank {}; refusing the method",
+                    IntegrationSettings.authMethodKey(method), bankId);
             return false;
         }
     }
