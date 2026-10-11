@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getTemplates } from '../api/cache';
-import { createJobFromFile, getSupportedTypes, listJobs } from '../api/ingestion';
+import { createJobFromFile, getSupportedTypes, listJobSummaries } from '../api/ingestion';
+import { DEFAULT_PAGE_SIZE, toPage } from '../api/paging';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
+import Pager from '../components/Pager';
 import { Badge, Button, Card, ErrorBanner, Field, inputClass, Spinner, Tag } from '../components/ui';
 import { describeProvenance } from '../utils/parseProvenance';
 import { useToast } from '../context/ToastContext';
@@ -13,6 +15,9 @@ export default function IngestionListPage() {
   const toast = useToast();
   const [templates, setTemplates] = useState([]);
   const [jobs, setJobs] = useState(null);
+  // v1.2.0: the list is paged server-side (summaries, no JSON blobs).
+  const [page, setPage] = useState(0);
+  const [pageInfo, setPageInfo] = useState({ page: 0, size: DEFAULT_PAGE_SIZE, total: 0, paged: true });
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   // Asked for once: the picker must offer exactly what this build can parse
@@ -25,14 +30,24 @@ export default function IngestionListPage() {
   const [uploading, setUploading] = useState(false);
   // null = "not decided by the user yet": auto-open only for first-time users.
   const [showUpload, setShowUpload] = useState(null);
-  const uploadOpen = showUpload ?? (jobs !== null && jobs.length === 0);
+  const uploadOpen = showUpload ?? (jobs !== null && pageInfo.total === 0 && jobs.length === 0);
+  // One lookup per row instead of a scan of every template.
+  const templateNames = useMemo(
+    () => new Map(templates.map((t) => [t.templateId, t.name])),
+    [templates]
+  );
 
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [tpl, jobList] = await Promise.all([getTemplates(), listJobs()]);
+      const [tpl, answer] = await Promise.all([
+        getTemplates(),
+        listJobSummaries({ page, size: DEFAULT_PAGE_SIZE }),
+      ]);
+      const loaded = toPage(answer, { page, size: DEFAULT_PAGE_SIZE });
       setTemplates(tpl);
-      setJobs(jobList.sort((a, b) => b.ingestionJobId - a.ingestionJobId));
+      setJobs([...loaded.items].sort((a, b) => b.ingestionJobId - a.ingestionJobId));
+      setPageInfo(loaded);
       // A stale banner outliving the problem reads as a broken page.
       setError('');
     } catch (err) {
@@ -40,11 +55,16 @@ export default function IngestionListPage() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Opening a job: a full legacy row is handed over to skip one fetch; a
+  // summary is not (the job page needs the parsed table it leaves out).
+  const openJob = (row) =>
+    navigate(`/ingestion/${row.ingestionJobId}`, pageInfo.paged ? undefined : { state: { job: row } });
 
   useEffect(() => {
     let active = true;
@@ -180,7 +200,7 @@ export default function IngestionListPage() {
               key: 'templateId',
               label: 'Template',
               render: (row) =>
-                templates.find((t) => t.templateId === row.templateId)?.name ?? row.templateId,
+                row.templateName ?? templateNames.get(row.templateId) ?? row.templateId,
             },
             {
               key: 'currentStep',
@@ -213,9 +233,17 @@ export default function IngestionListPage() {
           rows={jobs}
           maxHeight="65vh"
           emptyMessage="No jobs yet — click 'Upload a document' to get started."
-          onRowClick={(row) =>
-            navigate(`/ingestion/${row.ingestionJobId}`, { state: { job: row } })
-          }
+          onRowClick={openJob}
+        />
+      )}
+      {jobs && (
+        <Pager
+          label="Jobs"
+          page={pageInfo.page}
+          size={pageInfo.size}
+          total={pageInfo.total}
+          disabled={refreshing}
+          onPage={setPage}
         />
       )}
     </div>

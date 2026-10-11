@@ -1,4 +1,5 @@
 import { api } from './client';
+import { DEFAULT_PAGE_SIZE, pagedPath } from './paging';
 
 // Bank Integration Hub (phase 2, ws25/ws26). Contract: docs/phase2/contracts.md
 // §3 (routes by owner) and §7.3 (REST shapes). Every maker/checker write
@@ -146,8 +147,16 @@ export const runFlow = (flowId) => api.post(`${BASE}/flows/${id(flowId)}/run`);
 // detail adds events:[{at, level, message}], deliveries:[{id, status, attempts,
 //   lastError, nextAttemptAt}]
 
-/** INTEGRATION_RUN. Optional filters: `{flowId, status}`. */
+/** INTEGRATION_RUN. Optional filters: `{flowId, status, limit}` → RunView[] (newest first). */
 export const listRuns = (filters = {}) => api.get(`${BASE}/runs${query(filters)}`);
+
+/**
+ * v1.2.0 (contracts §5): one page of the run history, `{flowId, status,
+ * page, size}` → `{items:[RunView], page, size, total}` (read it through
+ * toPage(): an older server answers the array).
+ */
+export const listRunsPage = ({ page = 0, size = DEFAULT_PAGE_SIZE, ...filters } = {}) =>
+  api.get(pagedPath(`${BASE}/runs`, { ...filters, page, size }));
 
 export const getRun = (runId) => api.get(`${BASE}/runs/${id(runId)}`);
 

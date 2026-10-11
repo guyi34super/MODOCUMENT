@@ -1,6 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { api } from './client';
-import { createJobFromFile, waitForJob, needsIngestionWait } from './ingestion';
+import {
+  createJobFromFile,
+  databaseExportRequest,
+  getSupportedTypes,
+  listJobSummaries,
+  needsIngestionWait,
+  waitForJob,
+} from './ingestion';
 
 vi.mock('./client', () => ({
   api: {
@@ -15,6 +22,51 @@ describe('ingestion API', () => {
     api.post.mockReset();
     api.get.mockResolvedValue({});
     api.post.mockResolvedValue({});
+  });
+
+  it('asks for job summaries one page at a time', async () => {
+    await listJobSummaries({ page: 2, size: 25 });
+    expect(api.get).toHaveBeenCalledWith('/api/ingestion/jobs?view=summary&page=2&size=25');
+  });
+
+  it('asks for the supported types once per session, but retries a failure', async () => {
+    api.get.mockRejectedValueOnce(new Error('down'));
+    await expect(getSupportedTypes()).rejects.toThrow('down');
+    api.get.mockResolvedValue({ accept: '.csv' });
+    await getSupportedTypes();
+    await getSupportedTypes();
+    const calls = api.get.mock.calls.filter(([path]) => path === '/api/ingestion/supported-types');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('builds the vendor/host database export body (no JDBC URL), leaving out empty optionals', () => {
+    const body = databaseExportRequest(
+      {
+        vendor: 'SQLSERVER',
+        host: ' sql.bank.internal ',
+        port: '1433',
+        database: 'core',
+        schema: '',
+        sslmode: 'verify-full',
+        username: '',
+        password: '',
+        table: 'Payroll',
+        createTableIfMissing: false,
+      },
+      'Quarterly load'
+    );
+    expect(body).toEqual({
+      vendor: 'SQLSERVER',
+      host: 'sql.bank.internal',
+      port: 1433,
+      database: 'core',
+      sslmode: 'verify-full',
+      table: 'Payroll',
+      tableName: 'Payroll',
+      createTableIfMissing: false,
+      reason: 'Quarterly load',
+    });
+    expect(body).not.toHaveProperty('jdbcUrl');
   });
 
   it('waitForJob defaults until to MAPPED', async () => {

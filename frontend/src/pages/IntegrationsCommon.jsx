@@ -23,14 +23,8 @@ export const CONNECTION_TYPE_LABELS = Object.fromEntries(
   CONNECTION_TYPES.map((t) => [t.value, t.label])
 );
 
-export const DB_VENDORS = [
-  { value: 'POSTGRESQL', label: 'PostgreSQL', port: 5432 },
-  { value: 'ORACLE', label: 'Oracle', port: 1521 },
-  { value: 'SQLSERVER', label: 'SQL Server', port: 1433 },
-  { value: 'MARIADB', label: 'MariaDB / MySQL', port: 3306 },
-];
-
-export const SSL_MODES = ['require', 'verify-ca', 'verify-full', 'disable'];
+// Shared with the ingestion database export (utils/dbVendors.js).
+export { DB_VENDORS, SSL_MODES } from '../utils/dbVendors';
 
 /** OutboundAuthType offered for a REST API connection. */
 export const REST_AUTH_TYPES = [

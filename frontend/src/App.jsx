@@ -1,46 +1,53 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
-import LoginCompletePage from './pages/LoginCompletePage';
 import DashboardPage from './pages/DashboardPage';
-import TemplatesPage from './pages/TemplatesPage';
-import TemplateEditorPage from './pages/TemplateEditorPage';
-import ValidationRulesPage from './pages/ValidationRulesPage';
-import IngestionListPage from './pages/IngestionListPage';
-import IngestionJobPage from './pages/IngestionJobPage';
-import BlueprintListPage from './pages/BlueprintListPage';
-import BlueprintDetailPage from './pages/BlueprintDetailPage';
-import DocInstancesPage from './pages/DocInstancesPage';
-import DocBuilderPage from './pages/DocBuilderPage';
-import ExtractionSourcesPage from './pages/ExtractionSourcesPage';
-import ExtractionJobsPage from './pages/ExtractionJobsPage';
-import ExtractionJobDetailPage from './pages/ExtractionJobDetailPage';
-import ProfilePage from './pages/ProfilePage';
-import AdminUsersPage from './pages/AdminUsersPage';
-import PendingChangesPage from './pages/PendingChangesPage';
-import PendingReleasesPage from './pages/PendingReleasesPage';
-import AdminRetentionPage from './pages/AdminRetentionPage';
-import AdminAlertsPage from './pages/AdminAlertsPage';
-import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
-import PlatformOverviewPage from './pages/PlatformOverviewPage';
-import PlatformBanksPage from './pages/PlatformBanksPage';
-import PlatformBankDetailPage from './pages/PlatformBankDetailPage';
-import AdminDashboardPage from './pages/AdminDashboardPage';
-import SettingsPage from './pages/SettingsPage';
-import PlatformAnnouncementsPage from './pages/PlatformAnnouncementsPage';
-import PlatformReleasesPage from './pages/PlatformReleasesPage';
-import IntegrationsOverviewPage from './pages/IntegrationsOverviewPage';
-import IntegrationConnectionsPage from './pages/IntegrationConnectionsPage';
-import IntegrationFlowsPage from './pages/IntegrationFlowsPage';
-import IntegrationFlowBuilderPage from './pages/IntegrationFlowBuilderPage';
-import IntegrationRunsPage from './pages/IntegrationRunsPage';
-import IntegrationRunDetailPage from './pages/IntegrationRunDetailPage';
-import IntegrationApiClientsPage from './pages/IntegrationApiClientsPage';
-import IntegrationAgentsPage from './pages/IntegrationAgentsPage';
-import IntegrationEgressRulesPage from './pages/IntegrationEgressRulesPage';
-import PlatformEgressRulesPage from './pages/PlatformEgressRulesPage';
+import { Spinner } from './components/ui';
+
+// v1.2.0: every page but the two a cold start lands on (sign-in, home) is
+// its own chunk, fetched on first navigation. Layout wraps its <Outlet/> in
+// <Suspense>; the standalone routes below carry their own.
+const LoginCompletePage = lazy(() => import('./pages/LoginCompletePage'));
+const TemplatesPage = lazy(() => import('./pages/TemplatesPage'));
+const TemplateEditorPage = lazy(() => import('./pages/TemplateEditorPage'));
+const ValidationRulesPage = lazy(() => import('./pages/ValidationRulesPage'));
+const IngestionListPage = lazy(() => import('./pages/IngestionListPage'));
+const IngestionJobPage = lazy(() => import('./pages/IngestionJobPage'));
+const BlueprintListPage = lazy(() => import('./pages/BlueprintListPage'));
+const BlueprintDetailPage = lazy(() => import('./pages/BlueprintDetailPage'));
+const DocInstancesPage = lazy(() => import('./pages/DocInstancesPage'));
+const DocBuilderPage = lazy(() => import('./pages/DocBuilderPage'));
+const ExtractionSourcesPage = lazy(() => import('./pages/ExtractionSourcesPage'));
+const ExtractionJobsPage = lazy(() => import('./pages/ExtractionJobsPage'));
+const ExtractionJobDetailPage = lazy(() => import('./pages/ExtractionJobDetailPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage'));
+const PendingChangesPage = lazy(() => import('./pages/PendingChangesPage'));
+const PendingReleasesPage = lazy(() => import('./pages/PendingReleasesPage'));
+const AdminRetentionPage = lazy(() => import('./pages/AdminRetentionPage'));
+const AdminAlertsPage = lazy(() => import('./pages/AdminAlertsPage'));
+const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPage'));
+const PlatformOverviewPage = lazy(() => import('./pages/PlatformOverviewPage'));
+const PlatformBanksPage = lazy(() => import('./pages/PlatformBanksPage'));
+const PlatformBankDetailPage = lazy(() => import('./pages/PlatformBankDetailPage'));
+const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const PlatformAnnouncementsPage = lazy(() => import('./pages/PlatformAnnouncementsPage'));
+const PlatformReleasesPage = lazy(() => import('./pages/PlatformReleasesPage'));
+const IntegrationsOverviewPage = lazy(() => import('./pages/IntegrationsOverviewPage'));
+const IntegrationConnectionsPage = lazy(() => import('./pages/IntegrationConnectionsPage'));
+const IntegrationFlowsPage = lazy(() => import('./pages/IntegrationFlowsPage'));
+const IntegrationFlowBuilderPage = lazy(() => import('./pages/IntegrationFlowBuilderPage'));
+const IntegrationRunsPage = lazy(() => import('./pages/IntegrationRunsPage'));
+const IntegrationRunDetailPage = lazy(() => import('./pages/IntegrationRunDetailPage'));
+const IntegrationApiClientsPage = lazy(() => import('./pages/IntegrationApiClientsPage'));
+const IntegrationAgentsPage = lazy(() => import('./pages/IntegrationAgentsPage'));
+const IntegrationEgressRulesPage = lazy(() => import('./pages/IntegrationEgressRulesPage'));
+const PlatformEgressRulesPage = lazy(() => import('./pages/PlatformEgressRulesPage'));
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage'));
 
 /** ws21: the platform owner has no domain home page — its home is the console. */
 function Home() {
@@ -53,14 +60,23 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       {/* OIDC landing: exchanges the refresh cookie for the access token. */}
-      <Route path="/login/complete" element={<LoginCompletePage />} />
+      <Route
+        path="/login/complete"
+        element={
+          <Suspense fallback={<Spinner />}>
+            <LoginCompletePage />
+          </Suspense>
+        }
+      />
       {/* ws09: standalone (no app chrome) — the only page a temporary
           password can use; ProtectedRoute routes flagged users here. */}
       <Route
         path="/force-password-change"
         element={
           <ProtectedRoute>
-            <ForceChangePasswordPage />
+            <Suspense fallback={<Spinner />}>
+              <ForceChangePasswordPage />
+            </Suspense>
           </ProtectedRoute>
         }
       />
@@ -95,6 +111,10 @@ export default function App() {
         <Route path="/admin/retention" element={<AdminRetentionPage />} />
         {/* ws18 security alerts for ADMINs (server: user:admin, bank-scoped). */}
         <Route path="/admin/alerts" element={<AdminAlertsPage />} />
+        {/* v1.2.0 audit log viewer (server: audit:read — ADMIN, APPROVER;
+            the platform variant for the PLATFORM_ADMIN of the platform bank). */}
+        <Route path="/admin/audit" element={<AuditLogPage mode="bank" />} />
+        <Route path="/platform/audit" element={<AuditLogPage mode="platform" />} />
         {/* ws21 platform console (server: platform:read / platform:banks). */}
         <Route path="/platform" element={<PlatformOverviewPage />} />
         <Route path="/platform/banks" element={<PlatformBanksPage />} />

@@ -1,9 +1,16 @@
 import { api, downloadFile } from './client';
+import { pagedPath } from './paging';
 
 // Bank-scoped user administration (ws09). Every call is ADMIN-only
 // (user:admin) and the backend scopes everything to the caller's own bank.
 
-export const listUsers = () => api.get('/api/admin/users');
+/**
+ * The bank's users. With `paging` ({page, size}, v1.2.0 contracts §5) the
+ * answer is `{items, page, size, total}` — read it through toPage()
+ * (api/paging.js), which also accepts an older server's array.
+ */
+export const listUsers = (paging) =>
+  api.get(paging ? pagedPath('/api/admin/users', paging) : '/api/admin/users');
 
 export const createUser = ({ email, displayName, role, temporaryPassword }) =>
   api.post('/api/admin/users', { email, displayName, role, temporaryPassword });

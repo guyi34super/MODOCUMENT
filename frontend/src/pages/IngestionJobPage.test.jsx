@@ -23,7 +23,9 @@ vi.mock('../api/templates', () => ({
   getAllFields: vi.fn(),
 }));
 
-vi.mock('../api/ingestion', () => ({
+vi.mock('../api/ingestion', async (importOriginal) => ({
+  // The real request builder: the tests assert the body it produces.
+  databaseExportRequest: (await importOriginal()).databaseExportRequest,
   getJob: vi.fn(),
   waitForJob: vi.fn(),
   needsIngestionWait: vi.fn((job, until = 'MAPPED') => {
@@ -1046,9 +1048,29 @@ describe('export row caps (ws18, gate D2)', () => {
     await screen.findByRole('heading', { name: 'Export' });
 
     await userEvent.click(screen.getByRole('button', { name: 'Export to database…' }));
-    await userEvent.type(screen.getByLabelText('JDBC URL'), 'jdbc:postgresql://db/x');
+    // v1.2.0: vendor/host fields; no raw JDBC URL any more.
+    expect(screen.queryByLabelText('JDBC URL')).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText('Database vendor'), 'POSTGRESQL');
+    // Choosing the vendor fills in its default port.
+    expect(screen.getByLabelText('Port')).toHaveValue('5432');
+    await userEvent.type(screen.getByLabelText('Host'), 'db.bank.internal');
+    await userEvent.type(screen.getByLabelText('Database'), 'core');
+    await userEvent.type(screen.getByLabelText('Schema (optional)'), 'staging');
+    await userEvent.type(screen.getByLabelText('Username'), 'loader');
     await userEvent.type(screen.getByLabelText('Table name'), 'Rows');
     await userEvent.click(screen.getByRole('button', { name: 'Run database export' }));
+    expect(exportToDatabase).toHaveBeenCalledWith('7', {
+      vendor: 'POSTGRESQL',
+      host: 'db.bank.internal',
+      port: 5432,
+      database: 'core',
+      schema: 'staging',
+      sslmode: 'require',
+      username: 'loader',
+      table: 'Rows',
+      tableName: 'Rows',
+      createTableIfMissing: true,
+    });
 
     expect(await screen.findByText('This export needs a reason')).toBeInTheDocument();
     expect(screen.getByText(/This database export has/)).toBeInTheDocument();
@@ -1060,8 +1082,10 @@ describe('export row caps (ws18, gate D2)', () => {
     expect(exportToDatabase).toHaveBeenLastCalledWith(
       '7',
       expect.objectContaining({
-        jdbcUrl: 'jdbc:postgresql://db/x',
-        tableName: 'Rows',
+        vendor: 'POSTGRESQL',
+        host: 'db.bank.internal',
+        port: 5432,
+        table: 'Rows',
         reason: 'Migration to core',
       })
     );
