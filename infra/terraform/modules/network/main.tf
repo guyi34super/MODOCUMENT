@@ -67,14 +67,17 @@ resource "aws_internet_gateway" "this" {
   tags   = merge(var.tags, { Name = "${var.name}-igw" })
 }
 
+# ws29: one NAT gateway per AZ (production: an AZ outage never cuts the
+# other AZ's egress) or a single shared one (staging: ~half the NAT bill,
+# accepting that losing that AZ cuts egress for both app subnets).
 resource "aws_eip" "nat" {
-  count  = 2
+  count  = var.nat_gateway_count
   domain = "vpc"
   tags   = merge(var.tags, { Name = "${var.name}-nat-${count.index}" })
 }
 
 resource "aws_nat_gateway" "this" {
-  count         = 2
+  count         = var.nat_gateway_count
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
   tags          = merge(var.tags, { Name = "${var.name}-nat-${local.az_names[count.index]}" })
@@ -109,7 +112,8 @@ resource "aws_route" "app_nat" {
   count                  = 2
   route_table_id         = aws_route_table.private_app[count.index].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.this[count.index].id
+  # With a single NAT gateway both app route tables use it.
+  nat_gateway_id = aws_nat_gateway.this[min(count.index, var.nat_gateway_count - 1)].id
 }
 
 resource "aws_route_table_association" "private_app" {
@@ -291,10 +295,12 @@ resource "aws_vpc_endpoint" "interface" {
 }
 
 # VPC flow logs → CloudWatch (detective input for the security-monitoring
-# module; PRIV-003 ransomware/beaconing detection feeds on these).
+# module; PRIV-003 ransomware/beaconing detection feeds on these). ws29:
+# hot retention is a variable (default 30 days) — flow logs are by far the
+# highest-volume log group, and detection runs on fresh data.
 resource "aws_cloudwatch_log_group" "flow_logs" {
   name              = "/vpc/${var.name}/flow-logs"
-  retention_in_days = 400
+  retention_in_days = var.flow_log_retention_days
 
   tags = var.tags
 }

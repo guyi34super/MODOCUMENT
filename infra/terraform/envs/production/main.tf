@@ -115,7 +115,11 @@ module "network" {
   bank_egress_cidrs          = var.bank_egress_cidrs
   app_egress_https_cidrs     = var.app_egress_https_cidrs
   enable_interface_endpoints = true
-  tags                       = local.tags
+  # ws29: one NAT gateway per AZ (AZ-independent egress) and 30-day hot
+  # flow logs (module defaults, explicit here for the record).
+  nat_gateway_count       = 2
+  flow_log_retention_days = 30
+  tags                    = local.tags
 }
 
 module "rds" {
@@ -125,8 +129,19 @@ module "rds" {
   db_subnet_ids        = module.network.private_db_subnet_ids
   db_security_group_id = module.network.db_security_group_id
   instance_class       = var.db_instance_class
+  multi_az             = true # SEC-004
   deletion_protection  = true
   tags                 = local.tags
+}
+
+# ws29: uploads, exports and doc assets in S3 (SSE-KMS, versioned, TLS-only,
+# public access blocked) instead of the task's disk.
+module "file_store" {
+  source = "../../modules/file-store"
+
+  name           = local.name
+  account_suffix = data.aws_caller_identity.current.account_id
+  tags           = local.tags
 }
 
 module "backups" {
@@ -197,8 +212,19 @@ module "ecs_app" {
   public_host         = var.app_domain
   client_ip_header    = "CloudFront-Viewer-Address"
 
+  # ws29: 1024 CPU / 3072 MiB tasks (module defaults), two per m6i.large;
+  # max_tasks is checked against max_instances x tasks per node at plan.
   min_tasks = 2
   max_tasks = var.max_tasks
+
+  log_retention_days = 90
+
+  # ws29: MODOCUMENT_STORAGE_BACKEND=s3 on the file-store bucket.
+  file_store = {
+    bucket_name = module.file_store.bucket_name
+    bucket_arn  = module.file_store.bucket_arn
+    kms_key_arn = module.file_store.kms_key_arn
+  }
 
   tags = local.tags
 }

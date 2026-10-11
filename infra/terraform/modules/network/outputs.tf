@@ -42,3 +42,8 @@ output "flow_log_group_name" {
   value       = aws_cloudwatch_log_group.flow_logs.name
   description = "CloudWatch log group receiving VPC flow logs."
 }
+
+output "s3_gateway_endpoint_id" {
+  value       = aws_vpc_endpoint.s3.id
+  description = "S3 gateway endpoint (private app + DB route tables): the app's file-store traffic (ws29) stays off the NAT gateways."
+}

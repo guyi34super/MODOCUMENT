@@ -19,11 +19,11 @@ import com.modocument.doccreation.repo.DocImageAssetRepository;
 import com.modocument.doccreation.repo.DocInstanceRepository;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.model.AuditOutcome;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.application.port.FileStore;
+import com.modocument.infrastructure.file.store.FileStoreKeys;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -69,7 +69,7 @@ public class DocReleaseUseCase {
     private final AppUserRepository users;
     private final AuditRecorder audit;
     private final SodPolicy sodPolicy;
-    private final StorageProperties storage;
+    private final FileStore storage;
     /** ws25: DOC_RELEASED joins the release transaction (outbound EVENT flows). */
     private final com.modocument.application.port.integration.IntegrationEventLog eventLog;
 
@@ -82,7 +82,7 @@ public class DocReleaseUseCase {
                              AppUserRepository users,
                              AuditRecorder audit,
                              SodPolicy sodPolicy,
-                             StorageProperties storage,
+                             FileStore storage,
                              com.modocument.application.port.integration.IntegrationEventLog eventLog) {
         this.eventLog = eventLog;
         this.instances = instances;
@@ -231,10 +231,14 @@ public class DocReleaseUseCase {
                     ? "No PDF was generated for this document; review the .docx instead."
                     : "The document has no generated file; ask the author to generate it again.");
         }
-        Path path = storage.exportsDir().resolve(fileName);
-        if (!Files.exists(path)) {
+        Path path;
+        try {
+            path = storage.localCopy(FileStoreKeys.export(fileName));
+        } catch (java.nio.file.NoSuchFileException e) {
             throw new IllegalStateException(
                     "The generated file is missing; ask the author to generate it again.");
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("Could not read the generated file.", e);
         }
         return new DocInstanceUseCase.DownloadFile(path,
                 DocInstanceUseCase.sanitizeFileName(instance.getTitle()) + (pdf ? ".pdf" : ".docx"));

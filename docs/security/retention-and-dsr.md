@@ -16,9 +16,9 @@ permission was minted so the role→permission matrix stays unchanged.
 
 | Category | Where it lives | Period | Driver | Destruction method |
 |---|---|---|---|---|
-| Uploaded files (originals) | `wwwroot/uploads` + `UploadedFile` rows | **30 days** from upload | PRIV-013 / gate C5 | File deleted from disk, ownership row deleted |
+| Uploaded files (originals) | file store key `uploads/<name>` (local `wwwroot/uploads`, or the S3 file-store bucket on ECS — ws29) + `UploadedFile` rows | **30 days** from upload | PRIV-013 / gate C5 | File deleted from the store (S3: the version left behind is removed by the bucket lifecycle after 7 days), ownership row deleted |
 | Ingestion job row data | `IngestionJob.ParsedTableJson / MappedRowsJson / ValidationResultJson` | **30 days** from last update | PRIV-013 / gate C5 | Columns nulled, `PurgedAt` stamped; job row kept as an empty report skeleton (README promise: "only empty report structures remain") |
-| Export archive copies | `wwwroot/exports/u{owner}/job{id}.{ext}` | **30 days** (with their job) | PRIV-013 / gate C5 | Files deleted from disk |
+| Export archive copies | file store key `exports/u{owner}/job{id}.{ext}` (local `wwwroot/exports/…` or S3) | **30 days** (with their job) | PRIV-013 / gate C5 | Files deleted from the store; on S3 the bucket also expires `exports/` objects after 30 days as a backstop |
 | Import step payloads | `ImportDetails.RawJson` | **30 days** from the import date (`ImportHistory.ImportDate`) | PRIV-013 / gate C5 | Column nulled; row skeleton (step, ids) kept |
 | Extraction raw captures | `ExtractionRawRecord.Body` | **30 days** from fetch | PRIV-013 / gate C5 | Column nulled; fetch metadata (uri, status, hash) kept |
 | Extraction processed records | `ExtractionProcessedRecord.FieldsJson` | **30 days** from processing | PRIV-013 / gate C5 | Column nulled; dedup metadata kept |

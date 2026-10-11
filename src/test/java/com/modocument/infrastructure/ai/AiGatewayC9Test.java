@@ -17,7 +17,7 @@ import com.modocument.application.privacy.PrivacyProperties;
 import com.modocument.application.usecase.AutoMapUseCase;
 import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.model.AuditOutcome;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.store.LocalFileStore;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.prompt.AutoMappingPrompt;
 import com.modocument.infrastructure.prompt.ExtractionPrompt;
@@ -117,7 +117,7 @@ class AiGatewayC9Test {
                         + " contact ada@example.com");
         TransformServiceImpl transform = new TransformServiceImpl(
                 new PromptFactory(List.of(new ExtractionPrompt())), gateway, parser,
-                new UploadStorage(new StorageProperties(tempDir.toString())), tokenizer);
+                new UploadStorage(new LocalFileStore(tempDir)), tokenizer);
         // The model works on tokens and returns them; the service detokenizes.
         modelReturns("```json\n{\"nic\":\"[ID_1]\"}\n```");
 

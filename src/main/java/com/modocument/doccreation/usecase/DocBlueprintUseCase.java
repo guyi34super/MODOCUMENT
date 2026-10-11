@@ -12,6 +12,7 @@ import com.modocument.doccreation.parse.ParsedSection;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
 import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
 import com.modocument.doccreation.repo.DocInstanceRepository;
+import com.modocument.application.port.FileStore;
 import com.modocument.infrastructure.file.UploadStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -45,6 +45,7 @@ public class DocBlueprintUseCase {
     private final BlueprintSectionExtractor sectionExtractor;
     private final DocumentCreationFlowRegistry flows;
     private final UploadStorage uploadStorage;
+    private final FileStore files;
 
     public DocBlueprintUseCase(DocBlueprintRepository blueprints,
                                DocBlueprintSectionRepository sections,
@@ -52,7 +53,8 @@ public class DocBlueprintUseCase {
                                DocCreationOwnership ownership,
                                BlueprintSectionExtractor sectionExtractor,
                                DocumentCreationFlowRegistry flows,
-                               UploadStorage uploadStorage) {
+                               UploadStorage uploadStorage,
+                               FileStore files) {
         this.blueprints = blueprints;
         this.sections = sections;
         this.instances = instances;
@@ -60,6 +62,7 @@ public class DocBlueprintUseCase {
         this.sectionExtractor = sectionExtractor;
         this.flows = flows;
         this.uploadStorage = uploadStorage;
+        this.files = files;
     }
 
     @Transactional
@@ -72,9 +75,9 @@ public class DocBlueprintUseCase {
             throw new IllegalArgumentException("Only .docx blueprints are supported.");
         }
         String storedName = uploadStorage.store(file);
-        Path storedPath = uploadStorage.resolve(storedName);
+        String storedKey = uploadStorage.key(storedName);
         // A DB rollback after this point must not orphan the stored file.
-        StoredFileCleanup.deleteOnRollback(storedPath);
+        StoredFileCleanup.deleteOnRollback(files, storedKey);
 
         String blueprintName = name == null || name.isBlank() ? baseName(originalName) : name.strip();
         if (blueprintName.length() > 255) {
@@ -101,11 +104,14 @@ public class DocBlueprintUseCase {
         String sectionSource;
         try {
             BlueprintSectionExtractor.Extraction extraction =
-                    sectionExtractor.extract(storedPath, blueprintName);
+                    sectionExtractor.extract(uploadStorage.localCopy(storedName), blueprintName);
             parsed = flow.customizeSections(extraction.sections(), blueprint);
             sectionSource = extraction.source();
+        } catch (IOException e) {
+            StoredFileCleanup.deleteQuietly(files, storedKey);
+            throw new java.io.UncheckedIOException("Could not read the stored blueprint.", e);
         } catch (RuntimeException e) {
-            deleteFileQuietly(storedPath);
+            StoredFileCleanup.deleteQuietly(files, storedKey);
             throw e;
         }
 
@@ -147,8 +153,12 @@ public class DocBlueprintUseCase {
         // The original name is browser-supplied: sanitized before it travels
         // back out in a Content-Disposition header.
         String safeName = DocInstanceUseCase.sanitizeFileName(rawName);
-        return new StoredFile(uploadStorage.resolve(blueprint.getFileName()),
-                safeName.endsWith(".docx") ? safeName : safeName + ".docx");
+        try {
+            return new StoredFile(uploadStorage.localCopy(blueprint.getFileName()),
+                    safeName.endsWith(".docx") ? safeName : safeName + ".docx");
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Could not read the blueprint file.", e);
+        }
     }
 
     @Transactional
@@ -173,7 +183,7 @@ public class DocBlueprintUseCase {
         blueprints.delete(blueprintId);
         // Only after commit: a rollback (e.g. a racing instance create hitting
         // the FK) must not leave a live blueprint without its source file.
-        StoredFileCleanup.deleteAfterCommit(java.util.List.of(uploadStorage.resolve(blueprint.getFileName())));
+        StoredFileCleanup.deleteAfterCommit(files, java.util.List.of(uploadStorage.key(blueprint.getFileName())));
     }
 
     private static String joinKeywords(List<String> keywords) {
@@ -191,14 +201,6 @@ public class DocBlueprintUseCase {
         int dot = fileName.lastIndexOf('.');
         String base = dot > 0 ? fileName.substring(0, dot) : fileName;
         return base.isBlank() ? "Blueprint" : base;
-    }
-
-    private static void deleteFileQuietly(Path path) {
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException e) {
-            log.warn("Could not delete stored file {}", path, e);
-        }
     }
 
     public record StoredFile(Path path, String downloadName) {

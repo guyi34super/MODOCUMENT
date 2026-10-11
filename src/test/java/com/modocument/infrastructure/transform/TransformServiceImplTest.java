@@ -18,7 +18,7 @@ import com.modocument.domain.entity.TemplateFields;
 import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.ai.AiCircuitBreaker;
 import com.modocument.infrastructure.ai.AiPreflight;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.store.LocalFileStore;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.prompt.PromptFactory;
 import com.modocument.infrastructure.transform.code.ExtractionCorpus;
@@ -72,7 +72,7 @@ class TransformServiceImplTest {
         AiFilesService ai = mock(AiFilesService.class);
         DocumentParser parser = mock(DocumentParser.class);
         TransformServiceImpl service = new TransformServiceImpl(prompts, ai, parser,
-                new UploadStorage(new StorageProperties(tempDir.toString())),
+                new UploadStorage(new LocalFileStore(tempDir)),
                 new PiiTokenizer(new PrivacyProperties()));
 
         for (String name : new String[] {"../secrets.yml", "a/../../secrets.yml",
@@ -91,7 +91,7 @@ class TransformServiceImplTest {
     void missingUploadIsNotFoundNotAnError() {
         TransformServiceImpl service = new TransformServiceImpl(
                 mock(PromptFactory.class), mock(AiFilesService.class), mock(DocumentParser.class),
-                new UploadStorage(new StorageProperties(tempDir.toString())),
+                new UploadStorage(new LocalFileStore(tempDir)),
                 new PiiTokenizer(new PrivacyProperties()));
 
         assertThatThrownBy(() -> service.transform(request("nope.csv"), "[]"))
@@ -131,7 +131,7 @@ class TransformServiceImplTest {
         when(strategy.buildPrompt(any())).thenReturn("prompt");
         when(prompts.getPrompt(any())).thenReturn(strategy);
         return new TransformServiceImpl(prompts, ai, parser,
-                new UploadStorage(new StorageProperties(tempDir.toString())),
+                new UploadStorage(new LocalFileStore(tempDir)),
                 new PiiTokenizer(new PrivacyProperties()),
                 new CodeParseSupport(ExtractionCorpus.extractor(), new MappingProperties(), null),
                 new ExtractionModeResolver(settings),

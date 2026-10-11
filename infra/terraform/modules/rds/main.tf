@@ -92,8 +92,8 @@ resource "aws_db_instance" "this" {
   # touches Terraform state as a variable (SEC-018 posture).
   manage_master_user_password = true
 
-  multi_az          = true # SEC-004
-  storage_encrypted = true # SEC-028 / C4
+  multi_az          = var.multi_az # SEC-004 (production); staging single-AZ (ws29)
+  storage_encrypted = true         # SEC-028 / C4
   kms_key_id        = aws_kms_key.db.arn
 
   allocated_storage     = var.allocated_storage_gb

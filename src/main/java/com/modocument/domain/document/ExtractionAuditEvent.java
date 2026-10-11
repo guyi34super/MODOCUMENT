@@ -2,8 +2,6 @@ package com.modocument.domain.document;
 
 import com.modocument.domain.model.AuditAction;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
@@ -12,12 +10,10 @@ import java.time.Instant;
  * block, rate-limit wait), retry, LLM call, and bridge/export is recorded so
  * an extraction run is fully accountable after the fact.
  */
-@Document(collection = "extractionAudit")
 public class ExtractionAuditEvent {
 
     @Id
     private String id;
-    @Indexed
     private String jobId;
     private String sourceId;
     private AuditAction action;

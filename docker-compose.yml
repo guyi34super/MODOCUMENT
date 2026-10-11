@@ -26,7 +26,13 @@ services:
         condition: service_healthy
 
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # ws29: the default image ships no Mongo/Kafka client. For scale mode
+        # (APP_PROFILES=scale + --profile extraction) build it with
+        # APP_MAVEN_PROFILES=scale as well.
+        MAVEN_PROFILES: ${APP_MAVEN_PROFILES:-}
     # Runs as uid 10001 from the first instruction (Dockerfile USER; SUP-S04)
     # and needs no capabilities: drop them all, forbid privilege regain.
     cap_drop: [ALL]

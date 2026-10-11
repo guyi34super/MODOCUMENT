@@ -421,3 +421,122 @@ add it. **Do not add it earlier**: before v1.1.0 is a dated release, the
   continue while it scans. The table is small (connections per bank).
 - Also add the item to that release's changelog ("Changed: the connection →
   agent foreign key is validated").
+
+## 14. v1.2.0 (optimization round, ws29): file store, image, right-sizing
+
+### 14a. What changes for operators
+
+| Area | Before | v1.2.0 |
+|---|---|---|
+| Files (uploads, export copies, doc-creation assets and generated documents) | container disk under `wwwroot/` — lost on every task replacement, not shared between tasks | S3 bucket per environment (`modules/file-store`), selected by `MODOCUMENT_STORAGE_BACKEND=s3`; local disk stays the default elsewhere |
+| App jar | 369 MB (Playwright driver bundle 198 MB, Mongo + Kafka clients) | 157 MB: Playwright removed, Mongo/Kafka only in a `-Pscale` build |
+| Image | one 369 MB jar layer per release | layered jar (dependencies ≈ 148 MB, application ≈ 2.4 MB) + AppCDS archive; Tesseract installed (OCR fallback on) |
+| JVM | `java -jar`, JVM defaults (25 % heap) | `-XX:MaxRAMPercentage=70 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError` + `-XX:SharedArchiveFile` |
+| ECS task | 2048 CPU / 6144 MiB, one per m6i.large; app health-check start period 90 s, service grace 120 s | 1024 / 3072 (app 896 / 2816 MiB, frontend 128 / 256 MiB), two per node; start period 150 s, grace 180 s (Spring starts on about one vCPU now) |
+| Logs | 400 days everywhere | app 90 days, VPC flow logs 30 days, CloudTrail log group 400 days (unchanged) |
+| Staging | 2 NAT gateways, Multi-AZ RDS | 1 NAT gateway, single-AZ RDS |
+
+Terraform variables and defaults: [infra/terraform/README.md](../../infra/terraform/README.md)
+("Optimization round").
+
+### 14b. File store rollout (per environment, staging first)
+
+1. `terraform apply` the environment. It creates the bucket
+   `<name>-files-<account>` (own CMK with rotation, versioning, all
+   public-access blocks, ACLs disabled, TLS-only and SSE-KMS-only bucket
+   policy, lifecycle), the task-role policy (get/put/delete/list on that
+   bucket, `kms:GenerateDataKey`/`Decrypt` on that key via S3 only) and a new
+   task-definition revision with `MODOCUMENT_STORAGE_BACKEND=s3`,
+   `MODOCUMENT_STORAGE_S3_BUCKET`, `MODOCUMENT_STORAGE_S3_REGION`,
+   `MODOCUMENT_STORAGE_S3_KMS_KEY_ID`. S3 traffic uses the existing S3
+   gateway endpoint.
+2. Deploy v1.2.0 with `release.yml` / `deploy.yml` as usual: CI copies the
+   newest revision (the one with the new variables) and pins the image.
+3. Smoke test on staging: upload a file, parse it, export it, create and
+   generate a document from a blueprint, download it, then check the bucket
+   (`aws s3 ls s3://<bucket>/uploads/` and `exports/`). Replace the task
+   (`aws ecs update-service --force-new-deployment`) and download again: the
+   file must still be there.
+4. **Existing files are not migrated.** On ECS they lived on the task's disk
+   and were already lost whenever a task was replaced. A Docker-host install
+   that switches to S3 can copy its volume once, before switching:
+   `aws s3 cp --recursive wwwroot/ s3://<bucket>/ --sse aws:kms --sse-kms-key-id <key-arn>`
+   (same key layout: `uploads/…`, `exports/…`).
+5. Retention: the app's daily `RetentionPurgeJob` still deletes customer
+   files after 30 days. The bucket keeps a deleted or overwritten version for
+   7 days (`noncurrent_version_days`), then removes it. `exports/` objects
+   also expire after 30 days (backstop). `uploads/` has **no** storage-side
+   expiry (`uploads_expiry_days = 0`): it also holds doc-creation blueprints,
+   which are configuration and are never purged.
+
+Settings: `modocument.storage.backend` (`local`|`s3`), `modocument.storage.s3.{bucket,
+prefix,region,kms-key-id,temp-cache-mb,endpoint,path-style}` — env
+`MODOCUMENT_STORAGE_*`. An unknown backend or `s3` without a bucket stops the
+app at startup. Libraries that need a file (POI, PDFBox, LibreOffice) get a
+copy from a bounded LRU cache under `java.io.tmpdir` (`temp-cache-mb`,
+default 512), re-checked against the object's ETag on every use.
+
+### 14c. Image and JVM
+
+- **Layers.** The build stage runs `java -Djarmode=tools -jar app.jar
+  extract --layers` (without `--launcher`: a plain `app.jar` + `lib/` keeps
+  every class on the JVM class path, which AppCDS needs) and the runtime
+  stage copies `dependencies`, `spring-boot-loader`, `snapshot-dependencies`
+  and `application` separately. A release that changes only code ships the
+  2.4 MB application layer and the CDS archive.
+- **AppCDS.** The image build starts the context once on the in-memory H2
+  `test` profile with `spring.context.exit=onRefresh` and dumps the loaded
+  classes to `/app/app.jsa` (134 MB, ≈ 36 MB compressed). Measured in the dev
+  sandbox (a loaded machine, so absolute numbers are high): context start to
+  refresh 53–60 s without the archive, 40–44 s with it (≈ 25 % faster).
+  `MODOCUMENT_CDS=off` disables it; a missing archive is skipped, a
+  mismatched one is ignored by the JVM with a warning.
+- **JVM flags.** `docker-entrypoint.sh` puts the defaults FIRST in
+  `JAVA_TOOL_OPTIONS`, so a value the task already sets there wins, and
+  `JAVA_OPTS` (command line) beats both. Heap = 70 % of the container limit
+  (app container 2816 MiB → ≈ 1.9 GiB heap; before: 25 % of 6144 MiB).
+- **OCR.** `tesseract-ocr` + `tesseract-ocr-eng` (≈ 21 MB installed);
+  `TESSDATA_PREFIX=/usr/share/tessdata` (a link to the package's tessdata).
+  tess4j loads `libtesseract.so.5` through JNA without a `-dev` symlink —
+  checked on Ubuntu 24.04 (the base image's release) with the same packages:
+  `OcrServiceTest` recognises rendered text. The image build fails if the
+  traineddata or the library is missing. Check on a Docker host:
+  `docker run --rm --entrypoint sh <image> -c 'ls $TESSDATA_PREFIX/eng.traineddata'`;
+  at runtime the first scanned PDF logs `Tesseract OCR available`.
+- **Maven cache.** Both Dockerfiles mount `/root/.m2` as a BuildKit cache
+  (`id=modocument-m2`); `release.yml` adds `--cache-from/--cache-to
+  type=gha` per image.
+- **Scale mode** (Mongo + Kafka) needs `mvn -Pscale` (compose:
+  `APP_MAVEN_PROFILES=scale`, image build arg `MAVEN_PROFILES=scale`). A
+  default build started with `extraction.store=mongo` or
+  `extraction.kafka.enabled=true` stops with a message saying so.
+- **JavaScript rendering** for web extraction (Playwright) is gone:
+  `renderJs` sources are fetched as plain HTTP, which is what the container
+  always did.
+
+Image size estimate (no Docker daemon in the dev sandbox, so from the package
+and layer sizes): jar layers −219 MB, CDS archive +134 MB, Tesseract
++21 MB → about −64 MB uncompressed; compressed (pull) about −166 MB
+(jar 353 → 143 MB, CDS 36 MB, Tesseract ≈ 9 MB).
+
+### 14d. Monthly cost delta (estimate, af-south-1 on-demand list prices)
+
+| | Staging | Production |
+|---|---|---|
+| NAT gateways | −1 gateway + its public IPv4 ≈ **−$47** | — (2 kept) |
+| RDS | single-AZ db.t4g.medium + 100 GB ≈ **−$80** | — (Multi-AZ kept) |
+| CloudWatch log storage (steady state) | ≈ −$3 | ≈ −$15 to −$40 (flow logs 400 → 30 days, app 400 → 90 days; depends on volume) |
+| S3 file store + CMK | ≈ +$2 | ≈ +$3 to +$6 |
+| ECS nodes | $0 at the minimum (1 node) | $0 at the minimum (2 nodes); under sustained load the same traffic needs half the nodes (≈ −$88 per m6i.large not started) |
+| **Total** | **≈ −$128/month** | **≈ −$10 to −$35/month** at baseline, up to ≈ −$200 during scale-out |
+
+### 14e. Verified here / still to verify
+
+Verified in the dev sandbox: `mvn -B verify` (H2), `mvn -B verify
+-Ppostgres-it` (shared PostgreSQL), `mvn -Pscale` (compile + the collection
+mapping test), the agent build, `terraform fmt -check`/`validate` for both
+environments, `actionlint`, the AppCDS training run and timing against the
+extracted layers, Tesseract via tess4j on Ubuntu 24.04. Not verified (no
+Docker daemon, no AWS): the image build itself, the S3 contract suite
+against MinIO (CI job `storage-s3`), `terraform plan/apply`, the gha build
+cache.

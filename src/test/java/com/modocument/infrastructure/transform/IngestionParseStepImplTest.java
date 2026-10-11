@@ -131,7 +131,7 @@ class IngestionParseStepImplTest {
         for (String name : List.of("book.xlsx", "book.xlsm", "people.csv", "notes.txt", "report.pdf")) {
             Path file = tempDir.resolve(name);
             Files.writeString(file, "x");
-            when(uploadStorage.resolve(name)).thenReturn(file);
+            when(uploadStorage.localCopy(name)).thenReturn(file);
         }
 
         PromptStrategy strategy = mock(PromptStrategy.class);
@@ -613,7 +613,7 @@ class IngestionParseStepImplTest {
 
     private ParseContext cp1252Context() throws IOException {
         Path csv = ExtractionCorpus.generate("cp1252-customers.csv", tempDir);
-        when(uploadStorage.resolve("cp1252-customers.csv")).thenReturn(csv);
+        when(uploadStorage.localCopy("cp1252-customers.csv")).thenReturn(csv);
         UncheckedIOException utf8Refused = new UncheckedIOException(
                 "Could not read file", new MalformedInputException(1));
         when(documentParser.extract(csv)).thenThrow(utf8Refused);
@@ -628,8 +628,8 @@ class IngestionParseStepImplTest {
     // ---- still fatal in every mode (AC-EXT-06) --------------------------------------
 
     @Test
-    void aMissingFileIsFatalInEveryMode() {
-        when(uploadStorage.resolve("gone.csv")).thenReturn(tempDir.resolve("gone.csv"));
+    void aMissingFileIsFatalInEveryMode() throws IOException {
+        when(uploadStorage.localCopy("gone.csv")).thenThrow(new java.nio.file.NoSuchFileException("uploads/gone.csv"));
         for (ExtractionMode mode : ExtractionMode.values()) {
             assertThatThrownBy(() -> step.parse(new ParseContext("gone.csv", 1, 1, List.of(),
                     null, mode)))

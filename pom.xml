@@ -20,6 +20,9 @@
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>1.0.1</spring-ai.version>
+        <aws-sdk.version>2.55.5</aws-sdk.version>
+        <!-- see maven-surefire-plugin below -->
+        <skipUTs>false</skipUTs>
     </properties>
 
     <dependencyManagement>
@@ -28,6 +31,13 @@
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
                 <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws-sdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -165,30 +175,44 @@
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
 
-        <!-- Data extraction: MongoDB stores raw/processed records + the task
-             queue; Kafka distributes work across instances. Both degrade to
-             in-memory adapters when not configured (local/test profiles). -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-mongodb</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
-        </dependency>
+        <!-- Data extraction: the default build keeps extraction in the
+             primary database (extraction.store=sql) or memory. MongoDB and
+             Kafka (scale mode) live in the `scale` profile below (ws29) so
+             the production jar carries neither driver. -->
 
         <!-- Data extraction web connector: jsoup parses fetched HTML (tables,
-             links, text); Playwright renders JS-heavy pages when its browsers
-             are installed, degrading to the plain HTTP fetcher otherwise. -->
+             links, text) fetched over plain HTTP. JavaScript rendering
+             (Playwright, ~200 MB of bundled driver) was removed in ws29;
+             renderJs sources fall back to the plain fetch. -->
         <dependency>
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
             <version>1.18.3</version>
         </dependency>
+
+        <!-- File store (ws29): uploads, exports and doc assets on S3 when
+             modocument.storage.backend=s3 (ECS). Sync Apache HTTP client
+             only: the SDK's default Netty async client is excluded. -->
         <dependency>
-            <groupId>com.microsoft.playwright</groupId>
-            <artifactId>playwright</artifactId>
-            <version>1.49.0</version>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>apache-client</artifactId>
+            <exclusions>
+                <!-- commons-logging is bridged by spring-jcl -->
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- File parsing: xlsx / csv / pdf / doc -->
@@ -211,6 +235,14 @@
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>3.0.3</version>
+            <exclusions>
+                <!-- ws29: spring-jcl already provides the commons-logging
+                     API; the second copy only made Spring warn at startup. -->
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- OCR fallback for image-only PDFs; degrades gracefully when the
              native tesseract library is unavailable -->
@@ -349,6 +381,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <!-- -DskipUTs=true skips ONLY the unit run (surefire) while
+                         failsafe still runs: CI's backend-postgres and
+                         storage-s3 jobs run their IT suites without repeating
+                         the unit suite the build-and-test job already ran. -->
+                    <skip>${skipUTs}</skip>
                     <!-- The PostgreSQL integration classes (*PgIT) belong to
                          failsafe in the postgres-it profile, never to the
                          default H2 unit run. -->
@@ -358,36 +395,154 @@
                     </excludes>
                 </configuration>
             </plugin>
-            <!-- Code coverage (ws19): the agent instruments the unit run and
-                 `report` renders target/site/jacoco/ at verify. Deliberately
-                 NO <check> threshold gate yet — the baseline must be
-                 established and agreed first (see
-                 docs/security/branch-protection.md); CI prints the summary
-                 from jacoco.csv so the number is visible on every run. -->
-            <plugin>
-                <groupId>org.jacoco</groupId>
-                <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.13</version>
-                <executions>
-                    <execution>
-                        <id>jacoco-prepare-agent</id>
-                        <goals>
-                            <goal>prepare-agent</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>jacoco-report</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>report</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
         </plugins>
     </build>
 
     <profiles>
+        <!-- mvn -B verify -Pcoverage — code coverage (ws19; a profile since
+             ws29 so local runs and the IT jobs don't pay for the agent): the
+             agent instruments the unit run and `report` renders
+             target/site/jacoco/ at verify. CI's build-and-test job enables
+             it. Deliberately NO <check> threshold gate yet — the baseline
+             must be established and agreed first (see
+             docs/security/branch-protection.md); CI prints the summary from
+             jacoco.csv so the number is visible on every run. -->
+        <profile>
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <version>0.8.13</version>
+                        <executions>
+                            <execution>
+                                <id>jacoco-prepare-agent</id>
+                                <goals>
+                                    <goal>prepare-agent</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>jacoco-report</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- mvn -B -Pscale package — scale-mode extraction (ws29): MongoDB
+             store + Kafka wake-up bus, for SPRING_PROFILES_ACTIVE=scale. The
+             default (production) jar ships neither driver; the Mongo/Kafka
+             adapters live in src/scale/java and only compile here. The base
+             application.yml excludes the Mongo/Kafka auto-configuration and
+             application-scale.yml re-enables it. A default jar started with
+             the scale profile fails fast (ScaleModeGuard). -->
+        <profile>
+            <id>scale</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-data-mongodb</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>org.springframework.kafka</groupId>
+                    <artifactId>spring-kafka</artifactId>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>scale-sources</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>add-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/scale/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>scale-test-sources</id>
+                                <phase>generate-test-sources</phase>
+                                <goals>
+                                    <goal>add-test-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/scale-test/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- mvn -B verify -Ps3-it -DskipUTs=true — the FileStore contract
+             suite (ws29, src/s3-it/java/**/*S3IT.java) against S3FileStore
+             on a Testcontainers MinIO. Needs Docker (CI storage-s3 job). -->
+        <profile>
+            <id>s3-it</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.testcontainers</groupId>
+                    <artifactId>minio</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>s3-it-sources</id>
+                                <phase>generate-test-sources</phase>
+                                <goals>
+                                    <goal>add-test-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/s3-it/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/*S3IT.java</include>
+                            </includes>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
         <!-- mvn -B verify -Ppostgres-it — runs the real-PostgreSQL suite
              (Flyway/RLS/tenant-isolation gate) via failsafe, on an external
              server when MODOCUMENT_IT_JDBC_URL (+ MODOCUMENT_IT_SUPERUSER /
