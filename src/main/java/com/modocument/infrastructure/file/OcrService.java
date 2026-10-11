@@ -3,6 +3,7 @@ package com.modocument.infrastructure.file;
 import net.sourceforge.tess4j.Tesseract;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.awt.image.BufferedImage;
@@ -29,11 +30,8 @@ public class OcrService {
     private volatile boolean unavailable;
     private volatile Boolean probed;
 
-    public OcrService() {
-        this(System.getenv("TESSDATA_PREFIX"));
-    }
-
-    OcrService(String tessdataPrefix) {
+    /** {@code TESSDATA_PREFIX} reaches Spring as a property from the environment (the image sets it). */
+    public OcrService(@Value("${TESSDATA_PREFIX:}") String tessdataPrefix) {
         this.datapath = tessdataPrefix == null || tessdataPrefix.isBlank() ? "tessdata" : tessdataPrefix.strip();
     }
 

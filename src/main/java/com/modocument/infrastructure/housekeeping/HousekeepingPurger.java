@@ -105,7 +105,7 @@ public class HousekeepingPurger {
                     .setParameter("cutoff", cutoff)
                     .setMaxResults(properties.getBatchSize())
                     .getResultList();
-            return deleteByIds("OutboundDelivery", bankId, ids);
+            return deleteByIds(IdPurge.OUTBOUND_DELIVERY, bankId, ids);
         });
     }
 
@@ -141,7 +141,7 @@ public class HousekeepingPurger {
                     .setParameter("bankId", bankId)
                     .setParameter("ids", ids)
                     .executeUpdate();
-            int runs = deleteByIds("IntegrationRun", bankId, ids);
+            int runs = deleteByIds(IdPurge.INTEGRATION_RUN, bankId, ids);
             totals[0] += runs;
             return runs;
         });
@@ -166,7 +166,7 @@ public class HousekeepingPurger {
                     .setParameter("pending", DeliveryStatus.PENDING)
                     .setMaxResults(properties.getBatchSize())
                     .getResultList();
-            return deleteByIds("IntegrationEvent", bankId, ids);
+            return deleteByIds(IdPurge.INTEGRATION_EVENT, bankId, ids);
         });
     }
 
@@ -191,12 +191,24 @@ public class HousekeepingPurger {
 
     // ------------------------------------------------------------ helpers
 
-    private int deleteByIds(String entity, int bankId, List<Long> ids) {
+    /** The tables purged by id, each with its own fixed JPQL (no query text is built at runtime). */
+    private enum IdPurge {
+        OUTBOUND_DELIVERY("delete from OutboundDelivery x where x.bankId = :bankId and x.id in :ids"),
+        INTEGRATION_RUN("delete from IntegrationRun x where x.bankId = :bankId and x.id in :ids"),
+        INTEGRATION_EVENT("delete from IntegrationEvent x where x.bankId = :bankId and x.id in :ids");
+
+        private final String jpql;
+
+        IdPurge(String jpql) {
+            this.jpql = jpql;
+        }
+    }
+
+    private int deleteByIds(IdPurge purge, int bankId, List<Long> ids) {
         if (ids.isEmpty()) {
             return 0;
         }
-        return entityManager.createQuery("delete from " + entity
-                        + " x where x.bankId = :bankId and x.id in :ids")
+        return entityManager.createQuery(purge.jpql)
                 .setParameter("bankId", bankId)
                 .setParameter("ids", ids)
                 .executeUpdate();
