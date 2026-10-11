@@ -142,6 +142,19 @@ All notable changes to MoDocument are recorded here. The format follows
   pages as plain HTML, as the image always did; the "Render JavaScript" option is shown as
   unavailable.
 
+### Fixed
+- `PUT /api/ingestion/jobs/{id}/mapping` (the manual mapping editor) writes one
+  `INGESTION_REMAPPED` audit row (source `MANUAL`, mapped column count, no cell values) (BUG-10).
+- `POST /api/ingestion/jobs/{id}/chat-edit` writes one `INGESTION_ROWS_EDITED` audit row with
+  the row and changed-row counts, never cell values, like `PUT …/rows` (BUG-11).
+- A stored-object delete that fails after a retention purge, a DSR erase or a job deletion is
+  no longer lost: 3 attempts in the call, then the key is queued in the bank-scoped
+  `PendingFileDelete` table (V290) and retried every 5 minutes with backoff until the store
+  confirms it (`modocument.retention.file-delete-retry.*`) (BUG-12).
+- Alert rule `access-denied-burst` counts refusals, not aggregated rows: the windowed sweep sums
+  the `count` of each `ACCESS_DENIED` row, so a burst inside one minute reaches the threshold
+  (OBS-01).
+
 ### Security
 - SSRF: the extraction REST connector and the web crawler no longer let the HTTP client follow
   redirects. Each hop is re-checked against the egress policy, and credentials never follow a

@@ -444,7 +444,12 @@ public class IngestionJobUseCase {
         clampWizardStep(job);
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
-        return jobs.save(job);
+        IngestionJob remapped = jobs.save(job);
+        if (audit != null) { // BUG-10: the manual mapping editor is a remap too; no cell values
+            audit.success(AuditActions.INGESTION_REMAPPED, "IngestionJob", String.valueOf(jobId),
+                    null, Map.of("source", "MANUAL", "mappedColumns", claimedBy.size()));
+        }
+        return remapped;
     }
 
     /** Persists directly-edited row values; downstream validation/export checkpoints are cleared. */
@@ -484,8 +489,9 @@ public class IngestionJobUseCase {
         return edited;
     }
 
-    private static int changedRows(List<Map<String, String>> before,
-                                   List<Map<String, String>> after) {
+    /** Rows whose values differ between two tables (index-aligned); counts only, never values. */
+    static int changedRows(List<Map<String, String>> before,
+                           List<Map<String, String>> after) {
         int changed = 0;
         for (int i = 0; i < after.size(); i++) {
             if (i >= before.size() || !after.get(i).equals(before.get(i))) {

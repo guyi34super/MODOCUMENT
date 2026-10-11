@@ -1,5 +1,8 @@
 package com.modocument.infrastructure.alerting;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.application.audit.AuditActions;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.TypedQuery;
@@ -7,7 +10,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * Read side of the WINDOWED rules: the audit rows a rule matches within its
@@ -24,6 +30,13 @@ import java.util.List;
  * of the window instead of scanning the append-only table, and only rows
  * {@link AlertRule#matches} would keep come back.
  *
+ * <p>Aggregated rows (OBS-01): an {@code ACCESS_DENIED} row stands for
+ * {@code newValues.count} refusals (the recorder writes at most an opening
+ * row and one flushed row per actor-or-ip per minute).
+ * {@link #aggregatedCounts} reads that one number for those rows — and
+ * nothing else of their values — so a windowed rule counts refusals, not
+ * minutes with refusals.
+ *
  * <p>Tenancy: the minute sweep calls this as SYSTEM (cross-bank, by design —
  * a brute-force burst is detected wherever it lands); every resulting alert
  * is then recorded under its own bank. Registered in the
@@ -34,6 +47,11 @@ public class AuditWindowReader {
 
     /** Safety cap per rule per sweep; hitting it is logged by the sweep. */
     static final int MAX_ROWS = 10_000;
+
+    /** Ids per IN-list when reading the counts of aggregated rows. */
+    private static final int ID_CHUNK = 500;
+
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -80,5 +98,46 @@ public class AuditWindowReader {
             query.setParameter("roles", rule.actorRoles());
         }
         return query.getResultList();
+    }
+
+    /**
+     * OBS-01: the refusal count each aggregated {@code ACCESS_DENIED} row of
+     * {@code rows} stands for ({@code newValues.count}, at least 1), by audit
+     * event id. Rows of other actions are absent (they weigh 1). Only the
+     * {@code count} number is taken from the JSON; no other value leaves
+     * this method.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, Integer> aggregatedCounts(List<AuditFacts> rows) {
+        List<UUID> ids = rows.stream()
+                .filter(row -> AuditActions.ACCESS_DENIED.equals(row.action()))
+                .map(AuditFacts::auditEventId)
+                .toList();
+        Map<UUID, Integer> counts = new HashMap<>();
+        for (int from = 0; from < ids.size(); from += ID_CHUNK) {
+            List<UUID> chunk = ids.subList(from, Math.min(ids.size(), from + ID_CHUNK));
+            List<Object[]> values = entityManager.createQuery(
+                            "select e.auditEventId, e.newValues from AuditEvent e"
+                                    + " where e.auditEventId in :ids", Object[].class)
+                    .setParameter("ids", chunk)
+                    .getResultList();
+            for (Object[] value : values) {
+                counts.put((UUID) value[0], countOf(value[1]));
+            }
+        }
+        return counts;
+    }
+
+    /** {@code newValues.count} of an aggregated row; 1 when absent or unreadable. */
+    static int countOf(Object newValues) {
+        if (newValues == null) {
+            return 1;
+        }
+        try {
+            JsonNode count = JSON.readTree(newValues.toString()).path("count");
+            return count.canConvertToInt() && count.asInt() > 0 ? count.asInt() : 1;
+        } catch (Exception e) {
+            return 1;
+        }
     }
 }

@@ -76,7 +76,10 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     "integrationconnection", "integrationflow", "integrationrun",
                     "integrationrunevent", "outbounddelivery", "integrationevent",
                     // V286 (ws28): a bank's cached AI parse results.
-                    "airesultcache");
+                    "airesultcache",
+                    // V290 (ws29, BUG-12): a bank's failed stored-object
+                    // deletes waiting for a retry.
+                    "pendingfiledelete");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

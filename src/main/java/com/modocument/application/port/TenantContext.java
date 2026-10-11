@@ -163,6 +163,12 @@ import java.util.concurrent.Callable;
  *       {@code runAs(bank)} per bank so each bank's purge and its
  *       RETENTION_PURGE_COMPLETED audit event run strictly inside that
  *       tenant.</li>
+ *   <li>{@code PendingFileDeleteSweeper#runOnce} — ws29 (BUG-12) retry of
+ *       stored-object deletes that failed after a retention purge, DSR erase
+ *       or job deletion, every 5 minutes: {@code runAsSystem} for the
+ *       cross-bank read that lists ONLY the ids of banks with a due
+ *       PendingFileDelete row, then {@code runAs(bank)} per bank for that
+ *       bank's retries and row deletes (store keys only, no content).</li>
  *   <li>{@code HousekeepingJob#runOnce} — the ws27 daily housekeeping
  *       (token, integration-history and idempotency-key cleanup), the same
  *       shape as the retention sweep: {@code runAsSystem} to list the

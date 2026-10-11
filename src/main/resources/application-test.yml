@@ -61,6 +61,10 @@ modocument:
     # No scheduled purge racing deterministic tests; the ws14 retention gate
     # tests re-enable it (and drive the job explicitly) via test properties.
     enabled: false
+    # ws29: no scheduled retry of failed file deletes racing the suite; the
+    # tests drive PendingFileDeleteSweeper.runOnce() directly.
+    file-delete-retry:
+      enabled: false
   housekeeping:
     # ws27: no scheduled housekeeping racing deterministic tests; the
     # housekeeping tests drive HousekeepingJob/HousekeepingPurger directly.

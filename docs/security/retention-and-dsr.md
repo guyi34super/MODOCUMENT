@@ -57,6 +57,27 @@ settings (the yml flag above still gates the schedule).
   removes the job row, its export archive copies and — when no other job
   references it — the uploaded file and its row, audited as `JOB_DELETED`.
 
+### Failed object deletes are retried, not lost (ws29, v1.2.0, BUG-12)
+
+The retention purge, the DSR erase and a job deletion delete their rows
+first and the stored objects (local disk or S3) only after the commit
+(`AfterCommitFileDeleter`). A failed object delete is retried, never
+dropped:
+
+1. each key gets 3 attempts in the call (100 ms and 500 ms apart), which
+   covers a short S3 `503 Slow Down` blip; once one key has used them all,
+   the rest of the batch gets one attempt each, so an outage does not stall
+   a large purge;
+2. a key that still fails is written to the bank-scoped `PendingFileDelete`
+   table (V290: store key, attempts, next attempt, last error — no
+   content), and `PendingFileDeleteSweeper` retries the due rows every
+   5 minutes (`modocument.retention.file-delete-retry.interval-ms`;
+   `modocument.retention.file-delete-retry.enabled`, off in the test
+   profile), with backoff from 5 minutes doubling to 6 hours. The row goes
+   only when the store confirms the delete, so the key survives restarts,
+   a throttling storm or a missing `s3:DeleteObject` grant that is fixed
+   later. From the 8th failed retry the log says so at ERROR.
+
 ### Operational housekeeping (ws27, v1.2.0)
 
 A second daily job, `HousekeepingJob` (`modocument.housekeeping.cron`,
