@@ -94,16 +94,17 @@ class AgentEndToEndTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rows = (List<Map<String, Object>>) page.get("records");
         assertThat(rows).hasSize(3);
-        assertThat(rows.get(0)).containsKeys("ID", "NAME", "UPDATED_AT").doesNotContainKey("SECRET_NOTE");
+        assertThat(rows.get(0)).containsKeys("id", "name", "updated_at").doesNotContainKey("secret_note");
         assertThat(page.get("last")).isEqualTo(true);
-        assertThat(page.get("nextCursor")).isEqualTo("ts:2026-10-03T10:00");
+        assertThat(page.get("nextCursor")).isEqualTo("T:2026-10-03T10:00");
         assertThat(cloud.results).singleElement().satisfies(result -> {
             assertThat(result).containsEntry("runId", 41L).containsEntry("success", true)
                     .containsEntry("recordsIn", 3);
         });
         assertThat(HealthFile.isFresh(agent.stateDir)).isTrue();
 
-        // The next read resumes after the watermark.
+        // The next read resumes after the watermark (a cursor an agent before
+        // 1.2.0 stored, typed "ts:", still binds as a timestamp).
         cloud.queue(Map.of("runId", 42, "connectionId", 12, "type", "DATABASE", "operation", "READ",
                 "config", Map.of("vendor", "POSTGRESQL", "host", "db.bank.local", "database", "core"),
                 "secretRef", "core-db", "spec", Map.of("table", "v_customers", "columns", List.of("id"),

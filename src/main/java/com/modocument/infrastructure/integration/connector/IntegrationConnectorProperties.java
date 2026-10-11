@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.integration.connector;
 
+import com.modocument.connector.core.support.ConnectorLimits;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;

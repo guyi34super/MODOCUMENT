@@ -1,4 +1,4 @@
-package com.modocument.infrastructure.integration.connector;
+package com.modocument.connector.core.support;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
 
 /**
  * Typed, validating access to a flow's source/target spec and a
- * connection's config (ws25). Every refusal is an IllegalArgumentException
+ * connection's config (ws25), the same on the server and in the agent. Every refusal is an IllegalArgumentException
  * whose message is safe to show the admin (it names the key, never a
  * secret).
  */
@@ -133,22 +133,24 @@ public final class Specs {
             path = path.substring(1);
         }
         if (path.startsWith("/") || !RELATIVE_PATH.matcher(path).matches()) {
-            throw new IllegalArgumentException(what + " must be a relative path of letters, "
-                    + "digits and _-.~/ only.");
+            throw new IllegalArgumentException(what + " is not a plain path: it must be a relative "
+                    + "path of letters, digits and _-.~/ only.");
         }
         for (String segment : path.split("/")) {
             if (segment.equals("..") || segment.equals(".")) {
-                throw new IllegalArgumentException(what + " must not contain '.' or '..' segments.");
+                throw new IllegalArgumentException(what + " is not a plain path: it must not contain "
+                        + "'.' or '..' segments.");
             }
         }
         if (path.contains("//")) {
-            throw new IllegalArgumentException(what + " must not contain empty segments.");
+            throw new IllegalArgumentException(what + " is not a plain path: it must not contain "
+                    + "empty segments.");
         }
         return path;
     }
 
     /** A key/name echoed in an error message: printable and short. */
-    static String safe(String value) {
+    public static String safe(String value) {
         if (value == null) {
             return "null";
         }

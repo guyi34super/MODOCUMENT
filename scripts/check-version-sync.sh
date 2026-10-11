@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Version single source check (ws24). Fails when the release version differs
-# between pom.xml, agent/pom.xml (ws26 Connector Agent, when present),
+# between pom.xml, agent/pom.xml (ws26 Connector Agent) and
+# connector-core/pom.xml (the shared connector library; each when present),
 # frontend/package.json (+ package-lock.json) and the newest released
 # CHANGELOG.md heading, or when the changelog is malformed. Given a
 # release tag (vX.Y.Z or vX.Y.Z-rc.N), the tag must name the same X.Y.Z.
@@ -48,14 +49,17 @@ lock_vs="$(package_lock_versions "$lock")"
 if ! [[ "$pom_v" =~ $SEMVER_RE ]]; then
   fail "pom.xml project version '$pom_v' is not a release version X.Y.Z"
 fi
-agent_pom="$root/agent/pom.xml"
-agent_v=""
-if [ -f "$agent_pom" ]; then
-  agent_v="$(pom_version "$agent_pom")"
-  if [ "$agent_v" != "$pom_v" ]; then
-    fail "agent/pom.xml version '$agent_v' != pom.xml '$pom_v' (run scripts/bump-version.sh)"
+# The standalone sibling Maven projects release with the app.
+siblings_checked=""
+for sibling in $SIBLING_POMS; do
+  if [ -f "$root/$sibling" ]; then
+    sibling_v="$(pom_version "$root/$sibling")"
+    if [ "$sibling_v" != "$pom_v" ]; then
+      fail "$sibling version '$sibling_v' != pom.xml '$pom_v' (run scripts/bump-version.sh)"
+    fi
+    siblings_checked="$siblings_checked$sibling, "
   fi
-fi
+done
 if [ "$pkg_v" != "$pom_v" ]; then
   fail "frontend/package.json version '$pkg_v' != pom.xml '$pom_v'"
 fi
@@ -113,4 +117,4 @@ if [ "$failures" -gt 0 ]; then
   echo "version-sync: FAILED ($failures problem(s))" >&2
   exit 1
 fi
-echo "version-sync: OK $pom_v (pom.xml, ${agent_v:+agent/pom.xml, }frontend/package.json, frontend/package-lock.json, CHANGELOG.md${tag:+, tag $tag})"
+echo "version-sync: OK $pom_v (pom.xml, ${siblings_checked}frontend/package.json, frontend/package-lock.json, CHANGELOG.md${tag:+, tag $tag})"

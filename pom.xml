@@ -118,9 +118,20 @@
             <version>3.5.3</version>
             <scope>runtime</scope>
         </dependency>
-        <!-- SFTP connector (ws25): Apache MINA SSHD client (Apache-2.0).
-             Compile scope: the connector pins host keys and confines paths
-             through its API. -->
+        <!-- Connector core (docs/integration/connector-sharing.md): the ONE
+             DATABASE / REST_API / SFTP / WEBHOOK implementation, shared with
+             the on-prem agent. A sibling Maven project, NOT a reactor module:
+             install it first (`mvn -B -f connector-core/pom.xml install`;
+             CI, the Dockerfile and release.yml do). Same version as this pom
+             (scripts/check-version-sync.sh). -->
+        <dependency>
+            <groupId>com.modocument</groupId>
+            <artifactId>modocument-connector-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- SFTP (ws25): Apache MINA SSHD (Apache-2.0), used through
+             connector-core; declared here to pin the version and for the
+             embedded SFTP server of the connector tests. -->
         <dependency>
             <groupId>org.apache.sshd</groupId>
             <artifactId>sshd-sftp</artifactId>

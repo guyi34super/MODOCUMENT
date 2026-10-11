@@ -11,6 +11,11 @@
 
 SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
 
+# Standalone Maven projects next to the app that carry the same version
+# (each only when present): the Connector Agent (ws26) and connector-core,
+# the connector library the app and the agent share.
+SIBLING_POMS="agent/pom.xml connector-core/pom.xml"
+
 # Prints the project version of a pom: the first <version> outside the
 # <parent> block and outside XML comments.
 pom_version() {

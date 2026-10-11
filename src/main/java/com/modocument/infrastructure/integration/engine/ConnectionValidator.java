@@ -105,7 +105,7 @@ public class ConnectionValidator {
         switch (connection.type()) {
             case REST_API -> {
                 http.baseUri(checked);
-                http.validateAuth(checked, OutboundHttp.authType(checked));
+                http.validateAuth(checked);
             }
             case WEBHOOK -> {
                 http.baseUri(checked);

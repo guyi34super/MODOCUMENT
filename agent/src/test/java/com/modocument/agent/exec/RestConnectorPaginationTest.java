@@ -8,6 +8,8 @@ import com.modocument.agent.cloud.Protocol;
 import com.modocument.agent.secrets.LocalSecrets;
 import com.modocument.agent.secrets.LocalSecrets.Secret;
 import com.modocument.agent.state.CredentialStore;
+import com.modocument.connector.core.rest.RestApiConnector;
+import com.modocument.connector.core.support.JsonFlattener;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
@@ -36,7 +38,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * the same keys as the server's REST connector and the flow builder):
  * PAGE (page/size parameters, short-page stop, maxPages), CURSOR (a dot path
  * in the answer, {@code $.} accepted) and LINK (rel="next", same origin and
- * same path only), against a JDK HttpServer "bank API" of 25 customers.
+ * same path only, anything else a SecurityException), against a JDK
+ * HttpServer "bank API" of 25 customers. The pagination is connector-core's,
+ * the same as the server's REST connector.
  */
 class RestConnectorPaginationTest {
 
@@ -45,7 +49,7 @@ class RestConnectorPaginationTest {
     private static HttpServer bank;
     private static final List<String> requests = new CopyOnWriteArrayList<>();
 
-    private final RestConnector connector = new RestConnector(MAPPER);
+    private final RestConnector connector = new RestConnector();
 
     @TempDir
     Path dir;
@@ -152,16 +156,18 @@ class RestConnectorPaginationTest {
     void aNextLinkToAnotherHostOrPathIsRefused() {
         for (String path : List.of("/api/escape", "/api/sideways")) {
             assertThatThrownBy(() -> readAll(task(path, null, Map.of("type", "LINK"))))
-                    .isInstanceOf(IllegalArgumentException.class)
+                    .isInstanceOf(SecurityException.class)
                     .hasMessageContaining("next-page link");
         }
         URI base = URI.create("http://127.0.0.1:8080");
-        assertThat(RestConnector.nextLink(base, "/api/x", "http://127.0.0.1:8080/api/x?p=2"))
+        assertThat(RestApiConnector.nextLink(base, "/api/x", "http://127.0.0.1:8080/api/x?p=2"))
                 .hasToString("http://127.0.0.1:8080/api/x?p=2");
-        assertThatThrownBy(() -> RestConnector.nextLink(base, "/api/x", "http://127.0.0.1:9090/api/x?p=2"))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> RestConnector.nextLink(base, "/api/x", "https://127.0.0.1:8080/api/x"))
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> RestApiConnector.nextLink(base, "/api/x", "http://127.0.0.1:9090/api/x?p=2"))
+                .isInstanceOf(SecurityException.class);
+        assertThatThrownBy(() -> RestApiConnector.nextLink(base, "/api/x", "https://127.0.0.1:8080/api/x"))
+                .isInstanceOf(SecurityException.class);
+        assertThatThrownBy(() -> RestApiConnector.nextLink(base, "/api/x", "http://127.0.0.1:8080/api/y?p=2"))
+                .isInstanceOf(SecurityException.class);
     }
 
     @Test
@@ -207,11 +213,15 @@ class RestConnectorPaginationTest {
 
     @Test
     void pagingHelpers() throws Exception {
-        assertThat(RestConnector.Paging.of(Map.of("type", "PAGE", "pageSize", 5000)).pageSize())
-                .isEqualTo(RestConnector.MAX_PAGE_SIZE);
-        assertThat(RestConnector.Paging.of(null).type()).isEqualTo(RestConnector.PagingType.NONE);
-        assertThat(RestConnector.at(MAPPER.readTree("{\"a\":{\"b\":1}}"), "$.a.b").asInt()).isEqualTo(1);
-        assertThat(RestConnector.at(MAPPER.readTree("{\"a\":{\"b\":1}}"), "a.c")).isNull();
+        // A page never asks for more than one records POST takes.
+        readAll(task("/api/customers", "items", Map.of("type", "PAGE", "sizeParam", "size", "pageSize", 5000)));
+        assertThat(requests).containsExactly("page=1&size=" + RestConnector.MAX_PAGE_SIZE);
+        // No pagination: one request.
+        requests.clear();
+        assertThat(readAll(task("/api/customers", "items", Map.of()))).hasSize(1);
+        assertThat(requests).containsExactly("");
+        assertThat(JsonFlattener.atPath(MAPPER.readTree("{\"a\":{\"b\":1}}"), "$.a.b").asInt()).isEqualTo(1);
+        assertThat(JsonFlattener.atPath(MAPPER.readTree("{\"a\":{\"b\":1}}"), "a.c")).isNull();
     }
 
     // ---------------------------------------------------------------- helpers

@@ -64,7 +64,8 @@ public class TaskExecutor {
             // Allow-list FIRST: no secret is even looked up for a refused task.
             connector.authorize(context, allowList);
             secret = secrets.resolve(task.secretRef());
-            context = new Connector.TaskContext(task, secret);
+            // The allow-list is asked again right before every connection.
+            context = new Connector.TaskContext(task, secret, CoreConnector.guard(allowList));
             switch (operation) {
                 case "TEST" -> {
                     connector.test(context);
@@ -106,6 +107,9 @@ public class TaskExecutor {
         int total = 0;
         for (int page = 0; page < MAX_PAGES; page++) {
             Connector.ReadPage read = connector.read(context, cursor, remaining);
+            for (String note : read.notes()) {
+                log.warn("Run {}: {}", task.runId(), note);
+            }
             List<Map<String, Object>> records = read.records().size() > remaining
                     ? read.records().subList(0, remaining) : read.records();
             total += records.size();

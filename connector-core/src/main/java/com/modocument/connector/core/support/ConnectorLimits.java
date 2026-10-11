@@ -1,4 +1,4 @@
-package com.modocument.infrastructure.integration.connector;
+package com.modocument.connector.core.support;
 
 import java.time.Duration;
 

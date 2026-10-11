@@ -19,6 +19,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # connector-core (docs/integration/connector-sharing.md): the DATABASE /
+  # REST_API / SFTP / WEBHOOK implementation the app and the agent share. A
+  # sibling Maven project, not a reactor module: its own tests here; every
+  # job that builds the app or the agent installs it first (-DskipTests).
+  connector-core:
+    name: Connector core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: connector-core/pom.xml
+      - run: mvn -B -f connector-core/pom.xml verify
+
   build-and-test:
     runs-on: ubuntu-latest
     steps:
@@ -35,6 +54,8 @@ jobs:
           cache: maven
       # ws29: JaCoCo lives in the `coverage` profile (local runs and the IT
       # jobs skip the agent); this job is the one that measures.
+      - name: Install connector-core
+        run: mvn -B -q -f connector-core/pom.xml -DskipTests install
       - run: mvn -B verify -Pcoverage
       # ws29: scale-mode extraction (Mongo/Kafka adapters, src/scale/java)
       # only compiles under -Pscale; keep it compiling, and run its one
@@ -70,6 +91,8 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - name: Install connector-core
+        run: mvn -B -q -f connector-core/pom.xml -DskipTests install
       - run: mvn -B verify -Ppostgres-it -DskipUTs=true
 
   # ws29: the FileStore contract against S3 (S3FileStore on a Testcontainers
@@ -85,11 +108,14 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - name: Install connector-core
+        run: mvn -B -q -f connector-core/pom.xml -DskipTests install
       - run: mvn -B verify -Ps3-it -DskipUTs=true
 
   # ws26: the on-prem Connector Agent is a standalone Maven project (not a
   # module of the root build): its unit and end-to-end tests (a fake
-  # MoDocument on a JDK HttpServer, H2, an embedded SFTP server).
+  # MoDocument on a JDK HttpServer, H2, an embedded SFTP server). Its
+  # connectors come from connector-core, installed first.
   agent:
     name: Connector Agent
     runs-on: ubuntu-latest
@@ -102,7 +128,11 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-          cache-dependency-path: agent/pom.xml
+          cache-dependency-path: |
+            agent/pom.xml
+            connector-core/pom.xml
+      - name: Install connector-core
+        run: mvn -B -q -f connector-core/pom.xml -DskipTests install
       - run: mvn -B -f agent/pom.xml verify
 
   frontend:

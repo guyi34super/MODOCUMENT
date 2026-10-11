@@ -69,7 +69,17 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- SFTP: Apache MINA SSHD client, host key pinned. -->
+        <!-- The connectors themselves (DATABASE, REST_API, SFTP): connector-core,
+             the same code the server runs for DIRECT connections
+             (docs/integration/connector-sharing.md). A sibling project, not a
+             reactor module: `mvn -B -f connector-core/pom.xml install` first. -->
+        <dependency>
+            <groupId>com.modocument</groupId>
+            <artifactId>modocument-connector-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- SFTP: Apache MINA SSHD (through connector-core); pinned here, and
+             the embedded SFTP server of the tests. -->
         <dependency>
             <groupId>org.apache.sshd</groupId>
             <artifactId>sshd-sftp</artifactId>

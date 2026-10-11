@@ -4,8 +4,9 @@ import com.modocument.application.dto.DatabaseExportRequest;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.port.integration.EgressGuard;
 import com.modocument.domain.model.integration.DbVendor;
-import com.modocument.infrastructure.integration.connector.ConnectorLimits;
-import com.modocument.infrastructure.integration.connector.DbDialect;
+import com.modocument.connector.core.support.ConnectorLimits;
+import com.modocument.connector.core.db.DatabaseConnector;
+import com.modocument.connector.core.db.DbDialect;
 import com.modocument.infrastructure.integration.connector.IntegrationConnectorProperties;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +16,6 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
-import java.sql.Driver;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
@@ -103,7 +103,7 @@ public class DatabaseExportService {
         }
         JdbcIdentifiers.requireValidIdentifier(request.getTableName().trim(), "tableName");
         DbVendor vendor = parseVendor(request.getVendor());
-        DbDialect dialect = DbDialect.of(vendor);
+        DbDialect dialect = DbDialect.valueOf(vendor.name());
         String host = DbDialect.requireHost(trim(request.getHost()));
         String database = DbDialect.requireDatabase(trim(request.getDatabase()));
         String schema = trim(request.getSchema());
@@ -275,16 +275,6 @@ public class DatabaseExportService {
 
     static Connection openWithDriver(DbDialect dialect, String url, Properties properties)
             throws SQLException {
-        Driver driver;
-        try {
-            driver = (Driver) Class.forName(dialect.driverClass()).getDeclaredConstructor().newInstance();
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("The " + dialect.name() + " JDBC driver is not available.");
-        }
-        Connection connection = driver.connect(url, properties);
-        if (connection == null) {
-            throw new IllegalStateException("The " + dialect.name() + " driver refused the URL.");
-        }
-        return connection;
+        return DatabaseConnector.openWithDriver(dialect, url, properties);
     }
 }

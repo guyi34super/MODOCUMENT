@@ -1,4 +1,4 @@
-package com.modocument.application.port.integration;
+package com.modocument.connector.core.wire;
 
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -22,9 +22,9 @@ import java.util.Map;
  * </ul>
  *
  * The server side ({@code AgentRunService}) parses records with
- * {@link #fromRecord}; the standalone agent ({@code agent/}, its own build)
- * writes the same four keys — {@link #toRecord} is the reference shape, and a
- * change here is a protocol change for both builds.
+ * {@link #fromRecord}; the agent builds them with {@link #of} and
+ * {@link #toRecord}. Both builds use this one class (connector-core), so the
+ * shape cannot drift; a change here is still a protocol change.
  *
  * @param fileName      the file's name, one path segment
  * @param remotePath    the path on the bank's server (never null after parsing)

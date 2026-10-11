@@ -57,8 +57,8 @@ public class AgentConfiguration {
             log.warn("The allow-list {} allows nothing: every task will be refused until the bank "
                     + "lists its destinations, tables and folders.", properties.allowList());
         }
-        TaskExecutor executor = new TaskExecutor(List.of(new DatabaseConnector(mapper),
-                new RestConnector(mapper), new SftpConnector(mapper)), allowList, secrets, cloud);
+        TaskExecutor executor = new TaskExecutor(List.of(new DatabaseConnector(),
+                new RestConnector(), new SftpConnector()), allowList, secrets, cloud);
         log.info("MoDocument Connector Agent {} starting: {}", version, properties);
         return new AgentLoop(cloud, new CredentialStore(properties.stateDir(), mapper), executor,
                 properties.stateDir(), version, agentName(properties), properties.enrolmentToken(),

@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.integration.connector;
 
+import com.modocument.connector.core.support.ConnectorLimits;
 import com.modocument.application.port.integration.ConnectionContext;
 import com.modocument.application.port.integration.ConnectionTestResult;
 import com.modocument.application.port.integration.EgressGuard;

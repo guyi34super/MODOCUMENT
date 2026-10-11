@@ -40,20 +40,21 @@ agent's host. When a flow runs, the flow engine queues the run as
 
 An SFTP READ run sends **one record per file** in
 `POST /runs/{id}/records`. The shape is fixed by
-`application/port/integration/AgentSftpFile` (constants `FILE_NAME`,
-`REMOTE_PATH`, `SIZE`, `CONTENT_BASE64`); `AgentRunService` parses every
-record with `AgentSftpFile.fromRecord`, and the agent's `SftpConnector`
-writes the same four keys:
+`com.modocument.connector.core.wire.AgentSftpFile` in `connector-core`
+(constants `FILE_NAME`, `REMOTE_PATH`, `SIZE`, `CONTENT_BASE64`), the one
+class both builds use: `AgentRunService` parses every record with
+`AgentSftpFile.fromRecord`, and the agent's `SftpConnector` builds them
+with `AgentSftpFile.of(...).toRecord()`:
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `fileName` | string | yes | The file's name: one path segment (`/` and `\` are refused). |
-| `remotePath` | string | no | Where the file was on the bank's server; logged on the run. Defaults to `fileName`. |
+| `remotePath` | string | no | Where the file was on the bank's server, relative to the connection's folder (`inbox/stmt-0131.csv`); logged on the run. Defaults to `fileName`. |
 | `size` | number | no | Byte count before encoding. Informational: the server measures the decoded bytes. |
 | `contentBase64` | string | yes | The file, standard base64. |
 
 ```json
-{"records": [{"fileName": "stmt-0131.csv", "remotePath": "stmt-0131.csv",
+{"records": [{"fileName": "stmt-0131.csv", "remotePath": "inbox/stmt-0131.csv",
               "size": 2048, "contentBase64": "RGF0ZSxEZXNjcmlwdGlvbi..."}],
  "nextCursor": null, "last": true}
 ```
@@ -163,19 +164,19 @@ Design rules:
 writes its SBOM. The GitHub Release then publishes the image unchanged as
 `ghcr.io/<owner>/modocument-agent:<version>` and attaches
 `modocument-agent-<version>.jar` and the SBOM. CI runs the agent's tests
-(`mvn -B -f agent/pom.xml verify`) on every push. `agent/pom.xml` carries
-the release version (`scripts/check-version-sync.sh`).
+(`mvn -B -f agent/pom.xml verify`, after installing `connector-core`) on
+every push. `agent/pom.xml` and `connector-core/pom.xml` carry the release
+version (`scripts/check-version-sync.sh`).
 
 ## Limits of this version (later work)
 
-- The agent has its own minimal connectors (DATABASE, REST_API, SFTP). One
-  shared implementation with the server's `IntegrationConnector` beans is a
-  later refactor, planned in [`connector-sharing.md`](connector-sharing.md).
-- REST reads paginate `PAGE`, `CURSOR` and `LINK` like the server's REST
-  connector (agent README, "REST pagination"). A `LINK` next page must keep
-  the configured path, so the allow-list's path check stays valid. Bank
-  REST targets that need a client certificate (outbound `MTLS` auth) are
-  not supported by the agent yet.
+- Since 1.2.0 the agent runs the server's own connector code
+  (`connector-core`, see [`connector-sharing.md`](connector-sharing.md)):
+  DATABASE, REST_API and SFTP behave the same for DIRECT and AGENT
+  connections, including REST pagination (`PAGE`, `CURSOR`, `LINK`; a
+  `LINK` next page must keep the configured path, so the allow-list's path
+  check stays valid) and outbound `OAUTH2_CLIENT_CREDENTIALS` and `MTLS`
+  auth from the local secret. WEBHOOK targets stay DIRECT-only.
 - An agent's certificate is fixed at enrolment. Rotating it means revoking
   the agent and registering it again.
 - SFTP reads upload each file as one record

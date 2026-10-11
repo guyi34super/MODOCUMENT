@@ -158,9 +158,13 @@ qualified with the connection's `schema` before it is compared.
 
 | Type | Read (inbound) | Write (outbound) | Notes |
 |---|---|---|---|
-| `DATABASE` | Read-only `SELECT` of listed columns from a listed table or view, by identifier (never free SQL), with an optional watermark column and a row cap | `INSERT`, or the vendor's UPSERT, of one batch in one transaction | PostgreSQL, MariaDB/MySQL, SQL Server, Oracle |
-| `REST_API` | `GET` a JSON array at `recordsPath`, paginated (below) | `POST`/`PUT` JSON in batches with `Idempotency-Key` | No redirects; 20 MB response cap |
-| `SFTP` | Files matching a glob (≤ 50 MB each), then moved to `processed/` or deleted | Upload to a temporary name, then rename | Host key **pinned** (`SHA256:…`); unknown keys are refused |
+| `DATABASE` | Read-only `SELECT` of listed columns from a listed table or view, by identifier (never free SQL; names are quoted, so they are case-sensitive), with an optional watermark column and a row cap | `INSERT`, or the vendor's UPSERT, in one transaction per batch of `batchSize` (500) rows | PostgreSQL, MariaDB/MySQL, SQL Server, Oracle |
+| `REST_API` | `GET` a JSON array at `recordsPath`, paginated (below); nested objects flatten to dotted keys | `POST`/`PUT` JSON in batches with `Idempotency-Key` | NONE, BASIC, BEARER, API key header, OAuth2 client credentials, MTLS; no redirects; 20 MB response cap |
+| `SFTP` | Files matching a glob (≤ 50 MB each), moved to `processed/` or deleted once MoDocument accepted them; a larger file is skipped, logged and left in place | Upload to a temporary name, then rename; an existing file of the same name means the batch was delivered already | Host key **pinned** (`SHA256:…`); unknown keys are refused |
+
+The connectors are MoDocument's own connector code (`connector-core`), the
+same that runs for DIRECT connections, so a flow behaves the same through
+the agent as without it.
 
 ### REST pagination
 
@@ -172,7 +176,7 @@ direct REST connector:
 | `NONE` | — | makes one request |
 | `PAGE` | `pageParam` (`page`), `sizeParam`, `pageSize` (100), `startPage` (1), `maxPages` | counts pages up and stops at a short page (or at an empty page when no size is set) or after `maxPages` |
 | `CURSOR` | `cursorParam`, `cursorPath` (e.g. `meta.next` or `$.meta.next`), `sizeParam`, `pageSize` | sends the cursor from the previous answer and stops when it is missing, empty or repeats |
-| `LINK` | `sizeParam`, `pageSize` | follows `Link: <…>; rel="next"`, but only on the same host and the **same path** (the path your allow-list approved) |
+| `LINK` | `sizeParam`, `pageSize` | follows `Link: <…>; rel="next"`, but only on the same host and the **same path** (the path your allow-list approved); any other link fails the run |
 
 Each page is at most 1000 records (MoDocument's limit per upload). The
 flow's row cap still applies.
@@ -201,9 +205,14 @@ The credentials in the state volume carry over.
 ## Build
 
 ```sh
+mvn -B -f connector-core/pom.xml install           # the shared connectors, first
 mvn -B -f agent/pom.xml verify                     # tests
-docker build -t modocument-agent agent             # image
+docker buildx build --build-context connector-core=connector-core \
+    -t modocument-agent agent                      # image
 ```
 
-This is a standalone Maven project, not a module of the root build. Its
-version follows the MoDocument release (`scripts/check-version-sync.sh`).
+This is a standalone Maven project, not a module of the root build. It
+depends on `connector-core` (`../connector-core`, another standalone
+project), which must be installed first; the image build takes its sources
+as the named build context `connector-core`. Its version follows the
+MoDocument release (`scripts/check-version-sync.sh`).
