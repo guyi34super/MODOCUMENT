@@ -5,7 +5,7 @@
 //   L1  stale-chunk recovery: a lazy route chunk that 404s (an old tab after a
 //       deploy) reloads the page ONCE (vite:preloadError handler), never in a
 //       loop; when the chunk is still missing the user must see an error,
-//       not a blank page (BUG-09, fixme).
+//       not a blank page (BUG-09).
 //   P7  AI result cache: the same document re-uploaded against the same
 //       template makes zero model calls (fake-LLM /__stats). Never audited
 //       (A18) and never shared across banks: AiResultCacheRlsPgIT (a template
@@ -76,11 +76,10 @@ test.describe('optimization round @v120', () => {
     expect(refused, 'the chunk was asked for once per document').toBe(2);
   });
 
-  // BUG-09 (P3, SE3): there is no React error boundary. When the chunk is still
-  // missing after the one guarded reload, the rejected lazy import unmounts the
-  // whole tree: the user is left on a blank white page with no message and no
-  // way back but the address bar. Test plan L1 expects the error to surface.
-  test.fixme('OPT-L1c BUG-09 a chunk still missing after the reload shows an error, not a blank page', async ({ page }) => {
+  // BUG-09 (fixed in 1.2.0): RouteErrorBoundary around the routed pages. When
+  // the chunk is still missing after the one guarded reload, the page shows an
+  // alert with Reload / Go to home instead of a blank white page.
+  test('OPT-L1c BUG-09 a chunk still missing after the reload shows an error, not a blank page', async ({ page }) => {
     await openAs(page, BOOTSTRAP(), '/');
     await expect(page.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible();
     await page.evaluate(() => sessionStorage.removeItem('modoc.chunkReloadAt'));

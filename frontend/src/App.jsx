@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+import RouteErrorBoundary from './components/RouteErrorBoundary';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import { Spinner } from './components/ui';
@@ -63,9 +64,11 @@ export default function App() {
       <Route
         path="/login/complete"
         element={
-          <Suspense fallback={<Spinner />}>
-            <LoginCompletePage />
-          </Suspense>
+          <RouteErrorBoundary>
+            <Suspense fallback={<Spinner />}>
+              <LoginCompletePage />
+            </Suspense>
+          </RouteErrorBoundary>
         }
       />
       {/* ws09: standalone (no app chrome) — the only page a temporary
@@ -74,9 +77,11 @@ export default function App() {
         path="/force-password-change"
         element={
           <ProtectedRoute>
-            <Suspense fallback={<Spinner />}>
-              <ForceChangePasswordPage />
-            </Suspense>
+            <RouteErrorBoundary>
+              <Suspense fallback={<Spinner />}>
+                <ForceChangePasswordPage />
+              </Suspense>
+            </RouteErrorBoundary>
           </ProtectedRoute>
         }
       />

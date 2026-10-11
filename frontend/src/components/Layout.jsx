@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import RouteErrorBoundary from './RouteErrorBoundary';
 import { useAuth } from '../context/AuthContext';
 import AnnouncementBanner from './AnnouncementBanner';
 import { Spinner } from './ui';
@@ -283,9 +284,11 @@ export default function Layout() {
           <AnnouncementBanner />
           {/* v1.2.0: route pages are lazy chunks (App.jsx); the app chrome
               stays up while the next page's chunk loads. */}
-          <Suspense fallback={<Spinner />}>
-            <Outlet />
-          </Suspense>
+          <RouteErrorBoundary key={location.pathname}>
+            <Suspense fallback={<Spinner />}>
+              <Outlet />
+            </Suspense>
+          </RouteErrorBoundary>
         </div>
       </main>
     </div>
