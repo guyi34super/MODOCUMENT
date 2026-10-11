@@ -137,7 +137,7 @@ assert what is left. PG IT under RLS, plus H2.
 
 | # | Check | Owner | Status |
 |---|---|---|---|
-| L1 | Lazy-route stale-chunk reload: after a redeploy the old `index.html` asks for a chunk that 404s → `vite:preloadError` reloads the page **once** (no reload loop: a second failure within the guard window shows the error boundary). Vitest for the handler; E2E by serving a build, deleting one lazy chunk, and navigating to its route | SE3 | [!] BUG-09: reload once PASS (Vitest `preloadRecovery.test.js`; E2E OPT-L1, OPT-L1b); no error boundary, a still-missing chunk leaves a blank page (E2E OPT-L1c fixme) |
+| L1 | Lazy-route stale-chunk reload: after a redeploy the old `index.html` asks for a chunk that 404s → `vite:preloadError` reloads the page **once** (no reload loop: a second failure within the guard window shows the error boundary). Vitest for the handler; E2E by serving a build, deleting one lazy chunk, and navigating to its route | SE3 | [x] reload once PASS (Vitest `preloadRecovery.test.js`; E2E OPT-L1, OPT-L1b); BUG-09 fixed: `RouteErrorBoundary` shows an alert (Vitest `RouteErrorBoundary.test.jsx`; E2E OPT-L1c) |
 | L2 | Login and Dashboard stay eager; every other route is a lazy chunk with a `<Suspense>` fallback inside the Layout | SE3 | [x] `App.test.jsx` (SE3); build: 55 chunks, login + dashboard in `index` |
 | L3 | `qrcode` is not loaded on a plain login (only on MFA enrolment / profile) — `perf/frontend-load.mjs` request list | SE3 | [x] `perf/results/wave2/frontend.json`: cold login loads `index` + `vendor` only |
 | L4 | `usePolling`: no overlapping calls, paused while `document.hidden`, resumes on visibility; same for ExtractionJobDetailPage and AnnouncementBanner | SE3 | [x] `usePolling.test.jsx` (SE3) |

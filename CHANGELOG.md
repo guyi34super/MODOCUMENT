@@ -95,7 +95,7 @@ All notable changes to MoDocument are recorded here. The format follows
 - **Scheduling.** A scheduler pool of 4 threads; the integration tick runs on its own executor,
   so a slow bank endpoint no longer delays settings sync or alerts.
 - **Frontend load.** Pages are code-split (initial JS 614.9 kB → 292 kB, 182.8 → 93 kB gzip).
-  `qrcode` loads only on MFA enrolment. nginx compresses CSS, JS, JSON and SVG, caches
+  `qrcode` loads only on MFA enrolment. nginx compresses CSS, JS, JSON and SVG (level 5), caches
   `/assets/` for a year as immutable and serves `index.html` with `no-cache`. Polling pauses in
   hidden tabs and never overlaps calls; version and supported-types calls are made once per
   session.
@@ -153,7 +153,10 @@ All notable changes to MoDocument are recorded here. The format follows
   confirms it (`modocument.retention.file-delete-retry.*`) (BUG-12).
 - Alert rule `access-denied-burst` counts refusals, not aggregated rows: the windowed sweep sums
   the `count` of each `ACCESS_DENIED` row, so a burst inside one minute reaches the threshold
-  (OBS-01).
+  (OBS-01). The default stays 3 refusals per actor or address in 5 minutes; a platform admin
+  can raise it to 12 with `alerts.accessDeniedBurst.threshold`.
+- A page whose code chunk is still missing after the one automatic reload shows an error with
+  "Reload page" and "Go to home" instead of a blank page (BUG-09).
 
 ### Security
 - SSRF: the extraction REST connector and the web crawler no longer let the HTTP client follow
