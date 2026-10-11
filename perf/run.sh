@@ -24,6 +24,10 @@ log() { printf '\033[1;35m[perf]\033[0m %s\n' "$*"; }
 
 # --- 1. Builds (timed) -----------------------------------------------------------
 if [ "${PERF_SKIP_BUILD:-0}" != "1" ]; then
+  # connector-core (Wave 2): the sibling Maven project the backend and the
+  # agent depend on; installed first, not counted in the package time.
+  log "mvn -B -DskipTests -f connector-core/pom.xml install"
+  (cd "$REPO_ROOT" && mvn -B -q -DskipTests -f connector-core/pom.xml install) >"$PERF_OUT_DIR/build-core.log" 2>&1
   log "mvn -B -DskipTests package"
   t0=$(date +%s)
   (cd "$REPO_ROOT" && mvn -B -q -DskipTests package) >"$PERF_OUT_DIR/build-backend.log" 2>&1

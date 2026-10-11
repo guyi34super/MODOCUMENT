@@ -7,6 +7,15 @@ perf toolkit / context fold), production code untouched since. Measured
 from that commit; the working tree carried only QA's Wave-2 test and perf
 changes (none of them is production code).
 
+**Connector-core merge (`6627af4`, after the measurements):** the shared
+connector library landed on the branch at 06:13 and was merged into QA's
+tree afterwards. It touches only the integration connectors (none of the
+measured paths); the jar built from the merged head is 157,213,853 bytes
+(+35 kB: `modocument-connector-core-1.1.0.jar`, 115 kB, replaces the
+server's own connector classes). Every build now starts with
+`mvn -B -f connector-core/pom.xml install` (`perf/run.sh` and
+`e2e/run-local.sh` do it).
+
 **Compared against:** the Wave-0 baseline `bb845a5` (`BASELINE.md`, measured
 03:22–03:50 at load 7.7) **and a paired re-run of that baseline** taken
 05:25–05:32, on the same box, at the same load as the Wave-2 run (`git

@@ -4,8 +4,10 @@ Owner: QA. Date: 2026-10-11. Scope: the five Wave-1 workstreams of the
 optimization round — SE1 database & runtime, SE2 audit logs & API hygiene,
 SE3 frontend load & audit UI, SE4 hot read paths & AI cost, SE5 footprint,
 S3 file store & CI — on the integrated branch `claude/tender-noether-izbf0u`
-at `8d1e272`, plus QA's Wave-2 commits (test code, perf scripts and docs
-only). Plan and checklist: [`optimization-test-plan.md`](optimization-test-plan.md)
+at `8d1e272`, **plus the Wave-2 shared connector library (connector-core,
+`6627af4`)**, merged into QA's tree after the measurements, plus QA's Wave-2
+commits (test code, perf scripts and docs only). The gates, the E2E suite
+and the connector checks below ran on the merged head. Plan and checklist: [`optimization-test-plan.md`](optimization-test-plan.md)
 (every row now carries its status and evidence); contracts:
 [`docs/optimization/contracts.md`](../optimization/contracts.md) incl. §10
 "As built"; measurements: [`perf/WAVE2.md`](../../perf/WAVE2.md) (before:
@@ -45,11 +47,12 @@ Conditions:
 | **Frontend load** | SE3 | Vitest (`preloadRecovery`, `usePolling`, paged pages, `AuditLogPage`), perf cold load (vite + real nginx), `perf/nginx-check.sh` 38/38, E2E OPT-L1/L1b/X3 | **Accepted** with BUG-09 open. Initial JS 614.9 → 292.2 kB raw (≤ 300 kB ✓), 182.8 → 93.0 kB gzip; cold-load API bytes 16.5 MB → 5.4 kB; data loaded 504 → 149 ms after sign-in |
 | **Cost & footprint** | SE4, SE5 | jar inspection, `RowBatchOutputTokensTest`, `IngestionParseStepImplTest` cache tests, QA `AiResultCacheRlsPgIT`, E2E OPT-P7, `OcrServiceTest`, `S3FileStoreTest`, `FileStoreContract` + QA `FileStoreTraversalQaTest`, QA `AfterCommitFileDeleterQaTest` | **Accepted** with BUG-12 open. Jar −212 MB (−57 %, Playwright/Kafka/zstd out); a re-uploaded document makes zero model calls; no cross-bank cache hit under RLS. Image/CDS: §5 |
 | **Code health / API hygiene** | SE2, SE5 | `DeprecatedEndpointsTest`, QA `ApiHygieneQaTest` (20 deprecated routes × 3 headers, removed routes 404 × 4 roles × 3 methods), `RestApiConnectorRedirectTest` + QA `HttpWebFetcherRedirectQaTest` (crawler), `DatabaseExportServiceTest`; suite −10 % at the same load, 19 test contexts | **Accepted** |
+| **Connector library (connector-core)** | connector engineer | `mvn -B -f connector-core/pom.xml verify` (25: two-phase SFTP read, oversized file noted and left, REST PAGE without a size reads to the first empty page, DB identifiers), agent `RestConnectorPaginationTest` / `DatabaseConnectorSqlTest`, `SftpIntegrationConnectorTest`; QA `SftpInboundPartialFailureQaTest` (2: through the real `FlowRunner`); E2E integration hub 25 live incl. the agent DB pull (quoted identifiers) | **Accepted.** A file that fails ingestion mid-run stays in the folder, the files after it are still ingested and moved, the run FAILS naming the file; an oversized file is skipped, left and noted. AC-INT-15 (SFTP E2E) needs the compose simulator and did not need a change (it asserts only the happy path, still valid) |
 | **Audit** | SE2 (SE3 UI) | `AuditTrailGapsTest`, `AuditLogApiTest`, `AuditLogRlsPgIT`, `AuditThrottleTest`, `JpaAuditRecorderThrottleTest`, `AuditActionCatalogueDocTest`; QA `AccessDeniedBurstAlertTest`, `AuditViewAuditQaTest`, `IngestionEditAuditQaTest`; E2E OPT-V9 | **Accepted** with BUG-10, BUG-11 and OBS-01 open. Viewer RLS-isolated (PG IT + E2E across two onboarded banks); viewing audited once per 15 min, no recursion |
 
 ### Checklist summary (`optimization-test-plan.md`)
 
-84 rows carry a status: **76 PASS** (`[x]`), **4 FAIL → bug** (`[!]`: A6
+86 rows carry a status: **78 PASS** (`[x]`), **4 FAIL → bug** (`[!]`: A6
 BUG-10, A7 BUG-11, L1 BUG-09, F4 BUG-12), **4 open** (`[ ]`: C7 CloudFront
 needs AWS; F2 the store has no per-bank key prefix to test — cross-bank
 access is refused above it; D2, D8 owner configuration / CI, not re-verified
@@ -75,23 +78,25 @@ by QA). The items the Supervisor asked for:
 
 | Suite | Count | Result |
 |---|---|---|
-| Backend H2 (`mvn -B verify`) | 1,915 tests, 269 classes | 1,912 pass, 0 fail, 3 skipped (BUG-10, BUG-11, BUG-12 `@Disabled` repros). 20 Spring "Started" lines = 19 test contexts (G9 ✓); 226 s at load 3.8 → 4.0 |
-| Backend PostgreSQL (`-Ppostgres-it`, shared scratch PG 16) | 85 PgITs (+ the H2 suite, run before `AfterCommitFileDeleterQaTest`, a plain unit test, was added) | 85 pass |
+| connector-core (`mvn -B -f connector-core/pom.xml verify`) | 25 | 25 pass |
+| Backend H2 (`mvn -B verify`) | 1,918 tests, 270 classes | 1,915 pass, 0 fail, 3 skipped (BUG-10, BUG-11, BUG-12 `@Disabled` repros). 20 Spring "Started" lines = 19 test contexts (G9 ✓); 203 s at load 2.4 → 1.8 |
+| Backend PostgreSQL (`-Ppostgres-it`, shared scratch PG 16) | 85 PgITs (+ the H2 suite) | 85 pass |
 | Agent module (`mvn -B -f agent/pom.xml verify`) | 41 | 41 pass |
 | Frontend Vitest | 501 tests (58 files) | 501 pass (1 load-dependent race fixed in the test, see OBS-06) |
-| E2E Playwright (`e2e/run-local.sh`, RLS mode, bank simulator, agent jar) | 80 | **76 passed, 0 failed, 4 skipped**: 2 `fixme` (AC-EXT-13, OPT-L1c BUG-09), 2 environment (AC-INT-15 SFTP needs compose, AC-INT-21 needs the mTLS listener) |
+| E2E Playwright (`e2e/run-local.sh`, RLS mode, bank simulator, agent jar; merged head) | 80 | **76 passed, 0 failed, 4 skipped**: 2 `fixme` (AC-EXT-13, OPT-L1c BUG-09), 2 environment (AC-INT-15 SFTP needs compose, AC-INT-21 needs the mTLS listener) |
 | nginx contract (`perf/nginx-check.sh`) | 38 checks | 38 pass |
 | `scripts/check-nginx-headers.sh`, `check-version-sync.sh` | — | OK (version still 1.1.0, condition 1) |
 
-QA's Wave-2 additions: 10 test classes (44 test cases incl. 20 parameterised
+QA's Wave-2 additions: 11 test classes (46 test cases incl. 20 parameterised
 route rows, 3 `@Disabled` repros) — `AccessDeniedBurstAlertTest`,
 `ApiHygieneQaTest`, `AuditViewAuditQaTest`, `IngestionEditAuditQaTest`,
 `IngestionSummaryPagingQaTest`, `HttpWebFetcherRedirectQaTest`,
 `FileStoreTraversalQaTest`, `HousekeepingRetentionSettingQaTest`,
-`AfterCommitFileDeleterQaTest`, `AiResultCacheRlsPgIT`; an `OK` mode in
+`AfterCommitFileDeleterQaTest`, `SftpInboundPartialFailureQaTest`,
+`AiResultCacheRlsPgIT`; an `OK` mode in
 `StubAiServer`; 6 E2E specs (`phase2/optimization.spec.js`, 1 fixme); the
 `HousekeepingJobTest` context fold; `perf/nginx-check.sh` +
-`perf/nginx-headers.mjs`. E2E specs adjusted: one (AC-INT-17) — see OBS-07.
+`perf/nginx-headers.mjs`; `perf/run.sh` installs connector-core first. E2E specs adjusted: one (AC-INT-17) — see OBS-07.
 No assertion was weakened.
 
 ## 4. Open bugs and observations
