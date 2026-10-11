@@ -25,4 +25,13 @@ public interface AiResultCacheJpaRepository extends JpaRepository<AiResultCacheE
     @Modifying
     @Query("delete from AiResultCacheEntry e where e.bankId = :bankId and e.createdAt < :cutoff")
     int purgeOlderThan(@Param("bankId") int bankId, @Param("cutoff") Instant cutoff);
+
+    /**
+     * DSR erase (DataSubjectUseCase): every cached result of one bank. A cached
+     * result is a copy of extracted rows keyed by a text hash, so it cannot be
+     * matched to a subject reliably; it is only a cost saving, so it all goes.
+     */
+    @Modifying
+    @Query("delete from AiResultCacheEntry e where e.bankId = :bankId")
+    int purgeBank(@Param("bankId") int bankId);
 }

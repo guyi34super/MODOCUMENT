@@ -23,6 +23,7 @@ permission was minted so the role→permission matrix stays unchanged.
 | Extraction raw captures | `ExtractionRawRecord.Body` | **30 days** from fetch | PRIV-013 / gate C5 | Column nulled; fetch metadata (uri, status, hash) kept |
 | Extraction processed records | `ExtractionProcessedRecord.FieldsJson` | **30 days** from processing | PRIV-013 / gate C5 | Column nulled; dedup metadata kept |
 | Doc-creation content | `DocContentBlock`, `DocImageAsset` (+ files), generated docx/pdf | **30 days** after the instance's last update | PRIV-013 / gate C5 | Block/asset rows and files deleted, `DocInstance.ContentPurgedAt` stamped; instance shell (title, status, dates) kept |
+| AI result cache (ws28, v1.2.0) | `AiResultCache.ResultJson` (bank-scoped, RLS) — a copy of the rows a model extracted, keyed by a hash of the document text | **30 days** from creation | PRIV-013 / gate C5 | Rows deleted by the retention sweep; a DSR erase clears the bank's whole cache (below) |
 | Doc-creation blueprints/sections | `DocBlueprint`, `DocBlueprintSection` | n/a — **never purged** | — | Configuration (document structure), not customer data |
 | Ingestion mapping config | `IngestionJob.MappingJson / SuggestedMappingJson / ExportInfoJson` | n/a — **not purged** | — | Column-name→field mappings and export metadata (file name, format, row count): configuration/metadata, no customer values |
 | Audit trail | `AuditEvent` | **7 years** (SEC-033) | Evidence obligation | Append-only; **not** touched by this job |
@@ -144,6 +145,12 @@ works in their own bank only; every step is audited.
      asset (row + file) goes with its matching caption.
    * **Name-matched uploads** — a file whose NAME is the identifier is
      deleted with its row.
+   * **AI result cache** (v1.2.0) — the bank's whole cache is cleared.
+     Its entries are copies of extracted rows keyed by a text hash, so a
+     subject's values cannot be found in them reliably; the cache only
+     saves model calls, so nothing is lost but tokens. Recorded as
+     `aiResultCacheCleared` in the `DSR_ERASED` evidence, outside the
+     subject's total.
    Audited `DSR_ERASED` with per-store counts. A re-run of step 1 must
    return zero matches — that re-run is the closure evidence.
 

@@ -1,5 +1,7 @@
 package com.modocument.api;
 
+import com.modocument.infrastructure.persistence.AiResultCacheJpaRepository;
+import com.modocument.domain.entity.AiResultCacheEntry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.doccreation.entity.DocContentBlock;
@@ -90,6 +92,8 @@ class DataSubjectRightsGateC12Test extends IsolatedStorageApiTestSupport {
     private JwtService jwtService;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private AiResultCacheJpaRepository aiResultCache;
 
     private Bank bank;
     private AppUser admin;
@@ -323,6 +327,37 @@ class DataSubjectRightsGateC12Test extends IsolatedStorageApiTestSupport {
                         + "(CAST(NewValues AS VARCHAR) LIKE ? OR EntityId LIKE ?)",
                 Integer.class, bank.getBankId(), "%" + SUBJECT + "%", "%" + SUBJECT + "%");
         assertThat(leaked).as("the identifier never enters the audit trail").isZero();
+    }
+
+    /**
+     * v1.2.0: the AI result cache holds copies of extracted rows under a text
+     * hash; an erase clears the caller's bank's cache (never another bank's).
+     */
+    @Test
+    void eraseClearsTheBanksAiResultCacheOnly() throws Exception {
+        Bank otherBank = banks.save(new Bank("C1X" + tag.substring(0, 5).toUpperCase(), "Other DSR Bank"));
+        AiResultCacheEntry mine = aiResultCache.save(cacheEntry(bank.getBankId(), "mine-" + tag));
+        AiResultCacheEntry theirs = aiResultCache.save(cacheEntry(otherBank.getBankId(), "theirs-" + tag));
+
+        call("/api/admin/dsr/erase", "{\"identifier\":\"" + SUBJECT + "\",\"confirm\":true}");
+
+        assertThat(aiResultCache.findById(mine.getId())).as("the caller's bank cache").isEmpty();
+        assertThat(aiResultCache.findById(theirs.getId())).as("another bank's cache").isPresent();
+        String evidence = jdbc.queryForObject(
+                "SELECT CAST(NewValues AS VARCHAR) FROM AuditEvent WHERE Action = 'DSR_ERASED' AND BankId = ?",
+                String.class, bank.getBankId());
+        assertThat(evidence).contains("\"aiResultCacheCleared\":1");
+    }
+
+    private AiResultCacheEntry cacheEntry(int bankId, String key) {
+        AiResultCacheEntry entry = new AiResultCacheEntry();
+        entry.setBankId(bankId);
+        entry.setCacheKey((key + "0".repeat(64)).substring(0, 64));
+        entry.setPromptVersion("v2");
+        entry.setModel("test-model");
+        entry.setResultJson("{\"columns\":[\"nic\"],\"rows\":[[\"" + SUBJECT + "\"]]}");
+        entry.setCreatedAt(Instant.now());
+        return entry;
     }
 
     @Test

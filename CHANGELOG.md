@@ -164,6 +164,8 @@ Changed before upgrading database-export callers or agent database flows.
   the `count` of each `ACCESS_DENIED` row, so a burst inside one minute reaches the threshold
   (OBS-01). The default stays 3 refusals per actor or address in 5 minutes; a platform admin
   can raise it to 12 with `alerts.accessDeniedBurst.threshold`.
+- A DSR erase clears the bank's AI result cache, which holds copies of extracted rows; the
+  cache is also listed in the retention schedule (30 days).
 - A page whose code chunk is still missing after the one automatic reload shows an error with
   "Reload page" and "Go to home" instead of a blank page (BUG-09).
 

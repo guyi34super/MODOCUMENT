@@ -23,6 +23,7 @@ import com.modocument.infrastructure.extraction.sql.ExtractionRawRecordJpaReposi
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionProcessedRecordEntity;
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionRawRecordEntity;
 import com.modocument.infrastructure.file.store.FileStoreKeys;
+import com.modocument.infrastructure.persistence.AiResultCacheJpaRepository;
 import com.modocument.infrastructure.persistence.ImportDetailsJpaRepository;
 import com.modocument.infrastructure.persistence.IngestionJobJpaRepository;
 import com.modocument.infrastructure.persistence.UploadedFileJpaRepository;
@@ -93,6 +94,8 @@ public class DataSubjectUseCase {
     private final ObjectMapper objectMapper;
     /** BUG-12: where a file delete that keeps failing after the commit waits for a retry. */
     private final PendingFileDeletes pendingDeletes;
+    /** v1.2.0: cached AI results are copies of extracted rows (cleared on erase). */
+    private final AiResultCacheJpaRepository aiResultCache;
 
     public DataSubjectUseCase(CurrentUserProvider currentUser,
                               IngestionJobJpaRepository jobs,
@@ -105,7 +108,8 @@ public class DataSubjectUseCase {
                               FileStore storage,
                               AuditRecorder audit,
                               ObjectMapper objectMapper,
-                              PendingFileDeletes pendingDeletes) {
+                              PendingFileDeletes pendingDeletes,
+                              AiResultCacheJpaRepository aiResultCache) {
         this.currentUser = currentUser;
         this.jobs = jobs;
         this.importDetails = importDetails;
@@ -118,6 +122,7 @@ public class DataSubjectUseCase {
         this.audit = audit;
         this.objectMapper = objectMapper;
         this.pendingDeletes = pendingDeletes;
+        this.aiResultCache = aiResultCache;
     }
 
     // ------------------------------------------------------------- results
@@ -272,10 +277,17 @@ public class DataSubjectUseCase {
         }
         counts.put("docContentBlocks", scan.docBlockMatches.size());
 
+        // The AI result cache holds copies of extracted rows under a text
+        // hash, so the subject's values cannot be found in it reliably: the
+        // bank's whole cache goes (it only saves model calls). Not counted in
+        // the subject's total.
+        int aiCacheCleared = aiResultCache.purgeBank(bankId);
+
         int total = counts.values().stream().mapToInt(Integer::intValue).sum();
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("total", total);
         evidence.putAll(counts);
+        evidence.put("aiResultCacheCleared", aiCacheCleared);
         audit.record(AuditEventSpec.builder("DSR_ERASED", AuditOutcome.SUCCESS)
                 .entity("DataSubject", scan.subjectRef)
                 .newValues(evidence)
