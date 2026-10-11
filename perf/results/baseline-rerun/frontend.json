@@ -1,0 +1,200 @@
+{
+  "machine": {
+    "at": "2026-10-11T05:27:10.262Z",
+    "commit": null,
+    "dirtyTree": null,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      1.69,
+      2.2,
+      1.72
+    ]
+  },
+  "base": "http://127.0.0.1:33753",
+  "runs": 3,
+  "timingsMs": {
+    "loginReady": 140,
+    "dashboardVisible": 137,
+    "dashboardIdle": 504
+  },
+  "total": {
+    "requests": 11,
+    "rawBytes": 17165405,
+    "servedBytes": 16720624,
+    "gzipEstimate": 190294
+  },
+  "loginPage": {
+    "requests": 4,
+    "rawBytes": 654278,
+    "servedBytes": 190884,
+    "gzipEstimate": 190294
+  },
+  "byCategory": {
+    "document": {
+      "requests": 1,
+      "rawBytes": 395,
+      "servedBytes": 407,
+      "gzipEstimate": 0
+    },
+    "css": {
+      "requests": 1,
+      "rawBytes": 38972,
+      "servedBytes": 7556,
+      "gzipEstimate": 7538
+    },
+    "js": {
+      "requests": 1,
+      "rawBytes": 614909,
+      "servedBytes": 182909,
+      "gzipEstimate": 182756
+    },
+    "api": {
+      "requests": 8,
+      "rawBytes": 16511129,
+      "servedBytes": 16529752,
+      "gzipEstimate": 0
+    }
+  },
+  "initialJs": {
+    "requests": 1,
+    "rawBytes": 614909,
+    "servedBytes": 182909,
+    "gzipEstimate": 182756
+  },
+  "responses": [
+    {
+      "phase": "login-page",
+      "category": "document",
+      "path": "/login",
+      "status": 200,
+      "rawBytes": 395,
+      "servedBodyBytes": 407,
+      "servedHeaderBytes": 238,
+      "contentEncoding": null,
+      "cacheControl": "no-cache",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "login-page",
+      "category": "css",
+      "path": "/assets/index-DMXazRez.css",
+      "status": 200,
+      "rawBytes": 38972,
+      "servedBodyBytes": 7556,
+      "servedHeaderBytes": 348,
+      "contentEncoding": "gzip",
+      "cacheControl": "no-cache",
+      "gzipEstimate": 7538
+    },
+    {
+      "phase": "login-page",
+      "category": "js",
+      "path": "/assets/index-CveQdyxm.js",
+      "status": 200,
+      "rawBytes": 614909,
+      "servedBodyBytes": 182909,
+      "servedHeaderBytes": 356,
+      "contentEncoding": "gzip",
+      "cacheControl": "no-cache",
+      "gzipEstimate": 182756
+    },
+    {
+      "phase": "login-page",
+      "category": "api",
+      "path": "/api/auth/providers",
+      "status": 200,
+      "rawBytes": 2,
+      "servedBodyBytes": 12,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/api/auth/login",
+      "status": 200,
+      "rawBytes": 438,
+      "servedBodyBytes": 450,
+      "servedHeaderBytes": 811,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/ImportHistory/GetAll",
+      "status": 200,
+      "rawBytes": 13473,
+      "servedBodyBytes": 13494,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/api/extraction/jobs",
+      "status": 200,
+      "rawBytes": 2,
+      "servedBodyBytes": 12,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/Templates/GetAll",
+      "status": 200,
+      "rawBytes": 192,
+      "servedBodyBytes": 203,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/api/announcements/active",
+      "status": 200,
+      "rawBytes": 349,
+      "servedBodyBytes": 361,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/api/system/version",
+      "status": 200,
+      "rawBytes": 159,
+      "servedBodyBytes": 170,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/api/ingestion/jobs",
+      "status": 200,
+      "rawBytes": 16496514,
+      "servedBodyBytes": 16515050,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    }
+  ]
+}

@@ -24,6 +24,10 @@ log() { printf '\033[1;35m[perf]\033[0m %s\n' "$*"; }
 
 # --- 1. Builds (timed) -----------------------------------------------------------
 if [ "${PERF_SKIP_BUILD:-0}" != "1" ]; then
+  # connector-core (Wave 2): the sibling Maven project the backend and the
+  # agent depend on; installed first, not counted in the package time.
+  log "mvn -B -DskipTests -f connector-core/pom.xml install"
+  (cd "$REPO_ROOT" && mvn -B -q -DskipTests -f connector-core/pom.xml install) >"$PERF_OUT_DIR/build-core.log" 2>&1
   log "mvn -B -DskipTests package"
   t0=$(date +%s)
   (cd "$REPO_ROOT" && mvn -B -q -DskipTests package) >"$PERF_OUT_DIR/build-backend.log" 2>&1
@@ -44,13 +48,18 @@ SKIP_BUILD=1 E2E_RUN_CMD="node perf/seed.mjs && node perf/api-bench.mjs && node 
 if [ "${PERF_TESTS:-0}" = "1" ]; then
   log "mvn -B verify (timed)"
   t0=$(date +%s)
-  (cd "$REPO_ROOT" && mvn -B verify) >"$PERF_OUT_DIR/mvn-verify.log" 2>&1
+  # A red suite is recorded, not fatal: the timing is still worth keeping.
+  verify_rc=0
+  (cd "$REPO_ROOT" && mvn -B verify) >"$PERF_OUT_DIR/mvn-verify.log" 2>&1 || verify_rc=$?
+  echo "verify_exit=$verify_rc" >>"$PERF_OUT_DIR/run.meta"
   wall=$(( $(date +%s) - t0 ))
   node "$PERF_DIR/test-suite.mjs" "$PERF_OUT_DIR/mvn-verify.log" "$REPO_ROOT/target/surefire-reports" "$wall"
   log "vitest run (timed)"
   t0=$(date +%s)
-  (cd "$REPO_ROOT/frontend" && npx vitest run) >"$PERF_OUT_DIR/vitest.log" 2>&1
+  vitest_rc=0
+  (cd "$REPO_ROOT/frontend" && npx vitest run) >"$PERF_OUT_DIR/vitest.log" 2>&1 || vitest_rc=$?
   echo "vitest_wall_seconds=$(( $(date +%s) - t0 ))" >>"$PERF_OUT_DIR/run.meta"
+  echo "vitest_exit=$vitest_rc" >>"$PERF_OUT_DIR/run.meta"
   grep -E "Test Files|Tests |Duration" "$PERF_OUT_DIR/vitest.log" | sed 's/\x1b\[[0-9;]*m//g' >>"$PERF_OUT_DIR/run.meta" || true
 fi
 

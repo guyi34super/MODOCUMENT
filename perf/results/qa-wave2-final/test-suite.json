@@ -1,0 +1,1462 @@
+{
+  "machine": {
+    "at": "2026-10-11T06:29:50.626Z",
+    "commit": "e3bfa0b",
+    "dirtyTree": true,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      1.75,
+      2.12,
+      2.76
+    ]
+  },
+  "log": "g1-final2.log",
+  "mavenTotalTime": "03:21 min",
+  "wallSeconds": 203,
+  "tests": {
+    "run": 1918,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3
+  },
+  "springContextsStarted": 20,
+  "springContextStartSeconds": 59.3,
+  "contexts": [
+    {
+      "by": "SqlExtractionStoreTest",
+      "seconds": 15.258
+    },
+    {
+      "by": "IngestionJobOptimisticLockTest",
+      "seconds": 3.479
+    },
+    {
+      "by": "ForkedBooter",
+      "seconds": 0.042
+    },
+    {
+      "by": "UserAdminActionsIntegrationTest",
+      "seconds": 2.512
+    },
+    {
+      "by": "ApiRateLimitIntegrationTest",
+      "seconds": 2.168
+    },
+    {
+      "by": "TemplateVisibilityMakerCheckerTest",
+      "seconds": 2.495
+    },
+    {
+      "by": "SyntheticProbeTest",
+      "seconds": 2.296
+    },
+    {
+      "by": "IngestionEditAuditQaTest",
+      "seconds": 2.28
+    },
+    {
+      "by": "RetentionPurgeGateC5Test",
+      "seconds": 2.054
+    },
+    {
+      "by": "MaskingGateC2Test",
+      "seconds": 2.162
+    },
+    {
+      "by": "ApiDocsExposureTest",
+      "seconds": 2.433
+    },
+    {
+      "by": "BankCreateAtomicityTest",
+      "seconds": 2.549
+    },
+    {
+      "by": "IntegrationHubSecurityQaTest",
+      "seconds": 2.14
+    },
+    {
+      "by": "IntegrationApiSecurityTest",
+      "seconds": 3.13
+    },
+    {
+      "by": "IntegrationAgentApiTest",
+      "seconds": 2.238
+    },
+    {
+      "by": "AgentProtocolSecurityChainTest",
+      "seconds": 2.564
+    },
+    {
+      "by": "AuthProvidersConfiguredTest",
+      "seconds": 2.363
+    },
+    {
+      "by": "IntegrationEngineTest",
+      "seconds": 2.381
+    },
+    {
+      "by": "ExtractionEndToEndTest",
+      "seconds": 2.527
+    },
+    {
+      "by": "DocCreationEndToEndTest",
+      "seconds": 2.264
+    }
+  ],
+  "testClasses": 270,
+  "classSecondsSum": 194.2,
+  "classes": [
+    {
+      "name": "com.modocument.infrastructure.extraction.sql.SqlExtractionStoreTest",
+      "seconds": 17.388,
+      "tests": 11
+    },
+    {
+      "name": "com.modocument.api.integration.IntegrationApiSecurityTest",
+      "seconds": 10.646,
+      "tests": 15
+    },
+    {
+      "name": "com.modocument.api.IngestionFallbackIntegrationTest",
+      "seconds": 8.539,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.api.integration.IntegrationHubSecurityQaTest",
+      "seconds": 6.823,
+      "tests": 24
+    },
+    {
+      "name": "com.modocument.doccreation.DocCreationEndToEndTest",
+      "seconds": 6.658,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.ExtractionModeResolutionApiTest",
+      "seconds": 6.339,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.DocReleaseSodIntegrationTest",
+      "seconds": 5.964,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.api.UserAdminActionsIntegrationTest",
+      "seconds": 5.679,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.api.MfaFlowIntegrationTest",
+      "seconds": 4.403,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.api.MaskingGateC2Test",
+      "seconds": 3.952,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.contract.ApiDocsExposureTest",
+      "seconds": 3.847,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.persistence.IngestionJobOptimisticLockTest",
+      "seconds": 3.652,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.BankCreateAtomicityTest",
+      "seconds": 3.167,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.AgentProtocolSecurityChainTest",
+      "seconds": 3.158,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.integration.IntegrationEngineTest",
+      "seconds": 2.917,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.api.TemplateVisibilityMakerCheckerTest",
+      "seconds": 2.837,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.UserAdminIntegrationTest",
+      "seconds": 2.833,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.ExtractionEndToEndTest",
+      "seconds": 2.811,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.api.ApiRateLimitIntegrationTest",
+      "seconds": 2.618,
+      "tests": 16
+    },
+    {
+      "name": "com.modocument.api.IntegrationAgentApiTest",
+      "seconds": 2.613,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.api.MakerCheckerIntegrationTest",
+      "seconds": 2.561,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.job.JobWaitServiceTest",
+      "seconds": 2.524,
+      "tests": 11
+    },
+    {
+      "name": "com.modocument.api.controller.AuthProvidersConfiguredTest",
+      "seconds": 2.49,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.SyntheticProbeTest",
+      "seconds": 2.46,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.contract.OpenApiContractTest",
+      "seconds": 2.423,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.api.RetentionPurgeGateC5Test",
+      "seconds": 2.315,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.IngestionEditAuditQaTest",
+      "seconds": 2.309,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.settings.SettingsGuardrailTest",
+      "seconds": 2.023,
+      "tests": 65
+    },
+    {
+      "name": "com.modocument.infrastructure.file.VisionOcrServiceTest",
+      "seconds": 1.879,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.connector.RestApiMtlsTest",
+      "seconds": 1.875,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.connector.SftpIntegrationConnectorTest",
+      "seconds": 1.802,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.api.controller.IngestionJobControllerTest",
+      "seconds": 1.65,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.api.AlertingGateD1Test",
+      "seconds": 1.598,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.settings.SettingsConsumersOverrideTest",
+      "seconds": 1.474,
+      "tests": 16
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.engine.IntegrationSchedulerExecutorTest",
+      "seconds": 1.466,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.logging.LogRedactionCanaryTest",
+      "seconds": 1.448,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.doccreation.pdf.LibreOfficePdfConverterTest",
+      "seconds": 1.389,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.connector.ConnectorSecurityQaTest",
+      "seconds": 1.377,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.file.FileTextReaderTest",
+      "seconds": 1.363,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.infrastructure.transform.code.ExtractionCorpusTest",
+      "seconds": 1.342,
+      "tests": 32
+    },
+    {
+      "name": "com.modocument.infrastructure.transform.IngestionParseStepImplTest",
+      "seconds": 1.326,
+      "tests": 32
+    },
+    {
+      "name": "com.modocument.api.DeprecatedEndpointsTest",
+      "seconds": 1.295,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.release.VersionScriptsTest",
+      "seconds": 1.285,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.integration.SftpInboundPartialFailureQaTest",
+      "seconds": 1.274,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.controller.AgentProtocolControllerTest",
+      "seconds": 1.246,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.api.AuthFlowIntegrationTest",
+      "seconds": 1.159,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.api.TemplateVisibilityMatrixTest",
+      "seconds": 1.11,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.api.BankLifecycleIntegrationTest",
+      "seconds": 1.101,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.api.controller.ExtractionJobControllerTest",
+      "seconds": 1.031,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.application.usecase.SummarizeExtractionUseCaseTest",
+      "seconds": 1.019,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.application.usecase.ApiClientProvisioningTest",
+      "seconds": 0.995,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.api.ExportCapGateD2Test",
+      "seconds": 0.985,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.api.AccountLockoutIntegrationTest",
+      "seconds": 0.912,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.bootstrap.BootstrapPlatformRunnerTest",
+      "seconds": 0.842,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.api.AuditTrailGapsTest",
+      "seconds": 0.81,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.api.controller.TemplateControllerTest",
+      "seconds": 0.795,
+      "tests": 12
+    },
+    {
+      "name": "com.modocument.api.IngestionListPayloadBenchmarkTest",
+      "seconds": 0.737,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.engine.OutboundDispatcherTickCacheTest",
+      "seconds": 0.723,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.bootstrap.BootstrapAdminRunnerTest",
+      "seconds": 0.72,
+      "tests": 13
+    },
+    {
+      "name": "com.modocument.infrastructure.transform.code.CodeTableExtractorTest",
+      "seconds": 0.698,
+      "tests": 23
+    },
+    {
+      "name": "com.modocument.api.PlatformChangeAlertTest",
+      "seconds": 0.682,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.application.usecase.PendingChangeAudienceTest",
+      "seconds": 0.67,
+      "tests": 40
+    },
+    {
+      "name": "com.modocument.release.ReleaseScriptsTest",
+      "seconds": 0.625,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.security.client.ClientCredentialPrimitivesTest",
+      "seconds": 0.622,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.file.OcrServiceTest",
+      "seconds": 0.55,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.AnnouncementApiTest",
+      "seconds": 0.541,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.file.store.FileStoreConfigurationTest",
+      "seconds": 0.538,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.ApiHygieneQaTest",
+      "seconds": 0.537,
+      "tests": 22
+    },
+    {
+      "name": "com.modocument.infrastructure.file.store.S3FileStoreTest",
+      "seconds": 0.527,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.api.settings.SettingsApiTest",
+      "seconds": 0.525,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.api.controller.IngestionExportControllerTest",
+      "seconds": 0.497,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.application.usecase.AuthUseCaseTest",
+      "seconds": 0.494,
+      "tests": 37
+    },
+    {
+      "name": "com.modocument.application.usecase.BridgeToTemplateUseCaseTest",
+      "seconds": 0.479,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.application.usecase.ExecuteExtractionTaskUseCaseTest",
+      "seconds": 0.478,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.integration.IntegrationApiTest",
+      "seconds": 0.477,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.api.SiemFeedE6Test",
+      "seconds": 0.466,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.api.AuditLogApiTest",
+      "seconds": 0.465,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.doccreation.generate.DocumentAssemblerTest",
+      "seconds": 0.445,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.release.SystemVersionServiceTest",
+      "seconds": 0.443,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.security.oidc.OidcLoginServiceTest",
+      "seconds": 0.435,
+      "tests": 18
+    },
+    {
+      "name": "com.modocument.api.ReadPathQueryCountTest",
+      "seconds": 0.417,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.web.CompliantWebAccessTest",
+      "seconds": 0.414,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.infrastructure.housekeeping.HousekeepingJobTest",
+      "seconds": 0.41,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.agent.AgentOfflineSweepTest",
+      "seconds": 0.404,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.AiGatewayC9Test",
+      "seconds": 0.399,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.application.port.TenantContextCallSiteRegistryTest",
+      "seconds": 0.391,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.AdminDashboardIsolationTest",
+      "seconds": 0.377,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.sql.SqlRecordStoreBatchTransactionTest",
+      "seconds": 0.366,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.settings.PlatformControlledSettingsIntegrationTest",
+      "seconds": 0.362,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.transform.TransformServiceImplTest",
+      "seconds": 0.352,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.api.EgressRuleIntegrationTest",
+      "seconds": 0.337,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.AuditViewAuditQaTest",
+      "seconds": 0.329,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.audit.JpaAuditRecorderThrottleTest",
+      "seconds": 0.327,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.ratelimit.MfaRateLimiterTest",
+      "seconds": 0.323,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.housekeeping.HousekeepingRetentionSettingQaTest",
+      "seconds": 0.312,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.connector.RestApiConnectorRedirectTest",
+      "seconds": 0.311,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.TrustedProxyIntegrationTest",
+      "seconds": 0.31,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.controller.AuthControllerTest",
+      "seconds": 0.294,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.application.usecase.IngestionJobSummaryBenchmarkTest",
+      "seconds": 0.276,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.doccreation.parse.BlueprintSectionExtractorTest",
+      "seconds": 0.274,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.file.StructuredTableMaterializerBenchmarkTest",
+      "seconds": 0.263,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.api.controller.ValidationRuleControllerTest",
+      "seconds": 0.258,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.security.oidc.OidcLoginSuccessHandlerTest",
+      "seconds": 0.256,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.egress.BankEgressGuardTest",
+      "seconds": 0.253,
+      "tests": 14
+    },
+    {
+      "name": "com.modocument.infrastructure.persistence.CrossUserAccessTest",
+      "seconds": 0.253,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.application.usecase.MfaUseCaseTest",
+      "seconds": 0.252,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.doccreation.api.DocInstanceControllerTest",
+      "seconds": 0.244,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.release.DeployedVersionRecorderTest",
+      "seconds": 0.243,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.controller.ProcessStepControllerTest",
+      "seconds": 0.239,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.application.usecase.UserAdminUseCaseTest",
+      "seconds": 0.233,
+      "tests": 22
+    },
+    {
+      "name": "com.modocument.infrastructure.security.SecretFileEnvironmentPostProcessorTest",
+      "seconds": 0.225,
+      "tests": 13
+    },
+    {
+      "name": "com.modocument.doccreation.api.DocBlueprintControllerTest",
+      "seconds": 0.223,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.settings.SettingsMakerCheckerIntegrationTest",
+      "seconds": 0.212,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.application.usecase.BankAdminAddChangeApplierTest",
+      "seconds": 0.211,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.AiOutputPolicyC10Test",
+      "seconds": 0.209,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.rule.RegexRuleTest",
+      "seconds": 0.209,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.web.HttpWebFetcherRedirectQaTest",
+      "seconds": 0.206,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.controller.TemplateDataTypesControllerTest",
+      "seconds": 0.205,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.api.security.PermissionEnforcementTest",
+      "seconds": 0.2,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.NoDirectChatModelAccessGuardTest",
+      "seconds": 0.2,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.file.TabularNormalizerTest",
+      "seconds": 0.197,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.infrastructure.file.StructuredTableMaterializerTest",
+      "seconds": 0.19,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.doccreation.generate.AiDocumentComposerTest",
+      "seconds": 0.187,
+      "tests": 11
+    },
+    {
+      "name": "com.modocument.api.security.PlatformBoundaryQaTest",
+      "seconds": 0.184,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.connector.RestApiIntegrationConnectorTest",
+      "seconds": 0.18,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.infrastructure.transform.code.QaExtractionCorpusTest",
+      "seconds": 0.18,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.application.audit.AuditActionCatalogueDocTest",
+      "seconds": 0.176,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.doccreation.usecase.DocInstanceUseCaseTest",
+      "seconds": 0.176,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.api.controller.SystemInfoControllerTest",
+      "seconds": 0.174,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.alerting.AlertServiceTest",
+      "seconds": 0.173,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.integration.AgentRunServiceTest",
+      "seconds": 0.169,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.AccessDeniedBurstAlertTest",
+      "seconds": 0.168,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.TemplateExtractionHintsApiTest",
+      "seconds": 0.167,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.api.security.UploadContentGateSec030Test",
+      "seconds": 0.152,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.infrastructure.file.CompositeDocumentParserTest",
+      "seconds": 0.146,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.audit.AuditThrottleTest",
+      "seconds": 0.144,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.security.RevocationValidatorTest",
+      "seconds": 0.144,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.doccreation.parse.AiSectionSplitterTest",
+      "seconds": 0.141,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.application.usecase.SettingUpdateApplierTest",
+      "seconds": 0.134,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.PlatformUserAdminIntegrationTest",
+      "seconds": 0.132,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.settings.SettingsConsumersParityTest",
+      "seconds": 0.132,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.security.RequestPrincipalStateQueryCountTest",
+      "seconds": 0.127,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.application.validation.SafeRegexTest",
+      "seconds": 0.126,
+      "tests": 22
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.AiPreflightTest",
+      "seconds": 0.117,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.web.HtmlContentExtractorTest",
+      "seconds": 0.106,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.transform.code.DateNormalizerTest",
+      "seconds": 0.106,
+      "tests": 25
+    },
+    {
+      "name": "com.modocument.api.IntegrityGateC6Test",
+      "seconds": 0.103,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.AiCircuitBreakerTest",
+      "seconds": 0.101,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.api.security.UploadOwnershipEnforcementTest",
+      "seconds": 0.1,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.IngestionSummaryPagingQaTest",
+      "seconds": 0.099,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.security.PlatformAccessIntegrationTest",
+      "seconds": 0.099,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.settings.SettingsCatalogueSafetyTest",
+      "seconds": 0.099,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.api.PlatformBankApiTest",
+      "seconds": 0.098,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.AiGatewayTest",
+      "seconds": 0.092,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.api.DataSubjectRightsGateC12Test",
+      "seconds": 0.091,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.security.JwtServiceTest",
+      "seconds": 0.091,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.application.usecase.IngestionJobUseCaseTest",
+      "seconds": 0.089,
+      "tests": 40
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.web.PerHostRateLimiterTest",
+      "seconds": 0.087,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.api.settings.SettingsConsumersIntegrationTest",
+      "seconds": 0.086,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.export.FileExportServiceTest",
+      "seconds": 0.083,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.api.TemplateMakerCheckerConfigOffIntegrationTest",
+      "seconds": 0.079,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.connector.DatabaseIntegrationConnectorTest",
+      "seconds": 0.076,
+      "tests": 11
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.connector.JdbcSourceConnectorTest",
+      "seconds": 0.075,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.RequestTraceabilityE9Test",
+      "seconds": 0.074,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.logging.StructuredLogRedactionTest",
+      "seconds": 0.072,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.doccreation.parse.BlueprintSectionParserTest",
+      "seconds": 0.071,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.api.HeaderContractTest",
+      "seconds": 0.07,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.export.DatabaseExportServiceTest",
+      "seconds": 0.068,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.infrastructure.alerting.AlertRuleCatalogueTest",
+      "seconds": 0.063,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.LlmStructuredJsonParserTest",
+      "seconds": 0.057,
+      "tests": 28
+    },
+    {
+      "name": "com.modocument.api.PlatformOverviewTest",
+      "seconds": 0.055,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.controller.AuthProvidersControllerTest",
+      "seconds": 0.05,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.file.store.LocalFileStoreTest",
+      "seconds": 0.05,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.release.MigrationPolicyTest",
+      "seconds": 0.05,
+      "tests": 58
+    },
+    {
+      "name": "com.modocument.ContextLoadsAndSeedTest",
+      "seconds": 0.046,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.persistence.DatabaseTlsConfigTest",
+      "seconds": 0.044,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.settings.SettingsResolverTest",
+      "seconds": 0.042,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.doccreation.DocCreationOwnershipIntegrationTest",
+      "seconds": 0.041,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.LlmQuotaRetryAfterIntegrationTest",
+      "seconds": 0.039,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.application.usecase.ChatEditTableUseCaseTest",
+      "seconds": 0.039,
+      "tests": 23
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.connector.WebhookIntegrationConnectorTest",
+      "seconds": 0.038,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.connector.RestApiConnectorTest",
+      "seconds": 0.037,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.infrastructure.file.UploadContentCheckerTest",
+      "seconds": 0.035,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.export.ExportGuardTest",
+      "seconds": 0.033,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.memory.InMemoryExtractionTaskQueueTest",
+      "seconds": 0.031,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.infrastructure.integration.secrets.ConnectorSecretVaultTest",
+      "seconds": 0.029,
+      "tests": 13
+    },
+    {
+      "name": "com.modocument.infrastructure.audit.JpaAuditRecorderTest",
+      "seconds": 0.028,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.transform.code.NumberNormalizerTest",
+      "seconds": 0.028,
+      "tests": 26
+    },
+    {
+      "name": "com.modocument.infrastructure.file.store.LocalCopyCacheTest",
+      "seconds": 0.025,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.prompt.RowBatchOutputTokensTest",
+      "seconds": 0.025,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.domain.model.Uuid7Test",
+      "seconds": 0.022,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.logging.RedactingConverterTest",
+      "seconds": 0.022,
+      "tests": 15
+    },
+    {
+      "name": "com.modocument.infrastructure.release.ReleaseNotesParserTest",
+      "seconds": 0.021,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.api.security.RoutePermissionCoverageTest",
+      "seconds": 0.02,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.settings.SettingsStartupCheckTest",
+      "seconds": 0.02,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.settings.SettingsDefaultParityTest",
+      "seconds": 0.019,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.application.usecase.AutoMapUseCaseTest",
+      "seconds": 0.018,
+      "tests": 14
+    },
+    {
+      "name": "com.modocument.infrastructure.file.SupportedDocumentTypesTest",
+      "seconds": 0.018,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.controller.TemplateFieldsControllerTest",
+      "seconds": 0.016,
+      "tests": 11
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.AiFailureClassifierTest",
+      "seconds": 0.015,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.AiGatewayC8LoggingTest",
+      "seconds": 0.015,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.file.store.FileStoreTraversalQaTest",
+      "seconds": 0.015,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.infrastructure.file.TableExtractionBatchPlannerTest",
+      "seconds": 0.014,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.file.TableExtractionHintsBuilderTest",
+      "seconds": 0.014,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.application.usecase.InferSchemaUseCaseTest",
+      "seconds": 0.013,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.ScaleModeEnvironmentGuardTest",
+      "seconds": 0.013,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.application.usecase.ExtractionSourceAuthEnvVarTest",
+      "seconds": 0.012,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.api.controller.ImportDetailsControllerTest",
+      "seconds": 0.011,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.connector.JsonFlattenerTest",
+      "seconds": 0.011,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.net.EgressTargetsTest",
+      "seconds": 0.011,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.release.FlywayVersionRangeTest",
+      "seconds": 0.01,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.application.usecase.ExtractionJobUseCaseTest",
+      "seconds": 0.009,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.file.store.FileStoreKeysTest",
+      "seconds": 0.009,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.retention.AfterCommitFileDeleterQaTest",
+      "seconds": 0.009,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.security.oidc.OidcRegistrationFactoryTest",
+      "seconds": 0.009,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.api.controller.ImportHistoryControllerTest",
+      "seconds": 0.008,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.application.privacy.PiiTokenizerTest",
+      "seconds": 0.008,
+      "tests": 15
+    },
+    {
+      "name": "com.modocument.application.usecase.DeleteTemplateUseCaseTest",
+      "seconds": 0.008,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.application.usecase.ExtractionCrossUserAccessTest",
+      "seconds": 0.008,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.AiOutputScannerTest",
+      "seconds": 0.008,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.infrastructure.ratelimit.FixedWindowRateLimiterTest",
+      "seconds": 0.008,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.security.totp.TotpTest",
+      "seconds": 0.008,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.application.usecase.CreateTemplateWithFieldsUseCaseTest",
+      "seconds": 0.007,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.application.privacy.PiiMaskingServiceTest",
+      "seconds": 0.006,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.application.security.PasswordPolicyTest",
+      "seconds": 0.006,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.application.usecase.AnnouncementRulesTest",
+      "seconds": 0.006,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.doccreation.api.DocInstanceControllerAuditTest",
+      "seconds": 0.006,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.domain.model.UrlNormalizerTest",
+      "seconds": 0.006,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.infrastructure.extraction.web.RobotsTxtParserTest",
+      "seconds": 0.006,
+      "tests": 9
+    },
+    {
+      "name": "com.modocument.infrastructure.net.OutboundHostPolicyTest",
+      "seconds": 0.006,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.prompt.TableExtractionPromptTest",
+      "seconds": 0.006,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.infrastructure.rule.RangeRuleTest",
+      "seconds": 0.006,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.security.MfaSecretCipherTest",
+      "seconds": 0.006,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.api.controller.ExtractionJobControllerAuditTest",
+      "seconds": 0.005,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.controller.ExtractionSourceControllerTest",
+      "seconds": 0.005,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.api.security.PermissionCheckerPlatformGuardTest",
+      "seconds": 0.005,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.application.privacy.MaskerTest",
+      "seconds": 0.005,
+      "tests": 8
+    },
+    {
+      "name": "com.modocument.application.security.SodPolicyTest",
+      "seconds": 0.005,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.application.usecase.ChatEditScopeResolverTest",
+      "seconds": 0.005,
+      "tests": 10
+    },
+    {
+      "name": "com.modocument.application.usecase.ValidateRowsUseCaseTest",
+      "seconds": 0.005,
+      "tests": 7
+    },
+    {
+      "name": "com.modocument.infrastructure.security.oidc.KeycloakRealmConfigTest",
+      "seconds": 0.005,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.infrastructure.security.totp.Base32Test",
+      "seconds": 0.005,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.transform.ExtractionModeResolverTest",
+      "seconds": 0.005,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.application.usecase.CleanRecordsUseCaseTest",
+      "seconds": 0.004,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.application.usecase.TemplateUpdateChangeApplierModeTest",
+      "seconds": 0.004,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.application.usecase.UpdateTemplateUseCaseTest",
+      "seconds": 0.004,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.file.MarkdownTableMaterializerTest",
+      "seconds": 0.004,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.api.controller.AiExceptionHandlerTest",
+      "seconds": 0.003,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.api.controller.ValidationControllerTest",
+      "seconds": 0.003,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.application.security.RoleAssignmentPolicyTest",
+      "seconds": 0.003,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.application.usecase.AccessReviewUseCaseTest",
+      "seconds": 0.003,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.application.usecase.UserSecurityServiceTest",
+      "seconds": 0.003,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.file.RowLineTableMaterializerTest",
+      "seconds": 0.003,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.rule.DateFormatRuleTest",
+      "seconds": 0.003,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.application.dto.TableRowsResultDeserializerTest",
+      "seconds": 0.002,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.application.mapping.ColumnNameSimilarityTest",
+      "seconds": 0.002,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.application.privacy.PiiClassifierTest",
+      "seconds": 0.002,
+      "tests": 6
+    },
+    {
+      "name": "com.modocument.application.security.LoginLockoutPolicyTest",
+      "seconds": 0.002,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.application.security.RolePermissionMatrixTest",
+      "seconds": 0.002,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.application.usecase.AgentEnrolmentTokenTest",
+      "seconds": 0.002,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.rule.ExpiryDateRuleTest",
+      "seconds": 0.002,
+      "tests": 4
+    },
+    {
+      "name": "com.modocument.infrastructure.settings.IntegrationSettingsTest",
+      "seconds": 0.002,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.infrastructure.settings.SettingsCatalogueDocTest",
+      "seconds": 0.002,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.transform.TableColumnAlignerTest",
+      "seconds": 0.002,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.application.dto.IngestionJobDtoTest",
+      "seconds": 0.001,
+      "tests": 3
+    },
+    {
+      "name": "com.modocument.application.privacy.MaskingMatrixDocTest",
+      "seconds": 0.001,
+      "tests": 2
+    },
+    {
+      "name": "com.modocument.doccreation.flow.KeywordSectionMatcherTest",
+      "seconds": 0.001,
+      "tests": 5
+    },
+    {
+      "name": "com.modocument.infrastructure.ai.AiTimeoutCancellationBug03Test",
+      "seconds": 0.001,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.prompt.AutoMappingPromptTest",
+      "seconds": 0.001,
+      "tests": 1
+    },
+    {
+      "name": "com.modocument.infrastructure.rule.RequiredRuleTest",
+      "seconds": 0.001,
+      "tests": 4
+    }
+  ]
+}

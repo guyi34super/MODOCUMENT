@@ -48,8 +48,10 @@ describe('IntegrationRunDetailPage', () => {
   it('shows the log and deliveries with their levels and statuses in words', async () => {
     renderPage();
     expect(await screen.findByRole('heading', { name: 'Run #41' })).toBeInTheDocument();
+    // The heading comes from the route (rendered before getRun resolves): wait
+    // for the run itself, or a loaded box races the mock (QA, flaky at load 2+).
     // The status is announced when polling changes it.
-    expect(screen.getByTestId('run-status')).toHaveAttribute('aria-live', 'polite');
+    expect(await screen.findByTestId('run-status')).toHaveAttribute('aria-live', 'polite');
     expect(screen.getByTestId('run-status')).toHaveTextContent('Run status: Succeeded');
     // Log levels are text, not only colour.
     expect(screen.getByText(/\[ERROR\]/)).toBeInTheDocument();

@@ -1,0 +1,188 @@
+{
+  "machine": {
+    "at": "2026-10-11T05:18:43.646Z",
+    "commit": "8d1e272",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      2.06,
+      2.23,
+      1.3
+    ]
+  },
+  "base": "http://127.0.0.1:39807",
+  "runs": 3,
+  "timingsMs": {
+    "loginReady": 111,
+    "dashboardVisible": 143,
+    "dashboardIdle": 149
+  },
+  "total": {
+    "requests": 10,
+    "rawBytes": 337702,
+    "servedBytes": 106735,
+    "gzipEstimate": 100574
+  },
+  "loginPage": {
+    "requests": 5,
+    "rawBytes": 332271,
+    "servedBytes": 101245,
+    "gzipEstimate": 100574
+  },
+  "byCategory": {
+    "document": {
+      "requests": 1,
+      "rawBytes": 537,
+      "servedBytes": 549,
+      "gzipEstimate": 0
+    },
+    "css": {
+      "requests": 1,
+      "rawBytes": 39549,
+      "servedBytes": 7642,
+      "gzipEstimate": 7624
+    },
+    "js": {
+      "requests": 2,
+      "rawBytes": 292183,
+      "servedBytes": 93042,
+      "gzipEstimate": 92950
+    },
+    "api": {
+      "requests": 6,
+      "rawBytes": 5433,
+      "servedBytes": 5502,
+      "gzipEstimate": 0
+    }
+  },
+  "initialJs": {
+    "requests": 2,
+    "rawBytes": 292183,
+    "servedBytes": 93042,
+    "gzipEstimate": 92950
+  },
+  "responses": [
+    {
+      "phase": "login-page",
+      "category": "document",
+      "path": "/login",
+      "status": 200,
+      "rawBytes": 537,
+      "servedBodyBytes": 549,
+      "servedHeaderBytes": 238,
+      "contentEncoding": null,
+      "cacheControl": "no-cache",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "login-page",
+      "category": "css",
+      "path": "/assets/index-DqMpGB_1.css",
+      "status": 200,
+      "rawBytes": 39549,
+      "servedBodyBytes": 7642,
+      "servedHeaderBytes": 348,
+      "contentEncoding": "gzip",
+      "cacheControl": "no-cache",
+      "gzipEstimate": 7624
+    },
+    {
+      "phase": "login-page",
+      "category": "js",
+      "path": "/assets/index-CuxOxI6y.js",
+      "status": 200,
+      "rawBytes": 58212,
+      "servedBodyBytes": 18069,
+      "servedHeaderBytes": 355,
+      "contentEncoding": "gzip",
+      "cacheControl": "no-cache",
+      "gzipEstimate": 18044
+    },
+    {
+      "phase": "login-page",
+      "category": "js",
+      "path": "/assets/vendor-B_dJgTEk.js",
+      "status": 200,
+      "rawBytes": 233971,
+      "servedBodyBytes": 74973,
+      "servedHeaderBytes": 356,
+      "contentEncoding": "gzip",
+      "cacheControl": "no-cache",
+      "gzipEstimate": 74906
+    },
+    {
+      "phase": "login-page",
+      "category": "api",
+      "path": "/api/auth/providers",
+      "status": 200,
+      "rawBytes": 2,
+      "servedBodyBytes": 12,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/api/auth/login",
+      "status": 200,
+      "rawBytes": 438,
+      "servedBodyBytes": 450,
+      "servedHeaderBytes": 811,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/api/announcements/active",
+      "status": 200,
+      "rawBytes": 349,
+      "servedBodyBytes": 361,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/Templates/GetAll",
+      "status": 200,
+      "rawBytes": 192,
+      "servedBodyBytes": 203,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/api/dashboard/summary",
+      "status": 200,
+      "rawBytes": 4288,
+      "servedBodyBytes": 4301,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    },
+    {
+      "phase": "sign-in+dashboard",
+      "category": "api",
+      "path": "/api/system/version",
+      "status": 200,
+      "rawBytes": 164,
+      "servedBodyBytes": 175,
+      "servedHeaderBytes": 533,
+      "contentEncoding": null,
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "gzipEstimate": null
+    }
+  ]
+}

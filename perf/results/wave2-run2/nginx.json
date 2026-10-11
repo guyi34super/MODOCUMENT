@@ -1,0 +1,299 @@
+{
+  "machine": {
+    "at": "2026-10-11T05:54:06.459Z",
+    "commit": "8d1e272",
+    "dirtyTree": true,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      5.19,
+      3.47,
+      2.55
+    ]
+  },
+  "base": "http://127.0.0.1:37363",
+  "checks": [
+    {
+      "id": "C1",
+      "name": "/assets/index-CuxOxI6y.js gzip",
+      "ok": true,
+      "detail": "20914 of 58212 B"
+    },
+    {
+      "id": "C1",
+      "name": "/assets/index-CuxOxI6y.js immutable",
+      "ok": true,
+      "detail": "public, max-age=31536000, immutable"
+    },
+    {
+      "id": "C1",
+      "name": "/assets/index-CuxOxI6y.js Vary",
+      "ok": true,
+      "detail": "Accept-Encoding"
+    },
+    {
+      "id": "C6",
+      "name": "/assets/index-CuxOxI6y.js security headers",
+      "ok": true,
+      "detail": "all"
+    },
+    {
+      "id": "C1",
+      "name": "/assets/vendor-B_dJgTEk.js gzip",
+      "ok": true,
+      "detail": "87142 of 233971 B"
+    },
+    {
+      "id": "C1",
+      "name": "/assets/vendor-B_dJgTEk.js immutable",
+      "ok": true,
+      "detail": "public, max-age=31536000, immutable"
+    },
+    {
+      "id": "C1",
+      "name": "/assets/vendor-B_dJgTEk.js Vary",
+      "ok": true,
+      "detail": "Accept-Encoding"
+    },
+    {
+      "id": "C6",
+      "name": "/assets/vendor-B_dJgTEk.js security headers",
+      "ok": true,
+      "detail": "all"
+    },
+    {
+      "id": "C2",
+      "name": "/assets/index-DqMpGB_1.css gzip",
+      "ok": true,
+      "detail": "9017 of 39549 B"
+    },
+    {
+      "id": "C2",
+      "name": "/assets/index-DqMpGB_1.css immutable",
+      "ok": true,
+      "detail": "public, max-age=31536000, immutable"
+    },
+    {
+      "id": "C2",
+      "name": "/assets/index-DqMpGB_1.css Vary",
+      "ok": true,
+      "detail": "Accept-Encoding"
+    },
+    {
+      "id": "C6",
+      "name": "/assets/index-DqMpGB_1.css security headers",
+      "ok": true,
+      "detail": "all"
+    },
+    {
+      "id": "C3",
+      "name": "missing chunk is a real 404",
+      "ok": true,
+      "detail": "HTTP 404"
+    },
+    {
+      "id": "C3",
+      "name": "missing chunk not cached immutable",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "id": "C6",
+      "name": "missing chunk security headers",
+      "ok": true,
+      "detail": "all"
+    },
+    {
+      "id": "C4",
+      "name": "/ serves the shell",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "id": "C4",
+      "name": "/ no-cache",
+      "ok": true,
+      "detail": "no-cache"
+    },
+    {
+      "id": "C6",
+      "name": "/ security headers",
+      "ok": true,
+      "detail": "all"
+    },
+    {
+      "id": "C4",
+      "name": "/index.html serves the shell",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "id": "C4",
+      "name": "/index.html no-cache",
+      "ok": true,
+      "detail": "no-cache"
+    },
+    {
+      "id": "C6",
+      "name": "/index.html security headers",
+      "ok": true,
+      "detail": "all"
+    },
+    {
+      "id": "C4",
+      "name": "/admin/audit serves the shell",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "id": "C4",
+      "name": "/admin/audit no-cache",
+      "ok": true,
+      "detail": "no-cache"
+    },
+    {
+      "id": "C6",
+      "name": "/admin/audit security headers",
+      "ok": true,
+      "detail": "all"
+    },
+    {
+      "id": "C4",
+      "name": "/ingestion/42 serves the shell",
+      "ok": true,
+      "detail": "HTTP 200"
+    },
+    {
+      "id": "C4",
+      "name": "/ingestion/42 no-cache",
+      "ok": true,
+      "detail": "no-cache"
+    },
+    {
+      "id": "C6",
+      "name": "/ingestion/42 security headers",
+      "ok": true,
+      "detail": "all"
+    },
+    {
+      "id": "C8",
+      "name": "favicon served",
+      "ok": true,
+      "detail": "HTTP 200 image/svg+xml"
+    },
+    {
+      "id": "C6",
+      "name": "/favicon.svg security headers",
+      "ok": true,
+      "detail": "all"
+    },
+    {
+      "id": "C5",
+      "name": "/api/ingestion/jobs?view=summary&page=0&size=50 gzip through nginx",
+      "ok": true,
+      "detail": "1569 of 20309 B"
+    },
+    {
+      "id": "C5",
+      "name": "/api/ingestion/jobs?view=summary&page=0&size=50 Cache-Control is the backend's",
+      "ok": true,
+      "detail": "no-cache, no-store, max-age=0, must-revalidate vs no-cache, no-store, max-age=0, must-revalidate"
+    },
+    {
+      "id": "C6",
+      "name": "/api/ingestion/jobs?view=summary&page=0&size=50 one CSP (the backend's)",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "id": "C5",
+      "name": "/api/dashboard/summary gzip through nginx",
+      "ok": true,
+      "detail": "642 of 4290 B"
+    },
+    {
+      "id": "C5",
+      "name": "/api/dashboard/summary Cache-Control is the backend's",
+      "ok": true,
+      "detail": "no-cache, no-store, max-age=0, must-revalidate vs no-cache, no-store, max-age=0, must-revalidate"
+    },
+    {
+      "id": "C6",
+      "name": "/api/dashboard/summary one CSP (the backend's)",
+      "ok": true,
+      "detail": "1"
+    },
+    {
+      "id": "C5",
+      "name": "/api/ingestion/jobs/1 gzip through nginx",
+      "ok": true,
+      "detail": "44389 of 328287 B"
+    },
+    {
+      "id": "C5",
+      "name": "/api/ingestion/jobs/1 Cache-Control is the backend's",
+      "ok": true,
+      "detail": "no-cache, no-store, max-age=0, must-revalidate vs no-cache, no-store, max-age=0, must-revalidate"
+    },
+    {
+      "id": "C6",
+      "name": "/api/ingestion/jobs/1 one CSP (the backend's)",
+      "ok": true,
+      "detail": "1"
+    }
+  ],
+  "transfer": [
+    {
+      "path": "/assets/index-CuxOxI6y.js",
+      "status": 200,
+      "rawBytes": 58212,
+      "wireBytes": 20914,
+      "encoding": "gzip"
+    },
+    {
+      "path": "/assets/vendor-B_dJgTEk.js",
+      "status": 200,
+      "rawBytes": 233971,
+      "wireBytes": 87142,
+      "encoding": "gzip"
+    },
+    {
+      "path": "/assets/index-DqMpGB_1.css",
+      "status": 200,
+      "rawBytes": 39549,
+      "wireBytes": 9017,
+      "encoding": "gzip"
+    }
+  ],
+  "api": {
+    "/api/ingestion/jobs?view=summary&page=0&size=50": {
+      "status": 200,
+      "rawBytes": 20309,
+      "wireBytes": 1569,
+      "encoding": "gzip",
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "backendCacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "backendEncoding": null
+    },
+    "/api/dashboard/summary": {
+      "status": 200,
+      "rawBytes": 4290,
+      "wireBytes": 642,
+      "encoding": "gzip",
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "backendCacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "backendEncoding": null
+    },
+    "/api/ingestion/jobs/1": {
+      "status": 200,
+      "rawBytes": 328287,
+      "wireBytes": 44389,
+      "encoding": "gzip",
+      "cacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "backendCacheControl": "no-cache, no-store, max-age=0, must-revalidate",
+      "backendEncoding": null
+    }
+  },
+  "failed": 0
+}
