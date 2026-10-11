@@ -49,4 +49,18 @@ public class DocContentBlockRepositoryImpl implements DocContentBlockRepository 
     public void deleteByInstance(int instanceId) {
         jpa.deleteByInstanceId(instanceId);
     }
+
+    @Override
+    public java.util.Map<Integer, List<DocContentBlock>> listByInstances(
+            java.util.Collection<Integer> instanceIds) {
+        java.util.Map<Integer, List<DocContentBlock>> byInstance = new java.util.LinkedHashMap<>();
+        if (instanceIds.isEmpty()) {
+            return byInstance;
+        }
+        for (DocContentBlock block
+                : jpa.findByInstanceIdInOrderByInstanceIdAscSectionIdAscOrderIndexAsc(instanceIds)) {
+            byInstance.computeIfAbsent(block.getInstanceId(), id -> new java.util.ArrayList<>()).add(block);
+        }
+        return byInstance;
+    }
 }

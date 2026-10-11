@@ -147,6 +147,11 @@ class PendingChangeAudienceTest {
                 .filter(row -> row.getPendingChangeId() == (int) call.getArgument(0))
                 .findFirst());
         when(changes.save(any())).thenAnswer(call -> call.getArgument(0));
+        // ws28: the paged queue filters in the repository; the port's default
+        // (the same rule over the stubbed lists above) stands in for the SQL.
+        when(changes.pageVisible(anyInt(), any(), anyInt(), any(), anyInt(), anyInt()))
+                .thenCallRealMethod();
+        when(users.getByIds(any())).thenCallRealMethod();
 
         PermissionChecker perm = new PermissionChecker(currentUser, passwordGate, platformBanks);
         useCase = newUseCase(perm);

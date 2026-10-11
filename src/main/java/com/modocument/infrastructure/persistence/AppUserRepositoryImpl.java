@@ -51,4 +51,21 @@ public class AppUserRepositoryImpl implements AppUserRepository {
     public long countActiveByRole(int bankId, Role role) {
         return jpa.countByBankIdAndRoleAndDisabledFalse(bankId, role);
     }
+
+    @Override
+    public java.util.Map<Integer, AppUser> getByIds(java.util.Collection<Integer> ids) {
+        java.util.Map<Integer, AppUser> byId = new java.util.LinkedHashMap<>();
+        if (ids == null || ids.isEmpty()) {
+            return byId;
+        }
+        for (AppUser user : jpa.findAllById(ids)) {
+            byId.put(user.getAppUserId(), user);
+        }
+        return byId;
+    }
+
+    @Override
+    public List<AppUser> listByBankAndIds(int bankId, java.util.Collection<Integer> ids) {
+        return ids == null || ids.isEmpty() ? List.of() : jpa.findByBankIdAndAppUserIdIn(bankId, ids);
+    }
 }

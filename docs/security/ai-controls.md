@@ -106,8 +106,10 @@ gateway (tenancy check, content-free logging, `AI_CALL` audit).
 ## Local models by default (C8)
 
 - Default endpoint: `http://localhost:11434` (Ollama), api-key `ollama`
-  (local endpoints need no real key), models `qwen2.5` (chat/extraction
-  default), `mistral` (extraction agents), `deepseek-r1:8b` (chat edits).
+  (local endpoints need no real key), one default model `qwen2.5` for
+  parsing, chat edits and the extraction agents (since v1.2.0;
+  `MODOCUMENT_CHAT_EDIT_MODEL` / `MODOCUMENT_EXTRACTION_MODEL` override it
+  with a pinned tag).
 - Docker: `docker compose --profile ai-local up` starts an `ollama` service
   on the compose network; the app's defaults point at it.
 - An **external** endpoint is an explicit operator opt-in via

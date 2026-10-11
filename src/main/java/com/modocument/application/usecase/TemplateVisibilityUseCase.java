@@ -160,12 +160,18 @@ public class TemplateVisibilityUseCase {
      * never come from another bank.
      */
     private Map<Integer, String> ownerNames(List<Template> visible, int userId, int bankId) {
-        boolean anyForeign = visible.stream().anyMatch(t -> t.getOwnerUserId() != userId);
+        // ws28: only the owners actually shown, by id set — not the whole bank.
+        java.util.Set<Integer> foreignOwners = new java.util.HashSet<>();
+        for (Template template : visible) {
+            if (template.getOwnerUserId() != userId) {
+                foreignOwners.add(template.getOwnerUserId());
+            }
+        }
         Map<Integer, String> names = new HashMap<>();
-        if (!anyForeign) {
+        if (foreignOwners.isEmpty()) {
             return names;
         }
-        for (AppUser user : users.listByBank(bankId)) {
+        for (AppUser user : users.listByBankAndIds(bankId, foreignOwners)) {
             String name = user.getDisplayName();
             if (name != null && !name.isBlank()) {
                 names.put(user.getAppUserId(), name);

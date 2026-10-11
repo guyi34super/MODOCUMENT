@@ -10,6 +10,7 @@ import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ExtractionTaskQueue;
 import com.modocument.application.port.ProcessedRecordStore;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.infrastructure.prompt.PromptFactory;
 import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.domain.document.ExtractionAuditEvent;
 import com.modocument.domain.document.ExtractionJob;
@@ -123,11 +124,7 @@ public class SummarizeExtractionUseCase {
                 .map(session::tokenizeRow)
                 .toList();
 
-        PromptStrategy strategy = promptStrategies.stream()
-                .filter(s -> s.getType().equals("ExtractionSummary"))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "ExtractionSummary prompt not registered."));
+        PromptStrategy strategy = PromptFactory.lookup(promptStrategies, "ExtractionSummary");
         String prompt = strategy.buildPrompt(new ExtractionSummaryPromptInput(
                 IngestionJobUseCase.toJson(stats), IngestionJobUseCase.toJson(sample),
                 job.getDataSpec()));

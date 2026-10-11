@@ -109,38 +109,108 @@ public class OutboundDispatcher {
     /** Claims and sends the bank's due deliveries; returns how many were attempted. */
     public int dispatchDue(int bankId) {
         List<Long> claimed = claim(bankId);
+        // ws28: one flow/connection cache for the whole tick — a batch of
+        // deliveries of the same flow loads it once, not once per delivery.
+        TickCache cache = new TickCache(bankId);
         for (Long id : claimed) {
-            dispatch(bankId, id);
+            dispatch(bankId, id, cache);
         }
         return claimed.size();
     }
 
     /** Sends the PENDING deliveries of one run now (an outbound run that just queued them). */
     public void dispatchRun(int bankId, long runId) {
+        TickCache cache = new TickCache(bankId);
         for (OutboundDelivery delivery : deliveries.findByBankIdAndRunIdAndStatusOrderByIdAsc(
                 bankId, runId, DeliveryStatus.PENDING)) {
-            dispatch(bankId, delivery.getId());
+            dispatch(bankId, delivery.getId(), cache);
         }
         settleRun(bankId, runId);
     }
 
+    /**
+     * Claims up to {@code dispatchBatchSize} due deliveries for a lease and
+     * returns their ids in due order. ws28: ONE statement on PostgreSQL —
+     * {@code UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED LIMIT n) RETURNING}
+     * — so concurrent tasks never claim the same row and the claim costs one
+     * round trip; on H2 (tests) a {@code SELECT … FOR UPDATE} and one batched
+     * {@code UPDATE … WHERE id IN (…)} in the same transaction.
+     */
     public List<Long> claim(int bankId) {
         Instant now = clock.instant();
         Instant leaseUntil = now.plus(properties.getDispatchLease());
         int limit = Math.max(1, properties.getDispatchBatchSize());
-        String lock = isPostgres() ? " FOR UPDATE SKIP LOCKED" : " FOR UPDATE";
-        List<Long> ids = tx.execute(status -> {
-            List<Long> found = jdbc.queryForList("SELECT OutboundDeliveryId FROM OutboundDelivery "
-                    + "WHERE BankId = ? AND Status = 'PENDING' AND NextAttemptAt IS NOT NULL "
-                    + "AND NextAttemptAt <= ? ORDER BY NextAttemptAt, OutboundDeliveryId "
-                    + "LIMIT " + limit + lock, Long.class, bankId, java.time.OffsetDateTime.ofInstant(now, java.time.ZoneOffset.UTC));
-            for (Long id : found) {
-                jdbc.update("UPDATE OutboundDelivery SET NextAttemptAt = ? WHERE OutboundDeliveryId = ?",
-                        java.time.OffsetDateTime.ofInstant(leaseUntil, java.time.ZoneOffset.UTC), id);
-            }
-            return found;
-        });
+        java.time.OffsetDateTime dueBy = java.time.OffsetDateTime.ofInstant(now, java.time.ZoneOffset.UTC);
+        java.time.OffsetDateTime lease = java.time.OffsetDateTime.ofInstant(leaseUntil, java.time.ZoneOffset.UTC);
+        List<Long> ids = tx.execute(status -> isPostgres()
+                ? claimPostgres(bankId, dueBy, lease, limit)
+                : claimPortable(bankId, dueBy, lease, limit));
         return ids == null ? List.of() : ids;
+    }
+
+    /** PostgreSQL: lock, lease and return the due rows in one statement. */
+    private List<Long> claimPostgres(int bankId, java.time.OffsetDateTime dueBy,
+                                     java.time.OffsetDateTime lease, int limit) {
+        List<Object[]> rows = jdbc.query("WITH due AS (SELECT OutboundDeliveryId, NextAttemptAt "
+                        + "FROM OutboundDelivery WHERE BankId = ? AND Status = 'PENDING' "
+                        + "AND NextAttemptAt IS NOT NULL AND NextAttemptAt <= ? "
+                        + "ORDER BY NextAttemptAt, OutboundDeliveryId LIMIT " + limit
+                        + " FOR UPDATE SKIP LOCKED) "
+                        + "UPDATE OutboundDelivery o SET NextAttemptAt = ? FROM due "
+                        + "WHERE o.OutboundDeliveryId = due.OutboundDeliveryId "
+                        + "RETURNING o.OutboundDeliveryId, due.NextAttemptAt",
+                (rs, rowNum) -> new Object[]{rs.getLong(1), rs.getTimestamp(2)},
+                bankId, dueBy, lease);
+        // RETURNING has no order: put the claim back into due order.
+        return rows.stream()
+                .sorted(java.util.Comparator.<Object[], java.sql.Timestamp>comparing(
+                                row -> (java.sql.Timestamp) row[1])
+                        .thenComparingLong(row -> (Long) row[0]))
+                .map(row -> (Long) row[0])
+                .toList();
+    }
+
+    /** H2 and other databases: select for update, then one batched lease update. */
+    private List<Long> claimPortable(int bankId, java.time.OffsetDateTime dueBy,
+                                     java.time.OffsetDateTime lease, int limit) {
+        List<Long> found = jdbc.queryForList("SELECT OutboundDeliveryId FROM OutboundDelivery "
+                + "WHERE BankId = ? AND Status = 'PENDING' AND NextAttemptAt IS NOT NULL "
+                + "AND NextAttemptAt <= ? ORDER BY NextAttemptAt, OutboundDeliveryId "
+                + "LIMIT " + limit + " FOR UPDATE", Long.class, bankId, dueBy);
+        if (!found.isEmpty()) {
+            String placeholders = String.join(",", java.util.Collections.nCopies(found.size(), "?"));
+            List<Object> args = new ArrayList<>(found.size() + 1);
+            args.add(lease);
+            args.addAll(found);
+            jdbc.update("UPDATE OutboundDelivery SET NextAttemptAt = ? WHERE OutboundDeliveryId IN ("
+                    + placeholders + ")", args.toArray());
+        }
+        return found;
+    }
+
+    /**
+     * ws28: the flows and connections one tick touches, loaded at most once
+     * each (a tick takes seconds; a flow edited meanwhile is picked up by the
+     * next tick, as an in-flight delivery always did).
+     */
+    private final class TickCache {
+
+        private final int bankId;
+        private final Map<Long, Optional<IntegrationFlow>> flowsById = new java.util.HashMap<>();
+        private final Map<Long, Optional<IntegrationConnection>> connectionsById = new java.util.HashMap<>();
+
+        TickCache(int bankId) {
+            this.bankId = bankId;
+        }
+
+        IntegrationFlow flow(long flowId) {
+            return flowsById.computeIfAbsent(flowId, id -> flows.findByIdAndBankId(id, bankId)).orElse(null);
+        }
+
+        IntegrationConnection connection(long connectionId) {
+            return connectionsById.computeIfAbsent(connectionId,
+                    id -> connections.findByIdAndBankId(id, bankId)).orElse(null);
+        }
     }
 
     private boolean isPostgres() {
@@ -155,14 +225,17 @@ public class OutboundDispatcher {
 
     /** One delivery attempt; never throws (failures are recorded on the row). */
     public void dispatch(int bankId, long deliveryId) {
+        dispatch(bankId, deliveryId, new TickCache(bankId));
+    }
+
+    private void dispatch(int bankId, long deliveryId, TickCache cache) {
         Optional<OutboundDelivery> found = deliveries.findByIdAndBankId(deliveryId, bankId);
         if (found.isEmpty() || found.get().getStatus() != DeliveryStatus.PENDING) {
             return;
         }
         OutboundDelivery delivery = found.get();
-        IntegrationFlow flow = flows.findByIdAndBankId(delivery.getFlowId(), bankId).orElse(null);
-        IntegrationConnection connection = flow == null ? null
-                : connections.findByIdAndBankId(flow.getConnectionId(), bankId).orElse(null);
+        IntegrationFlow flow = cache.flow(delivery.getFlowId());
+        IntegrationConnection connection = flow == null ? null : cache.connection(flow.getConnectionId());
         if (flow == null || connection == null) {
             markDead(delivery, flow, "The flow or its connection no longer exists.");
             return;
@@ -177,8 +250,8 @@ public class OutboundDispatcher {
                     ? RunStatus.AWAITING_AGENT : RunStatus.RUNNING);
             delivery.setRunId(run.getId());
             OutboundDelivery current = delivery;
-            tx.executeWithoutResult(status -> deliveries.save(current));
-            delivery = deliveries.findByIdAndBankId(deliveryId, bankId).orElseThrow();
+            // ws28: the save returns the stored row — no second read for it.
+            delivery = tx.execute(status -> deliveries.save(current));
         }
         long runId = delivery.getRunId();
         if (connection.getMode() == ConnectionMode.AGENT) {

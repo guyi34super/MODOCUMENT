@@ -1,7 +1,5 @@
 package com.modocument.application.dto;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.domain.entity.IngestionJob;
 
 import java.time.LocalDateTime;
@@ -44,8 +42,6 @@ public record IngestionJobDto(int ingestionJobId,
                               String parseFallbackReason,
                               Double parseMinConfidence,
                               Boolean parseLowConfidence) {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** A view with parse provenance but no confidence threshold (ws23 shape). */
     public IngestionJobDto(int ingestionJobId, int templateId, String fileName,
@@ -107,24 +103,18 @@ public record IngestionJobDto(int ingestionJobId,
     public static IngestionJobDto from(IngestionJob job,
                                        List<String> unmappedFields,
                                        List<String> reachableSteps) {
-        TableData parsed = read(job.getParsedTableJson(), new TypeReference<TableData>() {
-        });
-        Map<String, String> suggestedMapping = read(job.getSuggestedMappingJson(), new TypeReference<Map<String, String>>() {
-        });
-        Map<String, String> mapping = read(job.getMappingJson(), new TypeReference<Map<String, String>>() {
-        });
-        TableData mapped = read(job.getMappedRowsJson(), new TypeReference<TableData>() {
-        });
-        List<RowValidationResult> validation =
-                read(job.getValidationResultJson(), new TypeReference<List<RowValidationResult>>() {
-                });
-        Map<String, Object> exportInfo =
-                read(job.getExportInfoJson(), new TypeReference<Map<String, Object>>() {
-                });
+        return from(IngestionJobCheckpoints.of(job), unmappedFields, reachableSteps);
+    }
 
-        Long errorCount = validation == null ? null
-                : validation.stream().filter(r -> r.errorMessage() != null).count();
-
+    /**
+     * ws28: the view from checkpoints already parsed for this request — the
+     * gates that computed {@code unmappedFields} / {@code reachableSteps}
+     * read the same memo, so no JSON column is parsed twice.
+     */
+    public static IngestionJobDto from(IngestionJobCheckpoints checkpoints,
+                                       List<String> unmappedFields,
+                                       List<String> reachableSteps) {
+        IngestionJob job = checkpoints.job();
         return new IngestionJobDto(
                 job.getIngestionJobId(),
                 job.getTemplateId(),
@@ -134,31 +124,20 @@ public record IngestionJobDto(int ingestionJobId,
                 job.getStatus() == null ? null : job.getStatus().name(),
                 job.getWizardStep() == null ? null : job.getWizardStep().name(),
                 job.getErrorMessage(),
-                parsed,
-                suggestedMapping,
-                mapping,
-                mapped,
-                validation,
-                errorCount,
+                checkpoints.parsedTable(),
+                checkpoints.suggestedMapping(),
+                checkpoints.mapping(),
+                checkpoints.mappedRows(),
+                checkpoints.validationResults(),
+                checkpoints.validationErrorCount(),
                 unmappedFields,
                 reachableSteps,
-                exportInfo,
+                checkpoints.exportInfo(),
                 job.getCreatedDate(),
                 job.getUpdatedDate(),
                 job.getParsedBy(),
                 job.getParseStrategy(),
                 job.getParseConfidence() == null ? null : job.getParseConfidence().doubleValue(),
                 job.getParseFallbackReason());
-    }
-
-    private static <T> T read(String json, TypeReference<T> type) {
-        if (json == null || json.isBlank()) {
-            return null;
-        }
-        try {
-            return MAPPER.readValue(json, type);
-        } catch (Exception e) {
-            return null;
-        }
     }
 }

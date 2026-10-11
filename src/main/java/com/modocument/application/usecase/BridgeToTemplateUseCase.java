@@ -175,6 +175,7 @@ public class BridgeToTemplateUseCase {
         ingestionJob.setMappingJson(IngestionJobUseCase.toJson(mapping));
         ingestionJob.setMappedRowsJson(IngestionJobUseCase.toJson(mapped));
         ingestionJob.setValidationResultJson(IngestionJobUseCase.toJson(results));
+        ingestionJob.setValidationErrorCount(invalid);
         ingestionJob.setCurrentStep(JobStep.VALIDATED);
         ingestionJob.setStatus(JobStatus.COMPLETED);
         IngestionJob savedJob = ingestionJobs.save(ingestionJob);

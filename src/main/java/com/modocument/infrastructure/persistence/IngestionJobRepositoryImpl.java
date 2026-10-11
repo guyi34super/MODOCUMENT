@@ -7,8 +7,12 @@ import com.modocument.domain.model.JobStep;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
 
+import com.modocument.application.dto.IngestionJobSummaryRow;
+
 import java.time.LocalDateTime;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Repository
@@ -78,5 +82,31 @@ public class IngestionJobRepositoryImpl implements IngestionJobRepository {
     public List<String> listRecentMappingJson(int templateId, int ownerUserId, int limit) {
         return jpa.findRecentMappingJson(templateId, ownerUserId,
                 List.of(JobStep.VALIDATED, JobStep.EXPORTED), PageRequest.of(0, limit));
+    }
+
+    @Override
+    public List<IngestionJobSummaryRow> listSummariesByOwner(int ownerUserId, int page, int size) {
+        return jpa.findSummariesByOwner(ownerUserId, PageRequest.of(page, size));
+    }
+
+    @Override
+    public long countByOwner(int ownerUserId) {
+        return jpa.countByOwnerUserId(ownerUserId);
+    }
+
+    @Override
+    public Map<JobStatus, Long> countByOwnerGroupedByStatus(int ownerUserId) {
+        Map<JobStatus, Long> counts = new EnumMap<>(JobStatus.class);
+        for (Object[] row : jpa.countByOwnerGroupedByStatus(ownerUserId)) {
+            if (row[0] instanceof JobStatus status) {
+                counts.put(status, ((Number) row[1]).longValue());
+            }
+        }
+        return counts;
+    }
+
+    @Override
+    public List<IngestionJob> listNewestByOwner(int ownerUserId, int limit) {
+        return jpa.findNewestByOwner(ownerUserId, PageRequest.of(0, limit));
     }
 }

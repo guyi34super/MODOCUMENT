@@ -93,6 +93,15 @@ public class IngestionJob {
     private String exportInfoJson;
 
     /**
+     * ws28 (V285): failing validation results, written by the validate step
+     * so the job list never parses ValidationResultJson. Null when the job
+     * has not been validated (or was validated before V285) — cleared
+     * together with ValidationResultJson.
+     */
+    @Column(name = "ValidationErrorCount")
+    private Integer validationErrorCount;
+
+    /**
      * Optimistic-lock guard. Two requests editing the same job (a resume run
      * and a cell-edit save, say) both write the whole checkpoint set, so the
      * slower writer would otherwise silently revert the other's work. The
@@ -265,8 +274,24 @@ public class IngestionJob {
         return validationResultJson;
     }
 
+    /**
+     * Clearing the validation checkpoint (null) clears its
+     * {@link #getValidationErrorCount() count} too; a writer that stores
+     * results sets the count explicitly.
+     */
     public void setValidationResultJson(String validationResultJson) {
         this.validationResultJson = validationResultJson;
+        if (validationResultJson == null) {
+            this.validationErrorCount = null;
+        }
+    }
+
+    public Integer getValidationErrorCount() {
+        return validationErrorCount;
+    }
+
+    public void setValidationErrorCount(Integer validationErrorCount) {
+        this.validationErrorCount = validationErrorCount;
     }
 
     public String getExportInfoJson() {

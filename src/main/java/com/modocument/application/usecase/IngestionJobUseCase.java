@@ -2,7 +2,11 @@ package com.modocument.application.usecase;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.application.dto.IngestionJobCheckpoints;
 import com.modocument.application.dto.IngestionJobDto;
+import com.modocument.application.dto.IngestionJobSummary;
+import com.modocument.application.dto.IngestionJobSummaryRow;
+import com.modocument.application.dto.PagedList;
 import com.modocument.application.dto.ParseContext;
 import com.modocument.application.dto.ParseProvenance;
 import com.modocument.application.dto.ParseResult;
@@ -467,9 +471,11 @@ public class IngestionJobUseCase {
     public IngestionJob setWizardStep(int jobId, WizardStep step) {
         IngestionJob job = get(jobId);
         requireActive(job);
-        if (!reachableSteps(job).contains(step)) {
+        IngestionJobCheckpoints checkpoints = IngestionJobCheckpoints.of(job);
+        List<String> unmapped = unmappedFields(checkpoints, templateFieldNames(job.getTemplateId()));
+        if (!reachableSteps(checkpoints, unmapped).contains(step)) {
             throw new IllegalArgumentException("Wizard step " + step + " is not reachable yet: "
-                    + blockedReason(job, step));
+                    + blockedReason(checkpoints, unmapped, step));
         }
         job.setWizardStep(step);
         return jobs.save(job);
@@ -683,10 +689,17 @@ public class IngestionJobUseCase {
                 .filter(result -> result.errorMessage() != null)
                 .toList();
         job.setValidationResultJson(toJson(problems));
+        // ws28: the list summary reads this count instead of the JSON.
+        job.setValidationErrorCount(problems.size());
         recordImportDetails(job, STEP_VALIDATING, job.getValidationResultJson());
     }
 
     // ---- step completion ---------------------------------------------------
+    //
+    // ws28: every gate reads the job's checkpoints through ONE
+    // IngestionJobCheckpoints memo per request, so building a view parses
+    // each JSON column once (it used to parse MappedRowsJson three times and
+    // ValidationResultJson twice).
 
     /**
      * Template fields that no source column feeds. The mapped table's columns
@@ -695,44 +708,33 @@ public class IngestionJobUseCase {
      * field counts as unmapped.
      */
     public List<String> unmappedFields(IngestionJob job) {
-        return unmappedFields(job, templateFieldNames(job.getTemplateId()));
+        return unmappedFields(IngestionJobCheckpoints.of(job), templateFieldNames(job.getTemplateId()));
     }
 
-    private List<String> unmappedFields(IngestionJob job, List<String> templateFieldNames) {
-        List<String> mapped = mappedColumns(job);
+    private static List<String> unmappedFields(IngestionJobCheckpoints checkpoints,
+                                               List<String> templateFieldNames) {
+        List<String> mapped = checkpoints.mappedColumns();
         return templateFieldNames.stream().filter(field -> !mapped.contains(field)).toList();
-    }
-
-    private List<String> mappedColumns(IngestionJob job) {
-        if (job.getMappedRowsJson() == null) {
-            return List.of();
-        }
-        try {
-            List<String> columns = fromJson(job.getMappedRowsJson(), TableData.class).getColumns();
-            return columns == null ? List.of() : columns;
-        } catch (Exception e) {
-            log.warn("Could not read mapped columns of job {}: {}",
-                    job.getIngestionJobId(), e.getMessage());
-            return List.of();
-        }
     }
 
     /** Rows that still fail validation. Zero is what finishes the step. */
     public long validationErrorCount(IngestionJob job) {
+        return validationErrorCount(IngestionJobCheckpoints.of(job));
+    }
+
+    private static long validationErrorCount(IngestionJobCheckpoints checkpoints) {
+        IngestionJob job = checkpoints.job();
         if (job.getValidationResultJson() == null || job.getValidationResultJson().isBlank()) {
             return 0;
         }
-        try {
-            // Only failures are persisted now, but jobs validated before that
-            // change also hold the passing entries — filter either way.
-            return readValidationResults(job).stream()
-                    .filter(result -> result.errorMessage() != null)
-                    .count();
-        } catch (Exception e) {
-            log.warn("Could not read validation results of job {}: {}",
-                    job.getIngestionJobId(), e.getMessage());
+        // Only failures are persisted now, but jobs validated before that
+        // change also hold the passing entries — the memo filters either way.
+        Long count = checkpoints.validationErrorCount();
+        if (count == null) {
+            log.warn("Could not read validation results of job {}", job.getIngestionJobId());
             return 0;
         }
+        return count;
     }
 
     private List<RowValidationResult> readValidationResults(IngestionJob job) {
@@ -754,14 +756,17 @@ public class IngestionJobUseCase {
      * one is refused by {@link #requireActive} instead.
      */
     public List<WizardStep> reachableSteps(IngestionJob job) {
-        return reachableSteps(job, unmappedFields(job));
+        IngestionJobCheckpoints checkpoints = IngestionJobCheckpoints.of(job);
+        return reachableSteps(checkpoints,
+                unmappedFields(checkpoints, templateFieldNames(job.getTemplateId())));
     }
 
-    private List<WizardStep> reachableSteps(IngestionJob job, List<String> unmappedFields) {
-        if (!mappingComplete(job, unmappedFields) || !hasValidated(job)) {
+    private static List<WizardStep> reachableSteps(IngestionJobCheckpoints checkpoints,
+                                                   List<String> unmappedFields) {
+        if (!mappingComplete(checkpoints, unmappedFields) || !hasValidated(checkpoints.job())) {
             return List.of(WizardStep.MAPPING);
         }
-        if (validationErrorCount(job) > 0) {
+        if (validationErrorCount(checkpoints) > 0) {
             return List.of(WizardStep.MAPPING, WizardStep.VALIDATION);
         }
         return List.of(WizardStep.MAPPING, WizardStep.VALIDATION, WizardStep.EXPORT);
@@ -769,18 +774,24 @@ public class IngestionJobUseCase {
 
     /** Why {@code step} is closed — phrased for the person who hit the wall. */
     public String blockedReason(IngestionJob job, WizardStep step) {
-        List<String> unmapped = unmappedFields(job);
+        IngestionJobCheckpoints checkpoints = IngestionJobCheckpoints.of(job);
+        return blockedReason(checkpoints,
+                unmappedFields(checkpoints, templateFieldNames(job.getTemplateId())), step);
+    }
+
+    private static String blockedReason(IngestionJobCheckpoints checkpoints, List<String> unmapped,
+                                        WizardStep step) {
         if (!unmapped.isEmpty()) {
             return "map every template field first — " + unmapped.size() + " still unmapped ("
                     + String.join(", ", unmapped) + ")";
         }
-        if (!mappingComplete(job, unmapped)) {
+        if (!mappingComplete(checkpoints, unmapped)) {
             return "map at least one column to a template field first";
         }
-        if (!hasValidated(job)) {
+        if (!hasValidated(checkpoints.job())) {
             return "run validation on the mapped rows first";
         }
-        long errors = validationErrorCount(job);
+        long errors = validationErrorCount(checkpoints);
         if (step == WizardStep.EXPORT && errors > 0) {
             return errors + (errors == 1
                     ? " row still fails validation; fix it"
@@ -805,13 +816,111 @@ public class IngestionJobUseCase {
     }
 
     private IngestionJobDto view(IngestionJob job, List<String> templateFieldNames) {
-        List<String> unmapped = unmappedFields(job, templateFieldNames);
-        List<String> reachable = reachableSteps(job, unmapped).stream()
+        IngestionJobCheckpoints checkpoints = IngestionJobCheckpoints.of(job);
+        List<String> unmapped = unmappedFields(checkpoints, templateFieldNames);
+        List<String> reachable = reachableSteps(checkpoints, unmapped).stream()
                 .map(WizardStep::name)
                 .toList();
-        IngestionJobDto view = IngestionJobDto.from(job, unmapped, reachable);
+        IngestionJobDto view = IngestionJobDto.from(checkpoints, unmapped, reachable);
         return job.getParseConfidence() == null ? view
                 : view.withConfidenceThreshold(minConfidence(job.getBankId()));
+    }
+
+    // ---- ws28: the paged job list summary -----------------------------------
+
+    /** The most jobs the legacy unpaged list returns. */
+    public static final int LEGACY_LIST_CAP = 200;
+
+    /**
+     * One page of the caller's jobs as {@link IngestionJobSummary} rows,
+     * newest first ({@code GET /api/ingestion/jobs?view=summary}). One count,
+     * one projection query (no checkpoint JSON) and one query for the field
+     * names of the page's templates — whatever the page size.
+     */
+    public PagedList<IngestionJobSummary> summaries(Integer page, Integer size) {
+        int owner = currentUser.requireUserId();
+        int pageNumber = PagedList.page(page);
+        int pageSize = PagedList.size(size);
+        long total = jobs.countByOwner(owner);
+        List<IngestionJobSummaryRow> rows = total == 0 ? List.of()
+                : jobs.listSummariesByOwner(owner, pageNumber, pageSize);
+        return new PagedList<>(toSummaries(rows), pageNumber, pageSize, total);
+    }
+
+    /** The caller's {@code limit} newest jobs as summaries (the dashboard). */
+    public List<IngestionJobSummary> recentSummaries(int limit) {
+        return toSummaries(jobs.listSummariesByOwner(currentUser.requireUserId(), 0, limit));
+    }
+
+    /**
+     * The legacy unpaged list (full views): kept for compatibility but capped
+     * at the {@value #LEGACY_LIST_CAP} newest jobs, in the old (oldest-first)
+     * order. The UI moved to {@link #summaries}.
+     */
+    public List<IngestionJob> listCapped() {
+        List<IngestionJob> newest = new java.util.ArrayList<>(
+                jobs.listNewestByOwner(currentUser.requireUserId(), LEGACY_LIST_CAP));
+        java.util.Collections.reverse(newest);
+        return newest;
+    }
+
+    private List<IngestionJobSummary> toSummaries(List<IngestionJobSummaryRow> rows) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, List<String>> fieldsByTemplate = templateFields.fieldNamesByTemplateIds(
+                rows.stream().map(IngestionJobSummaryRow::templateId)
+                        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
+        return rows.stream()
+                .map(row -> toSummary(row, fieldsByTemplate.getOrDefault(row.templateId(), List.of())))
+                .toList();
+    }
+
+    private IngestionJobSummary toSummary(IngestionJobSummaryRow row, List<String> fieldNames) {
+        Double confidence = row.parseConfidence() == null ? null : row.parseConfidence().doubleValue();
+        // The full view's rule (IngestionJobDto.withConfidenceThreshold): only
+        // a code score is judged, against the bank's current threshold.
+        Boolean low = confidence == null || "AI".equals(row.parsedBy()) ? null
+                : confidence < minConfidence(currentUser.requireBankId());
+        return new IngestionJobSummary(
+                row.ingestionJobId(),
+                row.fileName(),
+                row.templateId(),
+                row.templateName(),
+                row.status() == null ? null : row.status().name(),
+                row.currentStep() == null ? null : row.currentStep().name(),
+                row.parsedBy(),
+                row.parseFallbackReason(),
+                confidence,
+                low,
+                row.validationErrorCount(),
+                unmappedFieldCount(row, fieldNames),
+                row.createdDate(),
+                row.updatedDate());
+    }
+
+    /**
+     * The template fields no source column feeds. The mapped table's columns
+     * are exactly the distinct non-blank mapping targets ({@link #applyMapping}),
+     * so the small MappingJson answers what the full view reads from the
+     * mapped rows; without mapped rows every field is unmapped.
+     */
+    static int unmappedFieldCount(IngestionJobSummaryRow row, List<String> fieldNames) {
+        if (!row.hasMappedRows() || row.mappingJson() == null || row.mappingJson().isBlank()) {
+            return fieldNames.size();
+        }
+        java.util.Set<String> mapped = new java.util.HashSet<>();
+        try {
+            Map<String, String> mapping = fromJson(row.mappingJson(),
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {
+                    });
+            if (mapping != null) {
+                mapping.values().stream().filter(v -> v != null && !v.isBlank()).forEach(mapped::add);
+            }
+        } catch (RuntimeException e) {
+            log.debug("Unreadable mapping on job {}", row.ingestionJobId());
+        }
+        return (int) fieldNames.stream().filter(field -> !mapped.contains(field)).count();
     }
 
     /** Wave 4: wired by Spring; unit tests without it judge against the shipped 0.75. */
@@ -843,14 +952,18 @@ public class IngestionJobUseCase {
     /** Exports operate on finished work only; the message names the blocker. */
     public void requireExportable(IngestionJob job) {
         requireActive(job);
-        if (!reachableSteps(job).contains(WizardStep.EXPORT)) {
+        IngestionJobCheckpoints checkpoints = IngestionJobCheckpoints.of(job);
+        List<String> unmapped = unmappedFields(checkpoints, templateFieldNames(job.getTemplateId()));
+        if (!reachableSteps(checkpoints, unmapped).contains(WizardStep.EXPORT)) {
             throw new IllegalStateException("Job " + job.getIngestionJobId()
-                    + " cannot be exported yet: " + blockedReason(job, WizardStep.EXPORT) + ".");
+                    + " cannot be exported yet: " + blockedReason(checkpoints, unmapped,
+                    WizardStep.EXPORT) + ".");
         }
     }
 
-    private boolean mappingComplete(IngestionJob job, List<String> unmappedFields) {
-        return !mappedColumns(job).isEmpty() && unmappedFields.isEmpty();
+    private static boolean mappingComplete(IngestionJobCheckpoints checkpoints,
+                                           List<String> unmappedFields) {
+        return !checkpoints.mappedColumns().isEmpty() && unmappedFields.isEmpty();
     }
 
     // ---- helpers -----------------------------------------------------------

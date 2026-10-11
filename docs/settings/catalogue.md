@@ -241,6 +241,7 @@ application.yml has exactly one threshold and one window setting
 | `doccreation.generateAiEnabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | `modocument.doccreation.generate-ai-enabled` |
 | `ai.circuitBreaker.failureThreshold` | AI & extraction | PLATFORM | OPERATIONAL | INT | 5 failures | 1 – 50 |  |  | — (code default) |
 | `ai.circuitBreaker.openDuration` | AI & extraction | PLATFORM | OPERATIONAL | DURATION | 2m | 10s – 30m |  |  | — (code default) |
+| `ai.resultCache.enabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | — (code default) |
 | `parsing.llmBatchSize` | AI & extraction | PLATFORM | OPERATIONAL | INT | 50 rows | 5 – 500 |  |  | `modocument.parsing.llm-batch-size` |
 | `parsing.llmBatchConcurrency` | AI & extraction | PLATFORM | OPERATIONAL | INT | 8 batches | 1 – 32 |  |  | `modocument.parsing.llm-batch-concurrency` |
 | `integration.maxRowsPerRun` | Integrations | BANK | OPERATIONAL | INT | 50000 rows | 1 – 500000 |  |  | — (code default) |

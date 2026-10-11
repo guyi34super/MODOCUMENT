@@ -81,6 +81,23 @@ public class SqlExtractionJobStore implements ExtractionJobStore {
     }
 
     @Override
+    public Map<ExtractionJobStatus, Long> countByOwnerGroupedByStatus(int ownerUserId) {
+        Map<ExtractionJobStatus, Long> counts = new java.util.EnumMap<>(ExtractionJobStatus.class);
+        for (Object[] row : jobs.countByOwnerGroupedByStatus(ownerUserId)) {
+            if (row[0] instanceof ExtractionJobStatus status) {
+                counts.put(status, ((Number) row[1]).longValue());
+            }
+        }
+        return counts;
+    }
+
+    @Override
+    public List<ExtractionJob> listRecentByOwner(int ownerUserId, int limit) {
+        return toDomainList(jobs.findByOwnerUserIdOrderByIdDesc(ownerUserId,
+                org.springframework.data.domain.PageRequest.of(0, limit)));
+    }
+
+    @Override
     public void increment(String jobId, String counter, long delta) {
         // Deliberately NOT one wrapping transaction: each repository call
         // commits on its own, so the insert-race retry below can see the

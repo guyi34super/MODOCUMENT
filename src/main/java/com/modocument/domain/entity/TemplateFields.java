@@ -111,11 +111,11 @@ public class TemplateFields {
     @Transient
     private Set<String> providedHints = new HashSet<>();
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY) // ws28: fetched by the repositories that need it
     @JoinColumn(name = "TemplateId", insertable = false, updatable = false)
     private Template template;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY) // ws28: fetched by the repositories that need it
     @JoinColumn(name = "TemplateDataTypeId", insertable = false, updatable = false)
     private TemplateDataType templateDataType;
 

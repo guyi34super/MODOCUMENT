@@ -27,6 +27,9 @@ public interface AppUserJpaRepository extends JpaRepository<AppUser, Integer> {
     /** ws09 user administration: bank-scoped listing (AppUsers is not under RLS). */
     List<AppUser> findByBankIdOrderByEmailAsc(int bankId);
 
+    /** ws28: the users of one bank among the given ids (AppUsers is not under RLS). */
+    List<AppUser> findByBankIdAndAppUserIdIn(int bankId, java.util.Collection<Integer> ids);
+
     /** ws09 last-admin guard: enabled ADMIN accounts remaining in the bank. */
     long countByBankIdAndRoleAndDisabledFalse(int bankId, Role role);
 

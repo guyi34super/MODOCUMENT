@@ -101,6 +101,8 @@ public final class SettingKeys {
     public static final String DOCCREATION_GENERATE_AI_ENABLED = "doccreation.generateAiEnabled";
     public static final String AI_CIRCUIT_FAILURE_THRESHOLD = "ai.circuitBreaker.failureThreshold";
     public static final String AI_CIRCUIT_OPEN_DURATION = "ai.circuitBreaker.openDuration";
+    /** ws28 (SE4): reuse cached AI parse results for identical documents (AiResultCache). */
+    public static final String AI_RESULT_CACHE_ENABLED = "ai.resultCache.enabled";
 
     // ---- Integrations (ws25/ws26 consumers; Wave 3) ----------------------
     public static final String INTEGRATION_MAX_ROWS_PER_RUN = "integration.maxRowsPerRun";

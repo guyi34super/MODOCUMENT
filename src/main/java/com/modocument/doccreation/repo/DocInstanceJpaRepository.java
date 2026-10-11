@@ -41,4 +41,10 @@ public interface DocInstanceJpaRepository extends JpaRepository<DocInstance, Int
     /** Retention sweep (ws14): instances idle past the cutoff, content not yet purged. */
     List<DocInstance> findByBankIdAndUpdatedDateBeforeAndContentPurgedAtIsNull(
             int bankId, java.time.LocalDateTime cutoff);
+
+    /** ws28: rows of [BlueprintId, count (Long)]. */
+    @org.springframework.data.jpa.repository.Query("select d.blueprintId, count(d) from DocInstance d"
+            + " where d.blueprintId in :blueprintIds group by d.blueprintId")
+    List<Object[]> countByBlueprintIds(
+            @org.springframework.data.repository.query.Param("blueprintIds") java.util.Collection<Integer> blueprintIds);
 }

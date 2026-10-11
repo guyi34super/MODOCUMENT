@@ -26,4 +26,13 @@ public interface ExtractionJobJpaRepository extends JpaRepository<ExtractionJobE
             + " where j.bankId = :bankId and j.createdDate >= :since group by j.status")
     List<Object[]> countByStatusSince(@Param("bankId") int bankId,
                                       @Param("since") Instant since);
+
+    /** ws28 (dashboard): rows of [ExtractionJobStatus, count (Long)] of one owner's jobs. */
+    @Query("select j.status, count(j) from ExtractionJobEntity j"
+            + " where j.ownerUserId = :ownerUserId group by j.status")
+    List<Object[]> countByOwnerGroupedByStatus(@Param("ownerUserId") int ownerUserId);
+
+    /** ws28 (dashboard): the owner's newest jobs. */
+    List<ExtractionJobEntity> findByOwnerUserIdOrderByIdDesc(int ownerUserId,
+                                                             org.springframework.data.domain.Pageable pageable);
 }

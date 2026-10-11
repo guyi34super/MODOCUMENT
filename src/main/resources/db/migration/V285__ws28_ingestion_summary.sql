@@ -1,0 +1,21 @@
+-- ws28 (v1.2.0 optimization round — docs/optimization/contracts.md §1/§5),
+-- SE4: the ingestion job list summary.
+--
+--  * IngestionJob.ValidationErrorCount — how many validation results of the
+--    job failed (the count the full job view derives from
+--    ValidationResultJson), written by the validate step. The paged
+--    GET /api/ingestion/jobs?view=summary reads this column instead of
+--    parsing every job's validation JSON. NULL means "not validated" or
+--    "validated before this column existed": the summary shows NULL for
+--    such old rows rather than parsing their JSON in the list; the single
+--    job view still derives the count from the JSON.
+--
+-- EXPAND/CONTRACT (docs/release/migration-policy.md): one nullable column
+-- with no default; the previous release never reads it and its INSERTs and
+-- UPDATEs leave it alone. No new table, so the row-level security policies
+-- (afterMigrate) are unchanged: IngestionJob is already tenant-filtered.
+--
+-- SCHEMA PARITY: the IngestionJob entity mirrors this file on the H2 test
+-- schema (ddl-auto: create).
+
+ALTER TABLE IngestionJob ADD COLUMN IF NOT EXISTS ValidationErrorCount integer;
