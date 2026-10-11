@@ -16,6 +16,15 @@ All notable changes to MoDocument are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-11
+
+Optimization release: faster pages and APIs, a smaller and cheaper deployment,
+a complete audit trail with a viewer, and one connector library shared by the
+server and the Connector Agent. The ingestion job list drops from 16.5 MB to
+about 20 kB, the initial JavaScript halves (614.9 → 292 kB), and the
+application jar shrinks from 369 MB to 157 MB. Read the migration note under
+Changed before upgrading database-export callers or agent database flows.
+
 ### Added
 - Audit log API: `GET /api/admin/audit` returns the caller's bank events newest first, with
   filters (actor, action, entity, outcome, date range), keyset paging and per-role masking of
@@ -368,6 +377,7 @@ workstreams) merged into `main`.
   CycloneDX SBOMs, Dependabot, CODEOWNERS review and documented
   branch-protection settings.
 
-[Unreleased]: https://github.com/guyi34super/MODOCUMENT/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/guyi34super/MODOCUMENT/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/guyi34super/MODOCUMENT/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/guyi34super/MODOCUMENT/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/guyi34super/MODOCUMENT/releases/tag/v1.0.0

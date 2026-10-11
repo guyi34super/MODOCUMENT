@@ -26,7 +26,7 @@
 
     <groupId>com.modocument</groupId>
     <artifactId>modocument-connector-core</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <packaging>jar</packaging>
     <name>MoDocument Connector Core</name>
     <description>The connector logic shared by the MoDocument server and the on-prem Connector Agent</description>
