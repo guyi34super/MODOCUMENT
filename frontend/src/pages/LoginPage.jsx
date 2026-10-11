@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import QRCode from 'qrcode';
 import { useAuth } from '../context/AuthContext';
 import { activateMfa, enrollMfa } from '../api/auth';
 import { Button, Field, inputClass } from '../components/ui';
@@ -62,12 +61,24 @@ export default function LoginPage() {
   const [enrollment, setEnrollment] = useState(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
 
+  // qrcode is loaded on demand (its own chunk): only enrolment needs it, so
+  // it stays out of the bundle every sign-in downloads.
   useEffect(() => {
-    if (enrollment?.otpauthUri) {
-      QRCode.toDataURL(enrollment.otpauthUri, { margin: 1, width: 192 })
-        .then(setQrDataUrl)
-        .catch(() => setQrDataUrl(''));
-    }
+    if (!enrollment?.otpauthUri) return undefined;
+    let active = true;
+    import('qrcode')
+      .then(({ default: QRCode }) =>
+        QRCode.toDataURL(enrollment.otpauthUri, { margin: 1, width: 192 })
+      )
+      .then((url) => {
+        if (active) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (active) setQrDataUrl('');
+      });
+    return () => {
+      active = false;
+    };
   }, [enrollment]);
 
   if (isAuthenticated) return <Navigate to="/" replace />;

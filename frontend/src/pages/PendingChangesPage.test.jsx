@@ -72,7 +72,7 @@ describe('PendingChangesPage', () => {
       await screen.findByText('Change worker@bank.example to READ_ONLY')
     ).toBeInTheDocument();
     expect(screen.getByText('Disable leaver@bank.example')).toBeInTheDocument();
-    expect(listChanges).toHaveBeenCalledWith('REQUESTED');
+    expect(listChanges).toHaveBeenCalledWith('REQUESTED', { page: 0, size: 50 });
     // The viewer's own submission is marked and cancellable; the other not.
     expect(screen.getByText('(yours)')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Cancel request' })).toHaveLength(1);
@@ -327,5 +327,21 @@ describe('PendingChangesPage', () => {
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cancel request' })).toBeInTheDocument();
+  });
+
+  it('pages the queue (v1.2.0 envelope) and starts over on a new status', async () => {
+    listChanges.mockImplementation((status, { page }) =>
+      Promise.resolve({ items: page === 0 ? [ROWS[0]] : [ROWS[1]], page, size: 50, total: 70 })
+    );
+    renderPage();
+
+    expect(await screen.findByText('Change worker@bank.example to READ_ONLY')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Changes pages' })).toHaveTextContent('1–50 of 70');
+    await userEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Disable leaver@bank.example')).toBeInTheDocument();
+    expect(listChanges).toHaveBeenLastCalledWith('REQUESTED', { page: 1, size: 50 });
+
+    await userEvent.selectOptions(screen.getByLabelText('Status filter'), 'APPLIED');
+    await waitFor(() => expect(listChanges).toHaveBeenLastCalledWith('APPLIED', { page: 0, size: 50 }));
   });
 });

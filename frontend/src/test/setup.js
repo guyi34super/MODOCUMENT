@@ -13,6 +13,7 @@ const A11Y_GATED = new Set([
   'AdminDashboardPage.test.jsx',
   'AdminUsersPage.test.jsx',
   'AnnouncementBanner.test.jsx',
+  'AuditLogPage.test.jsx',
   'ConfirmDialog.test.jsx',
   'IntegrationAgentsPage.test.jsx',
   'IntegrationApiClientsPage.test.jsx',

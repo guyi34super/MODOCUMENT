@@ -37,6 +37,25 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // v1.2.0: the framework changes far less often than the app, so it
+        // gets its own long-cached chunk (nginx: /assets/ immutable). Route
+        // pages are separate chunks via React.lazy (App.jsx).
+        manualChunks(id) {
+          if (
+            /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom|cookie|set-cookie-parser)[\\/]/.test(
+              id
+            )
+          ) {
+            return 'vendor';
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     port: 3000,
     proxy: Object.fromEntries(

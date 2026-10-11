@@ -3,6 +3,7 @@ import { getActiveAnnouncements } from '../api/announcements';
 import { getToken } from '../api/client';
 import { getVersion } from '../api/system';
 import { useAuth } from '../context/AuthContext';
+import usePolling from '../hooks/usePolling';
 import { APP_VERSION } from '../version';
 import { ReleaseNotesModal } from './ReleaseNotes';
 
@@ -86,7 +87,10 @@ export function formatLocal(iso) {
  *   different version than this bundle (APP_VERSION).
  *
  * Checked on mount and every 5 minutes — the periodic checks only while the
- * access token is still fresh, so they never extend an idle session.
+ * access token is still fresh, so they never extend an idle session, and
+ * (v1.2.0, usePolling) never in a hidden tab: a tab shown again catches up
+ * once the 5 minutes have passed. The mount check shares the session's
+ * memoized version (api/system.js); the periodic one asks the server again.
  * Failures are silent: banners are informational.
  */
 export default function AnnouncementBanner() {
@@ -98,8 +102,11 @@ export default function AnnouncementBanner() {
   const [notesFor, setNotesFor] = useState(null);
   const mounted = useRef(true);
 
-  const refresh = useCallback(async () => {
-    const [active, version] = await Promise.allSettled([getActiveAnnouncements(), getVersion()]);
+  const refresh = useCallback(async (fresh = false) => {
+    const [active, version] = await Promise.allSettled([
+      getActiveAnnouncements(),
+      getVersion({ fresh }),
+    ]);
     if (!mounted.current) return;
     if (active.status === 'fulfilled' && Array.isArray(active.value?.announcements)) {
       setAnnouncements(active.value.announcements);
@@ -113,14 +120,16 @@ export default function AnnouncementBanner() {
   useEffect(() => {
     mounted.current = true;
     refresh();
-    const timer = setInterval(() => {
-      if (tokenValidFor(QUIET_CHECK_MIN_TOKEN_MS)) refresh();
-    }, CHECK_INTERVAL_MS);
     return () => {
       mounted.current = false;
-      clearInterval(timer);
     };
   }, [refresh]);
+
+  const periodicCheck = useCallback(
+    () => (tokenValidFor(QUIET_CHECK_MIN_TOKEN_MS) ? refresh(true) : undefined),
+    [refresh]
+  );
+  usePolling(periodicCheck, CHECK_INTERVAL_MS, true);
 
   const dismiss = (id) => {
     setDismissed((current) => {

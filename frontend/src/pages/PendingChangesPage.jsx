@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as changesApi from '../api/changes';
+import { DEFAULT_PAGE_SIZE, toPage } from '../api/paging';
+import Pager from '../components/Pager';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import PageHeader from '../components/PageHeader';
@@ -182,13 +184,21 @@ export default function PendingChangesPage() {
   const [error, setError] = useState('');
   const [comments, setComments] = useState({});
 
+  // v1.2.0: the queue is paged server-side; a new status filter starts over.
+  const [page, setPage] = useState(0);
+  const [pageInfo, setPageInfo] = useState(null);
+
   const load = useCallback(() => {
     setChanges(null);
     changesApi
-      .listChanges(status)
-      .then(setChanges)
+      .listChanges(status, { page, size: DEFAULT_PAGE_SIZE })
+      .then((answer) => {
+        const loaded = toPage(answer, { page, size: DEFAULT_PAGE_SIZE });
+        setChanges(loaded.items);
+        setPageInfo(loaded);
+      })
       .catch((err) => setError(err.message));
-  }, [status]);
+  }, [status, page]);
 
   useEffect(() => {
     load();
@@ -239,7 +249,10 @@ export default function PendingChangesPage() {
               aria-label="Status filter"
               className={`${inputClass} w-auto`}
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setPage(0);
+              }}
             >
               {STATUSES.map((value) => (
                 <option key={value} value={value}>
@@ -342,6 +355,15 @@ export default function PendingChangesPage() {
             );
           })}
       </div>
+      {changes && pageInfo && (
+        <Pager
+          label="Changes"
+          page={pageInfo.page}
+          size={pageInfo.size}
+          total={pageInfo.total}
+          onPage={setPage}
+        />
+      )}
     </div>
   );
 }
