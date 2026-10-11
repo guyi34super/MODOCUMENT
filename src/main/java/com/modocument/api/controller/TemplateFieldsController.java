@@ -1,5 +1,12 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.config.DeprecatedEndpoint;
+
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
+import java.util.LinkedHashMap;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
@@ -29,10 +36,28 @@ public class TemplateFieldsController {
 
     private final TemplateFieldsRepository repo;
     private final TemplateOwnership ownership;
+    private final AuditRecorder audit;
 
     public TemplateFieldsController(TemplateFieldsRepository repo, TemplateOwnership ownership) {
+        this(repo, ownership, spec -> { });
+    }
+
+    @Autowired
+    public TemplateFieldsController(TemplateFieldsRepository repo, TemplateOwnership ownership,
+                                    AuditRecorder audit) {
         this.repo = repo;
         this.ownership = ownership;
+        this.audit = audit;
+    }
+
+    /** The audited shape of a field: its definition, never sample values. */
+    private static Map<String, Object> snapshot(TemplateFields field) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("templateId", field.getTemplateId());
+        values.put("fieldName", field.getFieldName());
+        values.put("templateDataTypeId", field.getTemplateDataTypeId());
+        values.put("piiKind", field.getPiiKind() == null ? null : field.getPiiKind().name());
+        return values;
     }
 
     /**
@@ -52,6 +77,7 @@ public class TemplateFieldsController {
     }
 
     @RequiresPermission(Permission.TEMPLATE_READ)
+    @DeprecatedEndpoint(replacement = "GET /TemplateFields/GetAll?templateId=")
     @GetMapping("/TemplateFields/GetById/{id}")
     public ResponseEntity<?> getTemplateFieldsById(@PathVariable int id) {
         Optional<TemplateFields> itemOpt = repo.getById(id);
@@ -96,6 +122,8 @@ public class TemplateFieldsController {
         entity.setPiiKind(dto.getPiiKind());
         entity.copyExtractionHints(dto);
         repo.add(entity);
+        audit.success(AuditActions.TEMPLATE_FIELD_CREATED, "TemplateFields",
+                String.valueOf(entity.getTemplateFieldsId()), null, snapshot(entity));
         return ResponseEntity
                 .created(URI.create("/TemplateFields/GetById/" + entity.getTemplateFieldsId()))
                 .body(entity);
@@ -115,6 +143,7 @@ public class TemplateFieldsController {
         ownership.requireWritable(dto.getTemplateId());
         requireValidHints(dto);
         TemplateFields existing = existingOpt.get();
+        Map<String, Object> before = snapshot(existing);
         existing.setFieldName(dto.getFieldName());
         if (dto.getTemplateDataTypeId() > 0) {
             existing.setTemplateDataTypeId(dto.getTemplateDataTypeId());
@@ -124,6 +153,8 @@ public class TemplateFieldsController {
         existing.mergeExtractionHints(dto);
 
         TemplateFields response = repo.update(existing);
+        audit.success(AuditActions.TEMPLATE_FIELD_UPDATED, "TemplateFields",
+                String.valueOf(response.getTemplateFieldsId()), before, snapshot(response));
         TemplateFields updated = new TemplateFields();
         updated.setTemplateFieldsId(response.getTemplateFieldsId());
         updated.setTemplateId(response.getTemplateId());
@@ -147,6 +178,8 @@ public class TemplateFieldsController {
         }
         ownership.requireWritable(existing.get().getTemplateId());
         repo.delete(id);
+        audit.success(AuditActions.TEMPLATE_FIELD_DELETED, "TemplateFields", String.valueOf(id),
+                snapshot(existing.get()), null);
         return ResponseEntity.noContent().build();
     }
 

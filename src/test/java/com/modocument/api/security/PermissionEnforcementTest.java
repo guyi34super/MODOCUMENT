@@ -150,10 +150,7 @@ class PermissionEnforcementTest {
                         .header("Authorization", auth))
                 .andExpect(status().isForbidden());
         // AI_USE
-        mvc.perform(post("/api/aifiles/send").header("Authorization", auth)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"prompt\":\"hi\"}"))
-                .andExpect(status().isForbidden());
-        mvc.perform(post("/api/transform/transform").header("Authorization", auth)
+        mvc.perform(post("/api/automapper/generate").header("Authorization", auth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fileName\":\"x.csv\"}"))
                 .andExpect(status().isForbidden());

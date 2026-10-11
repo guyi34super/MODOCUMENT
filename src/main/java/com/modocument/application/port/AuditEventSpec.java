@@ -37,6 +37,8 @@ public final class AuditEventSpec {
     private final String actorRole;
     private final Integer bankId;
     private final UUID sessionJti;
+    private final String ip;
+    private final String requestId;
 
     private AuditEventSpec(Builder builder) {
         this.action = builder.action;
@@ -50,6 +52,8 @@ public final class AuditEventSpec {
         this.actorRole = builder.actorRole;
         this.bankId = builder.bankId;
         this.sessionJti = builder.sessionJti;
+        this.ip = builder.ip;
+        this.requestId = builder.requestId;
     }
 
     public static Builder builder(String action, AuditOutcome outcome) {
@@ -106,6 +110,35 @@ public final class AuditEventSpec {
         return sessionJti;
     }
 
+    /** Explicit client ip (null = the request MDC's). */
+    public String ip() {
+        return ip;
+    }
+
+    /** Explicit request id (null = the request MDC's). */
+    public String requestId() {
+        return requestId;
+    }
+
+    /**
+     * A copy of this spec with other new values — used by the recorder to
+     * stamp the aggregation count onto an ACCESS_DENIED row.
+     */
+    public AuditEventSpec withNewValues(Object replacement) {
+        Builder copy = new Builder(action, outcome)
+                .entity(entityType, entityId)
+                .oldValues(oldValues)
+                .newValues(replacement)
+                .actorUserId(actorUserId)
+                .actorEmail(actorEmail)
+                .actorRole(actorRole)
+                .bankId(bankId)
+                .sessionJti(sessionJti)
+                .ip(ip)
+                .requestId(requestId);
+        return copy.build();
+    }
+
     public static final class Builder {
 
         private final String action;
@@ -119,6 +152,8 @@ public final class AuditEventSpec {
         private String actorRole;
         private Integer bankId;
         private UUID sessionJti;
+        private String ip;
+        private String requestId;
 
         private Builder(String action, AuditOutcome outcome) {
             this.action = action;
@@ -170,6 +205,22 @@ public final class AuditEventSpec {
 
         public Builder sessionJti(UUID sessionJti) {
             this.sessionJti = sessionJti;
+            return this;
+        }
+
+        /**
+         * Pins the client ip when the row is written away from the request
+         * thread (the ACCESS_DENIED aggregation flush); request threads leave
+         * it unset and the recorder takes the MDC's.
+         */
+        public Builder ip(String ip) {
+            this.ip = ip;
+            return this;
+        }
+
+        /** Pins the request id (same use as {@link #ip}). */
+        public Builder requestId(String requestId) {
+            this.requestId = requestId;
             return this;
         }
 

@@ -82,6 +82,10 @@ public final class SettingKeys {
             "alerts.integrationFailures.threshold";
     public static final String ALERT_INTEGRATION_FAILURES_WINDOW =
             "alerts.integrationFailures.window";
+    /** ws28 (SE2): the access-denied-burst windowed alert rule. */
+    public static final String ALERT_ACCESS_DENIED_THRESHOLD =
+            "alerts.accessDeniedBurst.threshold";
+    public static final String ALERT_ACCESS_DENIED_WINDOW = "alerts.accessDeniedBurst.window";
     public static final String ALERT_WEBHOOK_MIN_SEVERITY = "alerts.webhook.minSeverity";
     public static final String ALERT_EMAIL_MIN_SEVERITY = "alerts.email.minSeverity";
 

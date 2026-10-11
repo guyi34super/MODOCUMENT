@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.config.DeprecatedEndpoint;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 import java.util.Optional;
 
+@DeprecatedEndpoint
 @RestController
 @Tag(name = "Process Steps")
 public class ProcessStepController {

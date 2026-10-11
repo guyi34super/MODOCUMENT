@@ -1,8 +1,10 @@
 package com.modocument.api;
 
+import com.modocument.testsupport.H2ExportTargets;
 import com.modocument.testsupport.SharedTestStorage;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -28,6 +30,8 @@ import java.nio.file.Path;
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+// ws28: structured DB-export targets land in in-memory H2 (MaskingGateC2Test).
+@Import(H2ExportTargets.class)
 public abstract class IsolatedStorageApiTestSupport {
 
     /** {@code modocument.storage.root} of the shared context. */

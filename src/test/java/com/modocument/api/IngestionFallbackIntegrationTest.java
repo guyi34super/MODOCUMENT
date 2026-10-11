@@ -202,10 +202,12 @@ class IngestionFallbackIntegrationTest extends AiStubApiTestSupport {
 
         assertExtractedByCode(job);
         assertThat(job.get("parseFallbackReason").asText()).isEqualTo("CIRCUIT_OPEN");
-        mvc.perform(post("/api/aifiles/send")
+        // ws28: /api/aifiles/send is gone; the automapper is another AI
+        // endpoint with no code path, so it answers the open circuit's 503.
+        mvc.perform(post("/api/automapper/generate")
                         .header("Authorization", auth)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"prompt\": \"hello\"}"))
+                        .param("extractedFields", "Date,Reference,Amount")
+                        .param("filename", job.get("fileName").asText()))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().exists("Retry-After"))
                 .andExpect(jsonPath("$.code").value("CIRCUIT_OPEN"));

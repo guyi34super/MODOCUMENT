@@ -61,7 +61,7 @@ Per call site:
 | `SummarizeExtractionUseCase` | `EXTRACTION_SUMMARY` | Stats + tokenized samples; summary detokenized. Same fallback: a summary from counters, fill rates and distinct counts that quotes no value (`generatedBy: CODE`). |
 | `AiSectionSplitter` | `DOC_SECTION_SPLIT` | Body listing **one-way masked** (`maskText`), not tokenized: the model's anchors are body-element indexes (`[3]`), not character offsets, so length changes are safe, and the accepted titles/anchor text are re-read from the document itself — nothing from the model needs unmasking. |
 | `AiDocumentComposer` | `DOC_COMPOSE` | **Reversible tokenization** of the template listing, user paragraphs, captions, section titles and image file names in one session; the validated plan is detokenized before rendering, so the generated document carries the real values while the model never saw them. (Deliberately NOT the one-way masking used for classification snippets/section splitting: masking would bake `[ID]` placeholders into the generated document.) |
-| `AiFilesController` (`POST /api/aifiles/send`) | `DIAGNOSTIC` | User-typed prompt tokenized; reply detokenized. |
+| ~~`AiFilesController` (`POST /api/aifiles/send`)~~ | `DIAGNOSTIC` | **Removed in 1.2.0** (open prompt proxy). |
 | `VisionOcrService` | `VISION_OCR` | Images cannot be tokenized — see the vision policy below. |
 
 Tokenization is heuristic (field-name keywords + value shapes), fail-closed by
@@ -160,12 +160,12 @@ What happens to each feature when the model cannot be used:
 | Ingestion parse, mode `CODE_ONLY` | Never calls the model. |
 | Ingestion parse, mode `AI_ONLY` | The job fails, as before phase 2. |
 | Structured files (CSV, Excel, markdown/row-line text) | Parsed by code before any AI call, in every mode. |
-| Legacy transform (`/api/transform/transform`) | The same three modes. Template detection needs the model, so without it the caller passes `templateId`; otherwise the answer is 400. |
+| ~~Legacy transform (`/api/transform/transform`)~~ | Removed in 1.2.0 (unused). |
 | Column mapping | The code tiers always run. Columns they leave unresolved stay unmapped for review. |
 | Document creation: section breakdown, composition | The heuristic parser and the deterministic engine. |
 | LLM record cleaning while bridging | The original rows are kept. |
 | Vision OCR | Tesseract. |
-| Chat table edits, schema inference, run summaries, `/api/aifiles/send`, `/api/automapper/generate` | **No non-AI path**: 503. The heuristic schema inference and summaries are planned for phase 2, wave 4. |
+| Chat table edits, schema inference, run summaries, `/api/automapper/generate` | **No non-AI path**: 503. The heuristic schema inference and summaries are planned for phase 2, wave 4. |
 
 Falling back to code never sends data anywhere: the code extractor runs
 locally and its notes carry no cell values. A prompt the gateway refused

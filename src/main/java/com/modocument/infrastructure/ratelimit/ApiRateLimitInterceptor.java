@@ -45,14 +45,13 @@ import java.util.TreeMap;
  *
  * <p><b>Overlap with the other limiters (no double counting).</b>
  * <ul>
- *   <li>LLM-spending routes ({@code /api/aifiles/send},
- *       {@code /api/automapper/generate}, chat-edit, extraction
+ *   <li>LLM-spending routes ({@code /api/automapper/generate}, chat-edit, extraction
  *       infer-schema/summary) are metered by the shared per-user LLM quota
  *       ({@link LlmQuotaInterceptor} → {@link LlmRateLimiter}) and are NOT in
  *       this table.</li>
- *   <li>{@code /api/transform/transform} spends LLM tokens too, but is metered
- *       here only (its 30/h bucket is tighter than the LLM quota), not by
- *       both.</li>
+ *   <li>The legacy {@code /api/transform/transform} (and its {@code transform}
+ *       bucket) was removed in 1.2.0 (ws28); the {@code ratelimit.transform}
+ *       knob is kept, unused, so stored settings stay valid.</li>
  *   <li>Document generation is metered here for its rendering cost; its
  *       optional AI composition additionally draws on the LLM quota inside
  *       {@code AiDocumentComposer}, where exhaustion degrades to the
@@ -101,8 +100,6 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
                 SettingKeys.RATELIMIT_UPLOADS);
         Bucket ingestion = bucket("ingestion", "ingestion job", properties.getIngestion(),
                 SettingKeys.RATELIMIT_INGESTION);
-        Bucket transform = bucket("transform", "transform", properties.getTransform(),
-                SettingKeys.RATELIMIT_TRANSFORM);
         Bucket exports = bucket("exports", "export", properties.getExports(),
                 SettingKeys.RATELIMIT_EXPORTS);
         Bucket docGenerate = bucket("doc-generate", "document generation",
@@ -132,8 +129,6 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
         route("POST", "/api/ingestion/jobs/{id}/resume", ingestion);
         route("POST", "/api/ingestion/jobs/{id}/remap", ingestion);
         route("POST", "/api/ingestion/jobs/{id}/revalidate", ingestion);
-
-        route("POST", "/api/transform/transform", transform);
 
         // Every export path shares one bucket: the GET download, its ws18
         // POST twin (same export, over-cap reason in the body — otherwise an

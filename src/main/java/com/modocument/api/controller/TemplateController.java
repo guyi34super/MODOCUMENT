@@ -1,5 +1,10 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
+import java.util.LinkedHashMap;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -60,14 +65,28 @@ public class TemplateController {
     private final CurrentUserProvider currentUser;
     private final ObjectMapper objectMapper;
     private final boolean makerCheckerForTemplates;
+    private final AuditRecorder audit;
 
     public TemplateController(TemplateRepository repo, TemplateVisibilityUseCase templateViews,
                               UpdateTemplateUseCase updateTemplate,
                               DeleteTemplateUseCase deleteTemplate,
                               PendingChangeUseCase pendingChanges,
                               CurrentUserProvider currentUser, ObjectMapper objectMapper,
-                              @Value("${modocument.security.maker-checker.template-changes:true}")
                               boolean makerCheckerForTemplates) {
+        this(repo, templateViews, updateTemplate, deleteTemplate, pendingChanges, currentUser,
+                objectMapper, makerCheckerForTemplates, spec -> { });
+    }
+
+    @Autowired
+    public TemplateController(TemplateRepository repo, TemplateVisibilityUseCase templateViews,
+                              UpdateTemplateUseCase updateTemplate,
+                              DeleteTemplateUseCase deleteTemplate,
+                              PendingChangeUseCase pendingChanges,
+                              CurrentUserProvider currentUser, ObjectMapper objectMapper,
+                              @Value("${modocument.security.maker-checker.template-changes:true}")
+                              boolean makerCheckerForTemplates,
+                              AuditRecorder audit) {
+        this.audit = audit;
         this.repo = repo;
         this.templateViews = templateViews;
         this.updateTemplate = updateTemplate;
@@ -123,6 +142,11 @@ public class TemplateController {
         entity.setOwnerUserId(currentUser.requireUserId());
         entity.setBankId(currentUser.requireBankId());
         repo.add(entity);
+        Map<String, Object> created = new LinkedHashMap<>();
+        created.put("name", entity.getName());
+        created.put("extractionMode", entity.getExtractionMode());
+        audit.success(AuditActions.TEMPLATE_CREATED, "Template",
+                String.valueOf(entity.getTemplateId()), null, created);
         return ResponseEntity
                 .created(URI.create("/Templates/GetById/" + entity.getTemplateId()))
                 .body(entity);

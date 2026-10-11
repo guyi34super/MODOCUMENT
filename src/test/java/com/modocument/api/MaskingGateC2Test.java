@@ -1,5 +1,6 @@
 package com.modocument.api;
 
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.doccreation.dto.AddBlockRequest;
@@ -7,6 +8,7 @@ import com.modocument.doccreation.dto.BlueprintDto;
 import com.modocument.doccreation.dto.GenerationResultDto;
 import com.modocument.doccreation.usecase.DocBlueprintUseCase;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
+import com.modocument.testsupport.H2ExportTargets;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.entity.IngestionJob;
@@ -237,11 +239,13 @@ class MaskingGateC2Test extends IsolatedStorageApiTestSupport {
         assertMaskedAndNoRawValues(Files.readString(archived), "archive copy");
 
         // Database export: the same row transform lands in the target table.
-        String targetDb = "jdbc:h2:mem:ws12c2db" + job.getIngestionJobId() + ";DB_CLOSE_DELAY=-1";
+        String database = "ws12c2db" + job.getIngestionJobId();
+        String targetDb = H2ExportTargets.h2Url(database);
         mvc.perform(post("/api/ingestion/jobs/" + job.getIngestionJobId() + "/export/database")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"jdbcUrl\":\"" + targetDb
+                        .content("{\"vendor\":\"POSTGRESQL\",\"host\":\"localhost\","
+                                + "\"database\":\"" + database
                                 + "\",\"tableName\":\"ExportedRows\"}"))
                 .andExpect(status().isOk());
         try (Connection connection = DriverManager.getConnection(targetDb);

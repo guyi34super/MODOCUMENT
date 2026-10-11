@@ -16,6 +16,61 @@ All notable changes to MoDocument are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Audit log API: `GET /api/admin/audit` returns the caller's bank events newest first, with
+  filters (actor, action, entity, outcome, date range), keyset paging and per-role masking of
+  values. `GET /api/admin/audit/export` returns CSV, at most 50 000 rows. `GET
+  /api/admin/audit/actions` returns the action catalogue. The platform console gets
+  `GET /api/platform/audit` (the platform bank's own events) and `GET
+  /api/platform/audit/counts` (counts per bank). Permission `AUDIT_READ` (ADMIN, APPROVER,
+  PLATFORM_ADMIN). Viewing is audited `AUDIT_LOG_VIEWED` and exporting `AUDIT_LOG_EXPORTED`.
+- New audit actions:
+  - `TEMPLATE_CREATED`, `TEMPLATE_FIELD_CREATED/UPDATED/DELETED`
+  - `VALIDATION_RULE_CREATED/UPDATED/DELETED`
+  - `FILE_UPLOADED`, `INGESTION_JOB_CREATED`, `INGESTION_REMAPPED`, `INGESTION_ROWS_EDITED`
+  - `DOC_GENERATED`, `DOC_DOWNLOADED`, `EXPORT_DOWNLOADED`, `TOKEN_REFRESHED`
+  - `ACCESS_DENIED`: use-case refusals, owner-scoped 404 probes and invalid bearer tokens. It is
+    aggregated to one row per actor or address per minute, with a count.
+  - `SENSITIVE_DATA_VIEWED`: ingestion job detail, extraction records, user list and DSR search,
+    once per actor, entity and hour, gated by `audit.readAuditEnabled`.
+
+  The catalogue is in `docs/security/audit-events.md`.
+- Alert rule `access-denied-burst` (windowed, MEDIUM), tunable with
+  `alerts.accessDeniedBurst.threshold|window`.
+
+### Changed
+- **Migration note — database export.** `POST /api/ingestion/jobs/{id}/export/database` no
+  longer accepts a raw `jdbcUrl`; such a body gets a 400. Send the target as `vendor`
+  (`POSTGRESQL`, `ORACLE`, `SQLSERVER` or `MARIADB`), `host`, `port` (optional, vendor default),
+  `database`, `schema` (optional) and `sslmode` (optional: `disable`, `allow`, `prefer`,
+  `require`, `verify-ca` or `verify-full`), plus `username`, `password`, `tableName` (or `table`),
+  `createTableIfMissing` and `reason` as before. The server builds the JDBC URL with the
+  integration hub's `DbDialect` and applies connect, login, socket and query timeouts. The
+  destination passes the bank-aware egress check, so a private-network target needs an approved
+  egress rule. Example: `jdbc:postgresql://db:5432/staging?sslmode=require` becomes
+  `{"vendor":"POSTGRESQL","host":"db","port":5432,"database":"staging","sslmode":"require"}`.
+  H2 targets are no longer accepted.
+
+### Deprecated
+- Unused legacy routes (sunset 2027-04-01). Each answers with `Deprecation`, `Sunset` and `Link`
+  headers and is marked `deprecated` in OpenAPI:
+  - `/ImportDetails/*`, `/ProcessStep/*`
+  - TemplateDataTypes Create/Update/GetById, ImportHistory Create/Update/GetById
+  - `/TemplateFields/GetById`, `/api/automapper/generate`, `/api/fileupload/upload`,
+    `/api/extraction/metrics`
+
+  See `docs/api/versioning-policy.md` §7.
+
+### Removed
+- `POST /api/aifiles/send` (an open AI prompt proxy) and the unused
+  `POST /api/transform/transform`. Both were removed under the security exception of the
+  versioning policy.
+
+### Security
+- SSRF: the extraction REST connector and the web crawler no longer let the HTTP client follow
+  redirects. Each hop is re-checked against the egress policy, and credentials never follow a
+  redirect to another origin.
+
 ## [1.1.0] - 2026-10-10
 
 Phase 2: settings every admin can change within guardrails, a platform owner

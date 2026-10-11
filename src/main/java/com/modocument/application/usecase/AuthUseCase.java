@@ -1,5 +1,7 @@
 package com.modocument.application.usecase;
 
+import com.modocument.application.audit.AuditActions;
+
 import com.modocument.application.dto.AuthResponse;
 import com.modocument.application.dto.UserDto;
 import com.modocument.application.port.AppUserRepository;
@@ -517,6 +519,16 @@ public class AuthUseCase {
         current.setRevokedAt(now);
         current.setReplacedByJti(next.jti());
         refreshTokens.save(current);
+        // ws28: a successful rotation; the anonymous caller is named from the
+        // token's owner, and the new refresh jti ties the row to its token.
+        audit.record(AuditEventSpec.builder(AuditActions.TOKEN_REFRESHED, AuditOutcome.SUCCESS)
+                .actorUserId(user.getAppUserId())
+                .actorEmail(user.getEmail())
+                .actorRole(user.getRole() == null ? null : user.getRole().name())
+                .bankId(user.getBankId())
+                .sessionJti(next.jti())
+                .entity("RefreshTokenFamily", current.getFamilyId().toString())
+                .build());
         return new AuthSession(
                 new AuthResponse(jwtService.issueToken(user), UserDto.from(user)), next.value());
     }

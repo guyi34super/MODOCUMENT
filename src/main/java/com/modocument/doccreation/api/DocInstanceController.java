@@ -12,6 +12,10 @@ import com.modocument.doccreation.dto.ReorderBlocksRequest;
 import com.modocument.doccreation.dto.UpdateBlockRequest;
 import com.modocument.doccreation.dto.UpdateDocInstanceRequest;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
+import com.modocument.doccreation.dto.GenerationResultDto;
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -31,6 +35,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Files;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -48,9 +53,16 @@ public class DocInstanceController {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     private final DocInstanceUseCase useCase;
+    private final AuditRecorder audit;
 
     public DocInstanceController(DocInstanceUseCase useCase) {
+        this(useCase, spec -> { });
+    }
+
+    @Autowired
+    public DocInstanceController(DocInstanceUseCase useCase, AuditRecorder audit) {
         this.useCase = useCase;
+        this.audit = audit;
     }
 
     // ------------------------------------------------------------- instances
@@ -168,7 +180,13 @@ public class DocInstanceController {
     @RequiresPermission(Permission.DOC_GENERATE)
     @PostMapping("/api/doccreation/instances/{id}/generate")
     public ResponseEntity<?> generate(@PathVariable int id) {
-        return ResponseEntity.ok(useCase.generate(id));
+        GenerationResultDto result = useCase.generate(id);
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("docxFileName", result.docxFileName());
+        values.put("pdfReady", result.pdfReady());
+        values.put("composedBy", result.composedBy());
+        audit.success(AuditActions.DOC_GENERATED, "DocInstance", String.valueOf(id), null, values);
+        return ResponseEntity.ok(result);
     }
 
     @RequiresPermission(Permission.DOC_GENERATE)
@@ -178,11 +196,15 @@ public class DocInstanceController {
         DocInstanceUseCase.DownloadFile file = useCase.download(id, format);
         String contentType = file.downloadName().endsWith(".pdf") ? "application/pdf" : DOCX_CONTENT_TYPE;
         try {
+            byte[] bytes = Files.readAllBytes(file.path());
+            audit.success(AuditActions.DOC_DOWNLOADED, "DocInstance", String.valueOf(id), null,
+                    Map.of("format", contentType.equals("application/pdf") ? "pdf" : "docx",
+                            "bytes", bytes.length));
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=\"" + file.downloadName().replace("\"", "") + "\"")
                     .contentType(MediaType.parseMediaType(contentType))
-                    .body(Files.readAllBytes(file.path()));
+                    .body(bytes);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not read the generated file.", e);
         }

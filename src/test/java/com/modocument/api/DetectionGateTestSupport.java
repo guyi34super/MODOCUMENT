@@ -1,5 +1,8 @@
 package com.modocument.api;
 
+import com.modocument.testsupport.H2ExportTargets;
+import org.springframework.context.annotation.Import;
+
 import com.modocument.domain.entity.AlertLog;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
@@ -49,6 +52,7 @@ import static org.awaitility.Awaitility.await;
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Import(H2ExportTargets.class)
 abstract class DetectionGateTestSupport {
 
     static final String PUSH_BANK_CODE = "WS18PUSH";

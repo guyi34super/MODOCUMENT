@@ -1,6 +1,8 @@
 package com.modocument.application.usecase;
 
+import com.modocument.application.audit.AuditActions;
 import com.modocument.application.port.AppUserRepository;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.security.RolePermissions;
@@ -9,6 +11,7 @@ import com.modocument.domain.entity.Template;
 import com.modocument.domain.model.Permission;
 import com.modocument.domain.model.Role;
 import com.modocument.domain.model.TemplateVisibility;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
@@ -41,12 +44,21 @@ public class TemplateOwnership {
     private final TemplateRepository templates;
     private final CurrentUserProvider currentUser;
     private final AppUserRepository users;
+    /** Null = no probe audit (unit-test wiring). */
+    private final AuditRecorder audit;
 
     public TemplateOwnership(TemplateRepository templates, CurrentUserProvider currentUser,
                              AppUserRepository users) {
+        this(templates, currentUser, users, null);
+    }
+
+    @Autowired
+    public TemplateOwnership(TemplateRepository templates, CurrentUserProvider currentUser,
+                             AppUserRepository users, AuditRecorder audit) {
         this.templates = templates;
         this.currentUser = currentUser;
         this.users = users;
+        this.audit = audit;
     }
 
     /**
@@ -58,7 +70,15 @@ public class TemplateOwnership {
     public Template requireReadable(int templateId) {
         return templates.getAccessible(templateId, currentUser.requireUserId(),
                         currentUser.requireBankId())
-                .orElseThrow(() -> notFound(templateId));
+                .orElseThrow(() -> probe(templateId));
+    }
+
+    /** ws28: the owner-scoped 404 is audited ACCESS_DENIED (aggregated). */
+    private NoSuchElementException probe(int templateId) {
+        if (audit != null) {
+            audit.record(AuditActions.notFoundProbe("Template", templateId));
+        }
+        return notFound(templateId);
     }
 
     /**

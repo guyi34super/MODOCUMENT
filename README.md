@@ -144,9 +144,12 @@ no LLM involved.
   `GET /api/ingestion/jobs/{id}/export/file?format=csv|json|xlsx|tsv|xml` — a copy is
   archived under `wwwroot/exports/`.
 - **Push directly to your own database**: `POST /api/ingestion/jobs/{id}/export/database`
-  with `{jdbcUrl, username, password, tableName, createTableIfMissing}`. Supports
-  `jdbc:postgresql:` and `jdbc:h2:` targets, auto-creates the table when asked, inserts
-  in batches. Table/column identifiers are strictly validated **and** quoted; row values
+  with `{vendor, host, port, database, schema, sslmode, username, password, tableName,
+  createTableIfMissing}`. The vendor is `POSTGRESQL`, `ORACLE`, `SQLSERVER` or `MARIADB`.
+  The server builds the JDBC URL itself (the integration hub's `DbDialect`), with
+  allow-listed options and connect, login, socket and query timeouts. A raw `jdbcUrl` is
+  refused since 1.2.0. The destination passes the bank's egress check. The table is
+  created when asked, and rows are inserted in one all-or-nothing batch. Table/column identifiers are strictly validated **and** quoted; row values
   only ever travel as bound parameters (no SQL injection); credentials are used for the
   one export and never persisted or logged.
 - **Per-role export row caps** (ws18, gate D2): above the cap (READ_WRITE 5,000,
@@ -237,16 +240,23 @@ no LLM involved.
 - **Vision OCR is off by default** (`OCR_VISION_ENABLED=false`): page images
   cannot be pseudonymised, so sending them to a vision model is an explicit
   opt-in; local Tesseract OCR remains the default.
-- Legacy AI endpoints preserved (all through the gateway, tokenized):
-  `POST /api/aifiles/send` (diagnostics prompt — pseudonymised before sending,
-  detokenized in the reply), `POST /api/transform/transform` (classify + extract
-  to JSON), `POST /api/automapper/generate` (column mapping).
+- Legacy AI endpoint, deprecated in 1.2.0 (through the gateway, tokenized):
+  `POST /api/automapper/generate` (column mapping). The open prompt proxy
+  `POST /api/aifiles/send` and `POST /api/transform/transform` were removed in
+  1.2.0 ([docs/api/versioning-policy.md](docs/api/versioning-policy.md) §7).
 - Full control description: [docs/security/ai-controls.md](docs/security/ai-controls.md).
 
 ### Platform
 - Legacy CRUD APIs: `/Templates/*`, `/TemplateFields/*`, `/TemplateDataTypes/*`,
-  `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*`.
-- File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`).
+  `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*`. The unused ones are
+  deprecated (sunset 2027-04-01) and answer with `Deprecation`/`Sunset` headers, see
+  [docs/api/versioning-policy.md](docs/api/versioning-policy.md) §7.
+- File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`; deprecated,
+  use the multipart `POST /api/ingestion/jobs`).
+- **Audit viewer API** (1.2.0): `GET /api/admin/audit` (filters, keyset paging),
+  `/api/admin/audit/export` (CSV), `/api/admin/audit/actions`, and the platform's
+  `/api/platform/audit[/counts]`; catalogue in
+  [docs/security/audit-events.md](docs/security/audit-events.md).
 - **OpenAPI** generated from code at `/v3/api-docs` (all profiles); Swagger UI at `/swagger-ui` (`local` only).
 - `local` profile: same PostgreSQL + Flyway as production, plus dev conveniences
   (Swagger, in-memory extraction). The JWT signing key is **not** committed —
@@ -503,7 +513,7 @@ stays as the break-glass path. Nothing is active until
 
 Both open auth endpoints are rate-limited per IP and per email
 (`modocument.security.rate-limit.auth.*`), and the LLM-backed endpoints
-(`/api/aifiles/send`, `/api/automapper/generate`, chat-edit) carry a per-user
+(`/api/automapper/generate`, chat-edit) carry a per-user
 quota (`modocument.security.rate-limit.llm.*`); exceeding either returns `429`.
 
 ### Build & test
@@ -568,7 +578,7 @@ the template-classification snippet. Plain numbers/dates in non-sensitive column
 deliberately stay raw so format cleanup still works.
 
 Boundaries to know: document-to-table extraction (`TableExtraction` / `POST
-/Transform`), vision OCR, and the raw `POST /api/aifiles/send` passthrough inherently
+/Transform`) and vision OCR inherently
 send document content to the LLM — finding values in raw text *is* their job.
 Tokenized cells cannot be content-reformatted by the model (it never sees them), and
 prose summaries may paraphrase a placeholder — which degrades to vagueness, never to a
@@ -627,18 +637,16 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 | `POST /api/extraction/jobs/{id}/bridge` | Hand records to the document pipeline (auto-map + validate → standard ingestion job) |
 | `POST /api/extraction/jobs/{id}/infer-schema` | Suggest a template schema from sample records (LLM; code inference when the AI is unavailable, `generatedBy`) |
 | `GET /api/extraction/jobs/{id}/summary` | Short human summary of the run (LLM; counter-based when the AI is unavailable, `generatedBy`) |
-| `GET /api/extraction/metrics` | Queue depth, compliance counters, worker pool state |
+| `GET /api/extraction/metrics` | Queue depth, compliance counters, worker pool state (deprecated in 1.2.0) |
 
 ### Legacy pipeline & utilities
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/fileupload/upload` | Multipart upload to `wwwroot/uploads/` |
-| `POST /api/transform/transform` | Classify a file against a template and extract fields to JSON via the LLM |
-| `POST /api/automapper/generate` | LLM column-to-schema mapping |
+| `POST /api/fileupload/upload` | Multipart upload to `wwwroot/uploads/` (deprecated in 1.2.0) |
+| `POST /api/automapper/generate` | LLM column-to-schema mapping (deprecated in 1.2.0) |
 | `POST /Validation/validate` | Run rows through a template's rule engine |
-| `POST /api/aifiles/send` | Send a raw prompt to the chat model |
-| `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*` | Legacy CRUD |
+| `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*` | Legacy CRUD (partly deprecated in 1.2.0) |
 
 ### Document creation
 
@@ -695,8 +703,9 @@ curl -X POST localhost:8080/api/ingestion/jobs/1/chat-edit -H 'Content-Type: app
 # 5. export — download a file, or push to your own database
 curl -OJ "localhost:8080/api/ingestion/jobs/1/export/file?format=xlsx"
 curl -X POST localhost:8080/api/ingestion/jobs/1/export/database -H 'Content-Type: application/json' \
-     -d '{"jdbcUrl": "jdbc:postgresql://myhost:5432/staging",
-          "username": "loader", "password": "***", "tableName": "Contacts", "createTableIfMissing": true}'
+     -d '{"vendor": "POSTGRESQL", "host": "myhost", "port": 5432, "database": "staging",
+          "sslmode": "require", "username": "loader", "password": "***",
+          "tableName": "Contacts", "createTableIfMissing": true}'
 ```
 
 If a stage fails (LLM outage, unreadable scan, ...), the job stores the error and stays

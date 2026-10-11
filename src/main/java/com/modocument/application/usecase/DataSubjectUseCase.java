@@ -143,6 +143,10 @@ public class DataSubjectUseCase {
                 .entity("DataSubject", scan.subjectRef)
                 .newValues(scan.countsWithTotal())
                 .build());
+        // ws28 read audit: where a data subject appears was shown (deduplicated
+        // per actor, subject and hour; gated by audit.readAuditEnabled).
+        audit.success(com.modocument.application.audit.AuditActions.SENSITIVE_DATA_VIEWED,
+                "DataSubject", scan.subjectRef, null, Map.of("view", "dsr-search"));
         return result;
     }
 

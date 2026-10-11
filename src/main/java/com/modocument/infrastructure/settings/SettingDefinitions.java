@@ -280,6 +280,10 @@ public final class SettingDefinitions {
                     "Integration run failures", "5", "20"),
             alertWindow(ALERT_INTEGRATION_FAILURES_WINDOW, "integration-failures",
                     "Integration run failures: window", "60m"),
+            alertThreshold(ALERT_ACCESS_DENIED_THRESHOLD, "access-denied-burst",
+                    "Refused-access burst", "3", "12"),
+            alertWindow(ALERT_ACCESS_DENIED_WINDOW, "access-denied-burst",
+                    "Refused-access burst: window", "5m"),
             builder(ALERT_WEBHOOK_MIN_SEVERITY, ENUM).platform().security()
                     .group(SettingGroup.SECURITY_ALERTS)
                     .label("Webhook: minimum severity")

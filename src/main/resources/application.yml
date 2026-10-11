@@ -484,6 +484,19 @@ modocument:
         threshold: ${MODOCUMENT_ALERT_AUTHZ_DENIED_THRESHOLD:10}
         window: 5m
         severity: MEDIUM
+      # ws28: refusals outside method security - an AccessDeniedException
+      # inside a use case, an owner-scoped 404 probe, an invalid or revoked
+      # bearer token. ACCESS_DENIED rows are AGGREGATED (at most one per
+      # actor-or-ip per entity type per minute, newValues.count), so the
+      # threshold counts aggregated rows: minutes with refusals in the window.
+      - name: access-denied-burst
+        description: Repeated refused access (use-case denials, ownership probes, invalid tokens) from one user or address
+        trigger: WINDOWED
+        actions: [ACCESS_DENIED]
+        group-by: ACTOR_OR_IP
+        threshold: ${MODOCUMENT_ALERT_ACCESS_DENIED_THRESHOLD:3}
+        window: 5m
+        severity: MEDIUM
       - name: admin-action-burst
         description: Burst of administrator actions
         trigger: WINDOWED

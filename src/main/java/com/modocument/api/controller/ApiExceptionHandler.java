@@ -29,6 +29,11 @@ import java.io.UncheckedIOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditEventSpec;
+import com.modocument.application.port.AuditRecorder;
+import com.modocument.domain.model.AuditOutcome;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 
 /**
  * Last-resort translation of infrastructure failures into answers a user can
@@ -46,9 +51,17 @@ public class ApiExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     private final PasswordChangeRequiredGate passwordChangeGate;
+    /** Null = no ACCESS_DENIED audit (unit-test wiring). */
+    private final AuditRecorder audit;
 
     public ApiExceptionHandler(PasswordChangeRequiredGate passwordChangeGate) {
+        this(passwordChangeGate, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ApiExceptionHandler(PasswordChangeRequiredGate passwordChangeGate, AuditRecorder audit) {
         this.passwordChangeGate = passwordChangeGate;
+        this.audit = audit;
     }
 
     /**
@@ -61,7 +74,20 @@ public class ApiExceptionHandler {
      */
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
     public ResponseEntity<?> accessDenied(
-            org.springframework.security.access.AccessDeniedException e) throws Exception {
+            org.springframework.security.access.AccessDeniedException e,
+            jakarta.servlet.http.HttpServletRequest request) throws Exception {
+        if (audit != null && !(e instanceof AuthorizationDeniedException)) {
+            // ws28: a refusal raised INSIDE a use case (a shared template
+            // without template:publish, a release without the right, ...).
+            // @RequiresPermission refusals are AuthorizationDeniedException and
+            // already audited AUTHORIZATION_DENIED by their listener. The
+            // recorder aggregates ACCESS_DENIED (one row per actor per minute).
+            audit.record(AuditEventSpec.builder(AuditActions.ACCESS_DENIED, AuditOutcome.DENIED)
+                    .entity("Route", request.getRequestURI())
+                    .newValues(Map.of("kind", AuditActions.DENIED_KIND_USE_CASE,
+                            "method", request.getMethod()))
+                    .build());
+        }
         if (passwordChangeGate.callerMustChange()) {
             String requestId = MDC.get(RequestIdFilter.MDC_REQUEST_ID);
             Map<String, Object> body = new LinkedHashMap<>();
