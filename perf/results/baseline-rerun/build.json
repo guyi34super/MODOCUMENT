@@ -1,0 +1,58 @@
+{
+  "machine": {
+    "at": "2026-10-11T05:25:35.241Z",
+    "commit": null,
+    "dirtyTree": null,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      2.51,
+      2.45,
+      1.74
+    ]
+  },
+  "buildSeconds": 3.1,
+  "files": 4,
+  "js": {
+    "chunks": 1,
+    "rawBytes": 614909,
+    "gzipBytes": 182756,
+    "largestRawBytes": 614909
+  },
+  "css": {
+    "files": 1,
+    "rawBytes": 38972,
+    "gzipBytes": 7538
+  },
+  "assets": [
+    {
+      "file": "assets/index-CveQdyxm.js",
+      "kind": "js",
+      "rawBytes": 614909,
+      "gzipBytes": 182756,
+      "brotliBytes": 151912
+    },
+    {
+      "file": "assets/index-DMXazRez.css",
+      "kind": "css",
+      "rawBytes": 38972,
+      "gzipBytes": 7538,
+      "brotliBytes": 6520
+    },
+    {
+      "file": "index.html",
+      "kind": "html",
+      "rawBytes": 395,
+      "gzipBytes": 264,
+      "brotliBytes": 157
+    },
+    {
+      "file": ".well-known/security.txt",
+      "kind": "txt",
+      "rawBytes": 376,
+      "gzipBytes": 302,
+      "brotliBytes": 220
+    }
+  ]
+}

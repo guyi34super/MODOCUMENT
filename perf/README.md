@@ -18,6 +18,7 @@ git-ignored). The baseline numbers and their reading are in
 | `footprint.mjs [backend.log]` | app jar size, its 10 largest nested jars, startup "Started … in" | `footprint.json` |
 | `test-suite.mjs <verify.log> [reports] [wall-s]` | backend tests, Spring contexts started, per-class times | `test-suite.json` |
 | `compare.mjs <before> <after> [--md]` | before/after table with deltas | stdout |
+| `nginx-check.sh [-- cmd …]` | serves `frontend/dist` through the real `frontend/nginx.conf` (local nginx, rendered like the image's edge mode, API proxied to `E2E_API_URL`), checks gzip / cache / 404 / security headers (test plan §7, via `nginx-headers.mjs`), then optionally runs `cmd` with `E2E_BASE_URL` pointing at nginx | `nginx.json` |
 
 ## Running
 
@@ -55,3 +56,14 @@ preinstalled at `/opt/pw-browsers`.
    - fewer Spring contexts / faster `mvn -B verify`.
 4. The alert-sweep `EXPLAIN` and the AI-token count on the golden corpus are
    not in these scripts: they come from SE1's and SE4's PG IT / corpus run.
+5. What nginx actually transfers (gzip on the wire, the cold load through the
+   production config instead of `vite preview`), plus a second pass of the
+   load-sensitive cases:
+
+   ```sh
+   PERF_LABEL=wave2-run2 PERF_OUT_DIR="$PWD/perf/results/wave2-run2" SKIP_BUILD=1 \
+     E2E_RUN_CMD='node perf/seed.mjs && node perf/api-bench.mjs && perf/nginx-check.sh -- node perf/frontend-load.mjs && node perf/footprint.mjs' \
+     e2e/run-local.sh
+   ```
+
+The Wave-2 numbers and their reading are in [`WAVE2.md`](WAVE2.md).

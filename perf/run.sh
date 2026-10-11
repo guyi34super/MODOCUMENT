@@ -44,13 +44,18 @@ SKIP_BUILD=1 E2E_RUN_CMD="node perf/seed.mjs && node perf/api-bench.mjs && node 
 if [ "${PERF_TESTS:-0}" = "1" ]; then
   log "mvn -B verify (timed)"
   t0=$(date +%s)
-  (cd "$REPO_ROOT" && mvn -B verify) >"$PERF_OUT_DIR/mvn-verify.log" 2>&1
+  # A red suite is recorded, not fatal: the timing is still worth keeping.
+  verify_rc=0
+  (cd "$REPO_ROOT" && mvn -B verify) >"$PERF_OUT_DIR/mvn-verify.log" 2>&1 || verify_rc=$?
+  echo "verify_exit=$verify_rc" >>"$PERF_OUT_DIR/run.meta"
   wall=$(( $(date +%s) - t0 ))
   node "$PERF_DIR/test-suite.mjs" "$PERF_OUT_DIR/mvn-verify.log" "$REPO_ROOT/target/surefire-reports" "$wall"
   log "vitest run (timed)"
   t0=$(date +%s)
-  (cd "$REPO_ROOT/frontend" && npx vitest run) >"$PERF_OUT_DIR/vitest.log" 2>&1
+  vitest_rc=0
+  (cd "$REPO_ROOT/frontend" && npx vitest run) >"$PERF_OUT_DIR/vitest.log" 2>&1 || vitest_rc=$?
   echo "vitest_wall_seconds=$(( $(date +%s) - t0 ))" >>"$PERF_OUT_DIR/run.meta"
+  echo "vitest_exit=$vitest_rc" >>"$PERF_OUT_DIR/run.meta"
   grep -E "Test Files|Tests |Duration" "$PERF_OUT_DIR/vitest.log" | sed 's/\x1b\[[0-9;]*m//g' >>"$PERF_OUT_DIR/run.meta" || true
 fi
 

@@ -31,6 +31,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -53,6 +54,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * rules under row level security: HousekeepingRlsPgIT.
  */
 @SpringBootTest
+// QA (test plan G9): join the shared MockMvc context of the API suites (the
+// MockMvc beans are inert here) instead of starting a context of its own.
+@AutoConfigureMockMvc
 @ActiveProfiles("test")
 class HousekeepingJobTest {
 

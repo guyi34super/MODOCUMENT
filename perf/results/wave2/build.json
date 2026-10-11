@@ -1,0 +1,443 @@
+{
+  "machine": {
+    "at": "2026-10-11T05:17:26.392Z",
+    "commit": "8d1e272",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      2.35,
+      2.25,
+      1.22
+    ]
+  },
+  "buildSeconds": 3.3,
+  "files": 59,
+  "js": {
+    "chunks": 55,
+    "rawBytes": 654644,
+    "gzipBytes": 230544,
+    "largestRawBytes": 233971
+  },
+  "css": {
+    "files": 1,
+    "rawBytes": 39549,
+    "gzipBytes": 7624
+  },
+  "assets": [
+    {
+      "file": "assets/vendor-B_dJgTEk.js",
+      "kind": "js",
+      "rawBytes": 233971,
+      "gzipBytes": 74906,
+      "brotliBytes": 64777
+    },
+    {
+      "file": "assets/index-CuxOxI6y.js",
+      "kind": "js",
+      "rawBytes": 58212,
+      "gzipBytes": 18044,
+      "brotliBytes": 15683
+    },
+    {
+      "file": "assets/IngestionJobPage-CSIqluPZ.js",
+      "kind": "js",
+      "rawBytes": 40550,
+      "gzipBytes": 13121,
+      "brotliBytes": 11712
+    },
+    {
+      "file": "assets/index-DqMpGB_1.css",
+      "kind": "css",
+      "rawBytes": 39549,
+      "gzipBytes": 7624,
+      "brotliBytes": 6580
+    },
+    {
+      "file": "assets/browser-C1QLZ6O7.js",
+      "kind": "js",
+      "rawBytes": 25777,
+      "gzipBytes": 10134,
+      "brotliBytes": 8873
+    },
+    {
+      "file": "assets/IntegrationFlowBuilderPage-CLoYpdcV.js",
+      "kind": "js",
+      "rawBytes": 20982,
+      "gzipBytes": 7029,
+      "brotliBytes": 6254
+    },
+    {
+      "file": "assets/IntegrationConnectionsPage-DbWj4jTp.js",
+      "kind": "js",
+      "rawBytes": 19363,
+      "gzipBytes": 6750,
+      "brotliBytes": 5981
+    },
+    {
+      "file": "assets/TemplateEditorPage-CKiZHuMl.js",
+      "kind": "js",
+      "rawBytes": 17972,
+      "gzipBytes": 6061,
+      "brotliBytes": 5361
+    },
+    {
+      "file": "assets/ValidationRulesPage-C0_utd4O.js",
+      "kind": "js",
+      "rawBytes": 15023,
+      "gzipBytes": 5297,
+      "brotliBytes": 4661
+    },
+    {
+      "file": "assets/AuditLogPage-NggA-rW9.js",
+      "kind": "js",
+      "rawBytes": 13331,
+      "gzipBytes": 4837,
+      "brotliBytes": 4314
+    },
+    {
+      "file": "assets/SettingsPage-DkLJkGPM.js",
+      "kind": "js",
+      "rawBytes": 13247,
+      "gzipBytes": 5273,
+      "brotliBytes": 4639
+    },
+    {
+      "file": "assets/AdminUsersPage-DEbQjgv2.js",
+      "kind": "js",
+      "rawBytes": 12872,
+      "gzipBytes": 3869,
+      "brotliBytes": 3387
+    },
+    {
+      "file": "assets/AdminDashboardPage-BEb7fIPP.js",
+      "kind": "js",
+      "rawBytes": 11857,
+      "gzipBytes": 4296,
+      "brotliBytes": 3789
+    },
+    {
+      "file": "assets/DocBuilderPage-CL3egF9u.js",
+      "kind": "js",
+      "rawBytes": 10550,
+      "gzipBytes": 3686,
+      "brotliBytes": 3229
+    },
+    {
+      "file": "assets/PlatformAnnouncementsPage-BDaYS-Wa.js",
+      "kind": "js",
+      "rawBytes": 9487,
+      "gzipBytes": 3276,
+      "brotliBytes": 2849
+    },
+    {
+      "file": "assets/ExtractionJobDetailPage-BSlXx_0T.js",
+      "kind": "js",
+      "rawBytes": 9137,
+      "gzipBytes": 3297,
+      "brotliBytes": 2893
+    },
+    {
+      "file": "assets/IntegrationApiClientsPage-xe8f9WMt.js",
+      "kind": "js",
+      "rawBytes": 8291,
+      "gzipBytes": 3260,
+      "brotliBytes": 2836
+    },
+    {
+      "file": "assets/PendingChangesPage-B3UmLOEk.js",
+      "kind": "js",
+      "rawBytes": 7792,
+      "gzipBytes": 3227,
+      "brotliBytes": 2853
+    },
+    {
+      "file": "assets/IntegrationsCommon-BGwUNGjp.js",
+      "kind": "js",
+      "rawBytes": 7791,
+      "gzipBytes": 3328,
+      "brotliBytes": 2884
+    },
+    {
+      "file": "assets/PlatformBankDetailPage-D3UjrXlJ.js",
+      "kind": "js",
+      "rawBytes": 7546,
+      "gzipBytes": 2765,
+      "brotliBytes": 2407
+    },
+    {
+      "file": "assets/ProfilePage-C5XV7Kwu.js",
+      "kind": "js",
+      "rawBytes": 7077,
+      "gzipBytes": 2455,
+      "brotliBytes": 2129
+    },
+    {
+      "file": "assets/ExtractionSourcesPage-BtkPAu1x.js",
+      "kind": "js",
+      "rawBytes": 6867,
+      "gzipBytes": 2512,
+      "brotliBytes": 2176
+    },
+    {
+      "file": "assets/AdminRetentionPage-9fzzvC30.js",
+      "kind": "js",
+      "rawBytes": 6851,
+      "gzipBytes": 2515,
+      "brotliBytes": 2155
+    },
+    {
+      "file": "assets/PlatformBanksPage-CXtAd-ZN.js",
+      "kind": "js",
+      "rawBytes": 6158,
+      "gzipBytes": 2444,
+      "brotliBytes": 2140
+    },
+    {
+      "file": "assets/parseProvenance-BPqCSIsz.js",
+      "kind": "js",
+      "rawBytes": 5120,
+      "gzipBytes": 2253,
+      "brotliBytes": 1928
+    },
+    {
+      "file": "assets/IntegrationAgentsPage-BvLkErpD.js",
+      "kind": "js",
+      "rawBytes": 4991,
+      "gzipBytes": 2247,
+      "brotliBytes": 1959
+    },
+    {
+      "file": "assets/IntegrationEgressRulesPage-C56NPiSt.js",
+      "kind": "js",
+      "rawBytes": 4863,
+      "gzipBytes": 2127,
+      "brotliBytes": 1862
+    },
+    {
+      "file": "assets/IngestionListPage-BqL75OyG.js",
+      "kind": "js",
+      "rawBytes": 4787,
+      "gzipBytes": 2155,
+      "brotliBytes": 1910
+    },
+    {
+      "file": "assets/IntegrationRunDetailPage-BCm3QzwB.js",
+      "kind": "js",
+      "rawBytes": 4301,
+      "gzipBytes": 1776,
+      "brotliBytes": 1574
+    },
+    {
+      "file": "assets/IntegrationsOverviewPage-Bd8S_9Iy.js",
+      "kind": "js",
+      "rawBytes": 4209,
+      "gzipBytes": 1854,
+      "brotliBytes": 1652
+    },
+    {
+      "file": "assets/IntegrationFlowsPage-Pdi0CUHi.js",
+      "kind": "js",
+      "rawBytes": 3809,
+      "gzipBytes": 1725,
+      "brotliBytes": 1534
+    },
+    {
+      "file": "assets/BlueprintListPage-DaZpW77M.js",
+      "kind": "js",
+      "rawBytes": 3646,
+      "gzipBytes": 1671,
+      "brotliBytes": 1411
+    },
+    {
+      "file": "assets/ExtractionJobsPage-Dyg2HabS.js",
+      "kind": "js",
+      "rawBytes": 3558,
+      "gzipBytes": 1545,
+      "brotliBytes": 1329
+    },
+    {
+      "file": "assets/PendingReleasesPage-Dbtk_mfa.js",
+      "kind": "js",
+      "rawBytes": 3522,
+      "gzipBytes": 1562,
+      "brotliBytes": 1337
+    },
+    {
+      "file": "assets/AdminAlertsPage-DHBp464w.js",
+      "kind": "js",
+      "rawBytes": 3506,
+      "gzipBytes": 1481,
+      "brotliBytes": 1265
+    },
+    {
+      "file": "assets/DocInstancesPage-DKY7rw8v.js",
+      "kind": "js",
+      "rawBytes": 3323,
+      "gzipBytes": 1498,
+      "brotliBytes": 1288
+    },
+    {
+      "file": "assets/TemplatesPage-B4rulfum.js",
+      "kind": "js",
+      "rawBytes": 3270,
+      "gzipBytes": 1473,
+      "brotliBytes": 1254
+    },
+    {
+      "file": "assets/validationRules-DGJLwmC7.js",
+      "kind": "js",
+      "rawBytes": 3173,
+      "gzipBytes": 1359,
+      "brotliBytes": 1187
+    },
+    {
+      "file": "assets/BlueprintDetailPage-C8_YmplB.js",
+      "kind": "js",
+      "rawBytes": 3052,
+      "gzipBytes": 1514,
+      "brotliBytes": 1301
+    },
+    {
+      "file": "assets/PlatformEgressRulesPage-DkNA3aPd.js",
+      "kind": "js",
+      "rawBytes": 2949,
+      "gzipBytes": 1463,
+      "brotliBytes": 1276
+    },
+    {
+      "file": "assets/temporaryPassword-BsU3zbSO.js",
+      "kind": "js",
+      "rawBytes": 2836,
+      "gzipBytes": 1349,
+      "brotliBytes": 1152
+    },
+    {
+      "file": "assets/PlatformOverviewPage-3v8ltJDF.js",
+      "kind": "js",
+      "rawBytes": 2721,
+      "gzipBytes": 1041,
+      "brotliBytes": 892
+    },
+    {
+      "file": "assets/IntegrationRunsPage-DwUgAvns.js",
+      "kind": "js",
+      "rawBytes": 2430,
+      "gzipBytes": 1206,
+      "brotliBytes": 1059
+    },
+    {
+      "file": "assets/doccreation-DSAjQB6k.js",
+      "kind": "js",
+      "rawBytes": 2298,
+      "gzipBytes": 674,
+      "brotliBytes": 582
+    },
+    {
+      "file": "assets/PlatformCommon-amMzJ_l8.js",
+      "kind": "js",
+      "rawBytes": 1752,
+      "gzipBytes": 949,
+      "brotliBytes": 824
+    },
+    {
+      "file": "assets/ForceChangePasswordPage-DLgwrgkW.js",
+      "kind": "js",
+      "rawBytes": 1667,
+      "gzipBytes": 877,
+      "brotliBytes": 717
+    },
+    {
+      "file": "assets/AppVersionCard-B8xY9C1p.js",
+      "kind": "js",
+      "rawBytes": 1577,
+      "gzipBytes": 634,
+      "brotliBytes": 547
+    },
+    {
+      "file": "assets/extraction-D1irhb9s.js",
+      "kind": "js",
+      "rawBytes": 1075,
+      "gzipBytes": 477,
+      "brotliBytes": 401
+    },
+    {
+      "file": "assets/LoginCompletePage-B8BNWAb7.js",
+      "kind": "js",
+      "rawBytes": 894,
+      "gzipBytes": 539,
+      "brotliBytes": 458
+    },
+    {
+      "file": "assets/PlatformReleasesPage-DC7dpTtW.js",
+      "kind": "js",
+      "rawBytes": 884,
+      "gzipBytes": 534,
+      "brotliBytes": 446
+    },
+    {
+      "file": "assets/Pager-D0dzGWFk.js",
+      "kind": "js",
+      "rawBytes": 734,
+      "gzipBytes": 464,
+      "brotliBytes": 400
+    },
+    {
+      "file": "assets/templates-CA_OeI83.js",
+      "kind": "js",
+      "rawBytes": 733,
+      "gzipBytes": 351,
+      "brotliBytes": 299
+    },
+    {
+      "file": "assets/ConfirmDialog-CNeQhZ75.js",
+      "kind": "js",
+      "rawBytes": 701,
+      "gzipBytes": 424,
+      "brotliBytes": 355
+    },
+    {
+      "file": "assets/paging-BVdGthef.js",
+      "kind": "js",
+      "rawBytes": 697,
+      "gzipBytes": 373,
+      "brotliBytes": 334
+    },
+    {
+      "file": "index.html",
+      "kind": "html",
+      "rawBytes": 537,
+      "gzipBytes": 324,
+      "brotliBytes": 221
+    },
+    {
+      "file": "assets/changes-rkeqvt-w.js",
+      "kind": "js",
+      "rawBytes": 512,
+      "gzipBytes": 306,
+      "brotliBytes": 254
+    },
+    {
+      "file": ".well-known/security.txt",
+      "kind": "txt",
+      "rawBytes": 376,
+      "gzipBytes": 302,
+      "brotliBytes": 220
+    },
+    {
+      "file": "assets/dbVendors-Njc5DyJA.js",
+      "kind": "js",
+      "rawBytes": 350,
+      "gzipBytes": 261,
+      "brotliBytes": 218
+    },
+    {
+      "file": "favicon.svg",
+      "kind": "svg",
+      "rawBytes": 303,
+      "gzipBytes": 232,
+      "brotliBytes": 195
+    }
+  ]
+}

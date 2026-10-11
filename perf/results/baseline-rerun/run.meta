@@ -1,0 +1,17 @@
+label=baseline-rerun
+commit=
+start=2026-10-11T05:25:10Z
+uptime_start= 05:25:10 up 16 min,  0 user,  load average: 2.11, 2.37, 1.69
+backend_package_seconds=20
+end=2026-10-11T05:27:11Z
+uptime_end= 05:27:11 up 18 min,  0 user,  load average: 1.69, 2.20, 1.72
+uptime_vitest_start= 05:27:23 up 19 min,  0 user,  load average: 1.31, 2.09, 1.69
+vitest_wall_seconds=35
+vitest_exit=0
+ Test Files  54 passed (54)
+      Tests  456 passed (456)
+   Duration  34.71s (transform 3.19s, setup 9.32s, import 8.39s, tests 46.76s, environment 28.27s)
+uptime_vitest_end= 05:27:58 up 19 min,  0 user,  load average: 2.90, 2.39, 1.81
+uptime_verify_start= 05:28:05 up 19 min,  0 user,  load average: 2.75, 2.37, 1.80
+verify_wall_seconds=239
+uptime_verify_end= 05:32:04 up 23 min,  0 user,  load average: 2.15, 2.32, 1.92
