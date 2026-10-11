@@ -93,7 +93,7 @@ RUN set -eu; \
     test -f target/classes/release/CHANGELOG.md
 
 # ---- runtime stage ----------------------------------------------------------
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 
 # curl is only needed for the container healthcheck. LibreOffice Writer powers
