@@ -12,7 +12,7 @@
 # docs/security/key-certificate-register.md). The build FAILS unless the
 # download is a PEM bundle of parseable certificates — nothing else (no
 # HTML error page, no private key block) — with at least one Amazon RDS CA.
-FROM maven:3.9-eclipse-temurin-21 AS rds-ca
+FROM maven:3.9-eclipse-temurin-26 AS rds-ca
 ARG RDS_CA_BUNDLE_URL=https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
 RUN set -eu; \
     if ! command -v curl >/dev/null 2>&1 || ! command -v openssl >/dev/null 2>&1; then \
@@ -36,7 +36,7 @@ RUN set -eu; \
     echo "RDS CA bundle OK: $parsed certificates ($rds Amazon RDS CAs)"
 
 # ---- build stage -----------------------------------------------------------
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-26 AS build
 WORKDIR /build
 
 # Resolve dependencies first so source changes don't invalidate this layer.
