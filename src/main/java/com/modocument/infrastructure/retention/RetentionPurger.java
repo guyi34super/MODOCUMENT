@@ -77,6 +77,9 @@ public class RetentionPurger {
     private final DocImageAssetJpaRepository docAssets;
     private final StorageProperties storage;
     private final AuditRecorder audit;
+    /** ws28 (SE4): the AI result cache follows the customer-data retention. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.modocument.infrastructure.persistence.AiResultCacheJpaRepository aiResultCache;
 
     public RetentionPurger(UploadedFileJpaRepository uploadedFiles,
                            IngestionJobJpaRepository ingestionJobs,
@@ -134,6 +137,7 @@ public class RetentionPurger {
         int importRows = importDetails.purgeRawJsonOlderThan(bankId, cutoff);
         int rawBodies = extractionRaw.purgeBodiesOlderThan(bankId, cutoffInstant);
         int processedFields = extractionProcessed.purgeFieldsOlderThan(bankId, cutoffInstant);
+        if (aiResultCache != null) aiResultCache.purgeOlderThan(bankId, cutoffInstant); // ws28 (SE4)
 
         // Doc-creation content: blocks + assets (+files) + generated exports.
         int blockCount = 0;

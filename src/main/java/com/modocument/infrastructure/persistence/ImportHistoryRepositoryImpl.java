@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.persistence;
 
+import com.modocument.application.dto.ImportSummary;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.domain.entity.ImportHistory;
 import com.modocument.domain.entity.Template;
@@ -59,7 +60,10 @@ public class ImportHistoryRepositoryImpl implements ImportHistoryRepository {
             return new ImportHistory();
         }
         entity.setTemplate(template.get());
-        return jpa.save(entity);
+        ImportHistory saved = jpa.save(entity);
+        // ws28: a merge leaves the LAZY template an uninitialized proxy; the
+        // re-read fetches it, so the row serializes outside the session.
+        return jpa.findById(saved.getImportHistoryId()).orElse(saved);
     }
 
     @Override
@@ -80,5 +84,15 @@ public class ImportHistoryRepositoryImpl implements ImportHistoryRepository {
     @Override
     public int countByTemplateId(int templateId) {
         return (int) jpa.countByTemplateId(templateId);
+    }
+
+    @Override
+    public long countByOwner(int ownerUserId) {
+        return jpa.countByOwnerUserId(ownerUserId);
+    }
+
+    @Override
+    public List<ImportSummary> listRecentSummariesByOwner(int ownerUserId, int limit) {
+        return jpa.findRecentSummaries(ownerUserId, org.springframework.data.domain.PageRequest.of(0, limit));
     }
 }

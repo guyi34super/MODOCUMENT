@@ -16,6 +16,8 @@ import jakarta.validation.constraints.Size;
 import org.hibernate.annotations.Check;
 import org.hibernate.annotations.ColumnDefault;
 
+// ws28: an initialized Hibernate proxy (LAZY association) serializes like the entity.
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 // SCHEMA PARITY with V30 (uq_template_owneruserid_name): one template name
 // per owner, enforced on H2 (ddl-auto: create) exactly like on PostgreSQL.

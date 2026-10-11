@@ -21,6 +21,19 @@ import java.util.stream.Collectors;
 @Component
 public class TableExtractionPrompt implements PromptStrategy {
 
+    /**
+     * The prompt contract version, part of the AI result cache key (ws28):
+     * a cached reply is only reused for the prompt version that produced it.
+     * <ul>
+     *   <li>1 — row batches answered {@code {"rows":[{"Col":"val",…}]}}
+     *       (every column name repeated on every row);</li>
+     *   <li>2 (ws28) — row batches answer {@code {"columns":[…],"rows":[[…]]}}:
+     *       the names once, each row a positional array — fewer output
+     *       tokens. The parser still accepts the version-1 shape.</li>
+     * </ul>
+     */
+    public static final String VERSION = "2";
+
     @Override
     public String getType() {
         return "TableExtraction";
@@ -139,10 +152,14 @@ public class TableExtractionPrompt implements PromptStrategy {
         prompt.append("TASK: Extract data rows for this batch using the FIXED column schema.").append(nl);
         prompt.append(nl).append("STEPS:").append(nl);
         prompt.append("1. Read only the rows in this batch.").append(nl);
-        prompt.append("2. Build each row object with EXACTLY the fixed column keys (character-for-character).").append(nl);
-        prompt.append("3. Return ONE JSON object: {\"rows\":[...]} only — no columns key.").append(nl);
+        prompt.append("2. Put the fixed column names ONCE in \"columns\" (character-for-character, same order).")
+                .append(nl);
+        prompt.append("3. Write each row as an ARRAY of cell values in that column order — one value per "
+                + "column, \"\" for an empty cell; never repeat the column names in a row.").append(nl);
+        prompt.append("4. Return ONE JSON object: {\"columns\":[...],\"rows\":[[...],[...]]} only.").append(nl);
 
-        appendOutputContract(prompt, nl, "{\"rows\":[{\"Col1\":\"val\",\"Col2\":\"val\"}]}");
+        appendOutputContract(prompt, nl,
+                "{\"columns\":[\"Col1\",\"Col2\"],\"rows\":[[\"val\",\"val\"],[\"val\",\"\"]]}");
         appendMetadata(prompt, nl, hints, columns, batch);
         if (columns != null && !columns.isEmpty()) {
             prompt.append("FIXED COLUMN KEYS (use exactly):").append(nl);

@@ -10,4 +10,14 @@ public interface DocBlueprintSectionJpaRepository extends JpaRepository<DocBluep
     List<DocBlueprintSection> findByBlueprintIdOrderByOrderIndex(int blueprintId);
 
     void deleteByBlueprintId(int blueprintId);
+
+    /** ws28: the sections of several blueprints, in blueprint then document order. */
+    List<DocBlueprintSection> findByBlueprintIdInOrderByBlueprintIdAscOrderIndexAsc(
+            java.util.Collection<Integer> blueprintIds);
+
+    /** ws28: rows of [BlueprintId, count (Long)]. */
+    @org.springframework.data.jpa.repository.Query("select s.blueprintId, count(s) from DocBlueprintSection s"
+            + " where s.blueprintId in :blueprintIds group by s.blueprintId")
+    List<Object[]> countByBlueprintIds(
+            @org.springframework.data.repository.query.Param("blueprintIds") java.util.Collection<Integer> blueprintIds);
 }

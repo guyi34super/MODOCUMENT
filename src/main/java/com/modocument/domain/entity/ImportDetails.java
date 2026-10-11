@@ -37,11 +37,11 @@ public class ImportDetails {
     @Column(name = "RawJson")
     private String rawJson;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY) // ws28: fetched by the repositories that need it
     @JoinColumn(name = "ImportHistoryId", insertable = false, updatable = false)
     private ImportHistory importHistory;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY) // ws28: fetched by the repositories that need it
     @JoinColumn(name = "ProcessStepId", insertable = false, updatable = false)
     private ProcessStep processStep;
 

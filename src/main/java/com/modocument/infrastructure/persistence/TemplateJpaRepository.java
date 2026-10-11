@@ -29,6 +29,12 @@ public interface TemplateJpaRepository extends JpaRepository<Template, Integer> 
             + " and t.bankId = :bankId) order by t.templateId")
     List<Template> findAccessible(@Param("userId") int userId, @Param("bankId") int bankId);
 
+    /** ws28 (dashboard): how many templates {@link #findAccessible(int, int)} would return. */
+    @Query("select count(t) from Template t where t.ownerUserId = :userId"
+            + " or (t.visibility = com.modocument.domain.model.TemplateVisibility.BANK"
+            + " and t.bankId = :bankId)")
+    long countAccessible(@Param("userId") int userId, @Param("bankId") int bankId);
+
     /** Admin dashboard (phase 2): every template of one bank, whoever owns it. */
     long countByBankId(int bankId);
 

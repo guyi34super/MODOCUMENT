@@ -95,13 +95,16 @@ public class IntegrationApiUseCase {
         for (TemplateDataType type : dataTypes.list()) {
             typeNames.put(type.getTemplateDataTypeId(), type.getDataType());
         }
+        List<Template> shared = templates.listAccessible(requireOwner(client), client.bankId()).stream()
+                .filter(template -> isShared(template, client))
+                .toList();
+        // ws28: one fields query for every template, not one per template.
+        Map<Integer, List<TemplateFields>> fieldsByTemplate = shared.isEmpty() ? Map.of()
+                : templateFields.listByTemplateIds(shared.stream().map(Template::getTemplateId).toList());
         List<Map<String, Object>> out = new ArrayList<>();
-        for (Template template : templates.listAccessible(requireOwner(client), client.bankId())) {
-            if (!isShared(template, client)) {
-                continue;
-            }
+        for (Template template : shared) {
             List<Map<String, Object>> fields = new ArrayList<>();
-            for (TemplateFields field : templateFields.listByTemplateId(template.getTemplateId())) {
+            for (TemplateFields field : fieldsByTemplate.getOrDefault(template.getTemplateId(), List.of())) {
                 Map<String, Object> view = new LinkedHashMap<>();
                 view.put("name", field.getFieldName());
                 view.put("dataType", typeNames.get(field.getTemplateDataTypeId()));

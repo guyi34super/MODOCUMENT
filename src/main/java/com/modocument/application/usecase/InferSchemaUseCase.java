@@ -10,6 +10,7 @@ import com.modocument.application.port.ExtractionAuditLog;
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.application.port.ProcessedRecordStore;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.infrastructure.prompt.PromptFactory;
 import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.domain.document.ExtractionAuditEvent;
 import com.modocument.domain.document.ExtractionJob;
@@ -110,11 +111,7 @@ public class InferSchemaUseCase {
                 .map(session::tokenizeRow)
                 .toList();
 
-        PromptStrategy strategy = promptStrategies.stream()
-                .filter(s -> s.getType().equals("SchemaInference"))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                        "SchemaInference prompt not registered."));
+        PromptStrategy strategy = PromptFactory.lookup(promptStrategies, "SchemaInference");
         String prompt = strategy.buildPrompt(new SchemaInferencePromptInput(
                 IngestionJobUseCase.toJson(sampleFields), job.getDataSpec()));
         InferredSchema schema = aiFilesService.sendForObject(

@@ -116,6 +116,14 @@ public final class LlmStructuredJsonParser {
     }
 
     private static TableRowsResult readRows(String json, List<String> columns) {
+        // Prompt v2 (ws28): {"columns":[...],"rows":[[...]]} — positional rows
+        // keyed by the reply's own column list (or the fixed schema).
+        List<Map<String, String>> positional = readPositionalRows(json, columns);
+        if (positional != null) {
+            TableRowsResult result = new TableRowsResult();
+            result.setRows(positional);
+            return result;
+        }
         if (columns != null && !columns.isEmpty()) {
             try {
                 List<Map<String, String>> coerced = coerceRows(MAPPER.readTree(json), columns);
@@ -143,6 +151,60 @@ public final class LlmStructuredJsonParser {
                         "Could not parse LLM row batch JSON: " + summarize(first), first);
             }
         }
+    }
+
+    /**
+     * The compact row shape of prompt v2: {@code {"columns":[…],"rows":[[…],…]}}.
+     * Each row array is read positionally against the reply's {@code columns}
+     * when they are the fixed schema (same names, any order) or no schema is
+     * known; otherwise against the fixed schema. Returns null when the JSON is
+     * not this shape (the caller then tries the v1 object rows).
+     */
+    static List<Map<String, String>> readPositionalRows(String json, List<String> fixedColumns) {
+        JsonNode root;
+        try {
+            root = MAPPER.readTree(json);
+        } catch (Exception e) {
+            return null;
+        }
+        if (root == null || !root.isObject() || !root.has("rows") || !root.get("rows").isArray()) {
+            return null;
+        }
+        JsonNode rowsNode = root.get("rows");
+        if (rowsNode.isEmpty() || !rowsNode.get(0).isArray()) {
+            return null;
+        }
+        List<String> replyColumns = root.has("columns") && root.get("columns").isArray()
+                ? parseColumnsNode(root) : List.of();
+        List<String> keys = positionalKeys(replyColumns, fixedColumns);
+        if (keys.isEmpty()) {
+            return null;
+        }
+        List<Map<String, String>> rows = new ArrayList<>();
+        for (JsonNode rowNode : rowsNode) {
+            if (rowNode == null || !rowNode.isArray()) {
+                continue;
+            }
+            Map<String, String> row = new LinkedHashMap<>();
+            for (int i = 0; i < keys.size(); i++) {
+                JsonNode cell = i < rowNode.size() ? rowNode.get(i) : null;
+                row.put(keys.get(i), cell == null || cell.isNull() ? "" : cell.asText(""));
+            }
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /** The reply's columns when they name the fixed schema (or none is fixed), else the schema. */
+    private static List<String> positionalKeys(List<String> replyColumns, List<String> fixedColumns) {
+        if (fixedColumns == null || fixedColumns.isEmpty()) {
+            return replyColumns;
+        }
+        if (replyColumns.size() == fixedColumns.size()
+                && new java.util.HashSet<>(replyColumns).equals(new java.util.HashSet<>(fixedColumns))) {
+            return replyColumns;
+        }
+        return fixedColumns;
     }
 
     static List<Map<String, String>> coerceRows(JsonNode root, List<String> columns) {

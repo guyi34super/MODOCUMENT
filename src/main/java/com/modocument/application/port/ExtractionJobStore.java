@@ -5,6 +5,7 @@ import com.modocument.domain.model.ExtractionJobStatus;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -33,4 +34,23 @@ public interface ExtractionJobStore {
      * only; statuses without jobs are absent from the map.
      */
     Map<ExtractionJobStatus, Long> countByStatusSince(int bankId, Instant since);
+
+    /**
+     * ws28 (dashboard): the owner's job count per status (statuses without
+     * jobs are absent). The SQL store answers with one grouped count.
+     */
+    default Map<ExtractionJobStatus, Long> countByOwnerGroupedByStatus(int ownerUserId) {
+        Map<ExtractionJobStatus, Long> counts = new EnumMap<>(ExtractionJobStatus.class);
+        for (ExtractionJob job : listByOwner(ownerUserId)) {
+            if (job.getStatus() != null) {
+                counts.merge(job.getStatus(), 1L, Long::sum);
+            }
+        }
+        return counts;
+    }
+
+    /** ws28 (dashboard): the owner's {@code limit} newest jobs, newest first. */
+    default List<ExtractionJob> listRecentByOwner(int ownerUserId, int limit) {
+        return listByOwner(ownerUserId).stream().limit(limit).toList();
+    }
 }

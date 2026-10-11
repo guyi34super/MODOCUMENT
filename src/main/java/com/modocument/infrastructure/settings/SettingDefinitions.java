@@ -366,6 +366,13 @@ public final class SettingDefinitions {
                     .label("AI circuit breaker: open duration")
                     .description("How long the circuit stays open before a trial call.")
                     .defaultValue("120s").range("10s", "30m").build(),
+            builder(AI_RESULT_CACHE_ENABLED, BOOLEAN).bank().operational()
+                    .group(SettingGroup.AI_EXTRACTION)
+                    .label("AI result cache")
+                    .description("Reuse the AI's parsed table when the same document is parsed "
+                            + "again against the same template (no new AI call); cached results "
+                            + "follow the customer-data retention.")
+                    .defaultValue("true").build(),
             builder(PARSING_LLM_BATCH_SIZE, INT).platform().operational()
                     .group(SettingGroup.AI_EXTRACTION)
                     .label("AI batch size")

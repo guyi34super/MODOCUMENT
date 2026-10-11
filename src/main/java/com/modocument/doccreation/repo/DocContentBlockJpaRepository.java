@@ -18,4 +18,8 @@ public interface DocContentBlockJpaRepository extends JpaRepository<DocContentBl
 
     /** DSR scan (ws14): every content block of one bank. RLS backs this on PostgreSQL. */
     List<DocContentBlock> findByBankId(int bankId);
+
+    /** ws28: the blocks of several instances, in instance, section and order. */
+    List<DocContentBlock> findByInstanceIdInOrderByInstanceIdAscSectionIdAscOrderIndexAsc(
+            java.util.Collection<Integer> instanceIds);
 }

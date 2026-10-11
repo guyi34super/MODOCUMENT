@@ -13,8 +13,11 @@ public class ChatEditProperties {
      */
     private double fullTableMaxChangeRatio = 0.6;
 
-    /** LLM used for validation-step chat edits (overrides the global default). */
-    private String modelId = "deepseek-r1:8b";
+    /**
+     * LLM used for validation-step chat edits; blank (the default since ws28)
+     * = the configured default model, the same one parsing uses.
+     */
+    private String modelId = "";
 
     public double getFullTableMaxChangeRatio() {
         return fullTableMaxChangeRatio;

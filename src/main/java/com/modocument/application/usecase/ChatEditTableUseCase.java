@@ -13,6 +13,7 @@ import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.infrastructure.prompt.PromptFactory;
 import com.modocument.application.port.SettingsReader;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
@@ -504,10 +505,7 @@ public class ChatEditTableUseCase {
     }
 
     private PromptStrategy strategy(String type) {
-        return promptStrategies.stream()
-                .filter(s -> s.getType().equals(type))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(type + " prompt not registered."));
+        return PromptFactory.lookup(promptStrategies, type);
     }
 
     /**

@@ -21,4 +21,14 @@ public interface DocContentBlockRepository {
     void delete(int id);
 
     void deleteByInstance(int instanceId);
+
+    /** ws28: the blocks of several instances (section, then orderIndex), keyed by instance id. */
+    default java.util.Map<Integer, List<DocContentBlock>> listByInstances(
+            java.util.Collection<Integer> instanceIds) {
+        java.util.Map<Integer, List<DocContentBlock>> byInstance = new java.util.LinkedHashMap<>();
+        for (Integer id : instanceIds) {
+            byInstance.put(id, listByInstance(id));
+        }
+        return byInstance;
+    }
 }

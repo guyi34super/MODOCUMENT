@@ -358,7 +358,7 @@ machine:
 
 ```bash
 # once: install Ollama and pull the default models
-ollama pull qwen2.5 && ollama pull mistral && ollama pull deepseek-r1:8b
+ollama pull qwen2.5
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
 
@@ -396,8 +396,6 @@ docker compose up --build
 # the models once — prompts never leave the compose network
 docker compose --profile ai-local up --build
 docker compose exec ollama ollama pull qwen2.5
-docker compose exec ollama ollama pull mistral
-docker compose exec ollama ollama pull deepseek-r1:8b
 
 # EXTERNAL endpoint (explicit opt-in; any OpenAI-compatible API)
 MODOCUMENT_AI_BASE_URL=https://openrouter.ai/api \

@@ -74,7 +74,9 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     // V250/V252 (ws25): the integration hub's connections,
                     // flows, runs, run log, outbox and event stream.
                     "integrationconnection", "integrationflow", "integrationrun",
-                    "integrationrunevent", "outbounddelivery", "integrationevent");
+                    "integrationrunevent", "outbounddelivery", "integrationevent",
+                    // V286 (ws28): a bank's cached AI parse results.
+                    "airesultcache");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

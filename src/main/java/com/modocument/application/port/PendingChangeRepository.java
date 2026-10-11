@@ -30,4 +30,24 @@ public interface PendingChangeRepository {
      * makes it so.
      */
     List<PendingChange> listAppliedSodViolations(int bankId);
+
+    /**
+     * ws28: one page (zero-based) of the bank's changes the caller may see,
+     * newest first — those {@code makerUserId} submitted, plus every change
+     * whose type is in {@code decidableTypes} — optionally in one status
+     * (null = any). The visibility filter, the paging and the total run in
+     * the database; the default serves in-memory fakes.
+     */
+    default com.modocument.application.dto.PagedList<PendingChange> pageVisible(
+            int bankId, PendingChangeStatus status, int makerUserId,
+            java.util.Collection<com.modocument.domain.model.ChangeType> decidableTypes,
+            int page, int size) {
+        List<PendingChange> visible = (status == null ? listByBank(bankId) : listByBankAndStatus(bankId, status))
+                .stream()
+                .filter(row -> row.getMakerUserId() == makerUserId
+                        || decidableTypes.contains(row.getChangeType()))
+                .toList();
+        return new com.modocument.application.dto.PagedList<>(visible.stream()
+                .skip((long) page * size).limit(size).toList(), page, size, visible.size());
+    }
 }

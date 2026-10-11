@@ -642,12 +642,14 @@ modocument:
     # instruction would change more than this fraction of cells (0.6 = 60%).
     # Bulk phrasing ("all"/"every") is exempt.
     full-table-max-change-ratio: ${MODOCUMENT_CHAT_EDIT_MAX_CHANGE_RATIO:0.6}
-    # Model for validation-step chat edits (Ollama: deepseek-r1:8b).
-    model-id: ${MODOCUMENT_CHAT_EDIT_MODEL:deepseek-r1:8b}
+    # Model for validation-step chat edits; empty = the default model
+    # (aifiles.openai.model-id), the same one document parsing uses (ws28).
+    model-id: ${MODOCUMENT_CHAT_EDIT_MODEL:}
   extraction-llm:
     # Agentic extraction: schema inference, run summaries, record cleaning.
-    # Uses the same local Ollama endpoint as document parsing (AIFILES_OPENAI_BASEURL).
-    model-id: ${MODOCUMENT_EXTRACTION_MODEL:mistral:latest}
+    # Uses the same local Ollama endpoint as document parsing (AIFILES_OPENAI_BASEURL);
+    # empty = the default model (aifiles.openai.model-id), no floating :latest tag (ws28).
+    model-id: ${MODOCUMENT_EXTRACTION_MODEL:}
   doccreation:
     # Headless LibreOffice for the document-creation PDF export. Installed in
     # the Docker image; when the binary is absent (e.g. local dev) the .docx
@@ -698,8 +700,9 @@ aifiles:
     # sentinel and the AI gateway refuses calls).
     api-key: ${MODOCUMENT_AI_API_KEY:${AIFILES_OPENAI_APIKEY:ollama}}
     base-url: ${MODOCUMENT_AI_BASE_URL:${AIFILES_OPENAI_BASEURL:http://localhost:11434}}
-    # Default chat model (qwen2.5 on Ollama); extraction agents default to
-    # mistral and chat edits to deepseek-r1:8b (modocument.* keys below).
+    # THE default model (qwen2.5 on Ollama) for parsing, chat edits and the
+    # extraction agents alike; MODOCUMENT_CHAT_EDIT_MODEL /
+    # MODOCUMENT_EXTRACTION_MODEL override those two (modocument.* keys).
     model-id: ${MODOCUMENT_AI_MODEL:${AIFILES_OPENAI_MODELID:qwen2.5}}
   privacy:
     # PII tokenization for the LLM chat/analysis features (chat table edits,

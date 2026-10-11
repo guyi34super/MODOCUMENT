@@ -157,8 +157,21 @@ public class IngestionJobController {
      */
     @RequiresPermission(Permission.INGESTION_READ)
     @GetMapping("/api/ingestion/jobs")
-    public ResponseEntity<?> list() {
-        return ResponseEntity.ok(masking.maskJobViews(useCase.views(useCase.list())));
+    public ResponseEntity<?> list(@RequestParam(value = "view", required = false) String view,
+                                  @RequestParam(value = "page", required = false) Integer page,
+                                  @RequestParam(value = "size", required = false) Integer size) {
+        // ws28 (docs/optimization/contracts.md §5): the paged summary carries
+        // no cell values — ids, names, statuses and counts — so it needs no
+        // masking and costs one projection query per page.
+        if ("summary".equalsIgnoreCase(view)) {
+            return ResponseEntity.ok(useCase.summaries(page, size));
+        }
+        if (view != null && !view.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error",
+                    "Unknown view '" + view + "'; use view=summary or omit it."));
+        }
+        // Compatibility shape (full job views), capped at the 200 newest jobs.
+        return ResponseEntity.ok(masking.maskJobViews(useCase.views(useCase.listCapped())));
     }
 
     @RequiresPermission(Permission.INGESTION_READ)

@@ -24,4 +24,16 @@ public interface DocBlueprintRepository {
     DocBlueprint save(DocBlueprint entity);
 
     void delete(int id);
+
+    /**
+     * ws28: several blueprints by id in one statement (keyed by id; missing
+     * ids absent). Same caveat as {@link #getById}: release paths only.
+     */
+    default java.util.Map<Integer, DocBlueprint> getByIds(java.util.Collection<Integer> ids) {
+        java.util.Map<Integer, DocBlueprint> byId = new java.util.LinkedHashMap<>();
+        for (Integer id : ids) {
+            getById(id).ifPresent(blueprint -> byId.put(id, blueprint));
+        }
+        return byId;
+    }
 }

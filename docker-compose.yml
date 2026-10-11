@@ -115,7 +115,7 @@ services:
       # LOCAL AI BY DEFAULT (gate C8): the defaults point at the compose
       # `ollama` service (start it with `docker compose --profile ai-local up`,
       # then pull the models once: `docker compose exec ollama ollama pull
-      # qwen2.5` — plus mistral and deepseek-r1:8b for extraction/chat-edit).
+      # qwen2.5` — parsing, chat edits and extraction agents all use it).
       # An EXTERNAL endpoint is an explicit opt-in: export MODOCUMENT_AI_BASE_URL,
       # MODOCUMENT_AI_API_KEY and MODOCUMENT_AI_MODEL (passed through below) —
       # no document content leaves the machine unless you do.
@@ -140,9 +140,10 @@ services:
       # Document-creation PDF export: LibreOffice ships in the app image, so
       # the default "soffice" just works; point elsewhere for a custom binary.
       MODOCUMENT_DOCCREATION_SOFFICE_PATH: ${MODOCUMENT_DOCCREATION_SOFFICE_PATH:-soffice}
-      MODOCUMENT_CHAT_EDIT_MODEL: ${MODOCUMENT_CHAT_EDIT_MODEL:-deepseek-r1:8b}
+      # Empty = the default model above (ws28); set a pinned tag to override.
+      MODOCUMENT_CHAT_EDIT_MODEL: ${MODOCUMENT_CHAT_EDIT_MODEL:-}
       # Agentic extraction (schema inference, summaries, record cleaning).
-      MODOCUMENT_EXTRACTION_MODEL: ${MODOCUMENT_EXTRACTION_MODEL:-mistral:latest}
+      MODOCUMENT_EXTRACTION_MODEL: ${MODOCUMENT_EXTRACTION_MODEL:-}
       # ws18 detection (null-valued = passed through only when set on the
       # host): the alert webhook is the phone path (Slack/WhatsApp bridge/
       # PagerDuty); e-mail additionally needs SPRING_MAIL_HOST; the SIEM push

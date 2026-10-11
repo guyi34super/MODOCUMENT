@@ -59,4 +59,17 @@ public class DocInstanceRepositoryImpl implements DocInstanceRepository {
     public void delete(int id) {
         jpa.findById(id).ifPresent(jpa::delete);
     }
+
+    @Override
+    public java.util.Map<Integer, Long> countByBlueprints(java.util.Collection<Integer> blueprintIds) {
+        return blueprintIds.isEmpty() ? java.util.Map.of() : counts(jpa.countByBlueprintIds(blueprintIds));
+    }
+
+    private static java.util.Map<Integer, Long> counts(List<Object[]> rows) {
+        java.util.Map<Integer, Long> counts = new java.util.LinkedHashMap<>();
+        for (Object[] row : rows) {
+            counts.put(((Number) row[0]).intValue(), ((Number) row[1]).longValue());
+        }
+        return counts;
+    }
 }

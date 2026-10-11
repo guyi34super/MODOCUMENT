@@ -59,7 +59,14 @@ public class PendingChangeController {
     /** CHANGE_APPROVE holders see the bank's queue; a plain maker only their own rows. */
     @RequiresPermission(Permission.PROFILE_SELF)
     @GetMapping("/api/admin/changes")
-    public ResponseEntity<?> list(@RequestParam(name = "status", required = false) String status) {
+    public ResponseEntity<?> list(@RequestParam(name = "status", required = false) String status,
+                                  @RequestParam(name = "page", required = false) Integer page,
+                                  @RequestParam(name = "size", required = false) Integer size) {
+        // ws28: with a page parameter, the paged envelope {items, page, size,
+        // total}; without one, the old plain list (capped at the newest 200).
+        if (page != null) {
+            return ResponseEntity.ok(pendingChanges.page(status, page, size));
+        }
         return ResponseEntity.ok(pendingChanges.list(status));
     }
 

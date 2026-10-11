@@ -11,6 +11,12 @@ public interface ImportDetailsRepository {
 
     List<ImportDetails> list();
 
+    /**
+     * ws28: the details of every import {@code ownerUserId} owns in
+     * {@code bankId}, with their parent import and process step — one query.
+     */
+    List<ImportDetails> listByBankAndImportOwner(int bankId, int ownerUserId);
+
     ImportDetails add(ImportDetails entity);
 
     ImportDetails update(ImportDetails entity);

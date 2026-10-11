@@ -102,6 +102,19 @@ class TableExtractionPromptTest {
         assertThat(built).contains("rows 26–50");
     }
 
+    /** ws28 (prompt v2): columns once, rows as positional arrays — no key repeated per row. */
+    @Test
+    void rowBatchModeAsksForTheCompactColumnsAndArrayRowsShape() {
+        TableRowBatch batch = new TableRowBatch(1, 1, 1, 2, "Ada\tLondon\nBob\tParis");
+        String built = prompt.buildPrompt(new TableExtractionPromptInput(
+                batch.rowText(), null, TableExtractionMode.ROW_BATCH, List.of("Name", "City"), batch));
+
+        assertThat(built).contains("{\"columns\":[\"Col1\",\"Col2\"],\"rows\":[[\"val\",\"val\"]");
+        assertThat(built).contains("ARRAY of cell values");
+        assertThat(built).doesNotContain("{\"rows\":[{\"Col1\"");
+        assertThat(TableExtractionPrompt.VERSION).isEqualTo("2");
+    }
+
     @Test
     void pdfFormatRulesInFullMode() {
         TableExtractionHints hints = new TableExtractionHints(

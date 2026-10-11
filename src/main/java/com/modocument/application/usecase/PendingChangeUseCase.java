@@ -1,5 +1,6 @@
 package com.modocument.application.usecase;
 
+import com.modocument.application.dto.PagedList;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -261,6 +262,23 @@ public class PendingChangeUseCase {
      */
     @Transactional(readOnly = true)
     public List<PendingChangeDto> list(String status) {
+        // ws28: the unpaged compatibility shape, capped at the newest
+        // LIST_CAP visible rows (the admin UI pages through page()).
+        return page(status, 0, LIST_CAP).items();
+    }
+
+    /** The most rows the unpaged {@link #list} returns. */
+    public static final int LIST_CAP = 200;
+
+    /**
+     * ws28: one page (zero-based) of the queue in the paged envelope
+     * (docs/optimization/contracts.md §5). The visibility rule — the caller's
+     * own submissions plus every change type they may decide — is pushed into
+     * the query as a type set, so paging and the total are exact; the maker
+     * and checker e-mails of the page are looked up in one statement.
+     */
+    @Transactional(readOnly = true)
+    public PagedList<PendingChangeDto> page(String status, Integer page, Integer size) {
         Deciders deciders = deciders();
         if (!deciders.approver() && !deciders.maker()) {
             throw new AccessDeniedException("Listing pending changes requires an approval "
@@ -268,13 +286,30 @@ public class PendingChangeUseCase {
         }
         int bankId = currentUser.requireBankId();
         int callerId = currentUser.requireUserId();
-        List<PendingChange> rows = status == null || status.isBlank()
-                ? changes.listByBank(bankId)
-                : changes.listByBankAndStatus(bankId, parseStatus(status));
-        return rows.stream()
-                .filter(row -> row.getMakerUserId() == callerId || deciders.mayDecide(row))
-                .map(this::toDto)
-                .toList();
+        PendingChangeStatus wanted = status == null || status.isBlank() ? null : parseStatus(status);
+        Set<ChangeType> decidable = EnumSet.noneOf(ChangeType.class);
+        for (ChangeType type : ChangeType.values()) {
+            if (deciders.mayDecide(type, bankId)) {
+                decidable.add(type);
+            }
+        }
+        int pageNumber = PagedList.page(page);
+        int pageSize = PagedList.size(size);
+        PagedList<PendingChange> rows = changes.pageVisible(bankId, wanted, callerId, decidable,
+                pageNumber, pageSize);
+        Set<Integer> userIds = new java.util.HashSet<>();
+        for (PendingChange row : rows.items()) {
+            userIds.add(row.getMakerUserId());
+            if (row.getCheckerUserId() != null) {
+                userIds.add(row.getCheckerUserId());
+            }
+        }
+        Map<Integer, String> emails = new java.util.HashMap<>();
+        if (!userIds.isEmpty()) {
+            users.getByIds(userIds).forEach((id, user) -> emails.put(id, user.getEmail()));
+        }
+        return new PagedList<>(rows.items().stream().map(row -> toDto(row, emails)).toList(),
+                pageNumber, pageSize, rows.total());
     }
 
     // ------------------------------------------------------------ plumbing
@@ -341,14 +376,18 @@ public class PendingChangeUseCase {
 
         /** Whether the caller is in the checker audience of this (own-bank) row. */
         boolean mayDecide(PendingChange change) {
+            return mayDecide(change.getChangeType(), change.getBankId());
+        }
+
+        /** {@link #mayDecide(PendingChange)} for a change of {@code type} in {@code bankId}. */
+        boolean mayDecide(ChangeType type, int bankId) {
             if (!approver) {
                 return false;
             }
-            ChangeType type = change.getChangeType();
             return switch (ChangeAudience.of(type)) {
                 case BANK -> true;
                 case PLATFORM -> makerPermissions.contains(type.makerPermission())
-                        && platformBanks.isPlatformBank(change.getBankId());
+                        && platformBanks.isPlatformBank(bankId);
             };
         }
     }
@@ -431,6 +470,16 @@ public class PendingChangeUseCase {
     }
 
     private PendingChangeDto toDto(PendingChange change) {
+        Map<Integer, String> emails = new java.util.HashMap<>();
+        emails.put(change.getMakerUserId(), emailOf(change.getMakerUserId()));
+        if (change.getCheckerUserId() != null) {
+            emails.put(change.getCheckerUserId(), emailOf(change.getCheckerUserId()));
+        }
+        return toDto(change, emails);
+    }
+
+    /** The DTO with the parties' e-mails taken from {@code emails} (batch-loaded by the list). */
+    private PendingChangeDto toDto(PendingChange change, Map<Integer, String> emails) {
         return new PendingChangeDto(
                 change.getPendingChangeId(),
                 change.getChangeType().name(),
@@ -438,10 +487,10 @@ public class PendingChangeUseCase {
                 change.getTargetEntityId(),
                 change.getStatus().name(),
                 change.getMakerUserId(),
-                emailOf(change.getMakerUserId()),
+                emails.get(change.getMakerUserId()),
                 change.getMakerComment(),
                 change.getCheckerUserId(),
-                change.getCheckerUserId() == null ? null : emailOf(change.getCheckerUserId()),
+                change.getCheckerUserId() == null ? null : emails.get(change.getCheckerUserId()),
                 change.getCheckerComment(),
                 change.getRequestedAt(),
                 change.getDecidedAt(),

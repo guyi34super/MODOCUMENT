@@ -35,6 +35,11 @@ public class ImportDetailsRepositoryImpl implements ImportDetailsRepository {
     }
 
     @Override
+    public List<ImportDetails> listByBankAndImportOwner(int bankId, int ownerUserId) {
+        return jpa.findByBankAndImportOwner(bankId, ownerUserId);
+    }
+
+    @Override
     public ImportDetails add(ImportDetails entity) {
         // Both FK targets must exist; mirrors the original behaviour of
         // returning an empty entity instead of persisting a dangling FK.
@@ -57,7 +62,10 @@ public class ImportDetailsRepositoryImpl implements ImportDetailsRepository {
         }
         entity.setImportHistory(importHistory.get());
         entity.setProcessStep(processStep.get());
-        return jpa.save(entity);
+        ImportDetails saved = jpa.save(entity);
+        // ws28: a merge leaves the LAZY associations uninitialized proxies;
+        // the re-read fetches them, so the row serializes outside the session.
+        return jpa.findById(saved.getImportDetailsId()).orElse(saved);
     }
 
     @Override

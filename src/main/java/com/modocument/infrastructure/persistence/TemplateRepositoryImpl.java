@@ -50,4 +50,9 @@ public class TemplateRepositoryImpl implements TemplateRepository {
     public void delete(int id) {
         jpa.findById(id).ifPresent(jpa::delete);
     }
+
+    @Override
+    public long countAccessible(int userId, int bankId) {
+        return jpa.countAccessible(userId, bankId);
+    }
 }

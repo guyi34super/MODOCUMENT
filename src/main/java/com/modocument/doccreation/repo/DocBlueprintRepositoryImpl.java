@@ -39,4 +39,16 @@ public class DocBlueprintRepositoryImpl implements DocBlueprintRepository {
     public void delete(int id) {
         jpa.findById(id).ifPresent(jpa::delete);
     }
+
+    @Override
+    public java.util.Map<Integer, DocBlueprint> getByIds(java.util.Collection<Integer> ids) {
+        java.util.Map<Integer, DocBlueprint> byId = new java.util.LinkedHashMap<>();
+        if (ids.isEmpty()) {
+            return byId;
+        }
+        for (DocBlueprint blueprint : jpa.findAllById(ids)) {
+            byId.put(blueprint.getDocBlueprintId(), blueprint);
+        }
+        return byId;
+    }
 }

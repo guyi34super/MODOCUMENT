@@ -127,10 +127,19 @@ public class DocBlueprintUseCase {
     }
 
     public List<BlueprintSummaryDto> list() {
-        return blueprints.listByOwner(ownership.requireUserId()).stream()
+        List<DocBlueprint> owned = blueprints.listByOwner(ownership.requireUserId());
+        if (owned.isEmpty()) {
+            return List.of();
+        }
+        // ws28: two grouped count queries for the whole list, instead of
+        // loading every blueprint's sections and counting its instances.
+        List<Integer> ids = owned.stream().map(DocBlueprint::getDocBlueprintId).toList();
+        java.util.Map<Integer, Long> sectionCounts = sections.countByBlueprints(ids);
+        java.util.Map<Integer, Long> instanceCounts = instances.countByBlueprints(ids);
+        return owned.stream()
                 .map(b -> BlueprintSummaryDto.from(b,
-                        sections.listByBlueprint(b.getDocBlueprintId()).size(),
-                        instances.countByBlueprint(b.getDocBlueprintId())))
+                        sectionCounts.getOrDefault(b.getDocBlueprintId(), 0L).intValue(),
+                        instanceCounts.getOrDefault(b.getDocBlueprintId(), 0L).intValue()))
                 .toList();
     }
 
