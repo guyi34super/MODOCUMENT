@@ -7,6 +7,7 @@ import com.modocument.infrastructure.persistence.TemplateJpaRepository;
 import com.modocument.infrastructure.persistence.ValidationRuleJpaRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -17,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * and validation rules start empty and are created by users through the UI.
  */
 @SpringBootTest
+@AutoConfigureMockMvc // same context configuration as the API tests (one cached context)
 @ActiveProfiles("test")
 class ContextLoadsAndSeedTest {
 

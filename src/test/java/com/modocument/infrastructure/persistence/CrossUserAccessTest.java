@@ -9,6 +9,7 @@ import com.modocument.domain.entity.Template;
 import com.modocument.domain.model.JobStep;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * leak into the shared H2 instance and pollute other tests' counts.
  */
 @SpringBootTest
+@AutoConfigureMockMvc // same context configuration as the API tests (one cached context)
 @ActiveProfiles("test")
 @Transactional
 class CrossUserAccessTest {

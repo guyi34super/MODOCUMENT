@@ -13,22 +13,15 @@ import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,25 +48,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * boundary, and the SEC-024 layer-3 nightly scan (clean data scans to zero;
  * a manufactured violation is found and audited) are proven here too.
  */
-@SpringBootTest(properties = {
-        "modocument.doccreation.section-ai-enabled=false",
-        "modocument.doccreation.generate-ai-enabled=false",
-})
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-class DocReleaseSodIntegrationTest {
+class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String DOCX_CONTENT_TYPE =
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
-    @TempDir
-    static Path storageRoot;
-
-    @DynamicPropertySource
-    static void storage(DynamicPropertyRegistry registry) {
-        registry.add("modocument.storage.root", () -> storageRoot.toString());
-    }
 
     @Autowired
     private MockMvc mvc;

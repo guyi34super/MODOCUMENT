@@ -10,6 +10,7 @@ import com.modocument.infrastructure.persistence.BankJpaRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -29,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * only warns under dev/test ones.
  */
 @SpringBootTest
+@AutoConfigureMockMvc // same context configuration as the API tests (one cached context)
 @ActiveProfiles("test")
 @Transactional
 @ExtendWith(OutputCaptureExtension.class)

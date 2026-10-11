@@ -4,11 +4,9 @@ import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.security.JwtService;
+import com.modocument.testsupport.ProdShapedSpringBootTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
@@ -21,7 +19,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * The /v3/api-docs exposure decision (ws17, SEC-006), proven in a
  * production-shaped context: permit-dev-paths OFF (so the dev permitAll for
  * the API docs is gone and the startup guards demand a real JWT secret, an
- * MFA key and a bootstrap admin), its own in-memory database.
+ * MFA key and a bootstrap admin), its own in-memory database — the shared
+ * {@link ProdShapedSpringBootTest} context.
  *
  * <ul>
  *   <li>Anonymous → 401: no unauthenticated reconnaissance of the route
@@ -32,16 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>The Swagger UI is not served outside dev.</li>
  * </ul>
  */
-@SpringBootTest(properties = {
-        "modocument.security.permit-dev-paths=false",
-        "modocument.security.jwt.secret=ws17-prod-shaped-test-secret-6b1f0c9e4a2d7e85f3c1",
-        "modocument.security.mfa.key=ws17-prod-shaped-test-mfa-key-91d0a7c3e5b2f4a8c6e0",
-        "MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL=ws17-bootstrap@example.com",
-        "MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD=Prod-Shaped-Context-9fK2#qL7!",
-        "spring.datasource.url=jdbc:h2:mem:ws17-apidocs-prod;DB_CLOSE_DELAY=-1"
-})
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ProdShapedSpringBootTest
 class ApiDocsExposureTest {
 
     @Autowired

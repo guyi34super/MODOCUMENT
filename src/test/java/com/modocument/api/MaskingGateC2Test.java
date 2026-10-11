@@ -30,14 +30,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -80,17 +77,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * stays complete/raw by design (PRIV-016). The masking-matrix doc itself is
  * pinned by MaskingMatrixDocTest.
  */
-@SpringBootTest(properties = {
-        "modocument.storage.root=target/ws12-c2-storage",
-        "modocument.doccreation.section-ai-enabled=false",
-        "modocument.doccreation.generate-ai-enabled=false"
-})
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-class MaskingGateC2Test {
+class MaskingGateC2Test extends IsolatedStorageApiTestSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Path STORAGE = Path.of("target/ws12-c2-storage");
+    private static final Path STORAGE = STORAGE_ROOT;
 
     private static final String RAW_NIC = "M090976290148E";
     private static final String RAW_ACCOUNT = "00445566778899";

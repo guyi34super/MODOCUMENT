@@ -50,8 +50,12 @@ class AuthUseCaseTest {
     private final AppUserRepository repo = mock(AppUserRepository.class);
     // Plain BCrypt keeps the long-standing tests fast and rehash-free
     // (BCrypt→BCrypt never upgrades); the SEC-018 tests below use the real
-    // delegating encoder explicitly.
-    private final PasswordEncoder encoder = new BCryptPasswordEncoder();
+    // delegating encoder explicitly. Strength 4 (the minimum) instead of the
+    // default 10: no test here is about hashing cost — they assert flows,
+    // audits and which hash format is stored — and every AuthUseCase built
+    // per test hashes a timing dummy, so the default cost dominated the
+    // class's run time.
+    private final PasswordEncoder encoder = new BCryptPasswordEncoder(4);
     private final PasswordPolicy passwordPolicy = new PasswordPolicy(12);
     private final LoginLockoutPolicy lockoutPolicy = new LoginLockoutPolicy(5, 1, 30);
     private final UserMfaRepository userMfa = mock(UserMfaRepository.class);

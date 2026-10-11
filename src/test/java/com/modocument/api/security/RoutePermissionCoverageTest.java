@@ -4,6 +4,7 @@ import com.modocument.domain.model.Permission;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.test.context.ActiveProfiles;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * route can never ship silently.
  */
 @SpringBootTest
+@AutoConfigureMockMvc // same context configuration as the API tests (one cached context)
 @ActiveProfiles("test")
 class RoutePermissionCoverageTest {
 

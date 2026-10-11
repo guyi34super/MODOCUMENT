@@ -27,11 +27,8 @@ import com.modocument.infrastructure.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -60,15 +57,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * second export is empty; the OTHER subject's rows are intact; and the
  * audit trail shows DSR_SEARCH / DSR_EXPORTED / DSR_ERASED.
  */
-@SpringBootTest(properties = {
-        "modocument.storage.root=target/ws14-c12-storage"
-})
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-class DataSubjectRightsGateC12Test {
+class DataSubjectRightsGateC12Test extends IsolatedStorageApiTestSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Path STORAGE = Path.of("target/ws14-c12-storage");
+    private static final Path STORAGE = STORAGE_ROOT;
     private static final String SUBJECT = "ANNA-NIC-7788";
     private static final String OTHER = "OTHR-NIC-9911";
 

@@ -8,6 +8,7 @@ import com.modocument.infrastructure.persistence.RevokedTokenJpaRepository;
 import com.modocument.testsupport.StubBankDirectory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * change gate), and when the user is gone — and must pass a clean token.
  */
 @SpringBootTest
+@AutoConfigureMockMvc // same context configuration as the API tests (one cached context)
 @ActiveProfiles("test")
 @Transactional
 class RevocationValidatorTest {

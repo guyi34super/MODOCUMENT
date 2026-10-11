@@ -1,6 +1,7 @@
 package com.modocument.api.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.api.IsolatedStorageApiTestSupport;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Template;
 import com.modocument.domain.model.Role;
@@ -10,15 +11,9 @@ import com.modocument.infrastructure.persistence.UploadedFileJpaRepository;
 import com.modocument.infrastructure.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,21 +34,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * stored names that predate the ownership table (clean cutover) — while the
  * owner sails through.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
 @Transactional
-class UploadOwnershipEnforcementTest {
+class UploadOwnershipEnforcementTest extends IsolatedStorageApiTestSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    @TempDir
-    static Path storageRoot;
-
-    @DynamicPropertySource
-    static void storageProperties(DynamicPropertyRegistry registry) {
-        registry.add("modocument.storage.root", () -> storageRoot.toString());
-    }
 
     @Autowired
     private MockMvc mvc;
@@ -143,7 +127,7 @@ class UploadOwnershipEnforcementTest {
     void preV20FilesOnDiskWithoutARowAreNotFound() throws Exception {
         // A file placed in uploads/ before the ownership table existed: no
         // row, so no one may reference it (clean cutover, see V20 header).
-        Path uploads = storageRoot.resolve("uploads");
+        Path uploads = STORAGE_ROOT.resolve("uploads");
         Files.createDirectories(uploads);
         Files.writeString(uploads.resolve("legacy.csv"), "a,b\n");
 
