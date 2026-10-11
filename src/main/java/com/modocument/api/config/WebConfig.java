@@ -52,6 +52,9 @@ public class WebConfig implements WebMvcConfigurer {
         // ws26: per-client limit, LastUsedAt and the per-call audit of the
         // machine API (selected by the controller's @MachineApi).
         registry.addInterceptor(machineApi);
+
+        // ws28: Deprecation / Sunset / Link headers on @DeprecatedEndpoint routes.
+        registry.addInterceptor(new DeprecationHeaderInterceptor());
     }
 
     @Override

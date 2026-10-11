@@ -1,5 +1,8 @@
 package com.modocument.api;
 
+import com.modocument.testsupport.H2ExportTargets;
+import org.springframework.context.annotation.Import;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.doccreation.dto.AddBlockRequest;
@@ -87,6 +90,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Import(H2ExportTargets.class)
 class MaskingGateC2Test {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -247,11 +251,13 @@ class MaskingGateC2Test {
         assertMaskedAndNoRawValues(Files.readString(archived), "archive copy");
 
         // Database export: the same row transform lands in the target table.
-        String targetDb = "jdbc:h2:mem:ws12c2db" + job.getIngestionJobId() + ";DB_CLOSE_DELAY=-1";
+        String database = "ws12c2db" + job.getIngestionJobId();
+        String targetDb = H2ExportTargets.h2Url(database);
         mvc.perform(post("/api/ingestion/jobs/" + job.getIngestionJobId() + "/export/database")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"jdbcUrl\":\"" + targetDb
+                        .content("{\"vendor\":\"POSTGRESQL\",\"host\":\"localhost\","
+                                + "\"database\":\"" + database
                                 + "\",\"tableName\":\"ExportedRows\"}"))
                 .andExpect(status().isOk());
         try (Connection connection = DriverManager.getConnection(targetDb);

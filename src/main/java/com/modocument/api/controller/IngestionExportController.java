@@ -1,5 +1,9 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -65,6 +69,8 @@ public class IngestionExportController {
     private final PiiMaskingService masking;
     private final ExportGuard exportGuard;
     private final Path exportsDir;
+    /** ws28 (setter-injected; a no-op without Spring): EXPORT_DOWNLOADED. */
+    private AuditRecorder audit = spec -> { };
 
     public IngestionExportController(IngestionJobUseCase jobs,
                                      FileExportService fileExport,
@@ -78,6 +84,11 @@ public class IngestionExportController {
         this.masking = masking;
         this.exportGuard = exportGuard;
         this.exportsDir = storage.exportsDir();
+    }
+
+    @Autowired
+    void setAuditRecorder(AuditRecorder audit) {
+        this.audit = audit;
     }
 
     @GetMapping("/api/ingestion/jobs/{id}/export/file")
@@ -127,6 +138,12 @@ public class IngestionExportController {
         exportInfo.put("rowCount", table.getRows().size());
         jobs.recordExport(job, exportInfo);
         exportGuard.recordExport(attempt, decision, table.getRows().size());
+        // ws28: the bytes leave the server — EXPORT_RUN logs the export,
+        // EXPORT_DOWNLOADED the delivery of this file to this caller.
+        audit.success(AuditActions.EXPORT_DOWNLOADED, "IngestionJob",
+                String.valueOf(job.getIngestionJobId()), null, Map.of(
+                        "fileName", exportName, "format", exportFormat.name(),
+                        "rowCount", table.getRows().size(), "bytes", bytes.length));
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + exportName + "\"")
@@ -139,7 +156,8 @@ public class IngestionExportController {
                                             @Valid @RequestBody DatabaseExportRequest request) {
         IngestionJob job = jobs.get(id);
         TableData rawTable = exportableRows(job);
-        String target = DatabaseExportService.describeTarget(request.getJdbcUrl());
+        // Validates the structured target (400 before the cap is even counted).
+        String target = databaseExport.describeTarget(request);
 
         // Same cap as the file path — counted before the target is touched.
         ExportGuard.Attempt attempt = new ExportGuard.Attempt(job.getIngestionJobId(), "database",
@@ -147,7 +165,7 @@ public class IngestionExportController {
         ExportGuard.Decision decision = exportGuard.authorize(attempt);
 
         TableData table = masking.maskForExport(job.getTemplateId(), rawTable);
-        int rowCount = databaseExport.export(table, request);
+        int rowCount = databaseExport.export(table, request, job.getBankId());
 
         // Persist only what is safe: never the credentials.
         Map<String, Object> exportInfo = new LinkedHashMap<>();

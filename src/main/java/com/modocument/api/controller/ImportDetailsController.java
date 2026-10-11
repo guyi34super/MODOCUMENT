@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.config.DeprecatedEndpoint;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.CurrentUserProvider;
@@ -28,6 +30,7 @@ import java.util.stream.Collectors;
  * ImportDetails are children of an ImportHistory, so access is scoped through
  * the parent's owner — there is no per-detail owner column.
  */
+@DeprecatedEndpoint(replacement = "the ingestion job API (/api/ingestion/jobs)")
 @RestController
 @Tag(name = "Import Details")
 public class ImportDetailsController {

@@ -90,8 +90,11 @@ public class RestApiConnector implements Connector {
         this.audit = audit;
         this.metrics = metrics;
         this.egress = egress;
+        // ws28 SSRF fix: the client NEVER follows a redirect by itself — the
+        // egress check would only ever have seen the first URL. send()
+        // follows them hop by hop, re-checking every target (see #send).
         this.client = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL)
+                .followRedirects(HttpClient.Redirect.NEVER)
                 .connectTimeout(Duration.ofSeconds(properties.getWeb().getRequestTimeoutSeconds()))
                 .build();
         // Documents the operational contract once at startup: connector
@@ -144,19 +147,8 @@ public class RestApiConnector implements Connector {
         String url = task.getPayload().get(PAYLOAD_URL);
         int page = Integer.parseInt(task.getPayload().getOrDefault(PAYLOAD_PAGE, "1"));
 
-        // SSRF guard: refuse an API URL that points at an internal address.
-        egress.checkUrl(url);
         rateLimiter.acquire(UrlNormalizer.hostOf(url), properties.getWeb().getDefaultDelayMillis());
-        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(properties.getWeb().getRequestTimeoutSeconds()))
-                .header("User-Agent", properties.getWeb().getUserAgent())
-                .header("Accept", "application/json")
-                .GET();
-        config.getHeaders().forEach(builder::header);
-        applyAuth(builder, config, job.getId());
-
-        HttpResponse<String> response =
-                client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = send(url, config, job.getId());
         metrics.fetch();
         audit.add(ExtractionAuditEvent.of(job.getId(), source.getId(), AuditAction.FETCH, url,
                 "HTTP " + response.statusCode(), "API page " + page));
@@ -197,6 +189,67 @@ public class RestApiConnector implements Connector {
 
         return new ConnectorResult(
                 List.of(new ConnectorResult.FetchedItem(raw, rows)), followUps, stateUpdates);
+    }
+
+    /** Redirect hops followed per page before giving up. */
+    static final int MAX_REDIRECTS = 5;
+
+    /**
+     * GET {@code url}, following up to {@value #MAX_REDIRECTS} redirects BY
+     * HAND: every hop's target passes the SSRF egress check before it is
+     * contacted (an allowed public API cannot bounce the worker to
+     * 169.254.169.254 or an internal host), and the credentials — the auth
+     * header and the source's custom headers — travel only to the ORIGIN the
+     * source names, never to a different scheme/host/port a redirect points at.
+     */
+    HttpResponse<String> send(String url, ApiSourceConfig config, String jobId) throws Exception {
+        URI origin = URI.create(url);
+        URI target = origin;
+        for (int hop = 0; ; hop++) {
+            // SSRF guard: refuse an API URL (or redirect target) that points
+            // at an internal address.
+            egress.checkUrl(target.toString());
+            HttpRequest.Builder builder = HttpRequest.newBuilder(target)
+                    .timeout(Duration.ofSeconds(properties.getWeb().getRequestTimeoutSeconds()))
+                    .header("User-Agent", properties.getWeb().getUserAgent())
+                    .header("Accept", "application/json")
+                    .GET();
+            if (sameOrigin(origin, target)) {
+                config.getHeaders().forEach(builder::header);
+                applyAuth(builder, config, jobId);
+            }
+            HttpResponse<String> response =
+                    client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            int status = response.statusCode();
+            boolean redirect = status == 301 || status == 302 || status == 303 || status == 307
+                    || status == 308;
+            Optional<String> location = response.headers().firstValue("Location");
+            if (!redirect || location.isEmpty()) {
+                return response;
+            }
+            if (hop >= MAX_REDIRECTS) {
+                throw new IllegalStateException("Too many redirects calling " + url);
+            }
+            URI next = target.resolve(location.get().trim());
+            String scheme = next.getScheme() == null ? "" : next.getScheme().toLowerCase();
+            if (!scheme.equals("http") && !scheme.equals("https")) {
+                throw new IllegalStateException("Refusing a redirect to a non-HTTP URL from " + url);
+            }
+            target = next;
+        }
+    }
+
+    static boolean sameOrigin(URI a, URI b) {
+        return a.getScheme() != null && a.getScheme().equalsIgnoreCase(b.getScheme())
+                && a.getHost() != null && a.getHost().equalsIgnoreCase(b.getHost())
+                && effectivePort(a) == effectivePort(b);
+    }
+
+    private static int effectivePort(URI uri) {
+        if (uri.getPort() != -1) {
+            return uri.getPort();
+        }
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
     }
 
     private Optional<String> nextPageUrl(ApiSourceConfig config, String url, int page,

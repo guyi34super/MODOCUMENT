@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.config.DeprecatedEndpoint;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
@@ -44,6 +46,7 @@ public class ImportHistoryController {
     }
 
     @RequiresPermission(Permission.IMPORT_READ)
+    @DeprecatedEndpoint(replacement = "GET /ImportHistory/GetAll")
     @GetMapping("/ImportHistory/GetById/{id}")
     public ResponseEntity<?> getImportHistoryById(@PathVariable int id) {
         Optional<ImportHistory> itemOpt = repo.getByIdAndOwner(id, currentUser.requireUserId());
@@ -62,6 +65,7 @@ public class ImportHistoryController {
     }
 
     @RequiresPermission(Permission.IMPORT_WRITE)
+    @DeprecatedEndpoint(replacement = "POST /api/ingestion/jobs")
     @PostMapping("/ImportHistory/Create")
     public ResponseEntity<?> create(@Valid @RequestBody ImportHistory dto) {
         // ws22: an import names the template it used — a USE of the template,
@@ -84,6 +88,7 @@ public class ImportHistoryController {
     }
 
     @RequiresPermission(Permission.IMPORT_WRITE)
+    @DeprecatedEndpoint
     @PutMapping("/ImportHistory/Update/{id}")
     public ResponseEntity<?> update(@PathVariable int id, @Valid @RequestBody ImportHistory dto) {
         Optional<ImportHistory> existingOpt =

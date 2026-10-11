@@ -1,5 +1,7 @@
 package com.modocument.api;
 
+import com.modocument.testsupport.H2ExportTargets;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.domain.entity.AlertLog;
@@ -231,14 +233,16 @@ class ExportCapGateD2Test extends DetectionGateTestSupport {
     @Test
     void theDatabaseExportPathIsCappedToo() throws Exception {
         IngestionJob job = bigJob(writer);
-        String targetDb = "jdbc:h2:mem:ws18d2db" + job.getIngestionJobId() + ";DB_CLOSE_DELAY=-1";
+        String database = "ws18d2db" + job.getIngestionJobId();
+        String targetDb = H2ExportTargets.h2Url(database);
         String dbPath = "/api/ingestion/jobs/" + job.getIngestionJobId() + "/export/database";
 
         MvcResult refused = mvc.perform(post(dbPath)
                         .header("Authorization", bearer(writer))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(MAPPER.writeValueAsString(
-                                Map.of("jdbcUrl", targetDb, "tableName", "CappedRows"))))
+                                Map.of("vendor", "POSTGRESQL", "host", "localhost", "database", database,
+                                        "tableName", "CappedRows"))))
                 .andExpect(status().isForbidden())
                 .andReturn();
         assertThat(MAPPER.readTree(refused.getResponse().getContentAsString()).get("code").asText())
@@ -253,7 +257,8 @@ class ExportCapGateD2Test extends DetectionGateTestSupport {
         mvc.perform(post(dbPath)
                         .header("Authorization", bearer(writer))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(MAPPER.writeValueAsString(Map.of("jdbcUrl", targetDb,
+                        .content(MAPPER.writeValueAsString(Map.of("vendor", "POSTGRESQL",
+                                "host", "localhost", "database", database,
                                 "tableName", "CappedRows", "reason", REASON))))
                 .andExpect(status().isOk());
         try (Connection connection = DriverManager.getConnection(targetDb);

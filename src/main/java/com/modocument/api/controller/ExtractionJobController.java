@@ -1,5 +1,9 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -56,6 +60,9 @@ public class ExtractionJobController {
     private final ExtractionAuditLog audit;
     private final JobWaitService jobWaitService;
 
+    /** ws28 (setter-injected; a no-op without Spring): the read audit. */
+    private AuditRecorder recorder = spec -> { };
+
     public ExtractionJobController(ExtractionJobUseCase jobs,
                                    BridgeToTemplateUseCase bridge,
                                    InferSchemaUseCase inferSchema,
@@ -72,6 +79,11 @@ public class ExtractionJobController {
         this.processedRecords = processedRecords;
         this.audit = audit;
         this.jobWaitService = jobWaitService;
+    }
+
+    @Autowired
+    void setAuditRecorder(AuditRecorder audit) {
+        this.recorder = audit;
     }
 
     /** Creates a job and (by default) starts it immediately. */
@@ -151,6 +163,9 @@ public class ExtractionJobController {
                                      @RequestParam(required = false) String afterId,
                                      @RequestParam(defaultValue = "50") int limit) {
         jobs.get(id);
+        // ws28 read audit: extracted records were shown (once per actor, job and hour).
+        recorder.success(AuditActions.SENSITIVE_DATA_VIEWED, "ExtractionJob", id, null,
+                Map.of("view", "extraction-records"));
         int pageSize = Math.min(Math.max(limit, 1), MAX_PAGE_SIZE);
         Map<String, Object> page = new LinkedHashMap<>();
         if ("raw".equalsIgnoreCase(kind)) {

@@ -1,11 +1,16 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.ChatEditRequest;
 import com.modocument.application.dto.CreateIngestionJobRequest;
 import com.modocument.application.dto.UpdateMappingRequest;
+import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.UpdateRowsRequest;
 import com.modocument.application.dto.UpdateWizardStepRequest;
 import com.modocument.application.privacy.PiiMaskingService;
@@ -59,6 +64,9 @@ public class IngestionJobController {
     private final IngestionJobDeletionUseCase deletion;
     private final PiiMaskingService masking;
 
+    /** ws28 (setter-injected; a no-op without Spring): the read audit. */
+    private AuditRecorder recorder = spec -> { };
+
     public IngestionJobController(IngestionJobUseCase useCase,
                                   ChatEditTableUseCase chatEdit,
                                   UploadStorage uploadStorage,
@@ -79,6 +87,11 @@ public class IngestionJobController {
         this.contentChecker = contentChecker;
         this.deletion = deletion;
         this.masking = masking;
+    }
+
+    @Autowired
+    void setAuditRecorder(AuditRecorder audit) {
+        this.recorder = audit;
     }
 
     /** Multipart creation: uploads the file and (by default) runs the pipeline. */
@@ -166,11 +179,14 @@ public class IngestionJobController {
     public ResponseEntity<?> get(@PathVariable int id,
                                  @RequestParam(defaultValue = "false") boolean wait,
                                  @RequestParam(defaultValue = "MAPPED") String until) {
-        if (wait) {
-            return ResponseEntity.ok(masking.maskJobView(
-                    jobWaitService.waitForIngestionView(id, parseUntil(until))));
-        }
-        return ResponseEntity.ok(masking.maskJobView(useCase.view(useCase.get(id))));
+        IngestionJobDto view = wait
+                ? jobWaitService.waitForIngestionView(id, parseUntil(until))
+                : useCase.view(useCase.get(id));
+        // ws28 read audit: the job's parsed/mapped rows were shown (once per
+        // actor, job and hour; gated by audit.readAuditEnabled).
+        recorder.success(AuditActions.SENSITIVE_DATA_VIEWED, "IngestionJob", String.valueOf(id),
+                null, Map.of("view", "ingestion-job-detail"));
+        return ResponseEntity.ok(masking.maskJobView(view));
     }
 
     /**

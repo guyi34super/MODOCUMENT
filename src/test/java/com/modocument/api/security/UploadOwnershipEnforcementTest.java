@@ -155,19 +155,14 @@ class UploadOwnershipEnforcementTest {
     }
 
     @Test
-    void transformRejectsFilesTheCallerDoesNotOwnBeforeAnyLlmSpend() throws Exception {
+    void theRemovedTransformRouteNoLongerExists() throws Exception {
+        // ws28: POST /api/transform/transform was removed (unused legacy AI
+        // path); the ownership rule above covers every remaining file route.
         String storedName = upload(aliceAuth);
-
-        mvc.perform(post("/api/transform/transform").header("Authorization", malloryAuth)
+        int status = mvc.perform(post("/api/transform/transform").header("Authorization", malloryAuth)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fileName\":\"" + storedName + "\"}"))
-                .andExpect(status().isNotFound());
-
-        // Traversal-shaped names have no ownership row either: 404 before the
-        // storage layer is even asked.
-        mvc.perform(post("/api/transform/transform").header("Authorization", malloryAuth)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"fileName\":\"../application.yml\"}"))
-                .andExpect(status().isNotFound());
+                .andReturn().getResponse().getStatus();
+        org.assertj.core.api.Assertions.assertThat(status).isIn(404, 405);
     }
 }

@@ -101,7 +101,6 @@ class ApiRateLimitIntegrationTest {
                 family("uploads", () -> multipart("/api/fileupload/upload")),
                 family("ingestion", () -> post("/api/ingestion/jobs")
                         .contentType(MediaType.APPLICATION_JSON).content("{}")),
-                family("transform", () -> post("/api/transform/transform")),
                 family("exports", () -> get("/api/ingestion/jobs/{id}/export/file", MISSING_ID)),
                 family("doc-generate", () ->
                         post("/api/doccreation/instances/{id}/generate", MISSING_ID)),
@@ -245,7 +244,7 @@ class ApiRateLimitIntegrationTest {
         }
         assertThat(handlerRoutes).containsAll(apiRateLimit.routes().keySet());
         assertThat(apiRateLimit.routes().values()).containsOnly(
-                "uploads", "ingestion", "transform", "exports", "doc-generate", "extraction",
+                "uploads", "ingestion", "exports", "doc-generate", "extraction",
                 "dsr", "password-change", "mfa-code", "admin-jobs", "admin-security");
     }
 

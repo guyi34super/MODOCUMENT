@@ -119,3 +119,55 @@ Reasons for the production choice:
   (`MODOCUMENT_API_SERVER_URL`) sets the `servers` entry.
 - **Open items:** owner, request process, data-refresh schedule. These are tracked with the
   SEC-006 control.
+
+## 7. Deprecated and removed routes (release 1.2.0, workstream 28)
+
+**Deprecated.** The routes below still answer normally. Every response carries:
+
+- `Deprecation: true`
+- `Sunset: Thu, 01 Apr 2027 00:00:00 GMT`
+- `Link: </docs/api/versioning-policy.md>; rel="deprecation"`
+
+The routes are marked `deprecated: true` in `/v3/api-docs`. Each one is a handler annotated
+`@DeprecatedEndpoint`, which drives both the headers (`DeprecationHeaderInterceptor`) and the spec.
+`DeprecatedEndpointsTest` keeps this table, the annotations and the spec in step. Before deprecation,
+each route was checked against the SPA (`frontend/src`) and the E2E suite (`e2e/`); none was called.
+The announcement starts the 6-month window of §4. Removal is not before the sunset date.
+
+| Route | Deprecated in | Sunset | Use instead |
+|---|---|---|---|
+| `GET /ImportDetails/GetAll` | 1.2.0 | 2027-04-01 | the ingestion job API (`/api/ingestion/jobs`) |
+| `GET /ImportDetails/GetById/{id}` | 1.2.0 | 2027-04-01 | the ingestion job API (`/api/ingestion/jobs`) |
+| `POST /ImportDetails/Create` | 1.2.0 | 2027-04-01 | the ingestion job API (`/api/ingestion/jobs`) |
+| `PUT /ImportDetails/Update/{id}` | 1.2.0 | 2027-04-01 | the ingestion job API (`/api/ingestion/jobs`) |
+| `DELETE /ImportDetails/{id}` | 1.2.0 | 2027-04-01 | the ingestion job API (`/api/ingestion/jobs`) |
+| `GET /ProcessStep/GetAll` | 1.2.0 | 2027-04-01 | none (fixed pipeline steps) |
+| `GET /ProcessStep/GetById/{id}` | 1.2.0 | 2027-04-01 | none |
+| `POST /ProcessStep/Create` | 1.2.0 | 2027-04-01 | none |
+| `PUT /ProcessStep/Update` | 1.2.0 | 2027-04-01 | none |
+| `DELETE /ProcessStep/{id}` | 1.2.0 | 2027-04-01 | none |
+| `GET /TemplateDataTypes/GetById/{id}` | 1.2.0 | 2027-04-01 | `GET /TemplateDataTypes/GetAll` |
+| `POST /TemplateDataTypes/Create` | 1.2.0 | 2027-04-01 | none (the data types are fixed) |
+| `PUT /TemplateDataTypes/Update` | 1.2.0 | 2027-04-01 | none |
+| `GET /ImportHistory/GetById/{id}` | 1.2.0 | 2027-04-01 | `GET /ImportHistory/GetAll` |
+| `POST /ImportHistory/Create` | 1.2.0 | 2027-04-01 | `POST /api/ingestion/jobs` (creates the history row) |
+| `PUT /ImportHistory/Update/{id}` | 1.2.0 | 2027-04-01 | none |
+| `GET /TemplateFields/GetById/{id}` | 1.2.0 | 2027-04-01 | `GET /TemplateFields/GetAll?templateId=` |
+| `POST /api/automapper/generate` | 1.2.0 | 2027-04-01 | the pipeline's mapping (`POST /api/ingestion/jobs/{id}/remap`) |
+| `POST /api/fileupload/upload` | 1.2.0 | 2027-04-01 | `POST /api/ingestion/jobs` (multipart) |
+| `GET /api/extraction/metrics` | 1.2.0 | 2027-04-01 | the admin dashboard (`GET /api/admin/dashboard`) |
+
+**Removed in 1.2.0, without the deprecation window.** These removals use the §3 security
+exception and appear in the release notes.
+
+| Route | Why |
+|---|---|
+| `POST /api/aifiles/send` | It was an open prompt proxy: any `AI_USE` holder could spend the bank's model quota on free text. Nothing in the product called it. |
+| `POST /api/transform/transform` | It was the legacy classify-and-extract AI path. The ingestion pipeline replaces it, and no SPA, E2E or integration client called it. The `ratelimit.transform` setting stays in the catalogue, unused, so stored values remain valid. |
+
+**Changed request (1.2.0).** `POST /api/ingestion/jobs/{id}/export/database` no longer accepts a
+raw `jdbcUrl`; such a body gets a 400 that names the new fields. The target is now sent as
+`vendor` (`POSTGRESQL`, `ORACLE`, `SQLSERVER` or `MARIADB`), `host`, `port` (optional),
+`database`, `schema` (optional) and `sslmode` (optional). The server builds the JDBC URL with the
+integration hub's `DbDialect`, which applies the connect, login, socket and query timeouts. See
+the CHANGELOG migration note.

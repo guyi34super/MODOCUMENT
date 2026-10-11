@@ -155,10 +155,10 @@ class SettingsConsumersParityTest extends SettingsIntegrationSupport {
 
     @Test
     void everyRateLimitBucketKeepsItsYmlLimit() {
+        // ws28: the transform bucket went with POST /api/transform/transform.
         Map<String, Integer> expected = new TreeMap<>(Map.ofEntries(
                 Map.entry("uploads", apiRateLimitProperties.getUploads()),
                 Map.entry("ingestion", apiRateLimitProperties.getIngestion()),
-                Map.entry("transform", apiRateLimitProperties.getTransform()),
                 Map.entry("exports", apiRateLimitProperties.getExports()),
                 Map.entry("doc-generate", apiRateLimitProperties.getDocGenerate()),
                 Map.entry("extraction", apiRateLimitProperties.getExtraction()),
@@ -174,7 +174,7 @@ class SettingsConsumersParityTest extends SettingsIntegrationSupport {
         }
         assertThat(actual).isEqualTo(expected).isEqualTo(Map.ofEntries(
                 Map.entry("uploads", 20), Map.entry("ingestion", 60),
-                Map.entry("transform", 30), Map.entry("exports", 60),
+                Map.entry("exports", 60),
                 Map.entry("doc-generate", 30), Map.entry("extraction", 30),
                 Map.entry("dsr", 10), Map.entry("password-change", 5),
                 Map.entry("mfa-code", 10), Map.entry("admin-jobs", 10),

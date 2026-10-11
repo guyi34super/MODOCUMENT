@@ -2,6 +2,7 @@ package com.modocument.application.usecase;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.application.audit.AuditActions;
 import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.ParseContext;
 import com.modocument.application.dto.ParseProvenance;
@@ -183,7 +184,14 @@ public class IngestionJobUseCase {
         job.setCurrentStep(JobStep.UPLOADED);
         job.setStatus(JobStatus.PENDING);
         job.setOrigin(origin == null ? null : abbreviateTo(origin, 100));
-        return jobs.save(job);
+        IngestionJob saved = jobs.save(job);
+        if (audit != null) {
+            audit.success(AuditActions.INGESTION_JOB_CREATED, "IngestionJob",
+                    String.valueOf(saved.getIngestionJobId()), null, Map.of(
+                            "templateId", templateId, "fileName", fileName,
+                            "origin", origin == null ? "user" : origin));
+        }
+        return saved;
     }
 
     /**
@@ -192,8 +200,12 @@ public class IngestionJobUseCase {
      * id-taking operation routes through here, so they all inherit the check.
      */
     public IngestionJob get(int jobId) {
-        return jobs.getByIdAndOwner(jobId, currentUser.requireUserId()).orElseThrow(
-                () -> new NoSuchElementException("Ingestion job " + jobId + " not found."));
+        return jobs.getByIdAndOwner(jobId, currentUser.requireUserId()).orElseThrow(() -> {
+            if (audit != null) { // ws28: owner-scoped 404 probe, ACCESS_DENIED (aggregated)
+                audit.record(AuditActions.notFoundProbe("IngestionJob", jobId));
+            }
+            return new NoSuchElementException("Ingestion job " + jobId + " not found.");
+        });
     }
 
     public List<IngestionJob> list() {
@@ -367,6 +379,9 @@ public class IngestionJobUseCase {
         clearDownstream(job, JobStep.PARSED);
         clampWizardStep(job);
         job = jobs.save(job);
+        if (audit != null) {
+            audit.success(AuditActions.INGESTION_REMAPPED, "IngestionJob", String.valueOf(jobId));
+        }
         return runStage(job, JobStep.MAPPED, this::doMap);
     }
 
@@ -456,7 +471,24 @@ public class IngestionJobUseCase {
         clampWizardStep(job);
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
-        return jobs.save(job);
+        IngestionJob edited = jobs.save(job);
+        if (audit != null) { // ws28: counts only, never cell values
+            audit.success(AuditActions.INGESTION_ROWS_EDITED, "IngestionJob",
+                    String.valueOf(jobId), null, Map.of("rows", rows.size(),
+                            "changedRows", changedRows(current.getRows(), rows)));
+        }
+        return edited;
+    }
+
+    private static int changedRows(List<Map<String, String>> before,
+                                   List<Map<String, String>> after) {
+        int changed = 0;
+        for (int i = 0; i < after.size(); i++) {
+            if (i >= before.size() || !after.get(i).equals(before.get(i))) {
+                changed++;
+            }
+        }
+        return changed;
     }
 
     /**

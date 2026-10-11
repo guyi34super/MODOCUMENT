@@ -247,6 +247,12 @@ import java.util.concurrent.Callable;
  *       {@code runAs(bank)} per bank for that bank's silent agents, each
  *       flipped ONLINE → OFFLINE under a row lock with its AGENT_OFFLINE
  *       audit row in that bank. No row content is read as SYSTEM.</li>
+ *   <li>{@code AuditLogUseCase#platformCounts} — ws28 platform console
+ *       ({@code GET /api/platform/audit/counts}; AUDIT_READ, platform bank
+ *       only): {@code runAsSystem} in its own read-only REQUIRES_NEW
+ *       transaction for a cross-bank COUNTS-ONLY read of AuditEvent (total,
+ *       DENIED, FAILED per bank in a time range) plus the Bank identifying
+ *       columns. No audit row, actor, entity or value is read as SYSTEM.</li>
  * </ul>
  */
 public final class TenantContext {

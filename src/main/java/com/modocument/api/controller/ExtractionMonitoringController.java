@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.config.DeprecatedEndpoint;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
@@ -32,6 +34,7 @@ public class ExtractionMonitoringController {
         this.workerPool = workerPool;
     }
 
+    @DeprecatedEndpoint(replacement = "the admin dashboard (GET /api/admin/dashboard)")
     @GetMapping("/api/extraction/metrics")
     public ResponseEntity<?> metrics() {
         Map<String, Object> view = new LinkedHashMap<>();

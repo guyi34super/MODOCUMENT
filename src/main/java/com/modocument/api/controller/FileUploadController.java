@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.config.DeprecatedEndpoint;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.usecase.UploadOwnership;
@@ -42,6 +44,7 @@ public class FileUploadController {
         this.contentChecker = contentChecker;
     }
 
+    @DeprecatedEndpoint(replacement = "POST /api/ingestion/jobs (multipart)")
     @PostMapping(value = "/api/fileupload/upload", consumes = "multipart/form-data")
     public ResponseEntity<?> uploadFile(@RequestParam(value = "file", required = false) MultipartFile file) {
         if (file == null || file.isEmpty()) {

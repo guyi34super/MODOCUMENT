@@ -1,5 +1,9 @@
 package com.modocument.api.config;
 
+import com.modocument.api.security.AuditingBearerEntryPoint;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.security.web.AuthenticationEntryPoint;
+
 import com.modocument.infrastructure.security.IdentityContextFilter;
 import com.modocument.infrastructure.security.MfaChallengeScopeValidator;
 import com.modocument.infrastructure.security.RevocationValidator;
@@ -39,7 +43,6 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
@@ -123,7 +126,11 @@ public class SecurityConfig {
             ObjectProvider<OidcLoginFailureHandler> oidcFailureHandler,
             // ws26 machine identity (API keys, client certificates).
             ApiClientAuthenticator apiClientAuthenticator,
-            MtlsClientCertificates mtlsCertificates) throws Exception {
+            MtlsClientCertificates mtlsCertificates,
+            // ws28: refused bearer tokens are audited ACCESS_DENIED (aggregated).
+            ObjectProvider<AuditRecorder> auditRecorder) throws Exception {
+        AuthenticationEntryPoint bearerEntryPoint =
+                new AuditingBearerEntryPoint(auditRecorder.getIfAvailable());
         // A JSON API serves no markup, so the strictest CSP applies; when the
         // dev tooling (Swagger UI, H2 console) is enabled, relax it just enough
         // for those pages to load their own assets.
@@ -191,8 +198,9 @@ public class SecurityConfig {
                     // Everything else: an authenticated USER — never a client.
                     a.anyRequest().access(USER_ONLY);
                 })
-                .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(
-                        SecurityConfig::convertJwt)))
+                .oauth2ResourceServer(o -> o
+                        .authenticationEntryPoint(bearerEntryPoint)
+                        .jwt(j -> j.jwtAuthenticationConverter(SecurityConfig::convertJwt)))
                 // ws26: API key / client certificate, before bearer tokens.
                 .addFilterBefore(new ClientAuthenticationFilter(apiClientAuthenticator,
                         mtlsCertificates), BearerTokenAuthenticationFilter.class)
@@ -216,8 +224,7 @@ public class SecurityConfig {
                             .failureHandler(oidcFailureHandler.getObject()))
                     // Keep the API's 401 contract: oauth2Login must not swap
                     // the Bearer entry point for a login-page redirect.
-                    .exceptionHandling(e ->
-                            e.authenticationEntryPoint(new BearerTokenAuthenticationEntryPoint()));
+                    .exceptionHandling(e -> e.authenticationEntryPoint(bearerEntryPoint));
         }
         return http.build();
     }

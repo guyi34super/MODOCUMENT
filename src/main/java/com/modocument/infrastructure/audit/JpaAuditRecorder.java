@@ -3,9 +3,11 @@ package com.modocument.infrastructure.audit;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.modocument.application.audit.AuditActions;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.TenantContext;
 import com.modocument.domain.entity.AuditEvent;
 import com.modocument.domain.entity.Bank;
@@ -16,12 +18,20 @@ import com.modocument.infrastructure.security.RequestIdFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -54,6 +64,21 @@ import java.util.UUID;
  * refusal the caller is about to signal. When no tenant is bound, the write
  * runs under {@code TenantContext.runAs(event bank)} so the PostgreSQL RLS
  * WITH CHECK accepts the insert.
+ *
+ * <p><b>Flood control (ws28)</b>, by action, so no call site can bypass it:
+ * <ul>
+ *   <li>{@code ACCESS_DENIED} is AGGREGATED ({@link AuditThrottle}): at most
+ *       one row per (bank, actor — else client ip —, entity type) per
+ *       minute, each carrying {@code newValues.count}; the suppressed tail
+ *       of a window is flushed by {@link #flushAggregatedDenials()}.</li>
+ *   <li>{@code SENSITIVE_DATA_VIEWED} is written once per (bank, actor,
+ *       entity) per hour, and only while the bank's
+ *       {@code audit.readAuditEnabled} setting is on (absent key = on);
+ *       {@code AUDIT_LOG_VIEWED} once per (bank, actor) per 15 minutes.</li>
+ * </ul>
+ * The two read audits write in their OWN transaction (a read path may run in
+ * a read-only one) and, like DENIED/FAILED, never fail the read they ride
+ * on; a failed write releases its dedupe claim so the next read retries.
  */
 @Service
 public class JpaAuditRecorder implements AuditRecorder {
@@ -66,21 +91,171 @@ public class JpaAuditRecorder implements AuditRecorder {
     /** How much of an oversized payload the truncation marker preserves. */
     static final int TRUNCATION_PREVIEW_CHARS = 2 * 1024;
 
+    /** The aggregation window of ACCESS_DENIED rows. */
+    static final Duration DENIAL_WINDOW = Duration.ofMinutes(1);
+    static final Duration SENSITIVE_READ_WINDOW = Duration.ofHours(1);
+    static final Duration AUDIT_VIEW_WINDOW = Duration.ofMinutes(15);
+
+    /** The bank setting gating SENSITIVE_DATA_VIEWED (ws28; SE1's catalogue key). */
+    static final String READ_AUDIT_SETTING = "audit.readAuditEnabled";
+
+    /** Read audits: deduplicated, own transaction, never fail the read. */
+    private static final Set<String> READ_AUDITS = Set.of(
+            AuditActions.SENSITIVE_DATA_VIEWED, AuditActions.AUDIT_LOG_VIEWED);
+
     private final AuditEventWriter writer;
     private final ObjectMapper objectMapper;
     private final CurrentUserProvider currentUser;
+    /** Null = no read-audit gate (unit-test wiring): the read audit stays on. */
+    private final SettingsReader settings;
+    private final AuditThrottle throttle;
 
     public JpaAuditRecorder(AuditEventWriter writer, ObjectMapper objectMapper,
                             CurrentUserProvider currentUser) {
+        this(writer, objectMapper, currentUser, null, Clock.systemUTC());
+    }
+
+    @Autowired
+    public JpaAuditRecorder(AuditEventWriter writer, ObjectMapper objectMapper,
+                            CurrentUserProvider currentUser, SettingsReader settings) {
+        this(writer, objectMapper, currentUser, settings, Clock.systemUTC());
+    }
+
+    JpaAuditRecorder(AuditEventWriter writer, ObjectMapper objectMapper,
+                     CurrentUserProvider currentUser, SettingsReader settings, Clock clock) {
         this.writer = writer;
         this.objectMapper = objectMapper;
         this.currentUser = currentUser;
+        this.settings = settings;
+        this.throttle = new AuditThrottle(clock, DENIAL_WINDOW);
     }
 
     @Override
     public void record(AuditEventSpec spec) {
+        String action = spec.action();
+        if (AuditActions.ACCESS_DENIED.equals(action)) {
+            recordDenial(spec);
+            return;
+        }
+        if (READ_AUDITS.contains(action)) {
+            recordRead(spec);
+            return;
+        }
+        persist(spec, spec.outcome() != AuditOutcome.SUCCESS);
+    }
+
+    /** Aggregated: written only when it opens a window (see the class comment). */
+    private void recordDenial(AuditEventSpec spec) {
+        AuditEvent probe = enrich(spec);
+        String actorOrIp = probe.getActorUserId() != null ? "user:" + probe.getActorUserId()
+                : probe.getIp() != null ? "ip:" + probe.getIp() : "unknown";
+        AuditThrottle.DenialKey key = new AuditThrottle.DenialKey(probe.getBankId(), actorOrIp,
+                probe.getEntityType());
+        AuditThrottle.DenialRow row = throttle.offerDenial(key, new AuditThrottle.DenialContext(
+                probe.getActorUserId(), probe.getActorEmail(), probe.getActorRole(),
+                probe.getIp(), probe.getEntityType(), probe.getEntityId(),
+                detailsOf(spec.newValues())));
+        if (row != null) {
+            persist(denialSpec(row, probe.getSessionJti(), probe.getRequestId()), true);
+        }
+    }
+
+    /**
+     * Writes the suppressed tails of expired ACCESS_DENIED windows. Runs on
+     * a scheduler thread: every row carries its bank, actor and ip
+     * explicitly (no request is around), and the insert binds that bank
+     * like any anonymous-flow write.
+     */
+    @Scheduled(fixedDelayString = "${modocument.audit.access-denied.flush-interval-ms:15000}",
+            initialDelayString = "${modocument.audit.access-denied.flush-interval-ms:15000}")
+    public void flushAggregatedDenials() {
+        flushAggregatedDenials(null);
+    }
+
+    /** {@link #flushAggregatedDenials()} as of {@code now} (null = the clock); tests pass a time. */
+    public void flushAggregatedDenials(Instant now) {
+        List<AuditThrottle.DenialRow> rows = now == null ? throttle.drainExpired()
+                : throttle.drainExpired(now);
+        for (AuditThrottle.DenialRow row : rows) {
+            persist(denialSpec(row, null, null), true);
+        }
+    }
+
+    private static AuditEventSpec denialSpec(AuditThrottle.DenialRow row, UUID sessionJti,
+                                             String requestId) {
+        AuditThrottle.DenialContext context = row.context();
+        Map<String, Object> values = new LinkedHashMap<>();
+        if (context.details() != null) {
+            values.putAll(context.details());
+        }
+        values.put("count", row.count());
+        values.put("windowStart", row.windowStart().toString());
+        if (row.sampleEntityIds().size() > 1) {
+            values.put("sampleEntityIds", row.sampleEntityIds());
+        }
+        return AuditEventSpec.builder(AuditActions.ACCESS_DENIED, AuditOutcome.DENIED)
+                .entity(context.entityType(), context.entityId())
+                .newValues(values)
+                .actorUserId(context.actorUserId())
+                .actorEmail(context.actorEmail())
+                .actorRole(context.actorRole())
+                .bankId(row.key().bankId())
+                .ip(context.ip())
+                .requestId(requestId)
+                .sessionJti(sessionJti)
+                .build();
+    }
+
+    private static Map<String, Object> detailsOf(Object newValues) {
+        if (newValues == null) {
+            return null;
+        }
+        Map<String, Object> copy = new LinkedHashMap<>();
+        if (newValues instanceof Map<?, ?> map) {
+            map.forEach((k, v) -> copy.put(String.valueOf(k), v));
+        } else {
+            copy.put("details", newValues);
+        }
+        return copy;
+    }
+
+    /** Deduplicated read audits, gated (SENSITIVE_DATA_VIEWED) by the bank setting. */
+    private void recordRead(AuditEventSpec spec) {
+        AuditEvent probe = enrich(spec);
+        boolean sensitive = AuditActions.SENSITIVE_DATA_VIEWED.equals(spec.action());
+        if (sensitive && !readAuditEnabled(probe.getBankId())) {
+            return;
+        }
+        String actor = probe.getActorUserId() != null ? "user:" + probe.getActorUserId()
+                : "ip:" + probe.getIp();
+        String key = spec.action() + '|' + probe.getBankId() + '|' + actor
+                + (sensitive ? "|" + probe.getEntityType() + ':' + probe.getEntityId() : "");
+        if (!throttle.tryAcquire(key, sensitive ? SENSITIVE_READ_WINDOW : AUDIT_VIEW_WINDOW)) {
+            return;
+        }
+        if (!persist(spec, true)) {
+            throttle.release(key);
+        }
+    }
+
+    private boolean readAuditEnabled(int bankId) {
+        if (settings == null) {
+            return true;
+        }
+        try {
+            return settings.getBool(READ_AUDIT_SETTING, bankId);
+        } catch (IllegalArgumentException unknownKey) {
+            // The key ships with SE1's settings catalogue; until then the read audit is on.
+            return true;
+        }
+    }
+
+    /**
+     * Writes one row; {@code independent} = own transaction, and a failure
+     * is logged and reported (false) instead of thrown.
+     */
+    private boolean persist(AuditEventSpec spec, boolean independent) {
         AuditEvent event = enrich(spec);
-        boolean independent = spec.outcome() != AuditOutcome.SUCCESS;
         try {
             write(event, independent);
             // One INFO line per audit event: with the MDC-extended pattern
@@ -99,7 +274,9 @@ public class JpaAuditRecorder implements AuditRecorder {
             log.error("audit write failed for action={} outcome={} (the refusal itself "
                             + "proceeds; investigate the audit store!)",
                     event.getAction(), event.getOutcome(), e);
+            return false;
         }
+        return true;
     }
 
     private void write(AuditEvent event, boolean independent) {
@@ -147,8 +324,10 @@ public class JpaAuditRecorder implements AuditRecorder {
                         truncate(spec.action(), 60), spec.outcome())
                 .actor(actorUserId, truncate(actorEmail, 320), truncate(actorRole, 20))
                 .sessionJti(sessionJti)
-                .request(truncate(MDC.get(RequestIdFilter.MDC_REQUEST_ID), 64),
-                        truncate(MDC.get(RequestIdFilter.MDC_CLIENT_IP), 64))
+                .request(truncate(spec.requestId() != null ? spec.requestId()
+                                : MDC.get(RequestIdFilter.MDC_REQUEST_ID), 64),
+                        truncate(spec.ip() != null ? spec.ip()
+                                : MDC.get(RequestIdFilter.MDC_CLIENT_IP), 64))
                 .entity(truncate(spec.entityType(), 40), truncate(spec.entityId(), 64))
                 .values(toJson(spec.oldValues()), toJson(spec.newValues()))
                 .build();

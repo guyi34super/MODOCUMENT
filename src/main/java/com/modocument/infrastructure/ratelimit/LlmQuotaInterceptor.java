@@ -28,7 +28,6 @@ public class LlmQuotaInterceptor implements HandlerInterceptor {
      * routes with no cheap sibling method, so path matching suffices.
      */
     public static final List<String> PATHS = List.of(
-            "/api/aifiles/send",
             "/api/automapper/generate",
             "/api/ingestion/jobs/*/chat-edit",
             // ws17: these two were unmetered LLM calls.

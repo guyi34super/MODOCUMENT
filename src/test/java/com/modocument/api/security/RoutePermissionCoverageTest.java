@@ -89,8 +89,7 @@ class RoutePermissionCoverageTest {
      * integration admin and runs, ws26 client scopes and agent connect). A
      * future permission is listed here until its first route lands.
      */
-    private static final Set<Permission> RESERVED = EnumSet.of(
-            Permission.AUDIT_READ);                                     // ws28 (optimization)
+    private static final Set<Permission> RESERVED = EnumSet.noneOf(Permission.class);
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")
