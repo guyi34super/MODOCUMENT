@@ -28,7 +28,8 @@ import static com.modocument.domain.model.Permission.*;
  *       triggering integration runs.</li>
  *   <li><b>APPROVER</b> — READ_ONLY plus the approval verbs
  *       (CHANGE_APPROVE — the ws10 maker/checker decisions; DOC_RELEASE —
- *       ws11). Approvers review, they do not author.</li>
+ *       ws11) and AUDIT_READ, the trail they review against. Approvers
+ *       review, they do not author.</li>
  *   <li><b>ADMIN</b> — everything a bank can hold: the complement of the
  *       platform-owner set and the machine-client scopes. In particular a
  *       bank admin can NOT change the shared lookup tables (LOOKUP_ADMIN
@@ -82,7 +83,7 @@ public final class RolePermissions {
                 INTEGRATION_RUN));
 
         EnumSet<Permission> approver = EnumSet.copyOf(readOnly);
-        approver.addAll(EnumSet.of(CHANGE_APPROVE, DOC_RELEASE));
+        approver.addAll(EnumSet.of(CHANGE_APPROVE, DOC_RELEASE, AUDIT_READ));
 
         EnumSet<Permission> notForBanks = EnumSet.copyOf(PLATFORM_PERMISSIONS);
         notForBanks.addAll(CLIENT_SCOPES);
@@ -90,7 +91,7 @@ public final class RolePermissions {
 
         EnumSet<Permission> platformAdmin = EnumSet.copyOf(PLATFORM_PERMISSIONS);
         platformAdmin.addAll(EnumSet.of(PROFILE_SELF, SYSTEM_INFO, USER_ADMIN, CHANGE_APPROVE,
-                SIEM_READ, LOOKUP_READ));
+                SIEM_READ, LOOKUP_READ, AUDIT_READ));
 
         EnumSet<Permission> apiClient = EnumSet.copyOf(CLIENT_SCOPES);
 

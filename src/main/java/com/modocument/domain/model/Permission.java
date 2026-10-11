@@ -79,6 +79,12 @@ public enum Permission {
      * integration authenticates as a dedicated admin account of that bank.
      */
     SIEM_READ("siem:read"),
+    /**
+     * Browse, search and export the bank's audit trail (/api/admin/audit,
+     * optimization round ws28); platform admins see the platform bank's own
+     * trail plus cross-bank counts only.
+     */
+    AUDIT_READ("audit:read"),
 
     // ---- Phase 2: bank-level administration ---------------------------------
     /** Read the bank's effective settings (ws20: GET /api/admin/settings). */

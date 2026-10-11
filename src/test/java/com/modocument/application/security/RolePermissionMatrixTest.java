@@ -99,11 +99,13 @@ class RolePermissionMatrixTest {
                     .isEqualTo(role == Role.ADMIN || role == Role.READ_WRITE);
         }
 
-        // APPROVER reviews: READ_ONLY plus the approval verbs, nothing else.
+        // APPROVER reviews: READ_ONLY plus the approval verbs and the audit
+        // trail a checker reviews them against (optimization ws28), nothing else.
         EnumSet<Permission> expectedApprover =
                 EnumSet.copyOf(RolePermissions.granted(Role.READ_ONLY));
         expectedApprover.add(Permission.CHANGE_APPROVE);
         expectedApprover.add(Permission.DOC_RELEASE);
+        expectedApprover.add(Permission.AUDIT_READ);
         assertThat(RolePermissions.granted(Role.APPROVER))
                 .containsExactlyInAnyOrderElementsOf(expectedApprover);
     }
