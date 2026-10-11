@@ -23,7 +23,8 @@ import com.modocument.doccreation.repo.DocContentBlockRepository;
 import com.modocument.doccreation.repo.DocImageAssetRepository;
 import com.modocument.application.privacy.PiiMaskingService;
 import com.modocument.doccreation.repo.DocInstanceRepository;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.application.port.FileStore;
+import com.modocument.infrastructure.file.store.FileStoreKeys;
 import com.modocument.infrastructure.file.UploadStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +36,6 @@ import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -64,6 +64,8 @@ import java.util.stream.Collectors;
 public class DocInstanceUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(DocInstanceUseCase.class);
+    private static final String DOCX_CONTENT_TYPE =
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     private static final Map<String, String> IMAGE_CONTENT_TYPES = Map.of(
             "png", "image/png",
             "jpg", "image/jpeg",
@@ -82,7 +84,7 @@ public class DocInstanceUseCase {
     private final AiDocumentComposer aiComposer;
     private final PdfConverter pdfConverter;
     private final UploadStorage uploadStorage;
-    private final StorageProperties storage;
+    private final FileStore storage;
     private final PiiMaskingService masking;
 
     public DocInstanceUseCase(DocInstanceRepository instances,
@@ -96,7 +98,7 @@ public class DocInstanceUseCase {
                               AiDocumentComposer aiComposer,
                               PdfConverter pdfConverter,
                               UploadStorage uploadStorage,
-                              StorageProperties storage,
+                              FileStore storage,
                               PiiMaskingService masking) {
         this.instances = instances;
         this.blueprints = blueprints;
@@ -193,15 +195,15 @@ public class DocInstanceUseCase {
         blocks.deleteByInstance(instanceId);
         assets.deleteByInstance(instanceId);
         instances.delete(instanceId);
-        List<Path> files = new ArrayList<>();
+        List<String> files = new ArrayList<>();
         for (DocImageAsset asset : assetList) {
-            files.add(uploadStorage.resolve(asset.getFileName()));
+            files.add(uploadStorage.key(asset.getFileName()));
         }
-        files.add(storage.exportsDir().resolve(exportName(instanceId, "docx")));
-        files.add(storage.exportsDir().resolve(exportName(instanceId, "pdf")));
+        files.add(FileStoreKeys.export(exportName(instanceId, "docx")));
+        files.add(FileStoreKeys.export(exportName(instanceId, "pdf")));
         // Only after commit: a rollback must not orphan the surviving rows'
         // files.
-        StoredFileCleanup.deleteAfterCommit(files);
+        StoredFileCleanup.deleteAfterCommit(storage, files);
     }
 
     // ---------------------------------------------------------------- blocks
@@ -342,7 +344,7 @@ public class DocInstanceUseCase {
             asset.setBankId(instance.getBankId());
             asset.setFileName(uploadStorage.store(file));
             // A rollback of this bulk upload must not orphan the stored bytes.
-            StoredFileCleanup.deleteOnRollback(uploadStorage.resolve(asset.getFileName()));
+            StoredFileCleanup.deleteOnRollback(storage, uploadStorage.key(asset.getFileName()));
             asset.setOriginalFileName(originalName);
             asset.setContentType(contentType);
             asset.setUploadedDate(LocalDateTime.now());
@@ -375,8 +377,12 @@ public class DocInstanceUseCase {
     /** The stored image, for authenticated previews in the builder. */
     public StoredAsset getAssetContent(int assetId) {
         DocImageAsset asset = requireAsset(assetId);
-        return new StoredAsset(uploadStorage.resolve(asset.getFileName()), asset.getContentType(),
-                asset.getOriginalFileName());
+        try {
+            return new StoredAsset(uploadStorage.localCopy(asset.getFileName()), asset.getContentType(),
+                    asset.getOriginalFileName());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read the image file.", e);
+        }
     }
 
     /** Moves an image into a section (replacing its previous placement) or back to Unsorted. */
@@ -421,7 +427,7 @@ public class DocInstanceUseCase {
         DocInstance instance = ownership.requireInstance(asset.getInstanceId());
         blocks.findByAsset(assetId).ifPresent(b -> blocks.delete(b.getDocContentBlockId()));
         assets.delete(assetId);
-        StoredFileCleanup.deleteAfterCommit(List.of(uploadStorage.resolve(asset.getFileName())));
+        StoredFileCleanup.deleteAfterCommit(storage, List.of(uploadStorage.key(asset.getFileName())));
         touch(instance);
         instances.save(instance);
     }
@@ -470,17 +476,18 @@ public class DocInstanceUseCase {
         docxBytes = decorate(docxBytes, blueprint, instance);
 
         try {
-            Files.createDirectories(storage.exportsDir());
             String docxName = exportName(instanceId, "docx");
-            Path docxPath = storage.exportsDir().resolve(docxName);
-            writeAtomically(docxPath, docxBytes);
+            String docxKey = FileStoreKeys.export(docxName);
+            writeExport(docxKey, docxBytes, DOCX_CONTENT_TYPE);
 
             String pdfName = null;
             String pdfError = null;
             try {
-                byte[] pdfBytes = pdfConverter.convert(docxPath);
+                // LibreOffice needs a file: the stored docx itself on local
+                // storage, a cached download on S3 (FileStore.localCopy).
+                byte[] pdfBytes = pdfConverter.convert(storage.localCopy(docxKey));
                 pdfName = exportName(instanceId, "pdf");
-                writeAtomically(storage.exportsDir().resolve(pdfName), pdfBytes);
+                writeExport(FileStoreKeys.export(pdfName), pdfBytes, "application/pdf");
             } catch (IllegalStateException e) {
                 pdfError = e.getMessage();
             }
@@ -557,9 +564,13 @@ public class DocInstanceUseCase {
         if (fileName == null) {
             throw new IllegalStateException("PDF conversion failed; download the .docx instead.");
         }
-        Path path = storage.exportsDir().resolve(fileName);
-        if (!Files.exists(path)) {
+        Path path;
+        try {
+            path = storage.localCopy(FileStoreKeys.export(fileName));
+        } catch (java.nio.file.NoSuchFileException e) {
             throw new IllegalStateException("The generated file is missing; generate the document again.");
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read the generated file.", e);
         }
         return new DownloadFile(path, sanitizeFileName(instance.getTitle()) + (pdf ? ".pdf" : ".docx"));
     }
@@ -576,7 +587,11 @@ public class DocInstanceUseCase {
             return true;
         }
         String fileName = pdf ? instance.getLastGeneratedPdf() : instance.getLastGeneratedDocx();
-        return !Files.exists(storage.exportsDir().resolve(fileName));
+        try {
+            return !storage.exists(FileStoreKeys.export(fileName));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not check the generated file.", e);
+        }
     }
 
     /** The company flow's last touch on the assembled document (stamps, footers, ...). */
@@ -594,38 +609,30 @@ public class DocInstanceUseCase {
     }
 
     /**
-     * Exports live at fixed per-instance paths that downloads stream while
-     * regenerations overwrite; an atomic move means a reader always sees a
+     * Exports live at fixed per-instance keys that downloads read while
+     * regenerations overwrite; FileStore.put replaces the object in one step
+     * (atomic move on disk, a single PUT on S3), so a reader always sees a
      * complete file, never a truncated one.
      */
-    private static void writeAtomically(Path target, byte[] bytes) throws IOException {
-        Path temp = Files.createTempFile(target.getParent(), target.getFileName().toString(), ".tmp");
-        try {
-            Files.write(temp, bytes);
-            try {
-                Files.move(temp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
-                Files.move(temp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            }
-        } finally {
-            Files.deleteIfExists(temp);
-        }
+    private void writeExport(String key, byte[] bytes, String contentType) throws IOException {
+        storage.put(key, new ByteArrayInputStream(bytes), bytes.length, contentType);
     }
 
     private Path requireBlueprintFile(DocBlueprint blueprint) {
-        Path blueprintPath = uploadStorage.resolve(blueprint.getFileName());
-        if (!Files.exists(blueprintPath)) {
+        try {
+            return uploadStorage.localCopy(blueprint.getFileName());
+        } catch (java.nio.file.NoSuchFileException e) {
             throw new IllegalStateException("The blueprint's source file is missing; re-upload the blueprint.");
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read the blueprint's source file.", e);
         }
-        return blueprintPath;
     }
 
     private Function<Integer, byte[]> assetBytesLoader(Map<Integer, DocImageAsset> assetsById) {
         return assetId -> {
             DocImageAsset asset = assetsById.get(assetId);
             try {
-                return Files.readAllBytes(uploadStorage.resolve(asset.getFileName()));
+                return uploadStorage.readAllBytes(asset.getFileName());
             } catch (IOException e) {
                 throw new IllegalStateException(
                         "Image " + asset.getOriginalFileName() + " is missing; upload it again.", e);
@@ -729,14 +736,6 @@ public class DocInstanceUseCase {
     static String sanitizeFileName(String title) {
         String cleaned = title == null ? "" : title.replaceAll("[\\\\/:*?\"<>|\\r\\n]", " ").strip();
         return cleaned.isBlank() ? "document" : cleaned;
-    }
-
-    private static void deleteFileQuietly(Path path) {
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException e) {
-            log.warn("Could not delete stored file {}", path, e);
-        }
     }
 
     public record StoredAsset(Path path, String contentType, String originalFileName) {

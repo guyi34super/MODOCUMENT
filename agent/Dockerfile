@@ -10,7 +10,10 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 COPY pom.xml .
-RUN mvn -B -q dependency:go-offline
+# Maven repository as a BuildKit cache mount (ws29; same id as the API
+# image, so both builds share one warm repository on a builder).
+RUN --mount=type=cache,target=/root/.m2,id=modocument-m2,sharing=locked \
+    mvn -B -q dependency:go-offline
 COPY src ./src
 # Release identity (same args as the API image; all optional):
 #   MODOCUMENT_VERSION  X.Y.Z or X.Y.Z-rc.N — must name pom.xml's version
@@ -19,7 +22,8 @@ COPY src ./src
 ARG MODOCUMENT_VERSION=
 ARG BUILD_TIME=
 # Tests run in CI (mvn -B -f agent/pom.xml verify); the image build packages.
-RUN set -eu; \
+RUN --mount=type=cache,target=/root/.m2,id=modocument-m2,sharing=locked \
+    set -eu; \
     if [ -n "$BUILD_TIME" ] \
         && ! printf '%s' "$BUILD_TIME" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'; then \
         echo "BUILD_TIME must be ISO-8601 UTC, e.g. 2026-10-10T12:00:00Z" >&2; exit 1; \

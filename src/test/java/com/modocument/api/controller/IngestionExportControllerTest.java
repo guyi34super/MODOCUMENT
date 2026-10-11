@@ -8,7 +8,7 @@ import com.modocument.infrastructure.export.DatabaseExportService;
 import com.modocument.infrastructure.export.ExportCapExceededException;
 import com.modocument.infrastructure.export.ExportGuard;
 import com.modocument.infrastructure.export.FileExportService;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.store.LocalFileStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.HttpStatus;
@@ -46,7 +46,7 @@ class IngestionExportControllerTest {
         when(exportGuard.authorize(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new ExportGuard.Decision(5000, false, null));
         return new IngestionExportController(jobs, fileExport, databaseExport, masking,
-                exportGuard, new StorageProperties(tempDir.toString()));
+                exportGuard, new LocalFileStore(tempDir));
     }
 
     private static IngestionJob job(JobStep step, JobStatus status, String mappedRowsJson) {

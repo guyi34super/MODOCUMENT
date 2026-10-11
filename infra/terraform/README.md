@@ -37,7 +37,11 @@ infra/terraform/
 │   │                         owned task-definition revisions (ws24)
 │   ├── edge/                 CloudFront + AWS WAF managed/rate rules
 │   │                         (SUP-S03/SEC-002), origin locked to CloudFront
-│   │                         (A12), D3 egress NACL stub
+│   │                         (A12), D3 egress NACL stub, /assets/* cached
+│   │                         at the edge (CachingOptimized, ws29)
+│   ├── file-store/           S3 bucket for uploads/exports/doc assets (ws29):
+│   │                         own CMK (SSE-KMS), versioned, public access
+│   │                         blocked, TLS-only, lifecycle expiry
 │   ├── security-monitoring/  GuardDuty (PRIV-003), CloudTrail → locked bucket
 │   │                         (A6/SEC-015), alarms → SNS (ws18 seam), Session
 │   │                         Manager session logging (SEC-015)
@@ -186,6 +190,36 @@ below as GitHub environment variables (runbook §7).
   - A variable validation pins every subject to one `owner/repo`.
   - The deploy role can also run `ecr:DescribeImages` (tag → digest),
     besides the existing ECS describe/register/update rights.
+
+## Optimization round (ws29, v1.2.0)
+
+Re-validated 11 Oct 2026 (`fmt -check`, `init -backend=false && validate`,
+both envs). New variables and changed defaults — production keeps its
+availability posture; staging gets the cheaper settings:
+
+| What | Where | Production | Staging |
+|---|---|---|---|
+| Task size | `ecs-app` `task_cpu` / `task_memory` (was 2048 / 6144) | 1024 / 3072 — two tasks per m6i.large | same |
+| Per-container limits | `ecs-app` `app_cpu`/`app_memory`, `frontend_cpu`/`frontend_memory` | 896 / 2816 MiB, 128 / 256 MiB (precondition: sum fits the task) | same |
+| Task cap | `max_tasks` (precondition: `<= max_instances x tasks per node`, from the instance type) | 8 (4 nodes x 2; the old 6 x 2048-CPU tasks could never be placed on 4 nodes) | 2 |
+| NAT gateways | `network` `nat_gateway_count` (was 2, hard-coded) | 2 (one per AZ) | 1 (`nat_gateway_count`) |
+| RDS standby | `rds` `multi_az` (was `true`, hard-coded) | `true` (SEC-004) | `false` (`db_multi_az`) |
+| App/frontend logs | `ecs-app` `log_retention_days` (was 400) | 90 | 90 |
+| VPC flow logs | `network` `flow_log_retention_days` (was 400) | 30 | 30 |
+| CloudTrail log group | `security-monitoring` `trail_log_retention_days` | 400 (unchanged; >= 365 enforced) | 400 |
+| File store | `file-store` module + `ecs-app` `file_store` | bucket `modocument-prod-files-<account>` | `modocument-staging-files-<account>` |
+
+The file store sets `MODOCUMENT_STORAGE_BACKEND=s3`,
+`MODOCUMENT_STORAGE_S3_BUCKET`, `MODOCUMENT_STORAGE_S3_REGION` and
+`MODOCUMENT_STORAGE_S3_KMS_KEY_ID` on the app container and gives the TASK
+role (not the execution role) object get/put/delete + list on that bucket and
+`kms:GenerateDataKey`/`Decrypt` on that key via S3 only. Traffic goes through
+the existing S3 gateway endpoint (no NAT). Lifecycle: noncurrent versions
+expire after 7 days, `exports/` current objects after 30 days; `uploads/`
+has no storage-side expiry by default (`uploads_expiry_days = 0`) because it
+also holds doc-creation blueprints, which are never purged — the app's
+retention job deletes customer uploads. Rollout steps:
+[docs/release/runbook.md](../../docs/release/runbook.md) §14.
 
 ## Bank integration hub (ws26)
 

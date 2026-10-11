@@ -161,10 +161,16 @@ public class IngestionParseStepImpl implements IngestionParseStep {
     @Override
     public ParseResult parse(ParseContext context) {
         String fileName = context.fileName();
-        Path file = uploadStorage.resolve(fileName);
-        if (!Files.exists(file)) {
+        // FileStore.localCopy (ws29): the file itself on local storage, a
+        // cached download on S3 — the parsers below need a Path.
+        Path file;
+        try {
+            file = uploadStorage.localCopy(fileName);
+        } catch (java.nio.file.NoSuchFileException e) {
             throw new NoSuchElementException(
                     "File '" + fileName + "' not found in uploads folder.");
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("Could not read the uploaded file.", e);
         }
         Integer bankId = context.bankId() != null
                 ? context.bankId() : TenantContext.currentBankId().orElse(null);

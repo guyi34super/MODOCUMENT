@@ -17,6 +17,15 @@ server:
 spring:
   application:
     name: MoDocument
+  autoconfigure:
+    # ws29 (SE5): no Mongo/Kafka in the default deployment — the production
+    # jar does not even ship the clients (Maven `scale` profile only).
+    # application-scale.yml clears this list to re-enable them.
+    exclude:
+      - org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   data:
     mongodb:
       # Extraction store (raw pages/payloads, processed records, job state,
@@ -259,9 +268,28 @@ modocument:
     admin-jobs: ${MODOCUMENT_RATELIMIT_ADMIN_JOBS:10}
     admin-security: ${MODOCUMENT_RATELIMIT_ADMIN_SECURITY:10}
   storage:
+    # ws29 (SE5) FileStore backend: `local` (default — disk under `root`) or
+    # `s3` (ECS: files survive task replacement, shared by every task).
+    backend: ${MODOCUMENT_STORAGE_BACKEND:local}
     # Root directory for uploaded files (<root>/uploads) and export copies
-    # (<root>/exports). Mount a volume here in containers.
+    # (<root>/exports) with the local backend. Mount a volume here in containers.
     root: ${MODOCUMENT_STORAGE_ROOT:wwwroot}
+    s3:
+      # Same key layout as the local root (uploads/..., exports/...), under
+      # an optional prefix. Credentials: the AWS default chain (ECS task role).
+      bucket: ${MODOCUMENT_STORAGE_S3_BUCKET:}
+      prefix: ${MODOCUMENT_STORAGE_S3_PREFIX:}
+      # Empty = the AWS default region chain (AWS_REGION on ECS).
+      region: ${MODOCUMENT_STORAGE_S3_REGION:}
+      # Empty = the bucket's default encryption (Terraform: SSE-KMS, the
+      # bucket CMK); set to name the CMK explicitly on every PUT.
+      kms-key-id: ${MODOCUMENT_STORAGE_S3_KMS_KEY_ID:}
+      # On-disk LRU cache (java.io.tmpdir) for FileStore.localCopy downloads
+      # (parsers, LibreOffice), in MiB.
+      temp-cache-mb: ${MODOCUMENT_STORAGE_S3_TEMP_CACHE_MB:512}
+      # S3-compatible endpoint (MinIO in tests); empty on AWS.
+      endpoint: ${MODOCUMENT_STORAGE_S3_ENDPOINT:}
+      path-style: ${MODOCUMENT_STORAGE_S3_PATH_STYLE:false}
   privacy:
     masking:
       # ws12 (gate C2, PRIV-005): PII-classified values are ALWAYS masked on
@@ -855,6 +883,7 @@ extraction:
     robots-ttl-seconds: 3600
     max-body-bytes: 5242880
     request-timeout-seconds: 20
+    # No effect since ws29: JS rendering (Playwright) was removed.
     render-js-enabled: false
     max-pages-default: 100
     max-depth-default: 2

@@ -116,11 +116,7 @@ public class TransformServiceImpl implements TransformService {
 
     @Override
     public TransformResult transform(TransformRequest request, String model, Integer templateId) {
-        Path filePath = resolveUpload(request);
-        if (!Files.exists(filePath)) {
-            throw new NoSuchElementException(
-                    "File '" + request.getFileName() + "' not found in uploads folder.");
-        }
+        Path filePath = localUpload(resolveUpload(request));
         Integer bankId = TenantContext.currentBankId().orElse(null);
         ExtractionMode mode = mode(templateId, bankId);
         if (mode == ExtractionMode.AI_ONLY) {
@@ -150,7 +146,7 @@ public class TransformServiceImpl implements TransformService {
 
     @Override
     public int getTemplateId(TransformRequest request) {
-        Path filePath = resolveUpload(request);
+        String fileName = resolveUpload(request);
         Integer bankId = TenantContext.currentBankId().orElse(null);
         ExtractionMode mode = mode(null, bankId);
         if (mode == ExtractionMode.CODE_ONLY) {
@@ -161,13 +157,14 @@ public class TransformServiceImpl implements TransformService {
             if (skip.isPresent()) {
                 throw templateNeeded(skip.get());
             }
+            Path filePath = localUpload(fileName);
             try {
                 return classify(filePath);
             } catch (RuntimeException aiFailure) {
                 throw templateNeeded(AiFailureClassifier.classify(aiFailure));
             }
         }
-        return classify(filePath);
+        return classify(localUpload(fileName));
     }
 
     private int classify(Path filePath) {
@@ -313,16 +310,29 @@ public class TransformServiceImpl implements TransformService {
         }
     }
 
-    private Path resolveUpload(TransformRequest request) {
+    /** The validated upload name (no traversal: UploadStorage.key refuses it). */
+    private String resolveUpload(TransformRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Request must be provided.");
         }
         if (request.getFileName() == null || request.getFileName().isBlank()) {
             throw new IllegalArgumentException("FileName must be provided.");
         }
-        // UploadStorage.resolve rejects names that escape the uploads folder
+        // UploadStorage.key rejects names that escape the uploads folder
         // ("../..."), closing the path-traversal hole a raw resolve left open.
-        return uploadStorage.resolve(request.getFileName());
+        uploadStorage.key(request.getFileName());
+        return request.getFileName();
+    }
+
+    /** A readable local file of the upload (FileStore.localCopy); missing → not found. */
+    private Path localUpload(String fileName) {
+        try {
+            return uploadStorage.localCopy(fileName);
+        } catch (java.nio.file.NoSuchFileException e) {
+            throw new NoSuchElementException("File '" + fileName + "' not found in uploads folder.");
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read the uploaded file.", e);
+        }
     }
 
     static String extractBetween(String input, String start, String end) {

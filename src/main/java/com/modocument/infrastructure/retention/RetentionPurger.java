@@ -2,6 +2,7 @@ package com.modocument.infrastructure.retention;
 
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
+import com.modocument.application.port.FileStore;
 import com.modocument.doccreation.entity.DocImageAsset;
 import com.modocument.doccreation.entity.DocInstance;
 import com.modocument.doccreation.repo.DocContentBlockJpaRepository;
@@ -13,15 +14,15 @@ import com.modocument.domain.model.AuditOutcome;
 import com.modocument.infrastructure.export.FileExportService;
 import com.modocument.infrastructure.extraction.sql.ExtractionProcessedRecordJpaRepository;
 import com.modocument.infrastructure.extraction.sql.ExtractionRawRecordJpaRepository;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.store.FileStoreKeys;
 import com.modocument.infrastructure.persistence.ImportDetailsJpaRepository;
 import com.modocument.infrastructure.persistence.IngestionJobJpaRepository;
 import com.modocument.infrastructure.persistence.UploadedFileJpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -75,7 +76,7 @@ public class RetentionPurger {
     private final DocInstanceJpaRepository docInstances;
     private final DocContentBlockJpaRepository docBlocks;
     private final DocImageAssetJpaRepository docAssets;
-    private final StorageProperties storage;
+    private final FileStore storage;
     private final AuditRecorder audit;
 
     public RetentionPurger(UploadedFileJpaRepository uploadedFiles,
@@ -86,7 +87,7 @@ public class RetentionPurger {
                            DocInstanceJpaRepository docInstances,
                            DocContentBlockJpaRepository docBlocks,
                            DocImageAssetJpaRepository docAssets,
-                           StorageProperties storage,
+                           FileStore storage,
                            AuditRecorder audit) {
         this.uploadedFiles = uploadedFiles;
         this.ingestionJobs = ingestionJobs;
@@ -109,12 +110,12 @@ public class RetentionPurger {
     @Transactional
     public BankPurgeSummary purgeBank(int bankId, LocalDateTime cutoff, Instant cutoffInstant,
                                       int retentionDays) {
-        List<Path> filesToDelete = new ArrayList<>();
+        List<String> filesToDelete = new ArrayList<>();
 
         // Uploaded files: disk file + ownership row.
         List<UploadedFile> oldUploads = uploadedFiles.findByBankIdAndUploadedAtBefore(bankId, cutoff);
         for (UploadedFile upload : oldUploads) {
-            filesToDelete.add(resolveWithin(storage.uploadsDir(), upload.getStoredName()));
+            addKey(filesToDelete, FileStoreKeys.tryUpload(upload.getStoredName()), upload.getStoredName());
         }
         uploadedFiles.deleteAll(oldUploads);
 
@@ -146,16 +147,18 @@ public class RetentionPurger {
             List<DocImageAsset> assetList = docAssets.findByInstanceIdOrderByDocImageAssetId(id);
             assetCount += assetList.size();
             for (DocImageAsset asset : assetList) {
-                filesToDelete.add(resolveWithin(storage.uploadsDir(), asset.getFileName()));
+                addKey(filesToDelete, FileStoreKeys.tryUpload(asset.getFileName()), asset.getFileName());
             }
             docBlocks.deleteByInstanceId(id);
             docAssets.deleteByInstanceId(id);
             if (instance.getLastGeneratedDocx() != null) {
-                filesToDelete.add(resolveWithin(storage.exportsDir(), instance.getLastGeneratedDocx()));
+                addKey(filesToDelete, FileStoreKeys.tryExport(instance.getLastGeneratedDocx()),
+                        instance.getLastGeneratedDocx());
                 instance.setLastGeneratedDocx(null);
             }
             if (instance.getLastGeneratedPdf() != null) {
-                filesToDelete.add(resolveWithin(storage.exportsDir(), instance.getLastGeneratedPdf()));
+                addKey(filesToDelete, FileStoreKeys.tryExport(instance.getLastGeneratedPdf()),
+                        instance.getLastGeneratedPdf());
                 instance.setLastGeneratedPdf(null);
             }
             instance.setContentPurgedAt(LocalDateTime.now());
@@ -178,7 +181,7 @@ public class RetentionPurger {
                 .newValues(evidence)
                 .build());
 
-        AfterCommitFileDeleter.deleteAfterCommit(filesToDelete);
+        AfterCommitFileDeleter.deleteAfterCommit(storage, filesToDelete);
         return summary;
     }
 
@@ -187,25 +190,29 @@ public class RetentionPurger {
      * exports/u{owner}/job{id}.{ext} — one per format, overwritten per
      * export. Counts only the copies that actually exist right now.
      */
-    private int collectArchiveCopies(IngestionJob job, List<Path> filesToDelete) {
+    private int collectArchiveCopies(IngestionJob job, List<String> filesToDelete) {
         int found = 0;
-        Path ownerDir = storage.exportsDir().resolve("u" + job.getOwnerUserId());
         for (FileExportService.Format format : FileExportService.Format.values()) {
-            Path copy = ownerDir.resolve("job" + job.getIngestionJobId() + format.extension());
-            if (Files.exists(copy)) {
-                filesToDelete.add(copy);
-                found++;
+            String copy = FileStoreKeys.exportCopy(job.getOwnerUserId(), job.getIngestionJobId(),
+                    format.extension());
+            try {
+                if (storage.exists(copy)) {
+                    filesToDelete.add(copy);
+                    found++;
+                }
+            } catch (IOException e) {
+                throw new UncheckedIOException("Could not check export copy " + copy, e);
             }
         }
         return found;
     }
 
-    /** Resolves a stored name inside a managed directory, refusing traversal. */
-    static Path resolveWithin(Path dir, String name) {
-        Path candidate = dir.resolve(name).normalize();
-        if (!candidate.startsWith(dir)) {
-            throw new IllegalArgumentException("Invalid stored file name: " + name);
-        }
-        return candidate;
+    /**
+     * Adds a stored file's key; a legacy name the store cannot address
+     * (FileStoreKeys) is skipped with a warning instead of failing the bank.
+     */
+    private static void addKey(List<String> filesToDelete, java.util.Optional<String> key, String name) {
+        key.ifPresentOrElse(filesToDelete::add, () -> org.slf4j.LoggerFactory.getLogger(RetentionPurger.class)
+                .warn("Retention purge skipped the file of unaddressable stored name '{}'", name));
     }
 }

@@ -5,6 +5,7 @@ import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
+import com.modocument.application.port.FileStore;
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.application.port.integration.OutboundBatch;
 import com.modocument.application.privacy.Masker;
@@ -21,14 +22,12 @@ import com.modocument.domain.model.integration.PayloadFormat;
 import com.modocument.domain.model.integration.PayloadKind;
 import com.modocument.infrastructure.export.ExportGuard;
 import com.modocument.infrastructure.export.FileExportService;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.store.FileStoreKeys;
 import com.modocument.infrastructure.persistence.IntegrationEventJpaRepository;
 import com.modocument.infrastructure.settings.IntegrationSettings;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -76,14 +75,14 @@ public class PayloadBuilder {
     private final IntegrationSettings settings;
     private final FileExportService files;
     private final DocInstanceRepository documents;
-    private final StorageProperties storage;
+    private final FileStore storage;
     private final IntegrationEventJpaRepository events;
     private final AuditRecorder audit;
 
     public PayloadBuilder(IngestionJobRepository jobs, PiiMaskingService masking,
                           ExportGuard exportGuard, IntegrationSettings settings,
                           FileExportService files, DocInstanceRepository documents,
-                          StorageProperties storage, IntegrationEventJpaRepository events,
+                          FileStore storage, IntegrationEventJpaRepository events,
                           AuditRecorder audit) {
         this.jobs = jobs;
         this.masking = masking;
@@ -301,14 +300,13 @@ public class PayloadBuilder {
         if (stored == null) {
             throw new PayloadRefusedException("Document " + docId + " has no generated file.");
         }
-        Path root = storage.exportsDir().toAbsolutePath().normalize();
-        Path path = root.resolve(stored).normalize();
-        if (!path.startsWith(root) || !Files.isRegularFile(path)) {
-            throw new PayloadRefusedException("The generated file of document " + docId + " is missing.");
-        }
+        String key = FileStoreKeys.tryExport(stored).orElseThrow(() -> new PayloadRefusedException(
+                "The generated file of document " + docId + " is missing."));
         byte[] content;
-        try {
-            content = Files.readAllBytes(path);
+        try (java.io.InputStream in = storage.open(key)) {
+            content = in.readAllBytes();
+        } catch (java.nio.file.NoSuchFileException e) {
+            throw new PayloadRefusedException("The generated file of document " + docId + " is missing.");
         } catch (java.io.IOException e) {
             throw new IllegalStateException("The generated file could not be read.");
         }

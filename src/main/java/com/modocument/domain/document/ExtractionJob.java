@@ -3,7 +3,6 @@ package com.modocument.domain.document;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.modocument.domain.model.ExtractionJobStatus;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.Map;
@@ -14,7 +13,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * is the checkpoint unit): resuming re-enqueues unfinished tasks, and dedup
  * keys make repeated work a no-op, so a crash never loses or repeats records.
  */
-@Document(collection = "extractionJobs")
 public class ExtractionJob {
 
     /** Counter keys used in {@link #counters}. */

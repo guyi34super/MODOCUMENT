@@ -42,9 +42,9 @@ variable "db_instance_class" {
 }
 
 variable "max_tasks" {
-  description = "ECS autoscaling hard cap (SEC-002/003)."
+  description = "ECS autoscaling hard cap (SEC-002/003). ws29: 8 = the ASG cap (4 x m6i.large) x 2 tasks per node; the old 6 x 2048-CPU tasks could never be placed on 4 nodes."
   type        = number
-  default     = 6
+  default     = 8
 }
 
 variable "app_egress_https_cidrs" {

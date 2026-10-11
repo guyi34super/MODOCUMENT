@@ -36,6 +36,18 @@ variable "db_instance_class" {
   default     = "db.t4g.medium"
 }
 
+variable "nat_gateway_count" {
+  description = "ws29: NAT gateways (1 = one shared gateway, about half the NAT cost; 2 = production parity)."
+  type        = number
+  default     = 1
+}
+
+variable "db_multi_az" {
+  description = "ws29: RDS Multi-AZ standby. false in staging (about half the instance cost); true for a failover rehearsal."
+  type        = bool
+  default     = false
+}
+
 variable "instance_type" {
   description = "ECS node type."
   type        = string

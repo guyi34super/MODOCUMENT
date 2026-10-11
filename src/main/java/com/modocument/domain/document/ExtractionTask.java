@@ -3,8 +3,6 @@ package com.modocument.domain.document;
 import com.modocument.domain.model.ExtractionTaskStatus;
 import com.modocument.domain.model.ExtractionTaskType;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -17,12 +15,10 @@ import java.util.Map;
  * The (jobId, dedupKey) pair is unique so the same page/API page/DB batch is
  * never enqueued twice for a job.
  */
-@Document(collection = "extractionTasks")
 public class ExtractionTask {
 
     @Id
     private String id;
-    @Indexed
     private String jobId;
     private String sourceId;
     private ExtractionTaskType type;

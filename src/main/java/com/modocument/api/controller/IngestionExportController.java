@@ -8,6 +8,7 @@ import com.modocument.domain.model.Permission;
 import com.modocument.application.dto.DatabaseExportRequest;
 import com.modocument.application.dto.FileExportRequest;
 import com.modocument.application.dto.TableData;
+import com.modocument.application.port.FileStore;
 import com.modocument.application.privacy.PiiMaskingService;
 import com.modocument.application.usecase.IngestionJobUseCase;
 import com.modocument.domain.entity.IngestionJob;
@@ -15,7 +16,7 @@ import com.modocument.infrastructure.export.DatabaseExportService;
 import com.modocument.infrastructure.export.ExportCapExceededException;
 import com.modocument.infrastructure.export.ExportGuard;
 import com.modocument.infrastructure.export.FileExportService;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.store.FileStoreKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -30,10 +31,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -64,20 +64,20 @@ public class IngestionExportController {
     private final DatabaseExportService databaseExport;
     private final PiiMaskingService masking;
     private final ExportGuard exportGuard;
-    private final Path exportsDir;
+    private final FileStore files;
 
     public IngestionExportController(IngestionJobUseCase jobs,
                                      FileExportService fileExport,
                                      DatabaseExportService databaseExport,
                                      PiiMaskingService masking,
                                      ExportGuard exportGuard,
-                                     StorageProperties storage) {
+                                     FileStore files) {
         this.jobs = jobs;
         this.fileExport = fileExport;
         this.databaseExport = databaseExport;
         this.masking = masking;
         this.exportGuard = exportGuard;
-        this.exportsDir = storage.exportsDir();
+        this.files = files;
     }
 
     @GetMapping("/api/ingestion/jobs/{id}/export/file")
@@ -204,10 +204,9 @@ public class IngestionExportController {
      */
     private void archiveCopy(int ownerUserId, String exportName, byte[] bytes) {
         try {
-            Path ownerDir = exportsDir.resolve("u" + ownerUserId);
-            Files.createDirectories(ownerDir);
-            Files.write(ownerDir.resolve(exportName), bytes);
-        } catch (IOException e) {
+            files.put(FileStoreKeys.EXPORTS + "u" + ownerUserId + "/" + exportName,
+                    new ByteArrayInputStream(bytes), bytes.length, null);
+        } catch (IOException | RuntimeException e) {
             // The download itself succeeded; a missing archive copy must not
             // fail the user's export.
             log.warn("Could not archive export {}: {}", exportName, e.getMessage());

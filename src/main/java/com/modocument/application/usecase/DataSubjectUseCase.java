@@ -8,6 +8,7 @@ import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
+import com.modocument.application.port.FileStore;
 import com.modocument.doccreation.entity.DocContentBlock;
 import com.modocument.doccreation.repo.DocContentBlockJpaRepository;
 import com.modocument.doccreation.repo.DocImageAssetJpaRepository;
@@ -21,7 +22,7 @@ import com.modocument.infrastructure.extraction.sql.ExtractionProcessedRecordJpa
 import com.modocument.infrastructure.extraction.sql.ExtractionRawRecordJpaRepository;
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionProcessedRecordEntity;
 import com.modocument.infrastructure.extraction.sql.entity.ExtractionRawRecordEntity;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.store.FileStoreKeys;
 import com.modocument.infrastructure.persistence.ImportDetailsJpaRepository;
 import com.modocument.infrastructure.persistence.IngestionJobJpaRepository;
 import com.modocument.infrastructure.persistence.UploadedFileJpaRepository;
@@ -35,8 +36,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -88,7 +87,7 @@ public class DataSubjectUseCase {
     private final UploadedFileJpaRepository uploads;
     private final DocContentBlockJpaRepository docBlocks;
     private final DocImageAssetJpaRepository docAssets;
-    private final StorageProperties storage;
+    private final FileStore storage;
     private final AuditRecorder audit;
     private final ObjectMapper objectMapper;
 
@@ -100,7 +99,7 @@ public class DataSubjectUseCase {
                               UploadedFileJpaRepository uploads,
                               DocContentBlockJpaRepository docBlocks,
                               DocImageAssetJpaRepository docAssets,
-                              StorageProperties storage,
+                              FileStore storage,
                               AuditRecorder audit,
                               ObjectMapper objectMapper) {
         this.currentUser = currentUser;
@@ -186,7 +185,7 @@ public class DataSubjectUseCase {
         int bankId = currentUser.requireBankId();
         String subject = requireIdentifier(identifier);
         Scan scan = scan(subject);
-        List<Path> filesToDelete = new ArrayList<>();
+        List<String> filesToDelete = new ArrayList<>();
         Map<String, Integer> counts = new LinkedHashMap<>();
 
         // Ingestion jobs: rewrite the row arrays without the subject's rows.
@@ -212,15 +211,15 @@ public class DataSubjectUseCase {
                 var uploadRow = uploads.findByStoredNameAndBankId(job.getFileName(), bankId);
                 if (uploadRow.isPresent()) {
                     uploads.delete(uploadRow.get());
-                    filesToDelete.add(resolveUpload(uploadRow.get().getStoredName()));
+                    addUploadKey(filesToDelete, uploadRow.get().getStoredName());
                     uploadCount++;
                 }
             }
             // So do the export archive copies — they hold the exported rows.
-            Path ownerDir = storage.exportsDir().resolve("u" + job.getOwnerUserId());
             for (FileExportService.Format format : FileExportService.Format.values()) {
-                Path copy = ownerDir.resolve("job" + job.getIngestionJobId() + format.extension());
-                if (Files.exists(copy)) {
+                String copy = FileStoreKeys.exportCopy(job.getOwnerUserId(), job.getIngestionJobId(),
+                        format.extension());
+                if (storedFileExists(copy)) {
                     filesToDelete.add(copy);
                 }
             }
@@ -245,7 +244,7 @@ public class DataSubjectUseCase {
         for (UploadedFile upload : scan.nameMatchedUploads) {
             if (uploads.existsById(upload.getUploadedFileId())) {
                 uploads.delete(upload);
-                filesToDelete.add(resolveUpload(upload.getStoredName()));
+                addUploadKey(filesToDelete, upload.getStoredName());
                 uploadCount++;
             }
         }
@@ -256,7 +255,7 @@ public class DataSubjectUseCase {
         for (DocContentBlock block : scan.docBlockMatches) {
             if (block.getAssetId() != null) {
                 docAssets.findById(block.getAssetId()).ifPresent(asset -> {
-                    filesToDelete.add(resolveUpload(asset.getFileName()));
+                    addUploadKey(filesToDelete, asset.getFileName());
                     docAssets.delete(asset);
                 });
             }
@@ -273,7 +272,7 @@ public class DataSubjectUseCase {
                 .newValues(evidence)
                 .build());
 
-        AfterCommitFileDeleter.deleteAfterCommit(filesToDelete);
+        AfterCommitFileDeleter.deleteAfterCommit(storage, filesToDelete);
         log.info("DSR erase removed {} item(s) across {} store(s) for subject ref {}",
                 total, counts.size(), scan.subjectRef);
         return new EraseResult(total, counts);
@@ -506,13 +505,23 @@ public class DataSubjectUseCase {
         }
     }
 
-    private Path resolveUpload(String storedName) {
-        Path uploadsDir = storage.uploadsDir();
-        Path candidate = uploadsDir.resolve(storedName).normalize();
-        if (!candidate.startsWith(uploadsDir)) {
-            throw new IllegalArgumentException("Invalid stored file name: " + storedName);
+    /**
+     * The upload's store key; a legacy stored name the store cannot address
+     * (FileStoreKeys) is logged and skipped so the rest of the erase — rows
+     * included — still completes.
+     */
+    private static void addUploadKey(List<String> filesToDelete, String storedName) {
+        FileStoreKeys.tryUpload(storedName).ifPresentOrElse(filesToDelete::add,
+                () -> log.warn("DSR erase could not address stored file '{}'; its row was removed, "
+                        + "remove the file by hand", storedName));
+    }
+
+    private boolean storedFileExists(String key) {
+        try {
+            return storage.exists(key);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not check stored file " + key, e);
         }
-        return candidate;
     }
 
     // ------------------------------------------------------------ exporting
