@@ -31,7 +31,10 @@ import java.util.Optional;
  *       IDEMPOTENCY_KEY_IN_PROGRESS.</li>
  * </ul>
  * Runs under the client's tenant (the RLS-protected table is written as the
- * client's bank); expired keys of the bank are purged on each use.
+ * client's bank). An expired key counts as unused: its row is replaced on
+ * the next use. Every other expired row is removed by the daily
+ * {@code HousekeepingJob} in one batched sweep (ws27) — no longer by a
+ * bank-wide DELETE inside every request.
  */
 @Component
 public class IdempotencyStore {
@@ -82,9 +85,14 @@ public class IdempotencyStore {
         try {
             return newTx.execute(status -> {
                 Instant now = Instant.now();
-                keys.deleteExpired(client.bankId(), now);
                 Optional<IdempotencyKey> existing = keys.findByBankIdAndApiClientIdAndIdemKey(
                         client.bankId(), client.apiClientId(), idemKey);
+                if (existing.isPresent() && !existing.get().getExpiresAt().isAfter(now)) {
+                    // Past its TTL: forgotten, exactly as if the sweep had run.
+                    keys.delete(existing.get());
+                    keys.flush();
+                    existing = Optional.empty();
+                }
                 if (existing.isPresent()) {
                     IdempotencyKey row = existing.get();
                     if (!row.getRequestHash().equals(requestHash)) {

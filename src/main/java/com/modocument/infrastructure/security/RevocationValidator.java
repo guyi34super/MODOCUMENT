@@ -39,7 +39,11 @@ import java.util.UUID;
  *
  * <p>Deliberately ONE cheap primary-key-driven DB read per request and no
  * cache: a revocation must take effect on the very next request, and the
- * query is two unique-index probes. The bank status comes from the
+ * query is two unique-index probes. The same read also fetches
+ * MustChangePassword and keeps the row for the rest of the request as a
+ * {@link RequestPrincipalState} (ws27), so the
+ * {@link PasswordChangeRequiredGate} answers from it instead of reading
+ * AppUsers a second time. The bank status comes from the
  * {@link BankDirectory} (short-TTL cache; the Bank table is RLS-protected
  * and no tenant is bound while the token is being validated).
  *
@@ -63,7 +67,7 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
 
     private static final String QUERY =
             "SELECT u.TokenVersion AS currentVersion, u.Disabled AS disabled, "
-                    + "u.BankId AS bankId, "
+                    + "u.BankId AS bankId, u.MustChangePassword AS mustChange, "
                     + "EXISTS (SELECT 1 FROM RevokedToken r WHERE r.Jti = ?) AS revoked "
                     + "FROM AppUsers u WHERE u.AppUserId = ?";
 
@@ -105,11 +109,12 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
         }
         UUID jti = parseJti(token.getId());
 
-        Status status;
+        RequestPrincipalState status;
         try {
             status = jdbc.queryForObject(QUERY, (rs, rowNum) ->
-                    new Status(rs.getInt("currentVersion"), rs.getBoolean("disabled"),
-                            rs.getInt("bankId"), rs.getBoolean("revoked")), jti, userId);
+                    new RequestPrincipalState(userId, rs.getInt("currentVersion"),
+                            rs.getBoolean("disabled"), rs.getInt("bankId"),
+                            rs.getBoolean("revoked"), rs.getBoolean("mustChange")), jti, userId);
         } catch (EmptyResultDataAccessException userGone) {
             return failure("Token user no longer exists.");
         }
@@ -125,7 +130,7 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
         // Tokens from before the claim existed count as version 0.
         Object claim = token.getClaims().get(JwtService.CLAIM_TOKEN_VERSION);
         int tokenVersion = claim instanceof Number number ? number.intValue() : 0;
-        if (tokenVersion < status.currentVersion()) {
+        if (tokenVersion < status.tokenVersion()) {
             return failure("Token was invalidated by a credential or role change.");
         }
         if (bankDirectory.isSuspended(status.bankId())) {
@@ -133,6 +138,8 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
             // must not tell a caller that their bank was suspended.
             return failure("Token has been revoked.");
         }
+        // Only a token that passed every check leaves its row behind.
+        RequestPrincipalState.store(status);
         return OAuth2TokenValidatorResult.success();
     }
 
@@ -168,8 +175,5 @@ public class RevocationValidator implements OAuth2TokenValidator<Jwt> {
     private static OAuth2TokenValidatorResult failure(String reason) {
         return OAuth2TokenValidatorResult.failure(
                 new OAuth2Error(OAuth2ErrorCodes.INVALID_TOKEN, reason, null));
-    }
-
-    private record Status(int currentVersion, boolean disabled, int bankId, boolean revoked) {
     }
 }

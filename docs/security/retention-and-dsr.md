@@ -57,6 +57,29 @@ settings (the yml flag above still gates the schedule).
   removes the job row, its export archive copies and — when no other job
   references it — the uploaded file and its row, audited as `JOB_DELETED`.
 
+### Operational housekeeping (ws27, v1.2.0)
+
+A second daily job, `HousekeepingJob` (`modocument.housekeeping.cron`,
+04:07 by default, after the retention purge and the SoD scan;
+`modocument.housekeeping.enabled`, off in the test profile), removes
+operational rows that only ever grew. They hold no customer values:
+
+| Category | Table | Deleted when | Driver |
+|---|---|---|---|
+| Refresh tokens | `RefreshToken` | expired or revoked **more than 30 days** ago (`refresh-token-grace`) | Session hygiene |
+| Access-token denylist | `RevokedToken` | the token's own expiry has passed (+5 min clock-skew margin) | The token is dead anyway |
+| Integration run history | `IntegrationRun` + `IntegrationRunEvent` | finished (SUCCEEDED/FAILED/CANCELLED) longer ago than the bank's `integration.historyRetention` (7–400 days, default **90**), and no outbox row still points at the run | Operations |
+| Outbox | `OutboundDelivery` | DELIVERED or DEAD and older than the same window; PENDING rows are never touched | Operations |
+| Integration events | `IntegrationEvent` | older than the same window, unless a PENDING delivery still references the event | Operations |
+| Idempotency keys | `IdempotencyKey` | past their TTL (24 h) | Replaces the per-request delete |
+
+Each rule deletes in batches (`batch-size` rows per statement, at most
+`max-batches` statements per rule and bank per run), so one run is bounded
+and a backlog drains over several days. Every run writes one
+`HOUSEKEEPING_COMPLETED` audit event per bank with the counts (zero counts
+included); the platform-wide RevokedToken count goes on the platform
+bank's row. The audit trail itself is never touched.
+
 ## DSR runbook (search → export → erase)
 
 A data-subject request arrives (access or erasure). The handling Admin

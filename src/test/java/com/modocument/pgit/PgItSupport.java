@@ -100,10 +100,14 @@ public abstract class PgItSupport {
             }
 
             // The full production chain, as the owner: V1..V13 (role +
-            // policies) ..V20, then the afterMigrate RLS callback.
+            // policies) ..V20, then the afterMigrate RLS callback. Session
+            // (not transactional) migration lock, exactly as application.yml
+            // configures it: the ws27 CREATE INDEX CONCURRENTLY of V270 would
+            // otherwise wait forever for Flyway's own lock transaction.
             Flyway.configure()
                     .dataSource(jdbcUrl, ownerUser, ownerPassword)
                     .locations("classpath:db/migration")
+                    .configuration(java.util.Map.of("flyway.postgresql.transactional.lock", "false"))
                     .load()
                     .migrate();
 

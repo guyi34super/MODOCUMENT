@@ -13,7 +13,10 @@ import com.modocument.infrastructure.settings.IntegrationSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import jakarta.annotation.PreDestroy;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -24,6 +27,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The flow engine's clock (ws25): every 30 s ({@code @EnableScheduling} comes
@@ -48,6 +52,15 @@ import java.util.TreeSet;
  *   <li>due outbox deliveries are dispatched.</li>
  * </ol>
  * One bank's failure never starves the others.
+ *
+ * <p><b>Where it runs</b> (ws27): the schedule only HANDS the tick to a
+ * dedicated single-thread executor ({@code integration-tick-}) and returns,
+ * because outbound dispatch waits on bank endpoints (up to the connector
+ * timeouts per delivery). The shared {@code @Scheduled} pool — settings
+ * poll, alert sweep, agent offline sweep — is never held by a slow bank.
+ * One tick at a time: while a tick is still running, the next schedule
+ * firing is skipped (the following one picks the work up). Tests call
+ * {@link #tick()} directly, in their own thread.
  */
 @Component
 public class IntegrationScheduler {
@@ -64,6 +77,9 @@ public class IntegrationScheduler {
     private final IntegrationEngineProperties properties;
     private final TransactionTemplate readOnly;
     private final Clock clock;
+    /** The tick's own thread; at most one tick in flight, never queued. */
+    private final ThreadPoolTaskExecutor tickExecutor;
+    private final AtomicBoolean tickInFlight = new AtomicBoolean();
 
     public IntegrationScheduler(IntegrationFlowJpaRepository flows,
                                 IntegrationRunJpaRepository runRepository,
@@ -82,6 +98,12 @@ public class IntegrationScheduler {
         this.readOnly = new TransactionTemplate(transactionManager);
         this.readOnly.setReadOnly(true);
         this.clock = Clock.systemUTC();
+        this.tickExecutor = new ThreadPoolTaskExecutor();
+        tickExecutor.setCorePoolSize(1);
+        tickExecutor.setMaxPoolSize(1);
+        tickExecutor.setQueueCapacity(0);
+        tickExecutor.setThreadNamePrefix("integration-tick-");
+        tickExecutor.initialize();
     }
 
     @Scheduled(fixedDelayString = "${modocument.integration.engine.tick-ms:30000}",
@@ -90,11 +112,29 @@ public class IntegrationScheduler {
         if (!properties.isSchedulerEnabled()) {
             return;
         }
-        try {
-            tick();
-        } catch (RuntimeException e) {
-            log.error("Integration scheduler tick failed", e);
+        if (!tickInFlight.compareAndSet(false, true)) {
+            log.debug("Previous integration tick still running; skipping this one.");
+            return;
         }
+        try {
+            tickExecutor.execute(() -> {
+                try {
+                    tick();
+                } catch (RuntimeException e) {
+                    log.error("Integration scheduler tick failed", e);
+                } finally {
+                    tickInFlight.set(false);
+                }
+            });
+        } catch (TaskRejectedException e) {
+            tickInFlight.set(false);
+            log.warn("Integration tick could not be started (executor busy or shut down)");
+        }
+    }
+
+    @PreDestroy
+    void shutdownTickExecutor() {
+        tickExecutor.shutdown();
     }
 
     /** One tick over every bank with integration work; returns the runs this task started. */
