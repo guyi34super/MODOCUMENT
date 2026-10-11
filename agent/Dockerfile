@@ -1,19 +1,35 @@
 # MoDocument Connector Agent image (ws26, agent/README.md).
 #
-# Build context: agent/ (release.yml: `docker buildx build … agent`).
+# Build context: agent/, plus connector-core as a named context (release.yml:
+# `docker buildx build --build-context connector-core=connector-core … agent`).
 # Runtime: distroless Java 21, NON-ROOT (uid/gid 65532), no shell, no
 # package manager, NO EXPOSE — the agent has no inbound port. It writes only
 # to its state volume (/var/lib/modocument-agent) and /tmp, so it runs with
 # `--read-only --tmpfs /tmp`.
 
+# ---- connector-core sources ---------------------------------------------------
+# The agent's connectors are connector-core (docs/integration/
+# connector-sharing.md), a sibling of agent/ and so outside this build
+# context. It comes in as a NAMED build context, which replaces this stage:
+#   docker buildx build --build-context connector-core=connector-core agent
+# (release.yml does). Without it the build stops here with that hint.
+FROM maven:3.9-eclipse-temurin-21 AS connector-core
+RUN echo "agent/Dockerfile needs the connector-core sources: docker buildx build" \
+         "--build-context connector-core=connector-core agent" >&2 \
+    && exit 1
+
 # ---- build stage -----------------------------------------------------------
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
+COPY --from=connector-core pom.xml /core/pom.xml
+COPY --from=connector-core src /core/src
 COPY pom.xml .
 # Maven repository as a BuildKit cache mount (ws29; same id as the API
-# image, so both builds share one warm repository on a builder).
+# image, so both builds share one warm repository on a builder). connector-
+# core is installed first: the agent depends on it as a normal artifact.
 RUN --mount=type=cache,target=/root/.m2,id=modocument-m2,sharing=locked \
-    mvn -B -q dependency:go-offline
+    mvn -B -q -f /core/pom.xml -DskipTests install \
+    && mvn -B -q dependency:go-offline
 COPY src ./src
 # Release identity (same args as the API image; all optional):
 #   MODOCUMENT_VERSION  X.Y.Z or X.Y.Z-rc.N — must name pom.xml's version
@@ -28,6 +44,8 @@ RUN --mount=type=cache,target=/root/.m2,id=modocument-m2,sharing=locked \
         && ! printf '%s' "$BUILD_TIME" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'; then \
         echo "BUILD_TIME must be ISO-8601 UTC, e.g. 2026-10-10T12:00:00Z" >&2; exit 1; \
     fi; \
+    mvn -B -q -f /core/pom.xml -DskipTests \
+        ${BUILD_TIME:+-Dproject.build.outputTimestamp=$BUILD_TIME} install; \
     mvn -B -q -DskipTests ${BUILD_TIME:+-Dproject.build.outputTimestamp=$BUILD_TIME} package; \
     built="$(sed -n 's/^build\.version=//p' target/classes/META-INF/build-info.properties)"; \
     if [ -n "$MODOCUMENT_VERSION" ] && [ "${MODOCUMENT_VERSION%-rc.*}" != "$built" ]; then \

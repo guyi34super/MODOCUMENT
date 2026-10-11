@@ -1,5 +1,7 @@
 package com.modocument.infrastructure.integration.connector;
 
+import com.modocument.connector.core.support.ConnectorLimits;
+import com.modocument.connector.core.webhook.WebhookSigner;
 import com.modocument.application.port.integration.ConnectionContext;
 import com.modocument.application.port.integration.OutboundBatch;
 import com.modocument.application.port.integration.ReadBatch;

@@ -1,4 +1,4 @@
-package com.modocument.infrastructure.integration.connector;
+package com.modocument.connector.core.rest;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;

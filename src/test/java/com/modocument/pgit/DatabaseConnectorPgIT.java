@@ -9,7 +9,7 @@ import com.modocument.domain.model.integration.ConnectionMode;
 import com.modocument.domain.model.integration.ConnectionType;
 import com.modocument.domain.model.integration.PayloadFormat;
 import com.modocument.domain.model.integration.PayloadKind;
-import com.modocument.infrastructure.integration.connector.ConnectorLimits;
+import com.modocument.connector.core.support.ConnectorLimits;
 import com.modocument.infrastructure.integration.connector.DatabaseIntegrationConnector;
 import com.modocument.infrastructure.integration.connector.IntegrationConnectorProperties;
 import org.junit.jupiter.api.BeforeAll;

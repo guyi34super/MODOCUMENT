@@ -1,6 +1,5 @@
 package com.modocument.agent.exec;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.agent.cloud.Protocol;
 import com.modocument.agent.secrets.LocalSecrets;
 import org.apache.sshd.common.config.keys.KeyUtils;
@@ -27,9 +26,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * SFTP against an embedded MINA SSHD server: the pinned host key is
- * enforced (no trust on first use), reads pull matching files and move them
- * to processed/ once accepted, writes land atomically under their final
- * name.
+ * enforced (no trust on first use), reads pull matching files (as the shared
+ * AgentSftpFile records) and move them to processed/ once accepted, writes
+ * land atomically under their final name.
  */
 class SftpConnectorTest {
 
@@ -40,7 +39,7 @@ class SftpConnectorTest {
 
     private SshServer server;
     private String fingerprint;
-    private final SftpConnector connector = new SftpConnector(new ObjectMapper());
+    private final SftpConnector connector = new SftpConnector();
 
     @BeforeEach
     void startServer() throws Exception {
@@ -71,7 +70,8 @@ class SftpConnectorTest {
         Connector.ReadPage page = connector.read(task("READ", fingerprint,
                 Map.of("folder", "in", "glob", "*.csv", "afterRead", "MOVE")), null, 10);
         assertThat(page.records()).singleElement().satisfies(record -> {
-            assertThat(record).containsEntry("fileName", "a.csv").containsEntry("size", 5);
+            assertThat(record).containsEntry("fileName", "a.csv").containsEntry("remotePath", "in/a.csv")
+                    .containsEntry("size", 5L);
             assertThat(new String(Base64.getDecoder().decode((String) record.get("contentBase64")),
                     StandardCharsets.UTF_8)).isEqualTo("id\n1\n");
         });
@@ -88,9 +88,11 @@ class SftpConnectorTest {
         Connector.WriteOutcome outcome = connector.write(task("WRITE", fingerprint, Map.of("folder", "in")),
                 new Protocol.OutboundBatch("run-9-1", "VALIDATED_RECORDS", "CSV", List.of(), "out.csv",
                         "text/csv", "a,b\n".getBytes(StandardCharsets.UTF_8)));
-        assertThat(outcome.remoteReference()).isEqualTo("/exports/in/out.csv");
+        assertThat(outcome.remoteReference()).isEqualTo("out.csv");
         assertThat(Files.readString(root.resolve("files/exports/in/out.csv"))).isEqualTo("a,b\n");
-        assertThat(root.resolve("files/exports/in/.out.csv.part")).doesNotExist();
+        try (var files = Files.list(root.resolve("files/exports/in"))) {
+            assertThat(files.map(p -> p.getFileName().toString())).noneMatch(name -> name.startsWith(".tmp-"));
+        }
     }
 
     @Test

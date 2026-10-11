@@ -148,10 +148,12 @@ jobs:
             --cache-from type=gha,scope=release-frontend \
             --cache-to type=gha,scope=release-frontend,mode=max \
             --output type=oci,dest=dist/frontend.oci.tar frontend
-      # ws26: the Connector Agent image (agent/Dockerfile, its own context).
+      # ws26: the Connector Agent image (agent/Dockerfile, its own context;
+      # connector-core comes in as the named context the Dockerfile expects).
       - name: Build the agent image
         run: |
           docker buildx build --builder release --pull --provenance=false --sbom=false \
+            --build-context connector-core=connector-core \
             --build-arg MODOCUMENT_VERSION="$IMAGE_VERSION" \
             --build-arg GIT_COMMIT="$GITHUB_SHA" \
             --build-arg BUILD_TIME="$BUILD_TIME" \
@@ -163,11 +165,16 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-          cache-dependency-path: agent/pom.xml
+          cache-dependency-path: |
+            agent/pom.xml
+            connector-core/pom.xml
       # The standalone jar for banks that run the agent without Docker
-      # (its tests ran in the tests job: ci.yml "agent").
+      # (its tests ran in the tests job: ci.yml "agent"). connector-core, a
+      # sibling Maven project the agent depends on, is installed first.
       - name: Build the agent jar
         run: |
+          mvn -B -q -f connector-core/pom.xml -DskipTests \
+            -Dproject.build.outputTimestamp="$BUILD_TIME" install
           mvn -B -q -f agent/pom.xml -DskipTests \
             -Dproject.build.outputTimestamp="$BUILD_TIME" package
           version="${IMAGE_VERSION%%-rc.*}"

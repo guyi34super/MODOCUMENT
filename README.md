@@ -519,8 +519,14 @@ quota (`modocument.security.rate-limit.llm.*`); exceeding either returns `429`.
 ### Build & test
 
 ```bash
+mvn -B -f connector-core/pom.xml install   # the shared connector library, first
 mvn -B verify
 ```
+
+`connector-core/` (the DATABASE, REST_API, SFTP and WEBHOOK connectors the
+app and the on-prem agent share) is a sibling Maven project, not a module:
+install it once, and again after changing it
+(docs/integration/connector-sharing.md).
 
 ## Configuration
 

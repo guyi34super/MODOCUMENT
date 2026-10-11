@@ -2,6 +2,9 @@
 .github
 .claude
 target
+# connector-core's sources are part of the context (installed before the
+# app is built); its local build output is not.
+connector-core/target
 wwwroot
 *.md
 # ws24: the changelog ships in the image as classpath:release/CHANGELOG.md

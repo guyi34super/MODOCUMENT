@@ -114,6 +114,10 @@ fi
 
 # --- 2. Build -------------------------------------------------------------------
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
+  # connector-core: the sibling Maven project the backend and the agent depend on.
+  log "installing connector-core (tests skipped)"
+  (cd "$REPO_ROOT" && mvn -B -q -DskipTests -f connector-core/pom.xml install) >"$RUN_DIR/build-core.log" 2>&1 \
+    || { tail -50 "$RUN_DIR/build-core.log"; die "connector-core build failed"; }
   log "building backend jar (tests skipped)"
   (cd "$REPO_ROOT" && mvn -B -q -DskipTests ${E2E_MVN_ARGS:-} package) >"$RUN_DIR/build-backend.log" 2>&1 \
     || { tail -50 "$RUN_DIR/build-backend.log"; die "backend build failed"; }

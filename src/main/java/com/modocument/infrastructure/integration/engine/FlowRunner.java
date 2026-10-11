@@ -23,6 +23,7 @@ import com.modocument.domain.model.integration.RunStatus;
 import com.modocument.infrastructure.file.SupportedDocumentTypes;
 import com.modocument.infrastructure.file.UploadContentChecker;
 import com.modocument.infrastructure.file.UploadStorage;
+import com.modocument.infrastructure.integration.connector.ConnectorErrors;
 import com.modocument.infrastructure.persistence.IntegrationConnectionJpaRepository;
 import com.modocument.infrastructure.persistence.IntegrationFlowJpaRepository;
 import com.modocument.infrastructure.persistence.OutboundDeliveryJpaRepository;
@@ -177,15 +178,37 @@ public class FlowRunner {
 
             if (connection.getType() == ConnectionType.SFTP) {
                 ReadBatch batch = connector.read(context, spec, null, Math.min(cap, MAX_FILES_PER_RUN));
+                for (String note : batch.notes()) {
+                    runs.log(bankId, runId, "WARN", note);
+                }
                 Integer lastJob = null;
                 int ingested = 0;
+                // Two-phase read (connector-sharing.md): only files whose ingestion
+                // job exists are moved to processed/ (or deleted). A file that
+                // cannot be ingested stays in the folder, does not hold back the
+                // others, and fails the run with its reason.
+                List<ReadBatch.InboundFile> stored = new ArrayList<>();
+                RuntimeException firstFailure = null;
                 for (ReadBatch.InboundFile file : batch.files()) {
-                    IngestionJob job = ingestFile(flow, file, origin);
+                    IngestionJob job;
+                    try {
+                        job = ingestFile(flow, file, origin);
+                    } catch (RuntimeException e) {
+                        firstFailure = firstFailure == null ? e : firstFailure;
+                        runs.log(bankId, runId, "WARN", "File " + file.fileName()
+                                + " was not ingested and stays in the folder: " + ConnectorErrors.safeMessage(e));
+                        continue;
+                    }
+                    stored.add(file);
                     lastJob = job.getIngestionJobId();
                     ingested++;
                     runs.log(bankId, runId, job.getStatus() == JobStatus.FAILED ? "WARN" : "INFO",
                             "File " + file.fileName() + " → ingestion job " + lastJob + " ("
                                     + job.getCurrentStep() + ", " + job.getStatus() + ").");
+                }
+                batch.acknowledge(stored);
+                if (firstFailure != null) {
+                    throw firstFailure;
                 }
                 if (batch.hasMore()) {
                     runs.log(bankId, runId, "INFO", "More files are waiting; the next run takes them.");

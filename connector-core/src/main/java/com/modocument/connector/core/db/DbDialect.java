@@ -1,7 +1,7 @@
-package com.modocument.infrastructure.integration.connector;
+package com.modocument.connector.core.db;
 
-import com.modocument.domain.model.integration.DbVendor;
-import com.modocument.infrastructure.export.JdbcIdentifiers;
+import com.modocument.connector.core.support.ConnectorLimits;
+import com.modocument.connector.core.support.Specs;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -14,15 +14,16 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * Per-vendor SQL and JDBC URL generation for the DATABASE connector (ws25).
- * The URL is BUILT from the connection's structured config — never accepted
- * raw — and only allow-listed options with allow-listed values reach it
- * (the approach {@link JdbcIdentifiers} takes for export URLs, extended per
- * vendor): driver options that load classes, read local files, or run code
- * at connect time can never be set. Identifiers are validated with the
- * {@link JdbcIdentifiers} rule (ASCII letters, digits, underscore; no dots,
- * quotes, comments, unicode confusables) and quoted the vendor's way; values
- * only ever travel as bound parameters.
+ * Per-vendor SQL and JDBC URL generation for the DATABASE connector (ws25;
+ * server and agent) and the server's database export. The constants are the
+ * supported vendors ({@code vendor} config values). The URL is BUILT from
+ * the connection's structured config — never accepted raw — and only
+ * allow-listed options with allow-listed values reach it: driver options
+ * that load classes, read local files, or run code at connect time can never
+ * be set. Identifiers are validated with the {@link DbIdentifiers} rule
+ * (ASCII letters, digits, underscore; no dots, quotes, comments, unicode
+ * confusables) and quoted the vendor's way; values only ever travel as bound
+ * parameters.
  */
 public enum DbDialect {
 
@@ -176,10 +177,6 @@ public enum DbDialect {
         this.close = close;
     }
 
-    public static DbDialect of(DbVendor vendor) {
-        return valueOf(vendor.name());
-    }
-
     public String driverClass() {
         return driverClass;
     }
@@ -249,7 +246,7 @@ public enum DbDialect {
     // ---- SQL ----------------------------------------------------------------
 
     public String quote(String identifier) {
-        JdbcIdentifiers.requireValidIdentifier(identifier, "identifier");
+        DbIdentifiers.require(identifier, "identifier");
         return open + identifier + close;
     }
 

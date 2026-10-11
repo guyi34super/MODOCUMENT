@@ -43,10 +43,19 @@ WORKDIR /build
 # change never re-downloads what an earlier build on the same builder already
 # fetched. (CI's buildx gha cache stores layers, not cache mounts: a fresh
 # runner downloads the dependencies once per build, as before.) Resolving
-# them before COPY src keeps that warm-up keyed on pom.xml alone.
+# them before COPY src keeps that warm-up keyed on pom.xml (and the
+# connector-core sources) alone.
+#
+# connector-core (docs/integration/connector-sharing.md) is a sibling Maven
+# project the app depends on as a normal artifact: it is installed into the
+# repository first. The package step below installs it again: a no-op when
+# this layer's /root/.m2 cache is still warm, and correct when BuildKit
+# dropped the cache mount in between.
+COPY connector-core ./connector-core
 COPY pom.xml .
 RUN --mount=type=cache,target=/root/.m2,id=modocument-m2,sharing=locked \
-    mvn -B -q dependency:go-offline
+    mvn -B -q -f connector-core/pom.xml -DskipTests install \
+    && mvn -B -q dependency:go-offline
 
 COPY src ./src
 # CHANGELOG.md → classpath:release/CHANGELOG.md (pom.xml copy-resources) for
@@ -104,6 +113,8 @@ RUN --mount=type=cache,target=/root/.m2,id=modocument-m2,sharing=locked \
     if [ -n "$MAVEN_PROFILES" ] && ! printf '%s' "$MAVEN_PROFILES" | grep -Eq '^[a-z0-9-]+(,[a-z0-9-]+)*$'; then \
         echo "MAVEN_PROFILES must be a comma-separated list of profile ids" >&2; exit 1; \
     fi; \
+    mvn -B -q -f connector-core/pom.xml -DskipTests \
+        ${BUILD_TIME:+-Dproject.build.outputTimestamp=$BUILD_TIME} install; \
     mvn -B -q -DskipTests -Dmaven.gitcommitid.skip=true ${MAVEN_PROFILES:+-P$MAVEN_PROFILES} \
         ${BUILD_TIME:+-Dproject.build.outputTimestamp=$BUILD_TIME} package; \
     built="$(sed -n 's/^build\.version=//p' target/classes/META-INF/build-info.properties)"; \

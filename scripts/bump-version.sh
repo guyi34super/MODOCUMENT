@@ -5,8 +5,9 @@
 #
 # 1. checks the tree is in sync now (scripts/check-version-sync.sh) and that
 #    X.Y.Z is greater than the current version;
-# 2. sets X.Y.Z as the project <version> in pom.xml and agent/pom.xml (ws26;
-#    parent, dependency and plugin versions are untouched) and in
+# 2. sets X.Y.Z as the project <version> in pom.xml, agent/pom.xml (ws26) and
+#    connector-core/pom.xml (parent, dependency and plugin versions are
+#    untouched) and in
 #    frontend/package.json +
 #    package-lock.json (top-level and packages[""]);
 # 3. turns the [Unreleased] entries of CHANGELOG.md into
@@ -49,7 +50,6 @@ date="${RELEASE_DATE:-$(date -u +%Y-%m-%d)}"
   || { echo "bump-version: RELEASE_DATE '$date' is not YYYY-MM-DD" >&2; exit 2; }
 
 pom="$root/pom.xml"
-agent_pom="$root/agent/pom.xml"
 pkg="$root/frontend/package.json"
 lock="$root/frontend/package-lock.json"
 changelog="$root/CHANGELOG.md"
@@ -87,12 +87,14 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 pom_set_version "$pom" "$new" > "$tmpdir/pom.xml"
-if [ -f "$agent_pom" ]; then
-  pom_set_version "$agent_pom" "$new" > "$tmpdir/agent-pom.xml"
-  [ "$(pom_version "$tmpdir/agent-pom.xml")" = "$new" ] || { echo "bump-version: agent/pom.xml rewrite failed" >&2; exit 1; }
-  changed="$(diff "$agent_pom" "$tmpdir/agent-pom.xml" | grep -c '^>' || true)"
-  [ "$changed" -le 1 ] || { echo "bump-version: agent/pom.xml rewrite touched $changed lines (expected <= 1)" >&2; exit 1; }
-fi
+for sibling in $SIBLING_POMS; do
+  [ -f "$root/$sibling" ] || continue
+  out="$tmpdir/${sibling//\//-}"
+  pom_set_version "$root/$sibling" "$new" > "$out"
+  [ "$(pom_version "$out")" = "$new" ] || { echo "bump-version: $sibling rewrite failed" >&2; exit 1; }
+  changed="$(diff "$root/$sibling" "$out" | grep -c '^>' || true)"
+  [ "$changed" -le 1 ] || { echo "bump-version: $sibling rewrite touched $changed lines (expected <= 1)" >&2; exit 1; }
+done
 package_json_set_version "$pkg" "$new" > "$tmpdir/package.json"
 package_lock_set_version "$lock" "$new" > "$tmpdir/package-lock.json"
 
@@ -130,9 +132,11 @@ for pair in "$pom:pom.xml" "$pkg:package.json" "$lock:package-lock.json"; do
 done
 
 cp "$tmpdir/pom.xml" "$pom"
-if [ -f "$agent_pom" ]; then
-  cp "$tmpdir/agent-pom.xml" "$agent_pom"
-fi
+for sibling in $SIBLING_POMS; do
+  if [ -f "$root/$sibling" ]; then
+    cp "$tmpdir/${sibling//\//-}" "$root/$sibling"
+  fi
+done
 cp "$tmpdir/package.json" "$pkg"
 cp "$tmpdir/package-lock.json" "$lock"
 cp "$tmpdir/CHANGELOG.md" "$changelog"

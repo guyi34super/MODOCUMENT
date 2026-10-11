@@ -1,12 +1,12 @@
 package com.modocument.infrastructure.export;
 
+import com.modocument.connector.core.db.DbIdentifiers;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 
 import java.sql.Driver;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * SQL-injection-safe JDBC helpers shared by database export and database
@@ -15,9 +15,6 @@ import java.util.regex.Pattern;
  * drivers actually on the classpath are accepted.
  */
 public final class JdbcIdentifiers {
-
-    /** Conservative identifier rule for table/column names. */
-    private static final Pattern IDENTIFIER = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]{0,127}$");
 
     /** Drivers actually on the classpath; other targets need a driver dependency first. */
     private static final Map<String, String> DRIVERS_BY_URL_PREFIX = Map.of(
@@ -50,13 +47,9 @@ public final class JdbcIdentifiers {
     private JdbcIdentifiers() {
     }
 
+    /** The identifier rule for table/column names, shared with the connectors ({@link DbIdentifiers}). */
     public static String requireValidIdentifier(String value, String what) {
-        if (value == null || !IDENTIFIER.matcher(value).matches()) {
-            throw new IllegalArgumentException(
-                    "Invalid " + what + " '" + value + "': only letters, digits, and underscores "
-                            + "are allowed (max 128 chars, must not start with a digit).");
-        }
-        return value;
+        return DbIdentifiers.require(value, what);
     }
 
     public static String quote(String identifier) {

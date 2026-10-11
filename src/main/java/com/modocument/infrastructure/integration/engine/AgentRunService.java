@@ -2,7 +2,7 @@ package com.modocument.infrastructure.integration.engine;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.modocument.application.port.integration.AgentRunPort;
-import com.modocument.application.port.integration.AgentSftpFile;
+import com.modocument.connector.core.wire.AgentSftpFile;
 import com.modocument.application.port.integration.OutboundBatch;
 import com.modocument.application.port.integration.RecordsIngestion;
 import com.modocument.domain.entity.IntegrationConnection;
