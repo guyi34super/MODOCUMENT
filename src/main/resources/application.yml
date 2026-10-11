@@ -48,6 +48,25 @@ spring:
     username: ${MODOCUMENT_DB_USERNAME:modocument}
     password: ${MODOCUMENT_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
+    # ws27 (v1.2.0): explicit connection pool sizing instead of Hikari's
+    # defaults (10 connections, all of them kept idle).
+    #  * maximum-pool-size: one request can hold TWO connections at once —
+    #    its own transaction plus a REQUIRES_NEW write (DENIED/FAILED audit
+    #    rows, idempotency reservations, settings writes) — and the
+    #    integration workers, extraction worker and scheduler threads draw
+    #    from the same pool. 20 per task leaves headroom for that; keep
+    #    tasks x pool below the database's max_connections (RDS: about
+    #    LEAST(DBInstanceClassMemory/9531392, 5000)).
+    #  * leak-detection-threshold: a connection held longer than 30 s logs a
+    #    WARN with the borrowing stack trace (diagnostic only; the
+    #    connection is not taken away). The test profile turns it off.
+    hikari:
+      maximum-pool-size: ${MODOCUMENT_DB_POOL_MAX:20}
+      minimum-idle: ${MODOCUMENT_DB_POOL_MIN_IDLE:5}
+      # Milliseconds (bound straight onto HikariDataSource setters).
+      connection-timeout: 10000
+      leak-detection-threshold: ${MODOCUMENT_DB_LEAK_DETECTION_MS:30000}
+      pool-name: modocument-db
   flyway:
     # Flyway owns the schema in production (src/main/resources/db/migration);
     # the H2 local/test profiles disable it and use ddl-auto: create instead.
@@ -64,6 +83,14 @@ spring:
     url: ${spring.datasource.url}
     user: ${MODOCUMENT_FLYWAY_USERNAME:${spring.datasource.username}}
     password: ${MODOCUMENT_FLYWAY_PASSWORD:${spring.datasource.password}}
+    postgresql:
+      # ws27: a session-level advisory lock instead of Flyway's transactional
+      # one. V270 builds its indexes CONCURRENTLY (non-transactional script),
+      # and CREATE INDEX CONCURRENTLY waits for every older transaction —
+      # including the lock transaction Flyway would hold open itself, a
+      # self-deadlock. The session lock still serialises tasks that start
+      # at the same time.
+      transactional-lock: false
   jpa:
     open-in-view: false
     hibernate:
@@ -72,6 +99,29 @@ spring:
       naming:
         # Keep the exact PascalCase table/column names from the original schema.
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    properties:
+      hibernate:
+        # ws27: JDBC batching for multi-row writes (saveAll, cascades, dirty
+        # entities flushed together). Entities with IDENTITY ids still insert
+        # one row per statement (Hibernate needs each generated key back);
+        # their UPDATEs and DELETEs batch, as do inserts of entities with
+        # assigned ids (UUIDv7 AuditEvent, RefreshToken).
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+  task:
+    scheduling:
+      # ws27: @Scheduled jobs (settings poll, alert sweep, agent offline
+      # sweep, integration tick, extraction retry sweeper, retention, SoD,
+      # housekeeping) share this pool instead of ONE thread, so a slow job
+      # never delays the others. Each job still never overlaps itself. The
+      # integration tick additionally hands its work to its own executor
+      # (IntegrationScheduler), since outbound dispatch waits on bank
+      # endpoints.
+      pool:
+        size: ${MODOCUMENT_SCHEDULER_POOL_SIZE:4}
+      thread-name-prefix: modocument-sched-
   servlet:
     multipart:
       max-file-size: 50MB
@@ -231,6 +281,23 @@ modocument:
     customer-data-days: ${MODOCUMENT_RETENTION_DAYS:30}
     # Daily, off-peak; six-field Spring cron (seconds first).
     cron: ${MODOCUMENT_RETENTION_CRON:0 41 2 * * *}
+  housekeeping:
+    # ws27 (v1.2.0) daily housekeeping (HousekeepingJob): deletes RefreshToken
+    # rows expired/revoked > 30 days ago, RevokedToken rows past their token
+    # expiry, finished integration runs (+ run logs), DELIVERED/DEAD outbox
+    # rows and integration events older than each bank's
+    # integration.historyRetention setting (default 90 days), and expired
+    # Idempotency-Key rows. Audited HOUSEKEEPING_COMPLETED per bank (counts).
+    # The flag gates only the schedule.
+    enabled: ${MODOCUMENT_HOUSEKEEPING_ENABLED:true}
+    # Daily, after the retention purge and the SoD scan; six-field Spring cron.
+    cron: ${MODOCUMENT_HOUSEKEEPING_CRON:0 7 4 * * *}
+    # Bounded per run: at most batch-size x max-batches rows per rule and
+    # bank, one short transaction per batch; a backlog drains over days.
+    batch-size: 500
+    max-batches: 100
+    refresh-token-grace: 30d
+    revoked-token-grace: 5m
   sod:
     # Nightly separation-of-duties scan (ws11, SEC-024 layer 3): re-verifies
     # per bank that no APPLIED change was approved by its own maker and no

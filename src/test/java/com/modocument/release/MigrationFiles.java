@@ -21,6 +21,9 @@ final class MigrationFiles {
     /** Flyway's versioned-migration file name: V&lt;version&gt;__&lt;description&gt;.sql. */
     static final Pattern VERSIONED = Pattern.compile("^V(\\d+(?:[._]\\d+)*)__(.+)\\.sql$");
 
+    /** A Flyway script config of one migration: V&lt;version&gt;__&lt;description&gt;.sql.conf. */
+    static final Pattern SCRIPT_CONFIG = Pattern.compile("^(V\\d+(?:[._]\\d+)*__.+\\.sql)\\.conf$");
+
     /** One versioned migration. */
     record Migration(Path path, String fileName, String version, int major, String description) {
 

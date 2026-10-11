@@ -110,7 +110,7 @@ public class AlertSweepJob {
     private List<AlertLog> evaluate(AlertRule rule, Instant now) throws Exception {
         Instant since = now.minus(rule.window());
         // runAsSystem: the cross-bank aggregate read (see class javadoc).
-        List<AuditFacts> rows = TenantContext.runAsSystem(() -> reader.matching(rule, since));
+        List<AuditFacts> rows = TenantContext.runAsSystem(() -> reader.matching(rule, since, now));
         if (rows.size() >= AuditWindowReader.MAX_ROWS) {
             log.warn("Windowed rule {} hit the {}-row read cap; counts are lower bounds",
                     rule.name(), AuditWindowReader.MAX_ROWS);

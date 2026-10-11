@@ -219,6 +219,14 @@ public final class SettingDefinitions {
                     .unit("days")
                     .property("modocument.retention.customer-data-days")
                     .defaultValue("30").range("1", "30").build(),
+            builder(AUDIT_READ_AUDIT_ENABLED, BOOLEAN).platformControlled().security()
+                    .group(SettingGroup.DATA_PROTECTION)
+                    .label("Audit views of sensitive data")
+                    .description("Record who viewed customer data (job data, extraction "
+                            + "records, the user list, data-subject searches) in the audit "
+                            + "trail, once per person, record and hour. Set by the platform "
+                            + "owner, per bank.")
+                    .defaultValue("true").build(),
             builder(MASKING_SCREEN_WORKING, BOOLEAN).bank().security()
                     .group(SettingGroup.DATA_PROTECTION)
                     .label("Mask PII in the editing wizard")
@@ -436,7 +444,14 @@ public final class SettingDefinitions {
                     .group(SettingGroup.INTEGRATIONS)
                     .label("Agent offline after")
                     .description("A Connector Agent silent for this long is shown offline.")
-                    .defaultValue("2m").range("1m", "60m").build());
+                    .defaultValue("2m").range("1m", "60m").build(),
+            builder(INTEGRATION_HISTORY_RETENTION, DURATION).bank().operational()
+                    .group(SettingGroup.INTEGRATIONS)
+                    .label("Integration history kept for")
+                    .description("Finished runs with their logs, delivered or dead-lettered "
+                            + "outbound deliveries and integration events older than this "
+                            + "are deleted by the daily housekeeping.")
+                    .defaultValue("90d").range("7d", "400d").build());
 
     /** A per-user endpoint bucket of modocument.ratelimit (1 permit up to 10x the default). */
     private static SettingDefinition bucket(String key, String property, String label,

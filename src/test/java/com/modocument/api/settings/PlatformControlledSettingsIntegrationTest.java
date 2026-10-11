@@ -72,7 +72,9 @@ class PlatformControlledSettingsIntegrationTest extends SettingsIntegrationSuppo
         int bankId = bank.getBankId();
         JsonNode page = body(getForBank(platformBearer(platformAdmin), bankId)
                 .andExpect(status().isOk()));
-        assertThat(keys(page)).containsExactly(SettingKeys.INTEGRATION_ALLOW_OAUTH2, API_KEYS,
+        // ws27 adds the bank's sensitive-read audit switch (Data protection tab).
+        assertThat(keys(page)).containsExactly(SettingKeys.AUDIT_READ_AUDIT_ENABLED,
+                SettingKeys.INTEGRATION_ALLOW_OAUTH2, API_KEYS,
                 SettingKeys.INTEGRATION_ALLOW_MTLS);
         assertThat(setting(page, API_KEYS).get("version").asInt()).isZero();
 

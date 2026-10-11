@@ -291,11 +291,13 @@ class SettingsCatalogueSafetyTest {
     @Test
     void platformControlledSettingsAreTheAuthMethodFlagsOfABank() {
         // Only the platform sets them per bank; a bank administrator sees them
-        // read-only (SettingChangeService refuses the bank layer).
+        // read-only (SettingChangeService refuses the bank layer). ws27 adds
+        // the bank's sensitive-read audit switch.
         assertThat(SettingDefinitions.ALL)
                 .filteredOn(SettingDefinition::platformControlled)
                 .extracting(SettingDefinition::key)
-                .containsExactly(SettingKeys.INTEGRATION_ALLOW_OAUTH2,
+                .containsExactly(SettingKeys.AUDIT_READ_AUDIT_ENABLED,
+                        SettingKeys.INTEGRATION_ALLOW_OAUTH2,
                         SettingKeys.INTEGRATION_ALLOW_API_KEYS, SettingKeys.INTEGRATION_ALLOW_MTLS);
         assertThat(SettingDefinitions.ALL)
                 .filteredOn(SettingDefinition::platformControlled)

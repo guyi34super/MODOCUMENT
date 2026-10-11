@@ -175,12 +175,47 @@ class FlywayVersionRangeTest {
                 .filter(name -> !name.equals("RANGES.md"))
                 .filter(name -> !MigrationFiles.VERSIONED.matcher(name).matches())
                 .filter(name -> !CALLBACK.matcher(name).matches())
+                .filter(name -> !MigrationFiles.SCRIPT_CONFIG.matcher(name).matches())
                 .toList();
 
         assertThat(unexpected)
-                .as("Only V{n}__*.sql migrations and Flyway callbacks (afterMigrate*.sql) belong here; "
-                        + "no undo (U*) or repeatable (R__*) scripts, no stray files Flyway would ignore")
+                .as("Only V{n}__*.sql migrations, their Flyway script configs (V{n}__*.sql.conf) "
+                        + "and Flyway callbacks (afterMigrate*.sql) belong here; no undo (U*) or "
+                        + "repeatable (R__*) scripts, no stray files Flyway would ignore")
                 .isEmpty();
+    }
+
+    /**
+     * ws27: a Flyway script config ({@code V270__….sql.conf}) sits next to
+     * the migration it configures and may only switch the transaction off
+     * (needed for CREATE INDEX CONCURRENTLY) — never re-route or re-encode a
+     * migration behind the reviewers' back.
+     */
+    @Test
+    void scriptConfigsBelongToAMigrationAndOnlyDisableTheTransaction() throws Exception {
+        List<String> names = MigrationFiles.fileNames();
+        List<String> problems = new ArrayList<>();
+        for (String name : names) {
+            Matcher config = MigrationFiles.SCRIPT_CONFIG.matcher(name);
+            if (!config.matches()) {
+                continue;
+            }
+            String migration = config.group(1);
+            if (!names.contains(migration)) {
+                problems.add(name + ": no migration " + migration + " next to it");
+            }
+            for (String line : Files.readAllLines(MigrationFiles.FOLDER.resolve(name))) {
+                String setting = line.strip();
+                if (setting.isEmpty() || setting.startsWith("#")) {
+                    continue;
+                }
+                if (!setting.replace(" ", "").equals("executeInTransaction=false")) {
+                    problems.add(name + ": unexpected setting '" + setting
+                            + "' (only executeInTransaction=false is allowed)");
+                }
+            }
+        }
+        assertThat(problems).isEmpty();
     }
 
     @Test

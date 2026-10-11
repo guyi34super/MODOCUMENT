@@ -47,6 +47,8 @@ public final class SettingKeys {
     public static final String EXPORT_CAP_ADMIN = "export.cap.admin";
     public static final String RETENTION_ENABLED = "retention.enabled";
     public static final String RETENTION_CUSTOMER_DATA_DAYS = "retention.customerDataDays";
+    /** ws27: platform-controlled per bank; SE2's sensitive-read audit (SENSITIVE_DATA_VIEWED). */
+    public static final String AUDIT_READ_AUDIT_ENABLED = "audit.readAuditEnabled";
     public static final String MASKING_SCREEN_WORKING = "privacy.masking.screenWorking";
     public static final String PRIVACY_TOKENIZE_PII = "privacy.tokenizePii";
     public static final String AI_ENABLED = "ai.enabled";
@@ -113,4 +115,6 @@ public final class SettingKeys {
     public static final String INTEGRATION_ALLOW_MTLS = "integration.auth.allowMtls";
     public static final String INTEGRATION_AGENT_HEARTBEAT_TIMEOUT =
             "integration.agentHeartbeatTimeout";
+    /** ws27: run history, terminal deliveries and events older than this are purged. */
+    public static final String INTEGRATION_HISTORY_RETENTION = "integration.historyRetention";
 }

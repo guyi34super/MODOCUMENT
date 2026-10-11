@@ -100,7 +100,16 @@ ALTER TABLE AppUsers
   - carries a `wsNN` that does not own its range.
 - From V20 on, files are named `V{n}__ws{NN}_{lower_case_description}.sql`.
 - The folder holds only versioned migrations, Flyway callbacks
-  (`afterMigrate*.sql`) and `RANGES.md`.
+  (`afterMigrate*.sql`), `RANGES.md` and Flyway script configs
+  (`V{n}__….sql.conf`, next to their migration). A script config may only
+  say `executeInTransaction=false`: that is how a migration builds indexes
+  with `CREATE INDEX CONCURRENTLY` (ws27 `V270`), which cannot run in a
+  transaction. Such a file contains only `CREATE INDEX CONCURRENTLY IF NOT
+  EXISTS` statements, since nothing else in it would be rolled back on a
+  failure. The Flyway migration lock is a session lock
+  (`spring.flyway.postgresql.transactional-lock: false`), because
+  `CONCURRENTLY` would otherwise wait forever for Flyway's own lock
+  transaction.
 - Never edit or rename a migration that has been applied anywhere,
   including staging. Flyway's checksum validation stops the app on start.
 

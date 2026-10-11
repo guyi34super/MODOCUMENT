@@ -207,6 +207,7 @@ application.yml has exactly one threshold and one window setting
 | `export.cap.admin` | Data protection | BANK | SECURITY | INT | 50000 rows | 0 – 500000 |  |  | `modocument.export.caps.ADMIN` |
 | `retention.enabled` | Data protection | BANK | SECURITY | BOOLEAN | true | true | **locked** |  | `modocument.retention.enabled` |
 | `retention.customerDataDays` | Data protection | BANK | SECURITY | INT | 30 days | 1 – 30 |  |  | `modocument.retention.customer-data-days` |
+| `audit.readAuditEnabled` | Data protection | BANK (platform-set) | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
 | `privacy.masking.screenWorking` | Data protection | BANK | SECURITY | BOOLEAN | false | true, false |  |  | `modocument.privacy.masking.screen-working` |
 | `privacy.tokenizePii` | Data protection | BANK | SECURITY | BOOLEAN | true | true | **locked** |  | `aifiles.privacy.tokenize-pii` |
 | `ai.enabled` | Data protection | BANK | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
@@ -252,4 +253,5 @@ application.yml has exactly one threshold and one window setting
 | `integration.auth.allowApiKeys` | Integrations | BANK (platform-set) | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
 | `integration.auth.allowMtls` | Integrations | BANK (platform-set) | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
 | `integration.agentHeartbeatTimeout` | Integrations | BANK | OPERATIONAL | DURATION | 2m | 1m – 1h |  |  | — (code default) |
+| `integration.historyRetention` | Integrations | BANK | OPERATIONAL | DURATION | 90d | 7d – 400d |  |  | — (code default) |
 <!-- END GENERATED -->

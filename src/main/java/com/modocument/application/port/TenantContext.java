@@ -163,6 +163,14 @@ import java.util.concurrent.Callable;
  *       {@code runAs(bank)} per bank so each bank's purge and its
  *       RETENTION_PURGE_COMPLETED audit event run strictly inside that
  *       tenant.</li>
+ *   <li>{@code HousekeepingJob#runOnce} — the ws27 daily housekeeping
+ *       (token, integration-history and idempotency-key cleanup), the same
+ *       shape as the retention sweep: {@code runAsSystem} to list the
+ *       RLS-protected Bank table and to sweep the non-tenant RevokedToken
+ *       denylist (jti + expiry only, no BankId), then {@code runAs(bank)}
+ *       per bank so each bank's batched deletes and its
+ *       HOUSEKEEPING_COMPLETED audit event (counts only) run strictly
+ *       inside that tenant.</li>
  *   <li>{@code SodScanJob#runOnce} — the ws11 nightly separation-of-duties
  *       scan (and its manual admin trigger): the same shape as the
  *       retention sweep — {@code runAsSystem} for the cross-tenant bank
