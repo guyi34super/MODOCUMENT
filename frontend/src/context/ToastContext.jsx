@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Spinner } from '../components/ui';
 
 const ToastContext = createContext(null);
@@ -42,6 +42,16 @@ export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const nextId = useRef(1);
   const timers = useRef(new Map());
+
+  // Clear pending auto-dismiss timers when the provider unmounts, so none
+  // fires into an unmounted tree (or a torn-down test environment).
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach((timer) => clearTimeout(timer));
+      pending.clear();
+    };
+  }, []);
 
   const dismiss = useCallback((id) => {
     const timer = timers.current.get(id);
