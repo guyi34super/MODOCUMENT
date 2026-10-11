@@ -96,7 +96,7 @@ jobs:
       - run: mvn -B verify -Ppostgres-it -DskipUTs=true
 
   # ws29: the FileStore contract against S3 (S3FileStore on a Testcontainers
-  # MinIO, src/s3-it/java). Failsafe only, like backend-postgres.
+  # Adobe S3Mock, src/s3-it/java). Failsafe only, like backend-postgres.
   storage-s3:
     runs-on: ubuntu-latest
     steps:

@@ -287,7 +287,7 @@ modocument:
       # On-disk LRU cache (java.io.tmpdir) for FileStore.localCopy downloads
       # (parsers, LibreOffice), in MiB.
       temp-cache-mb: ${MODOCUMENT_STORAGE_S3_TEMP_CACHE_MB:512}
-      # S3-compatible endpoint (MinIO in tests); empty on AWS.
+      # S3-compatible endpoint (S3Mock in tests); empty on AWS.
       endpoint: ${MODOCUMENT_STORAGE_S3_ENDPOINT:}
       path-style: ${MODOCUMENT_STORAGE_S3_PATH_STYLE:false}
   privacy:

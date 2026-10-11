@@ -40,7 +40,7 @@ import static org.mockito.Mockito.when;
 /**
  * S3FileStore's request shaping and error translation against a mocked SDK
  * client (the default suite has no Docker). The behaviour contract against a
- * real S3 API runs in {@code S3FileStoreS3IT} (-Ps3-it, MinIO).
+ * real S3 API runs in {@code S3FileStoreS3IT} (-Ps3-it, S3Mock).
  */
 class S3FileStoreTest {
 

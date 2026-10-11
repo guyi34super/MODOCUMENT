@@ -503,16 +503,10 @@
 
         <!-- mvn -B verify -Ps3-it -DskipUTs=true — the FileStore contract
              suite (ws29, src/s3-it/java/**/*S3IT.java) against S3FileStore
-             on a Testcontainers MinIO. Needs Docker (CI storage-s3 job). -->
+             on a Testcontainers Adobe S3Mock (a generic container, no extra
+             module). Needs Docker (CI storage-s3 job). -->
         <profile>
             <id>s3-it</id>
-            <dependencies>
-                <dependency>
-                    <groupId>org.testcontainers</groupId>
-                    <artifactId>minio</artifactId>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
             <build>
                 <plugins>
                     <plugin>

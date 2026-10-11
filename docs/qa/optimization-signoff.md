@@ -31,7 +31,7 @@ Conditions:
    delete after a purge/erase is never retried) are fixed before `v1.2.0`
    (final), or explicitly waived by the Supervisor.~~ **Met — fixed after
    rc.1** (§4a): the repros run enabled and pass.
-3. The items of §5 that need Docker or AWS (image size and CDS start, MinIO
+3. The items of §5 that need Docker or AWS (image size and CDS start, the
    S3 contract IT, `terraform plan` incl. CloudFront) are checked in CI /
    on staging before `v1.2.0`.
 4. ~~Supervisor decision on OBS-01 (the `access-denied-burst` rule counts
@@ -146,7 +146,7 @@ plus the same H2 suite. No route or settings-catalogue change.
 |---|---|---|
 | Container image size, AppCDS start time | D7 | CI image job: `docker image inspect` size against the v1.1.0 image; start log "Started … in" with and without `MODOCUMENT_CDS=off` |
 | Tesseract in the runtime image: an image-only PDF yields text | D6 | CI image smoke test (`OcrServiceTest#theDebianPackagesMakeOcrAvailable` runs where the packages are) |
-| S3 file store against MinIO (the shared `FileStoreContract`, incl. traversal) | F1, F2, F4 | `mvn -B verify -Ps3-it` (Testcontainers) in CI |
+| S3 file store against S3Mock (the shared `FileStoreContract`, incl. traversal) | F1, F2, F4 | `mvn -B verify -Ps3-it` (Testcontainers) in CI |
 | `terraform plan`: right-sized ECS, S3 bucket/KMS, CloudFront `/assets/*` CachingOptimized + compression | C7 | CI `terraform validate` + a staging `plan` |
 | nginx in the image (vs the local nginx 1.24 used here) | C1–C6 | CI `docker-compose.e2e.yml` run; same `perf/nginx-check.sh` checks apply with `NGINX_API_UPSTREAM` |
 | E2E SFTP (AC-INT-15) and mTLS listener (AC-INT-21) | X1 | CI E2E job with the compose bank simulator |

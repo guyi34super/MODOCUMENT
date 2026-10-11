@@ -538,5 +538,5 @@ mapping test), the agent build, `terraform fmt -check`/`validate` for both
 environments, `actionlint`, the AppCDS training run and timing against the
 extracted layers, Tesseract via tess4j on Ubuntu 24.04. Not verified (no
 Docker daemon, no AWS): the image build itself, the S3 contract suite
-against MinIO (CI job `storage-s3`), `terraform plan/apply`, the gha build
+against S3Mock (CI job `storage-s3`), `terraform plan/apply`, the gha build
 cache.

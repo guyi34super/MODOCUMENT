@@ -82,7 +82,7 @@ public class FileStoreConfiguration {
             builder.region(Region.of(region.strip()));
         }
         if (endpoint != null && !endpoint.isBlank()) {
-            // An S3-compatible store (MinIO): checksums only where the S3 API
+            // An S3-compatible store (MinIO, S3Mock): checksums only where the S3 API
             // requires them — not every implementation accepts the SDK's
             // default trailing CRC checksums.
             builder.endpointOverride(URI.create(endpoint.strip()))

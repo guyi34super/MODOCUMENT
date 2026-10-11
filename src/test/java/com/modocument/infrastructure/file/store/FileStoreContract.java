@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The behaviour every {@link FileStore} must share (ws29, contracts §7):
  * {@link LocalFileStoreTest} runs it on disk in the default suite, and
- * {@code S3FileStoreS3IT} runs the SAME assertions against MinIO in the
+ * {@code S3FileStoreS3IT} runs the SAME assertions against S3Mock in the
  * {@code -Ps3-it} profile (CI), so local and S3 cannot drift apart.
  */
 public abstract class FileStoreContract {

@@ -7,7 +7,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.testcontainers.containers.MinIOContainer;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -32,16 +33,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The FileStore contract against a real S3 API (ws29): S3FileStore on a
- * Testcontainers MinIO. Run with {@code mvn -B verify -Ps3-it -DskipUTs=true}
+ * Testcontainers Adobe S3Mock (an S3-compatible server; the MinIO images
+ * left Docker Hub). Run with {@code mvn -B verify -Ps3-it -DskipUTs=true}
  * (needs Docker — CI's storage-s3 job). Each test gets its own key prefix,
  * so the contract's list assertions see only their own objects.
  */
 @Testcontainers
 class S3FileStoreS3IT extends FileStoreContract {
 
-    /** A pinned MinIO release (the tag the Testcontainers MinIO module documents). */
+    /** A pinned S3Mock release; port 9090 is its plain-HTTP S3 endpoint. */
     @Container
-    static final MinIOContainer MINIO = new MinIOContainer("minio/minio:RELEASE.2023-09-04T19-57-37Z");
+    @SuppressWarnings("resource")
+    static final GenericContainer<?> S3 = new GenericContainer<>("adobe/s3mock:5.2.3")
+            .withExposedPorts(9090)
+            .waitingFor(Wait.forListeningPort());
 
     private static final String BUCKET = "modocument-files-it";
     private static S3Client client;
@@ -56,11 +61,11 @@ class S3FileStoreS3IT extends FileStoreContract {
     @BeforeAll
     static void createBucket() {
         client = S3Client.builder()
-                .endpointOverride(URI.create(MINIO.getS3URL()))
+                .endpointOverride(URI.create("http://" + S3.getHost() + ":" + S3.getMappedPort(9090)))
                 .forcePathStyle(true)
                 .region(Region.EU_WEST_1)
                 .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(MINIO.getUserName(), MINIO.getPassword())))
+                        AwsBasicCredentials.create("it-access-key", "it-secret-key")))
                 .httpClientBuilder(ApacheHttpClient.builder())
                 // S3-compatible endpoint: checksums only where the API requires
                 // them (what FileStoreConfiguration does for an endpoint override).
@@ -81,7 +86,7 @@ class S3FileStoreS3IT extends FileStoreContract {
     void setUp() throws IOException {
         cache = new LocalCopyCache(cacheDir, 1024 * 1024, Duration.ofMinutes(1), Clock.systemUTC());
         prefix = "it-" + UUID.randomUUID();
-        // kms-key-id empty: MinIO has no KMS; the request shaping for SSE-KMS
+        // kms-key-id empty: S3Mock has no KMS; the request shaping for SSE-KMS
         // is covered by S3FileStoreTest.
         store = new S3FileStore(client, BUCKET, prefix, null, cache);
     }
