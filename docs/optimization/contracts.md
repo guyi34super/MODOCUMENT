@@ -108,3 +108,25 @@ rel="deprecation"`, and `deprecated: true` in OpenAPI.
 | `frontend/src/**` | SE3 (SE4 touches none) |
 | `TenantContext` registry, RANGES, Permission/Role/RolePermissions, matrix | Supervisor |
 | `RetentionPurger` | SE1 (SE5 swaps its file deletes to FileStore — coordinate: SE5 edits only the file-deletion helper lines) |
+
+## 10. As built (Supervisor, after the Wave 1 merge)
+
+Deviations agreed during Wave 1, now part of the contract:
+
+- Audit counts: `GET /api/platform/audit/counts` answers
+  `{from, to, banks:[…]}` (default last 24 h, max 400 days).
+- Audit export: above 50 000 matches it streams the newest 50 000 with
+  `X-Export-Truncated: true` and `X-Export-Total: <matched>` (no refusal).
+- Audit list: `action` may also be comma-separated; a PLATFORM_ADMIN on
+  `/api/admin/audit*` sees the platform bank's own events.
+- DB export accepts `table` as an alias of `tableName`; `sslmode` also
+  `allow|prefer`; a legacy `jdbcUrl` gets 400 naming the new fields.
+- `IngestionJobSummary` adds `parseConfidence`, `parseLowConfidence`;
+  dashboard summary: `templates` is a count, `extraction.failed`, recent
+  imports carry `importDate`, `templateName`. Any other `view` value → 400.
+- Paged lists: `/api/ingestion/jobs`, `/api/admin/changes` and
+  `/api/admin/users` answer `{items, page, size, total}` only when `page` is
+  sent; without it the old plain list (jobs/changes capped at the newest 200).
+- Settings: `ai.resultCache.enabled` (SE4) in addition to §6.
+- RefreshToken has no BankId (V15), so its housekeeping indexes are on
+  `ExpiresAt`/`RevokedAt` instead of `(BankId)`.
