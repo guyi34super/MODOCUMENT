@@ -4,11 +4,9 @@ import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.security.JwtService;
+import com.modocument.testsupport.ProdShapedSpringBootTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultMatcher;
 
@@ -34,20 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * HSTS behind TLS termination is covered in depth by
  * TrustedProxyIntegrationTest; asserted here only as part of the contract.
  */
-@SpringBootTest(properties = {
-        "modocument.security.permit-dev-paths=false",
-        // Production mode refuses the publicly known dev secret and needs a
-        // dedicated MFA key + a first admin; test-only values.
-        "modocument.security.jwt.secret=header-contract-test-signing-key-0123456789abcdef",
-        "modocument.security.mfa.key=header-contract-test-mfa-encryption-key-0123456789",
-        "MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL=header-contract-admin@example.com",
-        "MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD=Header-Contract-Passphrase-2026!",
-        // Own in-memory database: this context's ddl-auto=create must not
-        // wipe the schema the shared test contexts are using.
-        "spring.datasource.url=jdbc:h2:mem:modocument-header-contract;DB_CLOSE_DELAY=-1"
-})
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ProdShapedSpringBootTest
 class HeaderContractTest {
 
     /** A JSON API serves no markup: nothing may load, nothing may frame it. */
@@ -113,7 +98,7 @@ class HeaderContractTest {
     }
 
     private AppUser readOnlyUser() {
-        int bankId = users.findByEmailIgnoreCase("header-contract-admin@example.com")
+        int bankId = users.findByEmailIgnoreCase(ProdShapedSpringBootTest.BOOTSTRAP_ADMIN_EMAIL)
                 .orElseThrow()
                 .getBankId();
         AppUser entity = new AppUser();

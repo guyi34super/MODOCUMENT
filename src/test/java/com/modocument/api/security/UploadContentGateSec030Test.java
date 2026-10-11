@@ -1,5 +1,6 @@
 package com.modocument.api.security;
 
+import com.modocument.api.IsolatedStorageApiTestSupport;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Template;
 import com.modocument.domain.model.Role;
@@ -9,19 +10,12 @@ import com.modocument.infrastructure.persistence.UploadedFileJpaRepository;
 import com.modocument.infrastructure.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -42,22 +36,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>legitimate files of each format family sail through.</li>
  * </ul>
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
 @Transactional
-class UploadContentGateSec030Test {
+class UploadContentGateSec030Test extends IsolatedStorageApiTestSupport {
 
     private static final byte[] PNG_BYTES = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A,
             0, 0, 0, 13, 'I', 'H', 'D', 'R'};
-
-    @TempDir
-    static Path storageRoot;
-
-    @DynamicPropertySource
-    static void storageProperties(DynamicPropertyRegistry registry) {
-        registry.add("modocument.storage.root", () -> storageRoot.toString());
-    }
 
     @Autowired
     private MockMvc mvc;

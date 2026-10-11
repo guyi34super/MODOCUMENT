@@ -12,10 +12,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.AbstractMockHttpServletRequestBuilder;
@@ -53,23 +50,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * else (an admin token is as scriptable and as stealable). Each test uses
  * fresh users, because the buckets live for the context's lifetime.
  */
-@SpringBootTest(properties = {
-        "modocument.ratelimit.uploads=1",
-        "modocument.ratelimit.ingestion=1",
-        "modocument.ratelimit.transform=1",
-        "modocument.ratelimit.exports=1",
-        "modocument.ratelimit.doc-generate=1",
-        "modocument.ratelimit.extraction=1",
-        "modocument.ratelimit.dsr=1",
-        "modocument.ratelimit.password-change=1",
-        "modocument.ratelimit.mfa-code=1",
-        "modocument.ratelimit.admin-jobs=1",
-        "modocument.ratelimit.admin-security=1",
-        "modocument.security.rate-limit.llm.per-user-max=1"
-})
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-class ApiRateLimitIntegrationTest {
+class ApiRateLimitIntegrationTest extends OnePermitRateLimitTestSupport {
 
     /** Default window (modocument.ratelimit.window-millis): 1 hour. */
     private static final long WINDOW_SECONDS = 3600;

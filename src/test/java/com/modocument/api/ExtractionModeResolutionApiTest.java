@@ -13,20 +13,14 @@ import com.modocument.infrastructure.security.JwtService;
 import com.modocument.infrastructure.settings.SettingsCache;
 import com.modocument.infrastructure.transform.code.ExtractionCorpus;
 import com.modocument.testsupport.StubAiServer;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Files;
@@ -54,30 +48,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * LLM was never called" is a fact, not a mock expectation. Each test runs in
  * its own bank, so bank settings never leak into other suites.
  */
-@SpringBootTest(properties = "modocument.ai.http.read-timeout=2s")
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-class ExtractionModeResolutionApiTest {
+class ExtractionModeResolutionApiTest extends AiStubApiTestSupport {
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final StubAiServer AI = new StubAiServer();
-
-    @TempDir
-    static Path storageRoot;
-
     @TempDir
     Path documents;
-
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry registry) {
-        registry.add("modocument.storage.root", () -> storageRoot.toString());
-        registry.add("spring.ai.openai.base-url", AI::baseUrl);
-    }
-
-    @AfterAll
-    static void stopStub() {
-        AI.close();
-    }
 
     @Autowired
     private MockMvc mvc;
