@@ -6,6 +6,7 @@ import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.usecase.TemplateOwnership;
+import com.modocument.application.validation.TemplateFieldHints;
 import com.modocument.domain.entity.TemplateFields;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,9 +36,9 @@ public class TemplateFieldsController {
     }
 
     /**
-     * Always scoped to one caller-owned template — a global list would leak
-     * every user's field definitions, so {@code templateId} is required and
-     * ownership is enforced.
+     * Always scoped to one template the caller can read (own, or shared with
+     * their bank — ws22) — a global list would leak every user's field
+     * definitions, so {@code templateId} is required.
      */
     @RequiresPermission(Permission.TEMPLATE_READ)
     @GetMapping("/TemplateFields/GetAll")
@@ -46,7 +47,7 @@ public class TemplateFieldsController {
         if (templateId == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "templateId is required."));
         }
-        ownership.require(templateId);
+        ownership.requireReadable(templateId);
         return ResponseEntity.ok(repo.listByTemplateId(templateId));
     }
 
@@ -57,8 +58,8 @@ public class TemplateFieldsController {
         if (itemOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        // A field belongs to whoever owns its template.
-        ownership.require(itemOpt.get().getTemplateId());
+        // A field is readable wherever its template is (owner, or bank-shared).
+        ownership.requireReadable(itemOpt.get().getTemplateId());
         TemplateFields item = itemOpt.get();
         TemplateFields dto = new TemplateFields();
         dto.setTemplateFieldsId(item.getTemplateFieldsId());
@@ -67,26 +68,40 @@ public class TemplateFieldsController {
         dto.setTemplate(item.getTemplate());
         dto.setTemplateDataTypeId(item.getTemplateDataTypeId());
         dto.setPiiKind(item.getPiiKind());
+        dto.copyExtractionHints(item);
         return ResponseEntity.ok(dto);
     }
 
+    /**
+     * ws23: the body may carry the field's extraction hints — {@code aliases}
+     * and {@code dateFormats} (string arrays), {@code labelPattern} and
+     * {@code valuePattern} (regexes, vetted by SafeRegex: a dangerous or
+     * invalid pattern is a 400).
+     */
     @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PostMapping("/TemplateFields/Create")
     public ResponseEntity<?> create(@Valid @RequestBody TemplateFields dto) {
-        ownership.require(dto.getTemplateId());
+        // Changing a template's definition: owner (PRIVATE) / template:publish (BANK).
+        ownership.requireWritable(dto.getTemplateId());
+        requireValidHints(dto);
         TemplateFields entity = new TemplateFields();
         entity.setTemplateId(dto.getTemplateId());
         entity.setBankId(ownership.requireBankId());
         entity.setFieldName(dto.getFieldName());
+        // The data type the editor sends (it was dropped, so every field
+        // created here hit the TemplateDataTypes foreign key with id 0).
+        entity.setTemplateDataTypeId(dto.getTemplateDataTypeId());
         // Explicit PII tag (ws12, PRIV-004); left null, the classifier tags
         // it on first use and the result shows up here for correction.
         entity.setPiiKind(dto.getPiiKind());
+        entity.copyExtractionHints(dto);
         repo.add(entity);
         return ResponseEntity
                 .created(URI.create("/TemplateFields/GetById/" + entity.getTemplateFieldsId()))
                 .body(entity);
     }
 
+    /** ws23 hints the body names replace the stored ones; hints it omits are kept. */
     @RequiresPermission(Permission.TEMPLATE_WRITE)
     @PutMapping("/TemplateFields/Update/{id}")
     public ResponseEntity<?> update(@PathVariable int id, @Valid @RequestBody TemplateFields dto) {
@@ -94,13 +109,19 @@ public class TemplateFieldsController {
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        // Must own both the current template and any template it's being moved to.
-        ownership.require(existingOpt.get().getTemplateId());
-        ownership.require(dto.getTemplateId());
+        // Must be allowed to change both the current template and any
+        // template the field is being moved to.
+        ownership.requireWritable(existingOpt.get().getTemplateId());
+        ownership.requireWritable(dto.getTemplateId());
+        requireValidHints(dto);
         TemplateFields existing = existingOpt.get();
         existing.setFieldName(dto.getFieldName());
+        if (dto.getTemplateDataTypeId() > 0) {
+            existing.setTemplateDataTypeId(dto.getTemplateDataTypeId());
+        }
         existing.setTemplateId(dto.getTemplateId());
         existing.setPiiKind(dto.getPiiKind());
+        existing.mergeExtractionHints(dto);
 
         TemplateFields response = repo.update(existing);
         TemplateFields updated = new TemplateFields();
@@ -110,6 +131,7 @@ public class TemplateFieldsController {
         updated.setTemplate(response.getTemplate());
         updated.setTemplateDataTypeId(response.getTemplateDataTypeId());
         updated.setPiiKind(response.getPiiKind());
+        updated.copyExtractionHints(response);
 
         return ResponseEntity
                 .created(URI.create("/TemplateFields/GetById/" + updated.getTemplateFieldsId()))
@@ -123,9 +145,15 @@ public class TemplateFieldsController {
         if (existing.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        ownership.require(existing.get().getTemplateId());
+        ownership.requireWritable(existing.get().getTemplateId());
         repo.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** 400 (IllegalArgumentException) naming every unacceptable hint. */
+    private static void requireValidHints(TemplateFields dto) {
+        TemplateFieldHints.require(dto.getAliases(), dto.getLabelPattern(),
+                dto.getValuePattern(), dto.getDateFormats());
     }
 
     @org.springframework.web.bind.annotation.ExceptionHandler(java.util.NoSuchElementException.class)

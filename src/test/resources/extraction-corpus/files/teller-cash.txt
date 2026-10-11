@@ -1,0 +1,6 @@
+Teller ID	Branch	Business Date	Opening Cash	Closing Cash	Remarks
+T-014	Port Louis Main	2024-03-28	250000.00	248750.00	
+T-015	Port Louis Main	2024-03-28	180000.00	180000.00	balanced
+T-021	Curepipe	2024-03-28	120000.00	119500.00	short 500
+T-022	Curepipe	2024-03-28	95000.00	95000.00	
+T-030	Flacq	2024-03-28	60000.00	60250.00	over 250

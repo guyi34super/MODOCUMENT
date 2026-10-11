@@ -32,7 +32,8 @@ import java.util.concurrent.Callable;
  * context outside a web request (grep for the class name to re-audit):
  * <ul>
  *   <li>{@code IdentityContextFilter} — request threads, from the JWT
- *       bank_id claim (cleared in a finally block).</li>
+ *       bank_id claim, or (ws26) the authenticated API client's bank
+ *       (cleared in a finally block).</li>
  *   <li>{@code ExecuteExtractionTaskUseCase#run} — extraction worker
  *       threads: {@code runAsSystem} to resolve whose job a queued task is,
  *       then {@code runAs(job.getBankId())} for the actual work.</li>
@@ -40,20 +41,122 @@ import java.util.concurrent.Callable;
  *       {@code runAsSystem} (requeues every tenant's expired tasks).</li>
  *   <li>{@code SqlExtractionStartupRecovery#run} — startup crash recovery,
  *       {@code runAsSystem} (settles every tenant's interrupted jobs).</li>
- *   <li>{@code BootstrapAdminRunner#run} — startup first-admin seeding,
- *       {@code runAsSystem} (reads/creates the default Bank row before any
- *       tenant exists).</li>
+ *   <li>{@code BootstrapAdminRunner#run} — startup first-admin seeding
+ *       (first and optional second ADMIN, one transaction) and the
+ *       every-start "fewer than two approvers" warning (a COUNT of the
+ *       default bank's enabled accounts by role), {@code runAsSystem}
+ *       (reads/creates the default Bank row before any tenant exists).</li>
  *   <li>{@code OidcLoginService#login} — OIDC JIT provisioning,
  *       {@code runAsSystem} (resolves the provider's Bank and links/creates
  *       the user before any tenant context exists — the caller is
- *       anonymous until MoDocument issues its own tokens).</li>
+ *       anonymous until MoDocument issues its own tokens; ws21 also reads
+ *       the user's Bank status there to refuse suspended banks).</li>
  *   <li>{@code OidcClientConfig#oidcBankCodeValidator} — startup check that
  *       every configured OIDC provider's bank-code names an existing Bank,
  *       {@code runAsSystem} (reads the RLS-protected Bank table).</li>
+ *   <li>{@code PlatformBankDirectory#platformBankId} — phase 2: resolves
+ *       the platform bank by code, {@code runAsSystem} in its own read-only
+ *       transaction (the Bank table is RLS-protected); id cached.</li>
+ *   <li>{@code PlatformBankDirectory#find} — ws21 {@code BankDirectory}:
+ *       one Bank row's kind/status by id (permission guard, role policy,
+ *       wave-2 suspension checks), {@code runAsSystem} in its own read-only
+ *       transaction; identifying columns only, short-TTL cache.</li>
+ *   <li>{@code BootstrapPlatformRunner#run} — ws21 startup seeding of the
+ *       platform bank and its two PLATFORM_ADMIN accounts,
+ *       {@code runAsSystem} (reads/creates an RLS-protected Bank row
+ *       before any tenant exists), one transaction.</li>
+ *   <li>{@code PlatformBankUseCase#listBanks} / {@code #getBank} — ws21
+ *       platform console ({@code GET /api/platform/banks[/{id}]}, and
+ *       {@code GET /api/platform/overview} through {@code #overview} →
+ *       {@code #listBanks}; PLATFORM_READ, platform bank only):
+ *       {@code runAsSystem} in its own read-only transaction for a
+ *       cross-bank COUNTS-ONLY read (Bank identifying columns +
+ *       COUNT/MAX/SUM aggregates; no row content). Wave 4: {@code #getBank}
+ *       also counts that one bank's IntegrationConnection (all / FAILED),
+ *       enabled IntegrationFlow, IntegrationRun finished in 24 h by
+ *       outcome, DEAD OutboundDelivery and offline IntegrationAgent rows in
+ *       the same transaction — aggregates only.</li>
+ *   <li>{@code SettingsCache#reload} / {@code SettingsCache#refreshIfChanged}
+ *       — phase 2 (ws20) settings snapshot: {@code runAsSystem} in its own
+ *       read-only REQUIRES_NEW transaction to read the tenant-less
+ *       ConfigRevision counter and EVERY bank's BankSetting rows (the
+ *       platform layer is the platform bank's rows, so each bank's effective
+ *       values need two banks' rows). Called at startup, after each settings
+ *       write commits, and by {@code ConfigRevisionPoller#poll} every
+ *       {@code modocument.settings.poll-interval-ms}. Read-only; writes stay
+ *       under the writer's own tenant.</li>
+ *   <li>{@code SettingChangeService#inTargetBank} (via {@code #findRow} and
+ *       {@code #write}) — phase 2 platform-controlled settings
+ *       ({@code /api/platform/banks/{id}/settings} and the
+ *       PLATFORM_SETTING_UPDATE applier when its payload names a
+ *       {@code bankId}; PLATFORM_SETTINGS, platform bank only):
+ *       {@code runAs(target customer bank)} around a REQUIRES_NEW
+ *       transaction (read-only for the version/"from" read) to read and
+ *       write that bank's BankSetting rows of platform-controlled keys, plus
+ *       the tenant-less ConfigRevision bump. Never the platform bank, never
+ *       {@code runAsSystem}; the audit rows stay in the platform bank.</li>
+ *   <li>{@code PlatformBankLifecycleUseCase#requireAvailableCode} — ws21
+ *       BANK_CREATE submit: {@code runAsSystem} in its own read-only
+ *       transaction to check that no bank carries the requested code (the
+ *       maker's tenant sees only the platform bank).</li>
+ *   <li>{@code PlatformBankLifecycleUseCase#applyOnboarding},
+ *       {@code #applySuspension}, {@code #applyAdminAdd} (the BANK_CREATE /
+ *       BANK_SUSPEND / BANK_ADMIN_ADD appliers, run when a SECOND platform
+ *       admin approves) and {@code #reactivate} (direct, PLATFORM_BANKS):
+ *       {@code runAsSystem} around a REQUIRES_NEW write transaction — the
+ *       approval transaction is bound to the platform bank. They write the
+ *       target Bank row, that bank's AppUsers (create, or TokenVersion bump
+ *       + RefreshToken revocation on suspension) and AuditEvent rows
+ *       stamped explicitly with the customer bank and the platform bank;
+ *       new users and their USER_CREATED rows are written under
+ *       {@code runAs(newBank)} inside the same system transaction, so a
+ *       failed user insert rolls the new Bank row back too. No customer
+ *       content is read.
+ *       {@code #revertOnboarding} (wave 4) is the compensating cleanup when
+ *       the approval transaction rolls back after the onboarding committed:
+ *       {@code runAsSystem} around a REQUIRES_NEW write transaction that
+ *       deletes the new bank's first users (and any refresh token) and the
+ *       Bank row, and writes BANK_ONBOARDING_REVERTED in the platform
+ *       bank.</li>
+ *   <li>{@code AiCircuitBreaker#auditOpened} — ws23: when the AI circuit
+ *       opens, {@code runAs(platformBankId)} to write AI_CIRCUIT_OPENED in
+ *       the platform bank (skipped when no platform bank exists). No
+ *       customer data is read or written.</li>
+ *   <li>{@code ApiClientAuthenticator#lookupAsSystem} — ws26 machine
+ *       identity: {@code runAsSystem} in its own read-only REQUIRES_NEW
+ *       transaction to fetch ONE ApiClient (by ClientId, API-key prefix,
+ *       certificate fingerprint) plus that client's ApiClientSecret hashes,
+ *       before any tenant exists (OAuth2 token endpoint, API-key and
+ *       client-certificate authentication, the client-token branch of
+ *       RevocationValidator, and the "certificate already registered"
+ *       check), and (wave 4 leaver check) whether the client's creator is
+ *       still an enabled AppUsers row of the client's bank — a boolean
+ *       from one primary-key probe. Identifying/credential columns only; the
+ *       request then runs under the client's bank (IdentityContextFilter).</li>
+ *   <li>{@code AgentApiClientIssuer#issueAgentClient} /
+ *       {@code #revokeAgentClient} — ws26 (revoke: wave 4): when the
+ *       caller (SE5's public agent enrolment) has bound no tenant,
+ *       {@code runAs(bankId)} to write the agent's new ApiClient row, its
+ *       secret hash and the API_CLIENT_CREATED audit in that bank (revoke:
+ *       to set that AGENT client REVOKED + TokenVersion bump and write
+ *       API_CLIENT_REVOKED; the agent revoke normally calls it under the
+ *       admin's own bank); a caller bound to another bank is refused.</li>
  *   <li>{@code TenantTaskDecorator} — copies the submitting thread's context
  *       (via {@link #snapshot()}/{@link #runWith}) onto pooled async
  *       threads: the ingestion background runner and the extraction worker
  *       executor.</li>
+ *   <li>{@code IngestionParseStepImpl#extractBatchesParallel} — the same
+ *       {@link #snapshot()}/{@link #runWith} hand-off onto the short-lived
+ *       pool that sends parallel LLM batches (the AI gateway refuses a
+ *       thread with no bound tenant). It only copies the caller's bank.</li>
+ *   <li>{@code JpaAuditRecorder#write} — anonymous flows (login, refresh,
+ *       MFA) where no tenant is bound yet: {@code runAs(event's bank)} for
+ *       that one AuditEvent insert, so the RLS WITH CHECK passes; restored
+ *       right after. Never {@code runAsSystem}.</li>
+ *   <li>{@code MfaUseCase#inUsersBank} — the MFA login step (the caller is
+ *       anonymous until tokens are issued): {@code runAs(user's bank)}
+ *       around a new transaction for that user's second-factor check and
+ *       session creation. Never {@code runAsSystem}.</li>
  *   <li>{@code RetentionPurgeJob#runOnce} — the ws14 daily retention sweep
  *       (and its manual admin trigger): {@code runAsSystem} to list the
  *       RLS-protected Bank table across tenants, then
@@ -81,6 +184,69 @@ import java.util.concurrent.Callable;
  *       {@code runAsSystem} to look the configured bank-code up in the
  *       RLS-protected Bank table (startup, then each sweep until it
  *       resolves); the forwarder touches no other table.</li>
+ *   <li>{@code DeployedVersionRecorder#record} — ws24 startup record of a
+ *       newly deployed version (only the task that inserted the non-tenant
+ *       DeployedVersion row): {@code runAsSystem} in its own read-only
+ *       transaction to list the Bank ids, then {@code runAs(bank)} per bank
+ *       for that bank's VERSION_DEPLOYED audit row, then
+ *       {@code runAs(platform bank)} to write the RELEASE announcement the
+ *       platform bank owns (+ its ANNOUNCEMENT_PUBLISHED audit).</li>
+ *   <li>{@code AnnouncementCache#live} (reload) — ws24: {@code runAs(platform
+ *       bank)} in its own read-only transaction to load the platform-owned
+ *       announcements (RLS hides them from every customer tenant); served
+ *       to each bank from memory, filtered by its bank code. Never
+ *       {@code runAsSystem}: it reads the platform's rows only.</li>
+ *   <li>{@code EgressRuleUseCase#listForPlatform} /
+ *       {@code #requireApprovable} — ws25 platform console
+ *       ({@code GET /api/platform/egress-rules}, PLATFORM_READ) and the
+ *       EGRESS_RULE_APPROVE submit check (PLATFORM_BANKS):
+ *       {@code runAsSystem} in its own read-only REQUIRES_NEW transaction to
+ *       read BankEgressRule rows across banks (destination host/CIDR, port,
+ *       status, reason — no customer content).</li>
+ *   <li>{@code EgressRuleUseCase#applyApproval} — ws25 EGRESS_RULE_APPROVE
+ *       applier (a SECOND platform admin approves): {@code runAsSystem}
+ *       read-only to find the rule's bank by id, then
+ *       {@code runAs(rule bank)} around a REQUIRES_NEW write transaction that
+ *       flips the rule PENDING → APPROVED and writes its EGRESS_RULE_APPROVED
+ *       audit row in that bank (the platform bank's copy joins the
+ *       approval transaction).</li>
+ *   <li>{@code BankEgressGuard#approvedRules} — ws25 egress check of DIRECT
+ *       connections: {@code runAs(bankId)} in its own read-only REQUIRES_NEW
+ *       transaction to load that bank's APPROVED egress rules (cached
+ *       briefly), whatever context the connector runs in. Never
+ *       {@code runAsSystem}.</li>
+ *   <li>{@code AgentEnrolmentService#enroll} (via {@code #pendingAgentBank})
+ *       — ws26 {@code POST /api/agent/v1/enroll}, a public route whose
+ *       credential is the agent's one-time enrolment token:
+ *       {@code runAsSystem} in its own read-only REQUIRES_NEW transaction to
+ *       read ONE IntegrationAgent row by the id embedded in the token and
+ *       return only its BankId (when the agent is PENDING_ENROLMENT) —
+ *       the bank is unknown before the token is resolved. The token check
+ *       (constant-time hash compare, expiry, single use), the ApiClient
+ *       issue and the AGENT_ENROLLED audit then run under
+ *       {@code runAs(that bank)}.</li>
+ *   <li>{@code AgentTaskLongPoll} — ws26 agent long poll: the scheduler
+ *       thread re-tries {@code AgentRunPort#claimTasks} for each waiting
+ *       agent under {@code runAs(agent's bank)} (taken from the
+ *       authenticated agent client on the request thread). Never
+ *       {@code runAsSystem}.</li>
+ *   <li>{@code IntegrationScheduler#tick} — ws25 integration flow engine,
+ *       every 30 s: {@code runAsSystem} in its own read-only transaction
+ *       for the cross-bank scan that lists ONLY the ids of banks with
+ *       integration work (an enabled flow, a PENDING outbox delivery, an
+ *       unfinished run); then {@code runAs(bank)} per bank for that bank's
+ *       due cron slots, run timeouts and outbox dispatch. No row content
+ *       is read as SYSTEM.</li>
+ *   <li>{@code IntegrationRunExecutor#submit} — ws25: executes one run on
+ *       the integration worker pool under {@code runAs(run's bank)} (from
+ *       the scheduler, "Run now" and retry).</li>
+ *   <li>{@code AgentOfflineSweep#sweep} — ws26 (Wave 4) agent offline
+ *       alert, every minute: {@code runAsSystem} in its own read-only
+ *       REQUIRES_NEW transaction for the cross-bank scan that lists ONLY the
+ *       ids of banks with an ONLINE IntegrationAgent; then
+ *       {@code runAs(bank)} per bank for that bank's silent agents, each
+ *       flipped ONLINE → OFFLINE under a row lock with its AGENT_OFFLINE
+ *       audit row in that bank. No row content is read as SYSTEM.</li>
  * </ul>
  */
 public final class TenantContext {

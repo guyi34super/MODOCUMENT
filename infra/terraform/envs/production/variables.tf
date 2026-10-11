@@ -100,3 +100,47 @@ variable "bootstrap_admin_enabled" {
   type        = bool
   default     = true
 }
+
+variable "platform_admin_bootstrap_enabled" {
+  description = "Create the platform-admin secret pair (MODOCUMENT_PLATFORM_ADMIN_EMAILS / _PASSWORDS) and inject it into the app task. true for the v1.1.0 rollout (set both values before the deploy; an injected secret without a value stops the task from starting); false once both PLATFORM_ADMINs have changed their passwords and enrolled MFA."
+  type        = bool
+  default     = false
+}
+
+# --- ws26 bank integration hub ------------------------------------------------
+
+variable "bank_egress_cidrs" {
+  description = "Bank networks app tasks may reach for DIRECT-mode DATABASE (1433/1521/3306/5432) and SFTP (22) connections (network module). Empty = no such egress."
+  type        = list(string)
+  default     = []
+}
+
+variable "api_mtls_enabled" {
+  description = "Serve api_domain on the mutual-TLS listener for machine clients (ecs-app mtls.tf). Off by default."
+  type        = bool
+  default     = false
+}
+
+variable "api_domain" {
+  description = "Machine API host name, e.g. api.<app domain>, pointed at the ALB."
+  type        = string
+  default     = ""
+}
+
+variable "api_certificate_arn" {
+  description = "ACM certificate (this region) covering api_domain."
+  type        = string
+  default     = ""
+}
+
+variable "api_mtls_ca_bundle_pem" {
+  description = "PEM bundle of the banks' client-certificate CAs for the mTLS trust store (public material)."
+  type        = string
+  default     = ""
+}
+
+variable "api_mtls_client_cidrs" {
+  description = "Bank egress networks allowed to reach the mTLS listener."
+  type        = list(string)
+  default     = []
+}

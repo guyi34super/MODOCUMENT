@@ -30,6 +30,10 @@ import java.util.List;
  * logged per bank and the sweep continues. {@code modocument.retention.enabled}
  * gates only the schedule; {@link #runOnce()} (the admin's manual
  * POST /api/admin/retention/run) always runs.
+ *
+ * <p>Each bank's cutoff uses ITS retention period (ws20 setting
+ * {@code retention.customerDataDays}, 1–30 days), computed inside the
+ * per-bank loop from one sweep-wide "now".
  */
 @Component
 public class RetentionPurgeJob {
@@ -58,8 +62,8 @@ public class RetentionPurgeJob {
 
     /** One full sweep over every bank; returns the per-bank evidence. */
     public List<BankPurgeSummary> runOnce() {
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(properties.customerDataDays());
-        Instant cutoffInstant = Instant.now().minus(properties.customerDataDays(), ChronoUnit.DAYS);
+        LocalDateTime now = LocalDateTime.now();
+        Instant nowInstant = Instant.now();
 
         // runAsSystem: listing the RLS-protected Bank table across tenants.
         List<Bank> allBanks;
@@ -70,12 +74,19 @@ public class RetentionPurgeJob {
         }
 
         List<BankPurgeSummary> summaries = new ArrayList<>();
+        int shortened = 0;
+        int defaultDays = properties.customerDataDaysForPlatform();
         for (Bank bank : allBanks) {
             int bankId = bank.getBankId();
             try {
+                int days = properties.customerDataDays(bankId);
+                if (days != defaultDays) {
+                    shortened++;
+                }
+                LocalDateTime cutoff = now.minusDays(days);
+                Instant cutoffInstant = nowInstant.minus(days, ChronoUnit.DAYS);
                 summaries.add(TenantContext.runAs(bankId, () ->
-                        purger.purgeBank(bankId, cutoff, cutoffInstant,
-                                properties.customerDataDays())));
+                        purger.purgeBank(bankId, cutoff, cutoffInstant, days)));
             } catch (Exception e) {
                 log.error("Retention purge failed for bank {} (continuing with the rest)",
                         bankId, e);
@@ -85,8 +96,9 @@ public class RetentionPurgeJob {
         // The one-line run summary promised by the gate ("RetentionRun" in
         // the app log). Counts only — never values.
         int total = summaries.stream().mapToInt(BankPurgeSummary::total).sum();
-        log.info("RetentionRun completed: {} bank(s) swept, {} item(s) purged, cutoff {} ({} days)",
-                summaries.size(), total, cutoff, properties.customerDataDays());
+        log.info("RetentionRun completed: {} bank(s) swept, {} item(s) purged, cutoff {} ({} days;"
+                        + " {} bank(s) with their own period)",
+                summaries.size(), total, now.minusDays(defaultDays), defaultDays, shortened);
         return summaries;
     }
 }

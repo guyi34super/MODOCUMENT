@@ -1,0 +1,66 @@
+{
+  "name": "fx-settlements-semicolon-csv",
+  "file": "fx-settlements-semicolon.csv",
+  "strategies": [
+    "DELIMITED",
+    "NATIVE_SHEET"
+  ],
+  "note": "semicolon delimiter, no BOM, LF, decimal comma with dot thousands, dotted dates, quoted newline and quoted ';'",
+  "fields": [
+    {
+      "name": "Trade Id",
+      "type": "TEXT"
+    },
+    {
+      "name": "Currency Pair",
+      "type": "TEXT"
+    },
+    {
+      "name": "Value Date",
+      "type": "DATE",
+      "dateFormats": [
+        "dd.MM.yyyy"
+      ]
+    },
+    {
+      "name": "Notional",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Counterparty",
+      "type": "TEXT"
+    }
+  ],
+  "rows": [
+    [
+      "FX-1001",
+      "EUR/MUR",
+      "2024-06-03",
+      "1250000.00",
+      "Blue Ocean Trading Ltd"
+    ],
+    [
+      "FX-1002",
+      "USD/MUR",
+      "2024-06-04",
+      "500000.50",
+      "Kestrel Partners"
+    ],
+    [
+      "FX-1003",
+      "GBP/USD",
+      "2024-06-05",
+      "75000.00",
+      "Sunrise; Foods"
+    ],
+    [
+      "FX-1004",
+      "USD/ZAR",
+      "2024-06-06",
+      "2000000.00",
+      "Island Dive Centre"
+    ]
+  ],
+  "expectAccepted": true,
+  "minConfidence": 0.75
+}

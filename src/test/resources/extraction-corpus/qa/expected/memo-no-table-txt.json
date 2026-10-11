@@ -1,0 +1,26 @@
+{
+  "name": "memo-no-table-txt",
+  "file": "memo-no-table.txt",
+  "expectAccepted": false,
+  "note": "negative case: prose with numbers and no table must NOT be accepted as a table at the default threshold",
+  "fields": [
+    {
+      "name": "Customer Name",
+      "type": "TEXT"
+    },
+    {
+      "name": "Account Number",
+      "type": "TEXT"
+    },
+    {
+      "name": "Amount",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Transaction Date",
+      "type": "DATE"
+    }
+  ],
+  "rows": [],
+  "minConfidence": 0.75
+}

@@ -104,10 +104,16 @@ class SodPolicyTest {
         assertThat(user.getRole()).isEqualTo(Role.APPROVER);
     }
 
-    /** The closed four-role catalogue the conflict analysis was done for. */
+    /**
+     * The closed catalogue the conflict analysis was done for: the four bank
+     * roles, plus the two phase-2 roles that are never a bank user's role.
+     */
     @Test
-    void theRoleCatalogueIsTheDocumentedFour() {
+    void theRoleCatalogueIsTheDocumentedSix() {
         assertThat(Role.values()).containsExactly(
+                Role.ADMIN, Role.APPROVER, Role.READ_WRITE, Role.READ_ONLY,
+                Role.PLATFORM_ADMIN, Role.API_CLIENT);
+        assertThat(Role.values()).filteredOn(Role::isBankRole).containsExactly(
                 Role.ADMIN, Role.APPROVER, Role.READ_WRITE, Role.READ_ONLY);
     }
 }

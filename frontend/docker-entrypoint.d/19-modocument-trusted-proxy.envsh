@@ -38,6 +38,10 @@
 #       the nginx variable each forwarding header of frontend/nginx.conf is
 #       set from. DERIVED here on every start — a value set from outside is
 #       overwritten, never trusted.
+#   MODOCUMENT_NGX_MTLS_{SERIAL,ISSUER,SUBJECT,VALIDITY,LEAF} (exported,
+#       ws26): what the 8443 mTLS server sends as the ALB's
+#       X-Amzn-Mtls-Clientcert-* headers — `""` (cleared) in edge mode, the
+#       trusted-peer-only map variables below in trusted-proxy mode.
 #   $NGINX_ENVSUBST_OUTPUT_DIR/modocument-trusted-proxy.conf (trusted mode
 #       only; default dir /etc/nginx/conf.d, included at http level by the
 #       image's nginx.conf): set_real_ip_from per CIDR + the maps below.
@@ -186,6 +190,15 @@ if [ "$modoc_tp_enabled" -eq 0 ]; then
     MODOCUMENT_NGX_FORWARDED_FOR='$remote_addr'
     MODOCUMENT_NGX_FORWARDED_PROTO='$scheme'
     export MODOCUMENT_NGX_FORWARDED_FOR MODOCUMENT_NGX_FORWARDED_PROTO
+    # ws26: no trusted ALB, so no client-certificate headers are ever passed
+    # on: the mTLS server clears them (an empty value removes the header).
+    MODOCUMENT_NGX_MTLS_SERIAL='""'
+    MODOCUMENT_NGX_MTLS_ISSUER='""'
+    MODOCUMENT_NGX_MTLS_SUBJECT='""'
+    MODOCUMENT_NGX_MTLS_VALIDITY='""'
+    MODOCUMENT_NGX_MTLS_LEAF='""'
+    export MODOCUMENT_NGX_MTLS_SERIAL MODOCUMENT_NGX_MTLS_ISSUER MODOCUMENT_NGX_MTLS_SUBJECT \
+        MODOCUMENT_NGX_MTLS_VALIDITY MODOCUMENT_NGX_MTLS_LEAF
     modoc_tp_log "edge mode (MODOCUMENT_TRUSTED_PROXY_CIDRS unset): X-Forwarded-For/-Proto from this connection"
 else
     modoc_tp_header=$(printf '%s' "${MODOCUMENT_CLIENT_IP_HEADER:-X-Forwarded-For}" | tr '[:upper:]' '[:lower:]')
@@ -253,6 +266,16 @@ else
             echo "    \"~^1 ([0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{0,4}){2,7}):[0-9]{1,5}\$\" \$1;"
             echo "}"
         fi
+        echo
+        echo "# ws26: the ALB's mTLS client-certificate headers (verify mode), passed"
+        echo "# to the app by the 8443 mTLS server ONLY when the TCP peer is a trusted"
+        echo "# proxy; from anyone else they are emptied (= removed)."
+        for modoc_tp_mtls in serial_number issuer subject validity leaf; do
+            echo "map \$modocument_from_trusted_proxy \$modocument_mtls_$modoc_tp_mtls {"
+            echo "    default \"\";"
+            echo "    1       \$http_x_amzn_mtls_clientcert_$modoc_tp_mtls;"
+            echo "}"
+        done
     } > "$modoc_tp_conf" || modoc_tp_die "cannot write $modoc_tp_conf"
 
     if [ "$modoc_tp_header" = CloudFront-Viewer-Address ]; then
@@ -263,11 +286,19 @@ else
     fi
     MODOCUMENT_NGX_FORWARDED_PROTO='$modocument_forwarded_proto'
     export MODOCUMENT_NGX_FORWARDED_FOR MODOCUMENT_NGX_FORWARDED_PROTO
+    MODOCUMENT_NGX_MTLS_SERIAL='$modocument_mtls_serial_number'
+    MODOCUMENT_NGX_MTLS_ISSUER='$modocument_mtls_issuer'
+    MODOCUMENT_NGX_MTLS_SUBJECT='$modocument_mtls_subject'
+    MODOCUMENT_NGX_MTLS_VALIDITY='$modocument_mtls_validity'
+    MODOCUMENT_NGX_MTLS_LEAF='$modocument_mtls_leaf'
+    export MODOCUMENT_NGX_MTLS_SERIAL MODOCUMENT_NGX_MTLS_ISSUER MODOCUMENT_NGX_MTLS_SUBJECT \
+        MODOCUMENT_NGX_MTLS_VALIDITY MODOCUMENT_NGX_MTLS_LEAF
     modoc_tp_log "trusted-proxy mode: proxies$modoc_tp_valid, client address from $modoc_tp_header -> $modoc_tp_conf"
 fi
 
 unset modoc_tp_me modoc_tp_conf modoc_tp_cidrs modoc_tp_enabled modoc_tp_header \
     modoc_tp_valid modoc_tp_cidr modoc_tp_ifs modoc_tp_octet modoc_tp_compressed \
-    modoc_tp_groups modoc_tp_group modoc_tp_addr modoc_tp_len modoc_tp_name modoc_tp_port
+    modoc_tp_groups modoc_tp_group modoc_tp_addr modoc_tp_len modoc_tp_name modoc_tp_port \
+    modoc_tp_mtls
 unset -f modoc_tp_log modoc_tp_die modoc_tp_is_ipv4 modoc_tp_is_ipv6 modoc_tp_is_cidr \
     modoc_tp_is_host

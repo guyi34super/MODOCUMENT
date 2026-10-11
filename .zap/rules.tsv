@@ -3,6 +3,12 @@
 # Every IGNORE must carry a justification and should be re-reviewed when the
 # frontend toolchain or nginx config changes. Anything not listed keeps the
 # scan's default behavior (WARN, with fail_action failing on FAILs).
+# Re-reviewed in phase 2 Wave 4 (QA) when the integration API was added to the
+# scan (.zap/integration-seed.py): all four stay justified. 10015 and 10096
+# concern static assets / the bundle; the API's own answers (JSON, 401s of
+# /api/integration/v1, the token and enrolment endpoints) send Cache-Control:
+# no-store and carry no epoch timestamps, and 10027/10109 never match JSON.
+# No IGNORE was added for the integration routes.
 10015	IGNORE	(Re-examine Cache-control Directives) Static assets are served by nginx with build-hashed filenames; caching them is intended. API responses set their own cache headers.
 10027	IGNORE	(Information Disclosure - Suspicious Comments) Matches bundler-generated comments in the minified Vite/React vendor bundle, not MoDocument source comments.
 10096	IGNORE	(Timestamp Disclosure - Unix) False positive on build-hashed asset names and numeric constants in the minified bundle.

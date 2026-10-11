@@ -16,6 +16,7 @@ import com.modocument.domain.entity.RefreshToken;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.security.JwtService;
 import com.modocument.infrastructure.security.MfaChallengeTokens;
+import com.modocument.testsupport.StubBankDirectory;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
@@ -63,9 +64,11 @@ class AuthUseCaseTest {
     // of what these tests assert.
     private final UserSecurityService userSecurity = new UserSecurityService(repo, audit);
     private static final Duration IDLE_TIMEOUT = Duration.ofHours(12);
+    // ws21: every bank active unless a test suspends one.
+    private final StubBankDirectory banks = new StubBankDirectory();
     private final AuthUseCase useCase = new AuthUseCase(repo, encoder, passwordPolicy,
             lockoutPolicy, userMfa, challengeTokens, jwtService, refreshTokens,
-            revokedTokens, userSecurity, audit, true, IDLE_TIMEOUT);
+            revokedTokens, userSecurity, audit, banks, true, IDLE_TIMEOUT);
 
     /** The production encoder wiring (SecurityConfig): argon2 default, bcrypt legacy. */
     private static PasswordEncoder delegatingEncoder() {
@@ -243,7 +246,7 @@ class AuthUseCaseTest {
         when(spyEncoder.encode(anyString())).thenReturn("dummy-hash");
         AuthUseCase timed = new AuthUseCase(repo, spyEncoder, passwordPolicy, lockoutPolicy,
                 userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
-                userSecurity, audit, true, IDLE_TIMEOUT);
+                userSecurity, audit, banks, true, IDLE_TIMEOUT);
         when(repo.getByEmail("nobody@example.com")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> timed.login("nobody@example.com", "whatever", null, null))
@@ -326,7 +329,7 @@ class AuthUseCaseTest {
         PasswordEncoder delegating = delegatingEncoder();
         AuthUseCase upgraded = new AuthUseCase(repo, delegating, passwordPolicy, lockoutPolicy,
                 userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
-                userSecurity, audit, true, IDLE_TIMEOUT);
+                userSecurity, audit, banks, true, IDLE_TIMEOUT);
         AppUser user = demoUser(); // raw BCrypt hash, no {id} prefix
         when(repo.getByEmail("demo@modocument.local")).thenReturn(Optional.of(user));
         when(repo.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -346,7 +349,7 @@ class AuthUseCaseTest {
         PasswordEncoder delegating = delegatingEncoder();
         AuthUseCase upgraded = new AuthUseCase(repo, delegating, passwordPolicy, lockoutPolicy,
                 userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
-                userSecurity, audit, true, IDLE_TIMEOUT);
+                userSecurity, audit, banks, true, IDLE_TIMEOUT);
         AppUser user = demoUser();
         user.setPasswordHash(delegating.encode("Demo123!"));
         String original = user.getPasswordHash();
@@ -402,7 +405,7 @@ class AuthUseCaseTest {
     void adminWithoutMfaLogsStraightInWhenRequireForAdminIsOff() {
         AuthUseCase relaxed = new AuthUseCase(repo, encoder, passwordPolicy, lockoutPolicy,
                 userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
-                userSecurity, audit, false, IDLE_TIMEOUT);
+                userSecurity, audit, banks, false, IDLE_TIMEOUT);
         AppUser admin = demoUser();
         admin.setRole(Role.ADMIN);
         when(repo.getByEmail("demo@modocument.local")).thenReturn(Optional.of(admin));
@@ -411,6 +414,26 @@ class AuthUseCaseTest {
 
         assertThat(relaxed.login("demo@modocument.local", "Demo123!", null, null))
                 .isInstanceOf(AuthUseCase.AuthSession.class);
+    }
+
+    @Test
+    void platformAdminWithoutMfaIsForcedIntoEnrollmentEvenWithRequireForAdminOff() {
+        // ws21: no setting switches the platform owner's second factor off.
+        AuthUseCase relaxed = new AuthUseCase(repo, encoder, passwordPolicy, lockoutPolicy,
+                userMfa, challengeTokens, jwtService, refreshTokens, revokedTokens,
+                userSecurity, audit, banks, false, IDLE_TIMEOUT);
+        AppUser platformAdmin = demoUser();
+        platformAdmin.setRole(Role.PLATFORM_ADMIN);
+        when(repo.getByEmail("demo@modocument.local")).thenReturn(Optional.of(platformAdmin));
+        when(repo.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(userMfa.isEnabled(1)).thenReturn(false);
+        when(challengeTokens.issue(platformAdmin)).thenReturn("challenge-jwt");
+
+        for (AuthUseCase auth : new AuthUseCase[] {useCase, relaxed}) {
+            assertThat(auth.login("demo@modocument.local", "Demo123!", null, null))
+                    .isEqualTo(new AuthUseCase.MfaChallenge("challenge-jwt", true));
+        }
+        verify(jwtService, never()).issueToken(any(AppUser.class));
     }
 
     // --------------------------------------------------------------- refresh
@@ -558,6 +581,78 @@ class AuthUseCaseTest {
         assertThatThrownBy(() -> useCase.refresh("still-have-the-cookie", null, null))
                 .isInstanceOf(AuthUseCase.BadCredentialsException.class);
         verify(refreshTokens, never()).save(any(RefreshToken.class));
+    }
+
+    // ------------------------------------------------- ws21 bank suspension
+
+    /** A suspended bank's user gets the generic 401 before the password is even checked. */
+    @Test
+    void loginRefusesAUserOfASuspendedBankLikeAWrongPassword() {
+        banks.suspended(Bank.DEFAULT_BANK_ID);
+        AppUser user = demoUser();
+        when(repo.getByEmail("demo@modocument.local")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> useCase.login("demo@modocument.local", "Demo123!", null, null))
+                .isInstanceOf(AuthUseCase.BadCredentialsException.class)
+                .hasMessage("Invalid email or password.");
+
+        verify(jwtService, never()).issueToken(any(AppUser.class));
+        verify(refreshTokens, never()).save(any(RefreshToken.class));
+        // No lockout counting: the account did nothing wrong.
+        assertThat(user.getFailedLoginCount()).isZero();
+        AuditEventSpec recorded = recordedAudit();
+        assertThat(recorded.action()).isEqualTo("LOGIN_FAILED");
+        assertThat(recorded.outcome()).isEqualTo(AuditOutcome.FAILED);
+        assertThat(recorded.bankId()).isEqualTo(Bank.DEFAULT_BANK_ID);
+        assertThat(recorded.newValues()).isEqualTo(
+                Map.of("reason", "bank_suspended", "method", "password"));
+    }
+
+    /** The second factor cannot complete a sign-in into a bank suspended meanwhile. */
+    @Test
+    void mfaCompletionRefusesASuspendedBank() {
+        banks.suspended(Bank.DEFAULT_BANK_ID);
+
+        assertThatThrownBy(() -> useCase.completeMfaLogin(demoUser(), null, null))
+                .isInstanceOf(AuthUseCase.BadCredentialsException.class);
+
+        verify(jwtService, never()).issueToken(any(AppUser.class));
+        assertThat(recordedAudit().newValues()).isEqualTo(
+                Map.of("reason", "bank_suspended", "method", "mfa"));
+    }
+
+    /**
+     * Suspension revoked every refresh token of the bank: the next refresh
+     * is a plain 401 — NOT the reuse-detection path, which would revoke the
+     * family again and raise a CRITICAL theft alert for every user.
+     */
+    @Test
+    void refreshOfASuspendedBankIsRefusedWithoutTheTheftAlarm() {
+        banks.suspended(Bank.DEFAULT_BANK_ID);
+        RefreshToken revokedBySuspension = liveToken();
+        revokedBySuspension.setRevokedAt(Instant.now());
+        when(refreshTokens.getByTokenHash(anyString()))
+                .thenReturn(Optional.of(revokedBySuspension));
+        when(repo.getById(1)).thenReturn(Optional.of(demoUser()));
+
+        assertThatThrownBy(() -> useCase.refresh("cookie", null, null))
+                .isInstanceOf(AuthUseCase.BadCredentialsException.class);
+
+        verify(refreshTokens, never()).revokeFamily(any(UUID.class), any(Instant.class));
+        verify(refreshTokens, never()).save(any(RefreshToken.class));
+        verify(audit, never()).record(any(AuditEventSpec.class));
+    }
+
+    /** Reactivated (or never suspended): the same login works. */
+    @Test
+    void anActiveBankSignsInNormally() {
+        banks.customer(Bank.DEFAULT_BANK_ID);
+        when(repo.getByEmail("demo@modocument.local")).thenReturn(Optional.of(demoUser()));
+        when(repo.save(any(AppUser.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.issueToken(any(AppUser.class))).thenReturn("jwt-token");
+
+        assertThat(useCase.login("demo@modocument.local", "Demo123!", null, null))
+                .isInstanceOf(AuthUseCase.AuthSession.class);
     }
 
     // --------------------------------------------------------------- profile

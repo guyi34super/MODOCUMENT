@@ -26,6 +26,25 @@ own range.**
 | A16        | V140–V149 |
 | A17        | V150–V159 |
 | A18        | V160–V169 |
+| A19        | V170–V179 (reserved, no migrations) |
+| —          | V180–V199 (reserved) |
+
+**Phase 2** (docs/phase2/contracts.md) continues the scheme with one block
+per new workstream:
+
+| Workstream | Range     | Owner | Content |
+|-----------:|-----------|-------|---------|
+| ws20       | V200–V209 | SE1   | Settings: BankSetting, ConfigRevision |
+| ws21       | V210–V219 | SE2   | Platform bank: Bank.Kind/Status, role trigger, Role CHECK widened |
+| ws22       | V220–V229 | SE3   | Template.Visibility, dashboard indexes |
+| ws23       | V230–V239 | SE4   | Extraction mode, field hints, parse provenance |
+| ws24       | V240–V249 | SE5   | DeployedVersion, Announcement |
+| ws25       | V250–V259 | SE4 (SE1: V251 BankEgressRule) | Integration core: V250 connections/flows/runs/outbox, V252 events + IngestionJob.Origin |
+| ws26       | V260–V269 | SE2 (SE5: V261 IntegrationAgent) | Machine identity: V260 ApiClient/secrets/idempotency, V261 agents + connection FK (NOT VALID) |
+
+Phase-2 migrations must also follow docs/release/migration-policy.md
+(expand/contract: a release only adds; drops/renames/SET NOT NULL ship one
+release later).
 
 Files at `V20` and above are named `V{n}__ws{NN}_{desc}.sql` (e.g.
 `V20__ws02_rbac_tables.sql`) so a glance at the folder shows who owns what.

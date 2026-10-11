@@ -26,6 +26,20 @@ export async function deleteTemplate(id) {
   return result;
 }
 
+// ws22 bank-shared templates: GetAll/GetById return { templateId, name,
+// description, visibility: 'PRIVATE'|'BANK', ownedByMe, editable, ownerName }.
+
+/**
+ * template:publish (bank ADMIN) only: share a template with the whole bank
+ * ('BANK') or make it its owner's alone again ('PRIVATE'). Direct (no
+ * approval); 409 while colleagues still have unfinished uploads on it.
+ */
+export async function setTemplateVisibility(id, visibility) {
+  const updated = await api.put(`/Templates/${id}/Visibility`, { visibility });
+  invalidateTemplates();
+  return updated;
+}
+
 /** Without a templateId the server returns every template's fields; pass one. */
 export const getAllFields = (templateId) =>
   api.get(

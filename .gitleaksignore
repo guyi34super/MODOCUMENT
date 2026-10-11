@@ -23,3 +23,43 @@ b427e6ef797867e9e388f99247fb65c8199ec2c0:src/test/java/com/modocument/infrastruc
 # _FILE value that agree are tolerated. Readable placeholder, never used as a
 # key outside that unit test; flagged by gitleaks >= 8.24 (generic-api-key).
 fdc6f3bdcb7dd933ffb00c487341b8773c87beb3:src/test/java/com/modocument/infrastructure/security/SecretFileEnvironmentPostProcessorTest.java:generic-api-key:115
+# ws26 IntegrationApiSecurityTest class Javadoc: the PROSE fragment
+# "revocation/expiry/CIDR/scope" after the word "credentials" matched
+# generic-api-key. No secret; the sentence was reworded in a later commit.
+adbaf9ba400200c19fe618a62e195f7bd959e297:src/test/java/com/modocument/api/integration/IntegrationApiSecurityTest.java:generic-api-key:69
+# Phase 2 (ws21/ws22) false positives, generic-api-key:
+# - PASSWORD_ALPHABET: the public character set of the temporary-password
+#   generator (no ambiguous glyphs), not a secret — three copies in history;
+# - SECRET_FILE: the NAME of a fake upload ("payroll-secret-ws21.csv") that
+#   PlatformBankApiTest proves a platform admin cannot read.
+6445042541eb6e41b962a866107900d958de8d5c:frontend/src/utils/temporaryPassword.js:generic-api-key:2
+43d127e347b12fa11a97096171a624e78de37aef:frontend/src/pages/PlatformCommon.jsx:generic-api-key:6
+5e550dcc4f144579cc8cfff4170b4e9936ec04fc:frontend/src/pages/AdminUsersPage.jsx:generic-api-key:17
+7c6c27de4767cd03f25d0df0dee4feddea37d856:src/test/java/com/modocument/api/PlatformBankApiTest.java:generic-api-key:55
+# ws26 agent SecretsNeverLoggedTest: the CANARY database password the test
+# feeds the agent to prove it never reaches logs or reported errors. A
+# made-up literal, never a credential of any system.
+f8dc6cbeb4daef58e48c6af7a08b08b9c05c0d27:agent/src/test/java/com/modocument/agent/SecretsNeverLoggedTest.java:generic-api-key:31
+# ws25 integration engine/API tests: the fixed 20-character test HMAC secret
+# "0123456789abcdef0123" of a WEBHOOK test connection (loopback stub only).
+ef559f610bbbec426bf91cd9d86fbb18c936817d:src/test/java/com/modocument/integration/IntegrationEngineTest.java:generic-api-key:138
+ef559f610bbbec426bf91cd9d86fbb18c936817d:src/test/java/com/modocument/integration/IntegrationEngineTest.java:generic-api-key:162
+ef559f610bbbec426bf91cd9d86fbb18c936817d:src/test/java/com/modocument/integration/IntegrationEngineTest.java:generic-api-key:185
+ef559f610bbbec426bf91cd9d86fbb18c936817d:src/test/java/com/modocument/integration/IntegrationApiTest.java:generic-api-key:138
+# ws25 TlsMaterial: an ERROR MESSAGE naming the PEM header the admin must
+# convert to ("-----BEGIN PRIVATE KEY-----"); there is no key material.
+9b305045592976631f7927450a073efcb664889e:src/main/java/com/modocument/infrastructure/integration/connector/TlsMaterial.java:private-key:82
+# ws26 agent AgentTls: a format CHECK and error message naming the PKCS#8
+# PEM header ("-----BEGIN PRIVATE KEY-----"); no key material.
+a54677aaa63bfa24f93a63fdb64b6b12e76a5e19:agent/src/main/java/com/modocument/agent/cloud/AgentTls.java:private-key:168
+# QA Wave 4 IntegrationHubSecurityQaTest: the dummy webhook HMAC secret
+# "0123456789abcdef0123" (the same test value IntegrationEngineTest uses) and a
+# deliberately unknown API-key prefix "mdk_UNKNOWNPREFIX0000.secret"; neither
+# is a credential.
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:384
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:589
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:599
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:637
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:653
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:682
+b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:735

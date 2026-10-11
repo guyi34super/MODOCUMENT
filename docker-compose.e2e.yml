@@ -1,0 +1,168 @@
+# MoDocument E2E stack for CI (Playwright against the production topology):
+#   postgres (fresh, tmpfs) -> app (production profile, RLS role) <- frontend
+#   nginx (the real edge, same nginx.conf as production) <- e2e (Playwright),
+#   plus the fake OpenAI-compatible LLM the app's AI endpoint points at.
+#
+# The local, Docker-free equivalent is e2e/run-local.sh — keep the two in
+# step (same env names, same relaxations, same E2E_* contract for the suite).
+# Every secret is REQUIRED and generated per run (`${VAR:?}`, no defaults);
+# the job writes them to a gitignored .env.e2e — see e2e/README.md.
+#
+#   docker compose -f docker-compose.e2e.yml --env-file .env.e2e up --build \
+#     --abort-on-container-exit --exit-code-from e2e
+#
+# Debug switch (was the BUG-01 workaround; BUG-01 is fixed): set
+# E2E_DB_APP_ROLE=owner, E2E_APP_DB_USER=modocument and
+# E2E_APP_DB_USER_PASSWORD=<E2E_POSTGRES_PASSWORD> so the app runs as the
+# schema owner. Default is the production two-role model.
+# Wave 3: the bank simulator (bank DB, REST stub, SFTP) joins through the
+# overlay docker-compose.e2e-bank-sim.yml, which also switches the Wave-3
+# specs on (E2E_WAVE3=1). Variables: e2e/bank-simulator/README.md.
+#   COMPOSE_FILE=docker-compose.e2e.yml:docker-compose.e2e-bank-sim.yml \
+#     docker compose --env-file .env.e2e up --build --abort-on-container-exit --exit-code-from e2e
+
+name: modocument-e2e
+
+services:
+  postgres:
+    # Every image is pinned by digest (Wave 4): CI runs exactly these bytes;
+    # refresh a digest deliberately (the tag stays for readability).
+    image: postgres:16@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
+    environment:
+      POSTGRES_DB: modocument
+      POSTGRES_USER: modocument
+      POSTGRES_PASSWORD: ${E2E_POSTGRES_PASSWORD:?Set E2E_POSTGRES_PASSWORD (openssl rand -hex 24)}
+      # First-boot init (docker/postgres-init/01-app-role.sh) creates the
+      # RLS-subject runtime role with this password.
+      MODOCUMENT_APP_DB_PASSWORD: ${E2E_APP_DB_PASSWORD:?Set E2E_APP_DB_PASSWORD (openssl rand -hex 24)}
+    volumes:
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    # A fresh database every run; nothing survives the job.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U modocument -d modocument"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  fake-llm:
+    image: node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+    working_dir: /stubs
+    command: ["node", "/stubs/fake-llm.mjs"]
+    environment:
+      FAKE_LLM_HOST: 0.0.0.0
+      FAKE_LLM_PORT: "18089"
+      FAKE_LLM_MODE: ok
+    volumes:
+      - ./e2e/stubs:/stubs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:18089/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      # Production profile: Flyway on PostgreSQL, bootstrap admin, MFA forced
+      # for admins. Same variables as docker-compose.yml.
+      SPRING_PROFILES_ACTIVE: ""
+      MODOCUMENT_DB_URL: jdbc:postgresql://postgres:5432/modocument?sslmode=disable
+      MODOCUMENT_DB_USERNAME: ${E2E_APP_DB_USER:-modocument_app}
+      # ws26: no ALB here, so client-certificate headers are never trusted.
+      MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS: ""
+      MODOCUMENT_DB_PASSWORD: ${E2E_APP_DB_USER_PASSWORD:?Set E2E_APP_DB_USER_PASSWORD (= E2E_APP_DB_PASSWORD for the RLS role)}
+      MODOCUMENT_FLYWAY_USERNAME: modocument
+      MODOCUMENT_FLYWAY_PASSWORD: ${E2E_POSTGRES_PASSWORD}
+      MODOCUMENT_JWT_SECRET: ${E2E_JWT_SECRET:?Set E2E_JWT_SECRET (openssl rand -base64 48)}
+      MODOCUMENT_MFA_KEY: ${E2E_MFA_KEY:?Set E2E_MFA_KEY (openssl rand -base64 48)}
+      # ws25 connector SecretVault key (mandatory outside dev): throwaway,
+      # base64 of exactly 32 bytes, generated per run like every secret here.
+      MODOCUMENT_CONNECTOR_KEY: ${E2E_CONNECTOR_KEY:?Set E2E_CONNECTOR_KEY (openssl rand -base64 32)}
+      MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL: ${E2E_BOOTSTRAP_ADMIN_EMAIL:?Set E2E_BOOTSTRAP_ADMIN_EMAIL}
+      MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD: ${E2E_BOOTSTRAP_ADMIN_PASSWORD:?Set E2E_BOOTSTRAP_ADMIN_PASSWORD}
+      # The platform owner (ws21): two PLATFORM_ADMIN accounts. Optional —
+      # without them the platform specs skip.
+      MODOCUMENT_PLATFORM_ADMIN_EMAILS: ${E2E_PLATFORM_ADMIN_1_EMAIL:-}${E2E_PLATFORM_ADMIN_2_EMAIL:+,}${E2E_PLATFORM_ADMIN_2_EMAIL:-}
+      MODOCUMENT_PLATFORM_ADMIN_PASSWORDS: ${E2E_PLATFORM_ADMIN_1_PASSWORD:-}${E2E_PLATFORM_ADMIN_2_PASSWORD:+,}${E2E_PLATFORM_ADMIN_2_PASSWORD:-}
+      MODOCUMENT_CORS_ALLOWED_ORIGINS: http://frontend:8080
+      # The AI endpoint is the fake LLM (no document content leaves the stack).
+      MODOCUMENT_AI_BASE_URL: http://fake-llm:18089
+      MODOCUMENT_AI_API_KEY: ${E2E_AI_KEY:?Set E2E_AI_KEY (any non-empty value; the stub ignores it)}
+      OCR_VISION_ENABLED: "false"
+      DOCLING_BASEURL: ""
+      # E2E-only relaxation (config, not code): the auth/MFA throttles are per
+      # client IP and the whole suite comes from one container; the AI read
+      # timeout is 5 s so the fake LLM's `timeout` mode reaches the code
+      # fallback inside a test. Mirrors e2e/run-local.sh.
+      SPRING_APPLICATION_JSON: '{"modocument":{"security":{"rate-limit":{"auth":{"per-ip-max":1000,"per-email-max":200},"mfa":{"per-ip-max":200,"per-user-max":60}}},"ai":{"http":{"read-timeout":"5s"}}}}'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fake-llm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      start_period: 60s
+      retries: 60
+
+  frontend:
+    build: ./frontend
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      MODOCUMENT_API_UPSTREAM: app:8080
+      # The origin the browser in the e2e container uses.
+      MODOCUMENT_PUBLIC_HOST: frontend:8080
+    # Loopback only, for looking at the stack while a job is paused/debugged.
+    ports:
+      - "127.0.0.1:3000:8080"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  e2e:
+    # Same Playwright version as e2e/package.json, browsers preinstalled.
+    image: mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
+    working_dir: /e2e
+    command: ["bash", "-c", "npm ci --no-audit --no-fund && npx playwright test $${E2E_PLAYWRIGHT_ARGS:-}"]
+    environment:
+      CI: "true"
+      E2E_BASE_URL: http://frontend:8080
+      E2E_LLM_URL: http://fake-llm:18089
+      E2E_DB_URL: postgres://modocument:${E2E_POSTGRES_PASSWORD}@postgres:5432/modocument
+      E2E_BOOTSTRAP_ADMIN_EMAIL: ${E2E_BOOTSTRAP_ADMIN_EMAIL}
+      E2E_BOOTSTRAP_ADMIN_PASSWORD: ${E2E_BOOTSTRAP_ADMIN_PASSWORD}
+      E2E_PLATFORM_ADMIN_1_EMAIL: ${E2E_PLATFORM_ADMIN_1_EMAIL:-}
+      E2E_PLATFORM_ADMIN_1_PASSWORD: ${E2E_PLATFORM_ADMIN_1_PASSWORD:-}
+      E2E_PLATFORM_ADMIN_2_EMAIL: ${E2E_PLATFORM_ADMIN_2_EMAIL:-}
+      E2E_PLATFORM_ADMIN_2_PASSWORD: ${E2E_PLATFORM_ADMIN_2_PASSWORD:-}
+      E2E_STATE_DIR: /tmp/e2e-state
+      E2E_RUN_ID: ${E2E_RUN_ID:-ci}
+      E2E_DB_APP_ROLE: ${E2E_DB_APP_ROLE:-rls}
+      # Extra Playwright args, e.g. "--grep @smoke".
+      E2E_PLAYWRIGHT_ARGS: ${E2E_PLAYWRIGHT_ARGS:-}
+    volumes:
+      - ./e2e:/e2e
+      # releases.spec.js compares the SPA's shown version with the frontend
+      # package version (E2E_ROOT/../frontend/package.json).
+      - ./frontend/package.json:/frontend/package.json:ro
+      # Linux node_modules stay inside the container, not in the checkout.
+      - e2e-node-modules:/e2e/node_modules
+    ipc: host
+    depends_on:
+      frontend:
+        condition: service_healthy
+
+volumes:
+  e2e-node-modules:

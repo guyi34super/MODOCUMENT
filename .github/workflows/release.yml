@@ -1,0 +1,455 @@
+name: Release
+
+# ws24 release pipeline (docs/release/runbook.md). A tag vX.Y.Z-rc.N or
+# vX.Y.Z on a commit whose pom.xml / package.json / CHANGELOG.md say X.Y.Z:
+#
+#   version ─ tests (ci.yml) ─ build (once) ─ staging ─ GitHub Release ─ production
+#                               SBOM + Trivy   push, deploy,  notes + SBOMs   same digests,
+#                                              smoke test     (rc stops here)  deploy, smoke
+#
+# - Each image is built ONCE, as an OCI archive; staging and production run
+#   those exact bytes (pushed with skopeo --preserve-digests, digests verified
+#   against the build job's).
+# - Task-definition revisions pin both images by digest; the ECS deployment
+#   circuit breaker rolls a failed rollout back and the job then fails
+#   (scripts/release/ecs-deploy.sh).
+# - AWS access: GitHub OIDC only, one deploy role per environment, trusted for
+#   the environment subject (infra/terraform/modules/ci-oidc). No secrets.
+# - Configuration: environment variables of the GitHub environments `staging`
+#   and `production` (same names, different values) — AWS_REGION,
+#   AWS_DEPLOY_ROLE_ARN, ECR_REGISTRY, ECR_APP_REPOSITORY,
+#   ECR_FRONTEND_REPOSITORY, ECS_CLUSTER, ECS_SERVICE, ECS_TASK_FAMILY,
+#   PUBLIC_BASE_URL. `production` has required reviewers (runbook §2).
+#
+# ws26: the on-prem Connector Agent (agent/, a standalone Maven project) is
+# built, scanned and SBOM'd in the same build job. It is not deployed to ECS:
+# the GitHub Release carries its jar and SBOM, and its image is published to
+# ghcr.io/<owner>/modocument-agent:<image version> for banks to pull.
+#
+# Actions are pinned by full commit SHA (SUP-S05); every job gets only the
+# permissions it uses.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*.*.*-rc.*'
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # BuildKit for the OCI exporter (the default docker driver cannot write
+  # OCI archives), pinned by digest.
+  BUILDKIT_IMAGE: moby/buildkit:v0.33.0@sha256:6c2fa84a6b61ccd72899dde4239f8d5717f05f9a8ca6f3cad185fb1a95a94de3
+
+jobs:
+  version:
+    name: Version check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      image_version: ${{ steps.meta.outputs.image_version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      sha7: ${{ steps.meta.outputs.sha7 }}
+      build_time: ${{ steps.meta.outputs.build_time }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Tag matches pom.xml, package.json and CHANGELOG.md
+        run: bash scripts/check-version-sync.sh "$GITHUB_REF_NAME"
+      - name: The changelog has notes for this release
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          bash scripts/release/changelog-section.sh "${version%%-rc.*}" > /dev/null
+      - name: Release metadata
+        id: meta
+        run: |
+          image_version="${GITHUB_REF_NAME#v}"           # X.Y.Z or X.Y.Z-rc.N (image tags)
+          version="${image_version%%-rc.*}"               # X.Y.Z (pom, probe)
+          if [ "$image_version" != "$version" ]; then prerelease=true; else prerelease=false; fi
+          # The commit time, not the wall clock: rebuilding a tag yields the same BUILD_TIME.
+          build_time="$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)"
+          {
+            echo "version=$version"
+            echo "image_version=$image_version"
+            echo "prerelease=$prerelease"
+            echo "sha7=${GITHUB_SHA::7}"
+            echo "build_time=$build_time"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release $image_version (commit ${GITHUB_SHA::7}, built as of $build_time, prerelease=$prerelease)"
+
+  tests:
+    name: Tests
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    name: Build images once, SBOM, Trivy
+    needs: [version, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      app_digest: ${{ steps.digests.outputs.app_digest }}
+      frontend_digest: ${{ steps.digests.outputs.frontend_digest }}
+      agent_digest: ${{ steps.digests.outputs.agent_digest }}
+    env:
+      IMAGE_VERSION: ${{ needs.version.outputs.image_version }}
+      BUILD_TIME: ${{ needs.version.outputs.build_time }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Set up BuildKit (pinned)
+        run: |
+          docker buildx create --name release --driver docker-container \
+            --driver-opt "image=$BUILDKIT_IMAGE" --bootstrap --use
+      - name: Build the API image
+        run: |
+          mkdir -p dist
+          docker buildx build --builder release --pull --provenance=false --sbom=false \
+            --build-arg MODOCUMENT_VERSION="$IMAGE_VERSION" \
+            --build-arg GIT_COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_TIME="$BUILD_TIME" \
+            --output type=oci,dest=dist/app.oci.tar .
+      - name: Build the frontend image
+        run: |
+          docker buildx build --builder release --pull --provenance=false --sbom=false \
+            --build-arg MODOCUMENT_VERSION="$IMAGE_VERSION" \
+            --build-arg GIT_COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_TIME="$BUILD_TIME" \
+            --output type=oci,dest=dist/frontend.oci.tar frontend
+      # ws26: the Connector Agent image (agent/Dockerfile, its own context).
+      - name: Build the agent image
+        run: |
+          docker buildx build --builder release --pull --provenance=false --sbom=false \
+            --build-arg MODOCUMENT_VERSION="$IMAGE_VERSION" \
+            --build-arg GIT_COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_TIME="$BUILD_TIME" \
+            --output type=oci,dest=dist/agent.oci.tar agent
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: agent/pom.xml
+      # The standalone jar for banks that run the agent without Docker
+      # (its tests ran in the tests job: ci.yml "agent").
+      - name: Build the agent jar
+        run: |
+          mvn -B -q -f agent/pom.xml -DskipTests \
+            -Dproject.build.outputTimestamp="$BUILD_TIME" package
+          version="${IMAGE_VERSION%%-rc.*}"
+          cp "agent/target/modocument-agent-$version.jar" "dist/modocument-agent-$IMAGE_VERSION.jar"
+      - name: Image digests
+        id: digests
+        run: |
+          for image in app frontend agent; do
+            digest="$(tar -xOf "dist/$image.oci.tar" index.json \
+              | jq -r 'if (.manifests | length) == 1 then .manifests[0].digest else error("expected one manifest") end')"
+            if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::dist/$image.oci.tar has no single image manifest"
+              exit 1
+            fi
+            echo "${image}_digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "$image: $digest"
+            # Trivy reads an OCI image layout from a directory.
+            mkdir -p "dist/$image-oci"
+            tar -xf "dist/$image.oci.tar" -C "dist/$image-oci"
+          done
+      # Gate (E3): fixable HIGH/CRITICAL findings stop the release. Accepted
+      # risks go into a reviewed .trivyignore entry with an expiry, never here.
+      - name: Trivy scan (API image)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          input: dist/app-oci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '1'
+      - name: Trivy scan (frontend image)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          input: dist/frontend-oci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '1'
+      - name: Trivy scan (agent image)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          input: dist/agent-oci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '1'
+      # CycloneDX SBOMs of the exact images (OS packages + application
+      # dependencies), attached to the GitHub Release.
+      - name: SBOM (API image)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          input: dist/app-oci
+          format: cyclonedx
+          output: dist/sbom-app.cdx.json
+          exit-code: '0'
+      - name: SBOM (frontend image)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          input: dist/frontend-oci
+          format: cyclonedx
+          output: dist/sbom-frontend.cdx.json
+          exit-code: '0'
+      - name: SBOM (agent image)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          input: dist/agent-oci
+          format: cyclonedx
+          output: dist/sbom-agent.cdx.json
+          exit-code: '0'
+      - name: Drop the unpacked layouts
+        run: rm -rf dist/app-oci dist/frontend-oci dist/agent-oci
+      - name: Upload the images
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-images
+          path: |
+            dist/app.oci.tar
+            dist/frontend.oci.tar
+          if-no-files-found: error
+          # Layers are already compressed. Production must be approved within
+          # the retention, else re-run the release (runbook §3).
+          compression-level: 0
+          retention-days: 30
+      - name: Upload the SBOMs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-sbom
+          path: |
+            dist/sbom-app.cdx.json
+            dist/sbom-frontend.cdx.json
+            dist/sbom-agent.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload the agent image and jar
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-agent
+          path: |
+            dist/agent.oci.tar
+            dist/modocument-agent-*.jar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  staging:
+    name: Deploy to staging
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: staging
+      url: ${{ steps.smoke.outputs.url }}
+    # One deployment per environment at a time, shared with deploy.yml.
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      IMAGE_VERSION: ${{ needs.version.outputs.image_version }}
+      SHA7: ${{ needs.version.outputs.sha7 }}
+      APP_DIGEST: ${{ needs.build.outputs.app_digest }}
+      FRONTEND_DIGEST: ${{ needs.build.outputs.frontend_digest }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+      ECR_APP_REPOSITORY: ${{ vars.ECR_APP_REPOSITORY }}
+      ECR_FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ECS_TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Environment configuration is complete
+        run: bash scripts/release/require-env.sh AWS_REGION AWS_DEPLOY_ROLE_ARN ECR_REGISTRY ECR_APP_REPOSITORY ECR_FRONTEND_REPOSITORY ECS_CLUSTER ECS_SERVICE ECS_TASK_FAMILY PUBLIC_BASE_URL
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-images
+          path: dist
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: release-staging-${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Registry login
+        run: |
+          command -v skopeo > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q skopeo; }
+          aws ecr get-login-password | skopeo login --username AWS --password-stdin "$ECR_REGISTRY"
+      - name: Push immutable tags X.Y.Z and X.Y.Z-sha7
+        run: |
+          bash scripts/release/push-oci.sh dist/app.oci.tar "$ECR_REGISTRY/$ECR_APP_REPOSITORY" \
+            "$APP_DIGEST" "$IMAGE_VERSION" "$IMAGE_VERSION-$SHA7"
+          bash scripts/release/push-oci.sh dist/frontend.oci.tar "$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY" \
+            "$FRONTEND_DIGEST" "$IMAGE_VERSION" "$IMAGE_VERSION-$SHA7"
+      - name: Deploy (task definition pinned by digest, wait for steady state)
+        run: |
+          bash scripts/release/ecs-deploy.sh "$ECS_CLUSTER" "$ECS_SERVICE" "$ECS_TASK_FAMILY" \
+            "$ECR_REGISTRY/$ECR_APP_REPOSITORY@$APP_DIGEST" \
+            "$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY@$FRONTEND_DIGEST"
+      - name: Smoke test
+        id: smoke
+        run: |
+          bash scripts/release/smoke-test.sh "$PUBLIC_BASE_URL" "$VERSION"
+          echo "url=$PUBLIC_BASE_URL" >> "$GITHUB_OUTPUT"
+
+  github-release:
+    name: GitHub Release
+    needs: [version, build, staging]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # ws26: publishes the Connector Agent image to ghcr.io.
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      IMAGE_VERSION: ${{ needs.version.outputs.image_version }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
+      AGENT_DIGEST: ${{ needs.build.outputs.agent_digest }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-sbom
+          path: sbom
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-agent
+          path: agent-dist
+      # The scanned bytes, unchanged (--preserve-digests), under the release
+      # tag; the registry must report the build job's digest afterwards.
+      - name: Publish the agent image (ghcr.io)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          command -v skopeo > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q skopeo; }
+          image="ghcr.io/${OWNER,,}/modocument-agent"
+          actual="$(tar -xOf agent-dist/agent.oci.tar index.json | jq -r '.manifests[0].digest')"
+          if [ "$actual" != "$AGENT_DIGEST" ]; then
+            echo "::error::agent.oci.tar holds $actual, the build job scanned $AGENT_DIGEST"
+            exit 1
+          fi
+          printf '%s' "$GH_TOKEN" | skopeo login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          skopeo copy --quiet --retry-times 3 --preserve-digests \
+            oci-archive:agent-dist/agent.oci.tar "docker://$image:$IMAGE_VERSION"
+          pushed="$(skopeo inspect --format '{{.Digest}}' "docker://$image:$IMAGE_VERSION")"
+          if [ "$pushed" != "$AGENT_DIGEST" ]; then
+            echo "::error::$image:$IMAGE_VERSION reports $pushed, expected $AGENT_DIGEST"
+            exit 1
+          fi
+          echo "$image:$IMAGE_VERSION = $AGENT_DIGEST"
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          bash scripts/release/changelog-section.sh "$VERSION" > release-notes.md
+          assets=(sbom/*.cdx.json agent-dist/modocument-agent-*.jar)
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            flags=()
+            if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --verify-tag \
+              --title "MoDocument $GITHUB_REF_NAME" --notes-file release-notes.md "${flags[@]}"
+          fi
+
+  production:
+    name: Deploy to production
+    needs: [version, build, github-release]
+    # Release candidates stop at staging.
+    if: needs.version.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Required reviewers (2) and the v* deployment policy live in the
+    # repository settings of this environment (runbook §2).
+    environment:
+      name: production
+      url: ${{ steps.smoke.outputs.url }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      SHA7: ${{ needs.version.outputs.sha7 }}
+      APP_DIGEST: ${{ needs.build.outputs.app_digest }}
+      FRONTEND_DIGEST: ${{ needs.build.outputs.frontend_digest }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+      ECR_APP_REPOSITORY: ${{ vars.ECR_APP_REPOSITORY }}
+      ECR_FRONTEND_REPOSITORY: ${{ vars.ECR_FRONTEND_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ECS_TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY }}
+      PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Environment configuration is complete
+        run: bash scripts/release/require-env.sh AWS_REGION AWS_DEPLOY_ROLE_ARN ECR_REGISTRY ECR_APP_REPOSITORY ECR_FRONTEND_REPOSITORY ECS_CLUSTER ECS_SERVICE ECS_TASK_FAMILY PUBLIC_BASE_URL
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-images
+          path: dist
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: release-production-${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Registry login
+        run: |
+          command -v skopeo > /dev/null || { sudo apt-get update -q && sudo apt-get install -y -q skopeo; }
+          aws ecr get-login-password | skopeo login --username AWS --password-stdin "$ECR_REGISTRY"
+      # The SAME bytes staging runs: push-oci.sh refuses an archive whose
+      # digest differs from the build job's and verifies ECR's digest after.
+      - name: Push the staging digests as X.Y.Z and X.Y.Z-sha7
+        run: |
+          bash scripts/release/push-oci.sh dist/app.oci.tar "$ECR_REGISTRY/$ECR_APP_REPOSITORY" \
+            "$APP_DIGEST" "$VERSION" "$VERSION-$SHA7"
+          bash scripts/release/push-oci.sh dist/frontend.oci.tar "$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY" \
+            "$FRONTEND_DIGEST" "$VERSION" "$VERSION-$SHA7"
+      - name: Deploy (task definition pinned by digest, wait for steady state)
+        run: |
+          bash scripts/release/ecs-deploy.sh "$ECS_CLUSTER" "$ECS_SERVICE" "$ECS_TASK_FAMILY" \
+            "$ECR_REGISTRY/$ECR_APP_REPOSITORY@$APP_DIGEST" \
+            "$ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY@$FRONTEND_DIGEST"
+      - name: Smoke test
+        id: smoke
+        run: |
+          bash scripts/release/smoke-test.sh "$PUBLIC_BASE_URL" "$VERSION"
+          echo "url=$PUBLIC_BASE_URL" >> "$GITHUB_OUTPUT"

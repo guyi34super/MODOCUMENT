@@ -13,7 +13,7 @@
 
     <groupId>com.modocument</groupId>
     <artifactId>modocument</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <name>MoDocument</name>
     <description>MoDocument document processing service</description>
 
@@ -80,6 +80,49 @@
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- Bank integration hub (ws25, SE4): JDBC drivers of the bank
+             databases a DATABASE connection may target. Runtime scope - the
+             connector loads them by class name for the vendor it builds the
+             URL for (never DriverManager discovery). Versions pinned (equal
+             to the Spring Boot 3.5.3 managed ones). MySQL is reached through
+             the MariaDB Connector/J (LGPL-2.1), never the GPL MySQL driver.
+             Licences: ojdbc11 Oracle Free Use Terms and Conditions (FUTC),
+             mssql-jdbc MIT, mariadb-java-client LGPL-2.1. -->
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc11</artifactId>
+            <version>23.7.0.25.01</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.sqlserver</groupId>
+            <artifactId>mssql-jdbc</artifactId>
+            <version>12.10.0.jre11</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mariadb.jdbc</groupId>
+            <artifactId>mariadb-java-client</artifactId>
+            <version>3.5.3</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- SFTP connector (ws25): Apache MINA SSHD client (Apache-2.0).
+             Compile scope: the connector pins host keys and confines paths
+             through its API. -->
+        <dependency>
+            <groupId>org.apache.sshd</groupId>
+            <artifactId>sshd-sftp</artifactId>
+            <version>2.15.0</version>
+            <exclusions>
+                <!-- commons-logging is already bridged by spring-jcl; a second
+                     org.apache.commons.logging copy would shadow it. -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>jcl-over-slf4j</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- Schema migrations: Flyway owns the PostgreSQL schema in production
@@ -236,6 +279,72 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- Release identity (ws24): target/classes/git.properties →
+                 Spring's GitProperties bean → GET /api/system/version
+                 "commit". Offline (never contacts a remote) and tolerant:
+                 a build without .git — the Docker build context excludes
+                 it — simply has no git.properties, and the Dockerfile
+                 writes a fallback one from its GIT_COMMIT build arg (and
+                 skips this plugin). Only the properties the app reads are
+                 computed. -->
+            <plugin>
+                <groupId>io.github.git-commit-id</groupId>
+                <artifactId>git-commit-id-maven-plugin</artifactId>
+                <version>9.0.2</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <verbose>false</verbose>
+                    <offline>true</offline>
+                    <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                    <failOnUnableToExtractRepoInfo>false</failOnUnableToExtractRepoInfo>
+                    <generateGitPropertiesFile>true</generateGitPropertiesFile>
+                    <generateGitPropertiesFilename>${project.build.outputDirectory}/git.properties</generateGitPropertiesFilename>
+                    <!-- the one pattern GitProperties.getCommitTime() parses -->
+                    <dateFormat>yyyy-MM-dd'T'HH:mm:ssZ</dateFormat>
+                    <dateFormatTimeZone>UTC</dateFormatTimeZone>
+                    <includeOnlyProperties>
+                        <includeOnlyProperty>^git.commit.id$</includeOnlyProperty>
+                        <includeOnlyProperty>^git.commit.id.abbrev$</includeOnlyProperty>
+                        <includeOnlyProperty>^git.commit.time$</includeOnlyProperty>
+                        <includeOnlyProperty>^git.build.time$</includeOnlyProperty>
+                    </includeOnlyProperties>
+                </configuration>
+            </plugin>
+            <!-- In-app release notes (ws24): CHANGELOG.md is packaged as
+                 classpath:release/CHANGELOG.md for
+                 GET /api/system/release-notes (ReleaseNotesCatalog). A build
+                 without the file just serves no releases. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>release-notes</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}/release</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}</directory>
+                                    <includes>
+                                        <include>CHANGELOG.md</include>
+                                    </includes>
+                                    <filtering>false</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -245,6 +354,7 @@
                          default H2 unit run. -->
                     <excludes>
                         <exclude>**/*PgIT.java</exclude>
+                        <exclude>**/*ConnIT.java</exclude>
                     </excludes>
                 </configuration>
             </plugin>
@@ -295,6 +405,71 @@
                                 <include>**/*PgIT.java</include>
                             </includes>
                             <groups>postgres</groups>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!-- mvn -B verify -Pconnectors-it — the live connector contract suite
+             (ws25, src/test/java/com/modocument/connectorsit/*ConnIT.java):
+             the DATABASE connector against Testcontainers Oracle Free, SQL
+             Server and MariaDB. Needs Docker (CI); excluded from the default
+             build, and its Testcontainers modules are test-scoped here only. -->
+        <profile>
+            <id>connectors-it</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.testcontainers</groupId>
+                    <artifactId>oracle-free</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.testcontainers</groupId>
+                    <artifactId>mssqlserver</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.testcontainers</groupId>
+                    <artifactId>mariadb</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>connectors-it-sources</id>
+                                <phase>generate-test-sources</phase>
+                                <goals>
+                                    <goal>add-test-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/connectors-it/java</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <includes>
+                                <include>**/*ConnIT.java</include>
+                            </includes>
                         </configuration>
                         <executions>
                             <execution>

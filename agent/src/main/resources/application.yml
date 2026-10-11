@@ -1,0 +1,40 @@
+# MoDocument Connector Agent — every value comes from the environment
+# (agent/README.md "Configuration"). No web server: the agent has no
+# inbound port.
+spring:
+  application:
+    name: modocument-agent
+  main:
+    web-application-type: none
+    banner-mode: off
+
+modocument:
+  agent:
+    url: ${MODOCUMENT_URL:}
+    enrolment-token: ${MODOCUMENT_ENROLMENT_TOKEN:}
+    name: ${MODOCUMENT_AGENT_NAME:}
+    state-dir: ${MODOCUMENT_AGENT_STATE_DIR:/var/lib/modocument-agent}
+    allow-list: ${MODOCUMENT_AGENT_ALLOWLIST:/etc/modocument-agent/allowlist.yml}
+    secrets-dir: ${MODOCUMENT_SECRETS_DIR:/etc/modocument-agent/secrets}
+    # Long-poll wait (server cap 30 s). 25 s keeps the answer inside
+    # CloudFront's default 30 s origin read timeout in front of MoDocument.
+    poll-wait-seconds: 25
+    heartbeat: 30s
+    max-backoff: ${MODOCUMENT_AGENT_MAX_BACKOFF:5m}
+    allow-insecure-http: ${MODOCUMENT_ALLOW_INSECURE_HTTP:false}
+    # How the agent authenticates to MoDocument, chosen at enrolment:
+    # OAUTH2_CLIENT_CREDENTIALS (issued secret) or MTLS (its own client
+    # certificate + key from the local secret named by client-cert-ref, keys
+    # certificatePem / privateKeyPem).
+    auth-method: ${MODOCUMENT_AGENT_AUTH_METHOD:OAUTH2_CLIENT_CREDENTIALS}
+    client-cert-ref: ${MODOCUMENT_AGENT_CLIENT_CERT_REF:agent-client-cert}
+    # Optional PEM bundle that REPLACES the JDK trust store for calls to
+    # MoDocument (a private CA; local development).
+    trusted-ca-file: ${MODOCUMENT_AGENT_TRUSTED_CA_FILE:}
+
+logging:
+  level:
+    root: INFO
+    # Drivers and SSH are chatty at INFO; nothing of theirs carries secrets
+    # at WARN.
+    org.apache.sshd: WARN

@@ -1,0 +1,15 @@
+~ scanned page 1 / 1 ~
+ACME BANK LTD - STATEMENT OF ACCOUNT
+Acc No: 000987654321    May 2024
+
+Date         Particulars                      Debit      Credit      Balance
+02/05/2024   OPENING BALANCE                                       10,512.30
+03/05/2024   POS PURCHASE WINNERS          1,245.60                 9,266.70
+06/05/2024   SALARY CREDIT                            32,500.00    41,766.70
+09/05/2024   ATM CASH WITHDRAWAL           5,000.00                36,766.70
+14/05/2024   INTERNET BANKING TRF         12,000.00                24,766.70
+20/05/2024   CHEQUE DEPOSIT 004512                     7,800.00    32,566.70
+31/05/2024   SERVICE CHARGE                   75.00                32,491.70
+
+Closing balance carried forward
+This is a computer generated statement.

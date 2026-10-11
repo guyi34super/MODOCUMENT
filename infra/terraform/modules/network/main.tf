@@ -226,6 +226,32 @@ resource "aws_security_group_rule" "alb_egress_app" {
   description              = "ALB forwards to app tasks only"
 }
 
+# ws26 bank integration hub, DIRECT mode: one egress rule per DB vendor port
+# and SFTP, all to var.bank_egress_cidrs — and none at all while that list
+# is empty (the default). AGENT-mode connections need nothing here: the
+# on-prem agent dials OUT to MoDocument over HTTPS.
+locals {
+  bank_egress_ports = {
+    sqlserver = 1433
+    oracle    = 1521
+    mariadb   = 3306
+    postgres  = 5432
+    sftp      = 22
+  }
+}
+
+resource "aws_security_group_rule" "app_egress_bank" {
+  for_each = length(var.bank_egress_cidrs) > 0 ? local.bank_egress_ports : {}
+
+  type              = "egress"
+  security_group_id = aws_security_group.app.id
+  protocol          = "tcp"
+  from_port         = each.value
+  to_port           = each.value
+  cidr_blocks       = var.bank_egress_cidrs
+  description       = "Bank integration (${each.key}) to approved bank networks only"
+}
+
 # The DB SG has NO egress rules at all: RDS initiates nothing.
 
 # --- VPC endpoints ----------------------------------------------------------

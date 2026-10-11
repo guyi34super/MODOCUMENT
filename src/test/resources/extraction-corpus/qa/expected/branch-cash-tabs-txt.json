@@ -1,0 +1,60 @@
+{
+  "name": "branch-cash-tabs-txt",
+  "file": "branch-cash-tabs.txt",
+  "strategies": [
+    "DELIMITED"
+  ],
+  "note": "tab-separated plain text",
+  "fields": [
+    {
+      "name": "Branch Code",
+      "type": "TEXT"
+    },
+    {
+      "name": "Branch Name",
+      "type": "TEXT"
+    },
+    {
+      "name": "Cash Position",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Reported",
+      "type": "DATE"
+    }
+  ],
+  "rows": [
+    [
+      "B01",
+      "Port Louis Central",
+      "1250000.00",
+      "2024-03-01"
+    ],
+    [
+      "B02",
+      "Curepipe",
+      "830500.25",
+      "2024-03-01"
+    ],
+    [
+      "B03",
+      "Rose-Hill",
+      "412000.00",
+      "2024-03-01"
+    ],
+    [
+      "B04",
+      "Grand Baie",
+      "96000.75",
+      "2024-03-01"
+    ],
+    [
+      "B05",
+      "Mahebourg",
+      "250010.10",
+      "2024-03-01"
+    ]
+  ],
+  "expectAccepted": true,
+  "minConfidence": 0.75
+}

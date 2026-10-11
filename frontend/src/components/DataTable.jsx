@@ -8,6 +8,10 @@
  * maxHeight (optional, any CSS length) caps the table's height: rows scroll
  * inside the wrapper and the header row stays pinned, so long tables never
  * force the page itself to scroll.
+ *
+ * caption (optional) names the table for assistive technology (a visually
+ * hidden <caption>). A column with an empty label (an actions column) gets
+ * a hidden header, `srLabel` or "Actions", so its cells are not unnamed.
  */
 export default function DataTable({
   columns,
@@ -16,6 +20,7 @@ export default function DataTable({
   onRowClick,
   maxHeight,
   getRowClassName,
+  caption,
 }) {
   if (!rows || rows.length === 0) {
     return <p className="py-6 text-sm text-muted">{emptyMessage}</p>;
@@ -27,11 +32,13 @@ export default function DataTable({
       style={stickyHead ? { maxHeight } : undefined}
     >
       <table className="w-full border-collapse text-[13px]">
+        {caption && <caption className="sr-only">{caption}</caption>}
         <thead>
           <tr className="bg-sidebar text-left">
             {columns.map((col) => (
               <th
                 key={col.key}
+                scope="col"
                 className={`bg-sidebar px-3 py-2 font-medium text-muted ${
                   stickyHead
                     ? // border-collapse detaches borders from sticky cells in
@@ -40,7 +47,7 @@ export default function DataTable({
                     : 'border-b border-line'
                 }`}
               >
-                {col.label}
+                {col.label || <span className="sr-only">{col.srLabel || 'Actions'}</span>}
               </th>
             ))}
           </tr>

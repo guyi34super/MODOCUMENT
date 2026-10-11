@@ -1,0 +1,10 @@
+Gehaltsabrechnung / Payroll January 2024
+
+Personnel No	Name	Department	Gross Pay	Payment Date
+1001	Lea Koenig	Operations	3.250,00	31.01.2024
+1002	Marco Rossi	Treasury	4.120,45	31.01.2024
+1003	Nina Jaworski	Compliance	3.890,10	31.01.2024
+1004	Olaf Berg	IT	5.002,00	31.01.2024
+1005	Pia Lindqvist	Retail	2.975,60	31.01.2024
+
+Total			19.238,15	

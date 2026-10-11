@@ -1,0 +1,20 @@
+{
+  "name": "statement-blocks-docx",
+  "file": "statement-blocks.docx",
+  "strategy": "KEY_VALUE",
+  "minConfidence": 0.85,
+  "maxConfidence": 1.0,
+  "fields": [
+    {"name": "Account Number", "type": "TEXT"},
+    {"name": "Transaction Date", "type": "DATE"},
+    {"name": "Description", "type": "TEXT"},
+    {"name": "Amount", "type": "NUMBER"},
+    {"name": "Reference", "type": "TEXT", "labelPattern": "Ref(erence)?\\.?"}
+  ],
+  "rows": [
+    ["MU-0042-7781", "2024-01-03", "Opening deposit", "1000.00", "REF-0001"],
+    ["MU-0042-7781", "2024-01-15", "Salary - January", "2500.00", "REF-0002"],
+    ["MU-0042-7781", "2024-01-18", "Card payment, supermarket", "-84.35", "REF-0003"],
+    ["MU-0042-7781", "2024-02-02", "Standing order", "-250.00", "REF-0004"]
+  ]
+}

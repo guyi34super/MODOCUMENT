@@ -16,6 +16,7 @@ import com.modocument.application.usecase.UploadOwnership;
 import com.modocument.domain.entity.ImportDetails;
 import com.modocument.domain.model.Permission;
 import com.modocument.domain.entity.ImportHistory;
+import com.modocument.infrastructure.ai.AiNotConfiguredException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -71,9 +72,14 @@ public class TransformController {
             // user's (or an unknown/pre-V20) stored name is a 404.
             uploadOwnership.require(request.getFileName());
 
-            int templateId = transformService.getTemplateId(request);
-            // The transform target template must belong to the caller.
-            int owner = ownership.require(templateId);
+            // ws23: a named template skips the AI template detection, so the
+            // transform also works with code-based extraction alone.
+            int templateId = request.getTemplateId() != null
+                    ? request.getTemplateId() : transformService.getTemplateId(request);
+            // The transform target template must be usable by the caller: own,
+            // or shared with their bank (ws22 read/use rule).
+            ownership.requireReadable(templateId);
+            int owner = ownership.requireUserId();
 
             List<String> fieldNames = templateFieldsRepository.listByTemplateId(templateId).stream()
                     .map(tf -> tf.getFieldName() == null ? "" : tf.getFieldName())
@@ -85,7 +91,7 @@ public class TransformController {
 
             String model = MAPPER.writeValueAsString(fieldNames);
 
-            TransformResult resultDto = transformService.transform(request, model);
+            TransformResult resultDto = transformService.transform(request, model, templateId);
 
             ImportHistory importHistory = new ImportHistory();
             importHistory.setOwnerUserId(owner);
@@ -107,6 +113,9 @@ public class TransformController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(notFound.getMessage());
         } catch (UnsupportedOperationException unsupported) {
             return ResponseEntity.badRequest().body(unsupported.getMessage());
+        } catch (AiNotConfiguredException unavailable) {
+            // No key, circuit open or AI off for the bank: AiExceptionHandler's 503.
+            throw unavailable;
         } catch (Exception ex) {
             // The message of an arbitrary failure can quote SQL, paths or the
             // file's content — log it, answer generically (requestId is in the

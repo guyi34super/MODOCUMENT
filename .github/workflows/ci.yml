@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # ws24: release.yml runs exactly these tests before it builds anything.
+  workflow_call:
 
 # Least privilege (SEC-042): CI only reads the repository. Actions are pinned
 # by full commit SHA (supply-chain hardening, SUP-S05) with the tag as a
@@ -21,6 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      # ws24: pom.xml, frontend/package.json (+ lock) and the newest released
+      # CHANGELOG.md heading carry one version (bash + awk only, seconds).
+      # release.yml runs the same script with the tag.
+      - name: Version sync
+        run: bash scripts/check-version-sync.sh
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
@@ -57,6 +64,24 @@ jobs:
           cache: maven
       - run: mvn -B verify -Ppostgres-it
 
+  # ws26: the on-prem Connector Agent is a standalone Maven project (not a
+  # module of the root build): its unit and end-to-end tests (a fake
+  # MoDocument on a JDK HttpServer, H2, an embedded SFTP server).
+  agent:
+    name: Connector Agent
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: agent/pom.xml
+      - run: mvn -B -f agent/pom.xml verify
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -73,4 +98,106 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: nginx security headers (E1)
-        run: ../scripts/check-nginx-headers.sh
+        run: |
+          ../scripts/check-nginx-headers.sh
+          # Wave 4: the local mTLS listener (docker-compose.mtls-dev.yml).
+          ../scripts/check-nginx-headers.sh nginx.mtls-dev.conf
+
+  # Playwright end-to-end suite on the compose stack (docker-compose.e2e.yml:
+  # PostgreSQL with RLS, the app and frontend images, the fake LLM, the
+  # Playwright runner; every image pinned by digest) — e2e/README.md.
+  # NON-BLOCKING for now (continue-on-error) while the phase-2 specs fill in;
+  # make it a required check once it has been green on main for a week.
+  # Pull requests run the @smoke subset on the base stack. Pushes to main run
+  # the full suite WITH the bank simulator (docker-compose.e2e-bank-sim.yml:
+  # bank DB, REST stub, SFTP) and the Wave-3 integration specs switched on
+  # (E2E_BANK_SIM=1, E2E_WAVE3=1). release.yml (workflow_call on a tag)
+  # skips the job.
+  e2e:
+    name: E2E (Playwright on the compose stack)
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    permissions:
+      contents: read
+    env:
+      E2E_BANK_SIM: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      # Every value is generated for this run only and masked in the log
+      # (e-mail addresses, ids and switches excepted); nothing is committed.
+      - name: Generate run-scoped secrets
+        env:
+          PLAYWRIGHT_ARGS: ${{ github.event_name == 'pull_request' && '--grep @smoke' || '' }}
+        run: |
+          umask 077
+          mkdir -p e2e/.run            # gitignored (e2e/.gitignore)
+          app_pw=$(openssl rand -hex 24)
+          pw() { echo "$1-$(openssl rand -base64 18 | tr -d '/+=,\n')-$2"; }
+          {
+            echo "E2E_POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+            echo "E2E_APP_DB_PASSWORD=$app_pw"
+            echo "E2E_APP_DB_USER_PASSWORD=$app_pw"
+            echo "E2E_JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "E2E_MFA_KEY=$(openssl rand -base64 48 | tr -d '\n')"
+            # Connector SecretVault key: a throwaway 32-byte key per run.
+            echo "E2E_CONNECTOR_KEY=$(openssl rand -base64 32 | tr -d '\n')"
+            echo "E2E_BOOTSTRAP_ADMIN_EMAIL=e2e-admin-${GITHUB_RUN_ID}@e2e.modocument.test"
+            echo "E2E_BOOTSTRAP_ADMIN_PASSWORD=$(pw E2e 7q)"
+            # The two bootstrap PLATFORM_ADMINs (ws21): platform console,
+            # bank onboarding, egress-rule approvals (maker/checker).
+            echo "E2E_PLATFORM_ADMIN_1_EMAIL=e2e-platform1-${GITHUB_RUN_ID}@e2e.modocument.test"
+            echo "E2E_PLATFORM_ADMIN_1_PASSWORD=$(pw E2p 7q)"
+            echo "E2E_PLATFORM_ADMIN_2_EMAIL=e2e-platform2-${GITHUB_RUN_ID}@e2e.modocument.test"
+            echo "E2E_PLATFORM_ADMIN_2_PASSWORD=$(pw E2p 8q)"
+            echo "E2E_AI_KEY=e2e-$(openssl rand -hex 8)"
+            echo "E2E_RUN_ID=${GITHUB_RUN_ID}"
+            echo "E2E_PLAYWRIGHT_ARGS=${PLAYWRIGHT_ARGS}"
+            if [ "$E2E_BANK_SIM" = 1 ]; then
+              # The bank simulator's own credentials (e2e/bank-simulator/README.md).
+              echo "E2E_WAVE3=1"
+              echo "BANK_SIM_DB_ADMIN_PASSWORD=$(openssl rand -hex 24)"
+              echo "BANK_SIM_DB_READER_PASSWORD=$(openssl rand -hex 24)"
+              echo "BANK_SIM_DB_WRITER_PASSWORD=$(openssl rand -hex 24)"
+              echo "BANK_SIM_CLIENT_ID=bank-sim-${GITHUB_RUN_ID}"
+              echo "BANK_SIM_CLIENT_SECRET=$(openssl rand -hex 24)"
+              echo "BANK_SIM_API_KEY=$(openssl rand -hex 24)"
+              echo "BANK_SIM_WEBHOOK_SECRET=$(openssl rand -hex 32)"
+              echo "BANK_SIM_SFTP_PASSWORD=$(openssl rand -hex 16)"
+            fi
+          } > e2e/.run/ci.env
+          while IFS='=' read -r name value; do
+            case "$name" in
+              *EMAIL|E2E_RUN_ID|E2E_PLAYWRIGHT_ARGS|E2E_WAVE3|BANK_SIM_CLIENT_ID) ;;
+              *) echo "::add-mask::$value" ;;
+            esac
+          done < e2e/.run/ci.env
+          # docker compose reads COMPOSE_FILE: the base stack, plus the bank
+          # simulator overlay when it is on.
+          files=docker-compose.e2e.yml
+          if [ "$E2E_BANK_SIM" = 1 ]; then files="$files:docker-compose.e2e-bank-sim.yml"; fi
+          echo "COMPOSE_FILE=$files" >> "$GITHUB_ENV"
+      - name: Run the suite
+        run: |
+          docker compose --env-file e2e/.run/ci.env config -q
+          docker compose --env-file e2e/.run/ci.env up --build \
+            --abort-on-container-exit --exit-code-from e2e
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose --env-file e2e/.run/ci.env logs --tail 300
+      - name: Upload report and traces
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-report
+          path: |
+            e2e/e2e-report
+            e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Tear down
+        if: always()
+        run: docker compose --env-file e2e/.run/ci.env down -v

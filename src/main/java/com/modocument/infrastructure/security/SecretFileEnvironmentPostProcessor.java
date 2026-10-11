@@ -58,6 +58,9 @@ public class SecretFileEnvironmentPostProcessor implements EnvironmentPostProces
     static final List<String> SECRET_VARIABLES = List.of(
             "MODOCUMENT_JWT_SECRET",
             "MODOCUMENT_MFA_KEY",
+            // ws25: the connector-secret master key (+ retired rotation keys).
+            "MODOCUMENT_CONNECTOR_KEY",
+            "MODOCUMENT_CONNECTOR_RETIRED_KEYS",
             // Runtime datasource (modocument_app role) and migration owner.
             "MODOCUMENT_DB_PASSWORD",
             "MODOCUMENT_FLYWAY_PASSWORD",
@@ -65,6 +68,10 @@ public class SecretFileEnvironmentPostProcessor implements EnvironmentPostProces
             "SPRING_DATASOURCE_PASSWORD",
             "SPRING_FLYWAY_PASSWORD",
             "MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD",
+            // Phase 2 (OBS-01): the optional second bootstrap administrator.
+            "MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_PASSWORD",
+            // ws21: the two platform admins' temporary passwords (one per line).
+            "MODOCUMENT_PLATFORM_ADMIN_PASSWORDS",
             "MODOCUMENT_AI_API_KEY",
             "MODOCUMENT_OIDC_ENTRA_CLIENT_SECRET",
             "MODOCUMENT_OIDC_KEYCLOAK_CLIENT_SECRET",

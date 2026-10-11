@@ -9,7 +9,8 @@ GitHub-OIDC deploys with no static cloud keys.
 > -check` and `terraform init -backend=false && terraform validate` pass for
 > both envs (Terraform 1.9.8, hashicorp/aws 5.100.0, hashicorp/random 3.9.1,
 > from a checksum-verified local provider mirror — 9 Oct 2026, go-live
-> blocker fixes). `terraform plan/apply` still need AWS credentials and are
+> blocker fixes; re-validated 10 Oct 2026 with the ws24 release changes
+> below). `terraform plan/apply` still need AWS credentials and are
 > **pending** — run them per env before anything goes live. Nothing here has
 > touched any cloud account.
 
@@ -31,7 +32,9 @@ infra/terraform/
 │   │                         cap (SEC-002/003), Session-Manager-only nodes;
 │   │                         non-root containers (nginx-unprivileged uid 101
 │   │                         on 8080, app uid 10001 on 8081 in the shared
-│   │                         awsvpc namespace), all capabilities dropped
+│   │                         awsvpc namespace), all capabilities dropped;
+│   │                         deployment circuit breaker with rollback, CI-
+│   │                         owned task-definition revisions (ws24)
 │   ├── edge/                 CloudFront + AWS WAF managed/rate rules
 │   │                         (SUP-S03/SEC-002), origin locked to CloudFront
 │   │                         (A12), D3 egress NACL stub
@@ -39,7 +42,8 @@ infra/terraform/
 │   │                         (A6/SEC-015), alarms → SNS (ws18 seam), Session
 │   │                         Manager session logging (SEC-015)
 │   └── ci-oidc/              GitHub OIDC provider + least-privilege per-env
-│                             deploy roles (SUP-S05/A8)
+│                             deploy roles (SUP-S05/A8), trusted per GitHub
+│                             environment (ws24)
 └── envs/
     ├── production/           af-south-1, full edge, locks gated behind a flag
     └── staging/              SEPARATE account (SUP-S07), scaled down, no locks
@@ -86,20 +90,23 @@ one run. Operationally, the sequence that avoids dead ends:
    terraform validate && terraform plan && terraform apply`.
 3. **Secret values, per env** — every secret the task injects must HAVE a
    value or ECS cannot launch the task (it retries until it can):
-   `MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`, the `modocument_app` DB
-   credentials, and — first deploy only — the **bootstrap admin pair**
+   `MODOCUMENT_JWT_SECRET`, `MODOCUMENT_MFA_KEY`, `MODOCUMENT_CONNECTOR_KEY`
+   (ws26: the connector SecretVault key, `openssl rand -base64 32`), the
+   `modocument_app` DB credentials, and — first deploy only — the **bootstrap admin pair**
    `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `_PASSWORD` (an empty database
    refuses to boot without it; the password must pass the app's password
    policy). Cleanest: create the shells first, set the values, then apply
    the rest —
-   `terraform apply -target=aws_secretsmanager_secret.jwt -target=aws_secretsmanager_secret.mfa_key -target=aws_secretsmanager_secret.db_app -target='aws_secretsmanager_secret.bootstrap_admin_email[0]' -target='aws_secretsmanager_secret.bootstrap_admin_password[0]'`,
+   `terraform apply -target=aws_secretsmanager_secret.jwt -target=aws_secretsmanager_secret.mfa_key -target=aws_secretsmanager_secret.connector_key -target=aws_secretsmanager_secret.db_app -target='aws_secretsmanager_secret.bootstrap_admin_email[0]' -target='aws_secretsmanager_secret.bootstrap_admin_password[0]'`,
    then `aws secretsmanager put-secret-value --secret-id <env>/MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD --secret-string file://pw.txt`
    (a file, not the shell history; shred it after) and likewise for the
    others, then the full `terraform apply`. Create the `modocument_app` role
    on RDS following
    [`docker/postgres-init/01-app-role.sh`](../../docker/postgres-init/01-app-role.sh)
    (NOBYPASSRLS — the RLS-subject runtime role, see the rds module header);
-   push images (ci-oidc outputs the ECR URLs); point DNS at the CloudFront
+   push the released images (ci-oidc outputs the ECR URLs; the tfvars
+   `app_image` / `frontend_image` tag must exist before the service is
+   created — "Releases and deployments" below); point DNS at the CloudFront
    output.
 4. **Production**, same steps, `enforce_backup_locks=false`.
 5. **After the first admin exists, per env:** that admin signs in, changes
@@ -111,6 +118,16 @@ one run. Operationally, the sequence that avoids dead ends:
    runtime — it just removes a standing admin credential. Do **not** delete
    the secrets by hand while the flag is still true: the task definition
    would reference a missing secret and new tasks would fail to launch.
+6. **Platform owner (v1.1.0), per env:** `platform_admin_bootstrap_enabled
+   = true` creates `MODOCUMENT_PLATFORM_ADMIN_EMAILS` and
+   `MODOCUMENT_PLATFORM_ADMIN_PASSWORDS` (two comma-separated entries each,
+   in the same order; the passwords must pass the password policy) and
+   injects them. BootstrapPlatformRunner then seeds the platform bank and
+   its two PLATFORM_ADMIN accounts once. Set both values **before** the
+   deploy that carries the flag. After both platform admins have changed
+   their passwords and enrolled MFA, set the flag to `false` and re-apply,
+   as in step 5. Default `false`: an install without a platform owner yet
+   simply skips the seeding.
    Re-enable only to seed a rebuilt, empty database.
 6. **After the restore drill passes (gate D6):** set
    `enforce_backup_locks=true` in production tfvars and re-apply — vault
@@ -119,6 +136,93 @@ one run. Operationally, the sequence that avoids dead ends:
 7. **After the egress allow-list is signed off (gate D3):** narrow
    `app_egress_https_cidrs`, set `enforce_egress_nacl=true` +
    `egress_allowlist_cidrs`, re-apply.
+
+## Releases and deployments (ws24)
+
+How Terraform and the release pipeline share the ECS service — see
+[docs/release/runbook.md](../../docs/release/runbook.md): `release.yml`
+(tags) and `deploy.yml` (manual roll-forward/rollback) use the outputs
+below as GitHub environment variables (runbook §7).
+
+- **Terraform owns the task-definition template; CI owns its revisions.**
+  - Terraform defines the family, roles, environment, secrets, health
+    checks and container users/capabilities. It also registers the
+    **first** revision, with `app_image` / `frontend_image` from tfvars.
+    These must be **released version tags** (`…/app:1.0.0`): the ECR
+    repositories are `IMMUTABLE`, so a moving tag like `latest-build`
+    cannot be pushed twice.
+  - From then on, CI copies the latest revision, pins both images **by
+    digest**, registers it and updates the service.
+  - `aws_ecs_service` ignores `task_definition` (and `desired_count`, which
+    autoscaling owns), so `terraform apply` never rolls a release back to
+    the tfvars image.
+  - `skip_destroy = true` keeps superseded revisions ACTIVE, so a running
+    service or a circuit-breaker rollback never points at a deregistered
+    one.
+  - A Terraform-only change (a new env var or secret) registers a new
+    revision. It reaches the running service with the next CI deploy: run
+    `deploy.yml` with the current version.
+- **Automatic rollback.** The service has `deployment_circuit_breaker
+  { enable = true, rollback = true }`. A deployment whose tasks keep failing
+  to start or to pass health checks returns to the last steady revision.
+  The schema stays migrated, which is why
+  [docs/release/migration-policy.md](../../docs/release/migration-policy.md)
+  allows only expand migrations in a release.
+- **App environment.** The app container gets:
+  - `MODOCUMENT_DEPLOY_ENVIRONMENT` = `staging` / `production`
+    (`deploy_environment`, reported by `GET /api/system/version`);
+  - `MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS=true`: the app refuses to boot
+    if a configured default lies outside its hard limits (ws20).
+- **CI OIDC trust.** A GitHub job that declares an `environment:` presents
+  `sub = repo:<owner>/<repo>:environment:<name>`, not the ref form.
+  - **Production** trusts `environment:production`. That environment has
+    required reviewers and accepts `v*` tags only; configure both in the
+    repository settings together with a tag ruleset protecting `v*`.
+  - **Production transition:** production also keeps
+    `ref:refs/heads/main` (the pre-ws24 trust). Remove it once one release
+    has shipped through the environment-gated pipeline.
+  - **Staging** trusts `environment:staging` and keeps its repo-wide
+    `repo:<repo>:*` entry.
+  - A variable validation pins every subject to one `owner/repo`.
+  - The deploy role can also run `ecr:DescribeImages` (tag → digest),
+    besides the existing ECS describe/register/update rights.
+
+## Bank integration hub (ws26)
+
+All three switches are **off by default**: an apply without them changes
+nothing but the new `MODOCUMENT_CONNECTOR_KEY` secret.
+
+- **`MODOCUMENT_CONNECTOR_KEY`**: a secret shell per env
+  (`aws_secretsmanager_secret.connector_key`), injected into the app like
+  the MFA key. This is the AES-256-GCM key of the connector SecretVault,
+  which seals bank integration credentials at rest. Set its value before
+  the next deploy (apply order step 3) and register it in the key register
+  (K16).
+- **`bank_egress_cidrs`** (network module): for DIRECT-mode connections to
+  bank systems reached over a per-bank VPN or PrivateLink (see the root
+  README "Implement later"). It adds app-SG egress on 1433, 1521, 3306,
+  5432 and 22 to exactly these CIDRs. Empty means no rule. The app also
+  requires an approved `BankEgressRule` per destination. In production,
+  the egress NACL (`enforce_egress_nacl`) must allow the same ranges.
+- **`api_mtls_enabled`** (ecs-app `mtls.tf`): machine clients with client
+  certificates use `api_domain` on a second HTTPS listener
+  (`api_mtls_listener_port`, default 8443). It runs in **verify** mode
+  against a trust store whose CA bundle (`api_mtls_ca_bundle_pem`, the
+  banks' issuing CAs) lives in a private, versioned, encrypted S3 bucket.
+  Only `api_mtls_client_cidrs` may reach it. Only `Host: api_domain` is
+  forwarded, to a dedicated target group on the nginx mTLS server
+  (`frontend_mtls_port` 8443). That is the only place that passes the
+  `X-Amzn-Mtls-Clientcert-*` headers to the app, and only from the trusted
+  ALB. The browser path always strips them. The app also gets
+  `MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS` = `127.0.0.1/32` — its only TCP
+  peer is that nginx container on loopback (empty while mTLS is off, so
+  the headers are never trusted). Point `api_domain` at the ALB
+  (not CloudFront, which cannot carry the client certificate).
+  Requires `api_domain`, `api_certificate_arn`, the CA bundle and client
+  CIDRs (a precondition fails the plan otherwise).
+
+AGENT-mode connections need none of this. The on-prem Connector Agent dials
+out to the normal HTTPS endpoint (`docs/integration/agent.md`).
 
 ## What this IaC deliberately does NOT do
 

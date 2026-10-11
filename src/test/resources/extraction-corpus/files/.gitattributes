@@ -1,0 +1,2 @@
+# Golden corpus text fixtures: exact bytes matter (BOM, CRLF, tabs, padding).
+* -text

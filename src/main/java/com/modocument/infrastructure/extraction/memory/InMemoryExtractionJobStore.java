@@ -2,11 +2,13 @@ package com.modocument.infrastructure.extraction.memory;
 
 import com.modocument.application.port.ExtractionJobStore;
 import com.modocument.domain.document.ExtractionJob;
+import com.modocument.domain.model.ExtractionJobStatus;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -63,5 +65,17 @@ public class InMemoryExtractionJobStore implements ExtractionJobStore {
         if (job != null) {
             job.getCounters().merge(counter, delta, Long::sum);
         }
+    }
+
+    @Override
+    public Map<ExtractionJobStatus, Long> countByStatusSince(int bankId, Instant since) {
+        Map<ExtractionJobStatus, Long> counts = new EnumMap<>(ExtractionJobStatus.class);
+        for (ExtractionJob job : jobs.values()) {
+            if (job.getBankId() == bankId && job.getStatus() != null
+                    && job.getCreatedDate() != null && !job.getCreatedDate().isBefore(since)) {
+                counts.merge(job.getStatus(), 1L, Long::sum);
+            }
+        }
+        return counts;
     }
 }

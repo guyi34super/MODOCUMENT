@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 /** Small shared UI primitives carrying the docs-site look. */
 
 export function Button({ variant = 'primary', size = 'md', className = '', ...props }) {
@@ -78,9 +80,17 @@ export function Badge({ status }) {
  * sits inside a toast or a button rather than standing in for a whole panel.
  */
 export function Spinner({ label = 'Loading…', inline = false }) {
+  // A panel-sized spinner announces itself (role=status, polite); an inline
+  // one sits inside something that already does (a toast, a button).
   return (
-    <div className={`flex items-center gap-2 text-sm text-muted ${inline ? '' : 'py-8'}`}>
-      <span className="size-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent" />
+    <div
+      role={inline ? undefined : 'status'}
+      className={`flex items-center gap-2 text-sm text-muted ${inline ? '' : 'py-8'}`}
+    >
+      <span
+        aria-hidden="true"
+        className="size-4 shrink-0 animate-spin rounded-full border-2 border-line border-t-accent"
+      />
       {label}
     </div>
   );
@@ -89,7 +99,10 @@ export function Spinner({ label = 'Loading…', inline = false }) {
 export function ErrorBanner({ message, onDismiss }) {
   if (!message) return null;
   return (
-    <div className="mb-4 flex items-start justify-between rounded-md bg-danger-bg px-4 py-3 text-sm text-danger-ink">
+    <div
+      role="alert"
+      className="mb-4 flex items-start justify-between rounded-md bg-danger-bg px-4 py-3 text-sm text-danger-ink"
+    >
       <span>{message}</span>
       {onDismiss && (
         <button onClick={onDismiss} className="ml-4 cursor-pointer font-bold" aria-label="Dismiss">
@@ -121,5 +134,184 @@ export function StatCard({ label, value, hint }) {
       <p className="mt-1 text-3xl font-semibold text-ink">{value}</p>
       {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
     </Card>
+  );
+}
+
+const KPI_TONES = {
+  neutral: { bar: 'border-l-line', value: 'text-ink' },
+  success: { bar: 'border-l-success-ink', value: 'text-success-ink' },
+  warning: { bar: 'border-l-amber-500', value: 'text-amber-800', text: 'Needs attention.' },
+  danger: { bar: 'border-l-danger-ink', value: 'text-danger-ink', text: 'Needs action.' },
+};
+
+/**
+ * A dashboard KPI: StatCard's label/value/hint plus a `tone` (neutral |
+ * success | warning | danger: a coloured left edge and value) and an
+ * optional `to` route that turns the whole tile into a link to the page
+ * behind the number. `value` null/undefined renders "—" (not loaded yet, or
+ * not tracked). `testId` lands on the tile (E2E: `kpi-<metric>`); the value
+ * itself is always `data-testid="kpi-value"`.
+ */
+export function KpiTile({ label, value, hint, to, tone = 'neutral', testId }) {
+  const colors = KPI_TONES[tone] || KPI_TONES.neutral;
+  const body = (
+    <>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
+      <p data-testid="kpi-value" className={`mt-1 text-3xl font-semibold ${colors.value}`}>
+        {value ?? '—'}
+      </p>
+      {/* The tone is a colour; say it in words too (WCAG 1.4.1). */}
+      {colors.text && <span className="sr-only">{colors.text}</span>}
+      {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
+    </>
+  );
+  const frame =
+    `block min-w-40 flex-1 rounded-lg border border-l-4 border-line ${colors.bar} ` +
+    'bg-white p-5';
+  if (to) {
+    return (
+      <Link
+        to={to}
+        data-tone={tone}
+        data-testid={testId}
+        className={`${frame} transition-colors hover:bg-pill/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <div data-tone={tone} data-testid={testId} className={frame}>
+      {body}
+    </div>
+  );
+}
+
+/**
+ * Whole-number percentages of `values` that add up to exactly 100 (largest
+ * remainder), or all zeros when the total is 0.
+ */
+export function sharePercents(values) {
+  const numbers = values.map((v) => Math.max(0, Number(v) || 0));
+  const total = numbers.reduce((a, b) => a + b, 0);
+  if (total === 0) return numbers.map(() => 0);
+  const exact = numbers.map((n) => (n * 100) / total);
+  const floors = exact.map(Math.floor);
+  let missing = 100 - floors.reduce((a, b) => a + b, 0);
+  const order = exact
+    .map((x, i) => ({ i, rest: x - Math.floor(x) }))
+    .sort((a, b) => b.rest - a.rest);
+  for (const { i } of order) {
+    if (missing <= 0) break;
+    floors[i] += 1;
+    missing -= 1;
+  }
+  return floors;
+}
+
+/**
+ * A dashboard tile showing how a whole splits into parts: a stacked bar
+ * (decorative, aria-hidden) plus a legend list that states every part's
+ * count and percentage in text, so nothing depends on colour alone.
+ * `parts`: [{ key, label, value, swatch }] where `swatch` is a background
+ * class. `testId` lands on the tile; each legend row is
+ * `data-testid="share-<key>"`.
+ */
+export function ShareTile({ label, parts, testId, emptyText = 'Nothing yet', className = '' }) {
+  const total = parts.reduce((sum, p) => sum + (Number(p.value) || 0), 0);
+  const percents = sharePercents(parts.map((p) => p.value));
+  const headingId = testId ? `${testId}-label` : undefined;
+  return (
+    <div
+      data-testid={testId}
+      className={`block min-w-40 flex-1 rounded-lg border border-l-4 border-line border-l-line bg-white p-5 ${className}`}
+    >
+      <p id={headingId} className="text-xs font-medium uppercase tracking-wide text-muted">
+        {label}
+      </p>
+      {total === 0 ? (
+        <p className="mt-2 text-sm text-muted">{emptyText}</p>
+      ) : (
+        <>
+          <div
+            aria-hidden="true"
+            className="mt-3 flex h-3 w-full gap-px overflow-hidden rounded-full bg-neutral-100"
+          >
+            {parts.map((p, i) =>
+              percents[i] > 0 ? (
+                <span key={p.key} className={p.swatch} style={{ width: `${percents[i]}%` }} />
+              ) : null
+            )}
+          </div>
+          <ul aria-labelledby={headingId} className="mt-3 space-y-1 text-sm text-ink">
+            {parts.map((p, i) => (
+              <li key={p.key} data-testid={`share-${p.key}`} className="flex items-center gap-2">
+                <span aria-hidden="true" className={`inline-block size-2.5 shrink-0 rounded-sm ${p.swatch}`} />
+                <span className="flex-1">{p.label}</span>
+                <span className="tabular-nums">
+                  {Number(p.value) || 0} ({percents[i]}%)
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
+const TAG_TONES = {
+  neutral: 'bg-neutral-100 text-muted',
+  info: 'bg-pill text-accent',
+  success: 'bg-success-bg text-success-ink',
+  warning: 'bg-amber-100 text-amber-800',
+  danger: 'bg-danger-bg text-danger-ink',
+};
+
+/**
+ * A small text badge ("Shared", "Locked", "Requires approval", …) — Badge's
+ * look for free text instead of a job status. `tone`: neutral | info |
+ * success | warning | danger; `title` explains it on hover.
+ */
+export function Tag({ tone = 'neutral', title, className = '', children }) {
+  return (
+    <span
+      title={title}
+      className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${
+        TAG_TONES[tone] || TAG_TONES.neutral
+      } ${className}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * An on/off switch: role="switch" + aria-checked, named by `label`
+ * (aria-label) or by `labelledBy` (the id of a visible label). `onChange`
+ * receives the new state.
+ */
+export function Switch({ checked, onChange, label, labelledBy, disabled = false, id }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      id={id}
+      aria-checked={Boolean(checked)}
+      aria-label={labelledBy ? undefined : label}
+      aria-labelledby={labelledBy}
+      disabled={disabled}
+      onClick={() => onChange?.(!checked)}
+      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked ? 'bg-accent' : 'bg-neutral-300'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`inline-block size-4 rounded-full bg-white shadow transition-transform ${
+          checked ? 'translate-x-4' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
   );
 }

@@ -99,8 +99,15 @@ function tokenExpiresSoon(token) {
  * forced-enrolment flow) instead of the stored session token; those calls
  * must never trigger the silent-refresh/redirect dance — a 401 just surfaces
  * as an error on the login screen.
+ *
+ * `noExpiryRedirect` keeps the silent refresh but never turns a final 401
+ * into the "session expired" redirect: for calls whose 401 is expected, like
+ * a logout after the session already ended server-side (BUG-02).
  */
-async function request(path, { method = 'GET', body, raw = false, retried = false, authToken } = {}) {
+async function request(
+  path,
+  { method = 'GET', body, raw = false, retried = false, authToken, noExpiryRedirect = false } = {}
+) {
   // The two-phase login endpoints answer 401 for a wrong code — that is
   // feedback for the login form, never a reason to bounce the browser.
   const isAuthEntryPoint =
@@ -134,8 +141,13 @@ async function request(path, { method = 'GET', body, raw = false, retried = fals
     if (!retried) {
       const newToken = await refreshAccessToken();
       if (newToken) {
-        return request(path, { method, body, raw, retried: true });
+        return request(path, { method, body, raw, retried: true, noExpiryRedirect });
       }
+    }
+    if (noExpiryRedirect) {
+      const error = new Error('Not signed in.');
+      error.status = 401;
+      throw error;
     }
     // The refresh cookie itself is dead (idle/absolute bound, revocation):
     // proactive logout — clear and land on the login page with a banner
@@ -176,6 +188,7 @@ export const api = {
   get: (path, opts = {}) => request(path, { ...opts }),
   post: (path, body, opts = {}) => request(path, { ...opts, method: 'POST', body }),
   put: (path, body, opts = {}) => request(path, { ...opts, method: 'PUT', body }),
+  patch: (path, body, opts = {}) => request(path, { ...opts, method: 'PATCH', body }),
   del: (path, body, opts = {}) => request(path, { ...opts, method: 'DELETE', body }),
 };
 

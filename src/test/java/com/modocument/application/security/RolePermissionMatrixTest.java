@@ -46,9 +46,35 @@ class RolePermissionMatrixTest {
 
     @Test
     void roleSemanticsHold() {
-        // ADMIN holds everything.
+        // ADMIN holds everything a bank can hold: all but the platform-owner
+        // set and the machine-client scopes.
+        EnumSet<Permission> notForBanks = EnumSet.copyOf(RolePermissions.PLATFORM_PERMISSIONS);
+        notForBanks.addAll(RolePermissions.CLIENT_SCOPES);
         assertThat(RolePermissions.granted(Role.ADMIN))
-                .containsExactlyInAnyOrderElementsOf(EnumSet.allOf(Permission.class));
+                .containsExactlyInAnyOrderElementsOf(EnumSet.complementOf(notForBanks));
+
+        // No bank role holds a platform permission or a client scope.
+        for (Role role : Role.values()) {
+            if (role.isBankRole()) {
+                assertThat(RolePermissions.granted(role))
+                        .as("bank role %s", role)
+                        .doesNotContainAnyElementsOf(notForBanks);
+            }
+        }
+
+        // PLATFORM_ADMIN: the platform set plus own-bank housekeeping, and
+        // no domain permission at all (no bank's templates, jobs or data).
+        assertThat(RolePermissions.granted(Role.PLATFORM_ADMIN))
+                .containsAll(RolePermissions.PLATFORM_PERMISSIONS)
+                .doesNotContain(Permission.TEMPLATE_READ, Permission.INGESTION_READ,
+                        Permission.IMPORT_READ, Permission.EXTRACTION_READ, Permission.DOC_READ,
+                        Permission.EXPORT_RUN, Permission.FILE_UPLOAD, Permission.AI_USE,
+                        Permission.SETTINGS_WRITE, Permission.INTEGRATION_ADMIN)
+                .doesNotContainAnyElementsOf(RolePermissions.CLIENT_SCOPES);
+
+        // API_CLIENT: exactly the client scopes.
+        assertThat(RolePermissions.granted(Role.API_CLIENT))
+                .containsExactlyInAnyOrderElementsOf(RolePermissions.CLIENT_SCOPES);
 
         // READ_ONLY: no writes, no exports, no uploads, no LLM spend (PRIV-005).
         for (Permission permission : RolePermissions.granted(Role.READ_ONLY)) {

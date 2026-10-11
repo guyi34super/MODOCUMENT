@@ -71,13 +71,28 @@ HIGH < CRITICAL), `enabled`.
 | `sod-attempt-blocked` | immediate | `SELF_APPROVAL_BLOCKED`, `DOC_SELF_RELEASE_BLOCKED` | actor | – / 15m | MEDIUM | |
 | `ai-prompt-refused` | immediate | `AI_PROMPT_REFUSED` | actor | – / 5m | HIGH | |
 | `ai-output-blocked` | immediate | `AI_OUTPUT_BLOCKED` | actor | – / 15m | MEDIUM | |
-| `privileged-change` | immediate | `BOOTSTRAP_ADMIN_CREATED`, `USER_ROLE_CHANGED`, `MFA_DISABLED`, `USER_LIST_EXPORTED`, `DSR_EXPORTED`, `DSR_ERASED` | actor | – / 5m | MEDIUM | |
+| `privileged-change` | immediate | `BOOTSTRAP_ADMIN_CREATED`, `USER_ROLE_CHANGED`, `MFA_DISABLED`, `USER_LIST_EXPORTED`, `DSR_EXPORTED`, `DSR_ERASED`, `USER_PASSWORD_RESET`, `USER_MFA_RESET` | actor | – / 5m | MEDIUM | |
 | `admin-login` | immediate | `LOGIN_SUCCESS` by role ADMIN | actor | – / 60m | LOW | `MODOCUMENT_ALERT_ADMIN_LOGIN_WINDOW` |
 | `login-failures-per-user` | windowed | `LOGIN_FAILED` | actor | ≥ 5 / 5m | HIGH | `MODOCUMENT_ALERT_LOGIN_FAILURES_PER_USER`, `..._WINDOW` |
 | `login-failures-per-ip` | windowed | `LOGIN_FAILED` | ip | ≥ 5 / 5m | HIGH | `MODOCUMENT_ALERT_LOGIN_FAILURES_PER_IP`, `..._WINDOW` |
 | `authorization-denied-burst` | windowed | `AUTHORIZATION_DENIED` | actor | ≥ 10 / 5m | MEDIUM | `MODOCUMENT_ALERT_AUTHZ_DENIED_THRESHOLD` |
 | `admin-action-burst` | windowed | any SUCCESS by role ADMIN | actor | ≥ 30 / 10m | MEDIUM | `MODOCUMENT_ALERT_ADMIN_BURST_THRESHOLD` |
 | `export-burst` | windowed | `EXPORT_RUN` | actor | ≥ 5 / 10m | MEDIUM | `MODOCUMENT_ALERT_EXPORT_BURST_THRESHOLD` |
+| `security-setting-changed` (ws20) | immediate | `SECURITY_SETTING_UPDATED` | actor (the approver) | – / 5m | MEDIUM | |
+| `platform-change` (ws20/ws21) | immediate | `PLATFORM_SETTING_UPDATED`, `PLATFORM_BOOTSTRAPPED`, `BANK_ONBOARDED`, `BANK_SUSPENDED`, `BANK_REACTIVATED`, `BANK_ADMIN_ADDED`, `EGRESS_RULE_APPROVED` (wave 3) | entity (bank lifecycle rows are audited in the customer bank and the platform bank: one alert each) | – / 5m | HIGH | |
+| `parse-fallback-surge` (ws23) | windowed | `INGESTION_PARSE_FALLBACK` | bank | ≥ 20 / 1h | MEDIUM | `MODOCUMENT_ALERT_PARSE_FALLBACK_SURGE_THRESHOLD` |
+| `ai-circuit-opened` (ws23) | immediate | `AI_CIRCUIT_OPENED` | bank | – / 15m | HIGH | |
+| `integration-failures` (ws25) | windowed | `INTEGRATION_RUN_FAILED` | bank | ≥ 5 / 1h | MEDIUM | `MODOCUMENT_ALERT_INTEGRATION_FAILURES_THRESHOLD` |
+| `integration-dead-letter` (ws25) | immediate | `INTEGRATION_DELIVERY_DEAD` | bank | – / 15m | HIGH | |
+| `agent-offline` (ws26) | immediate | `AGENT_OFFLINE` (written once per ONLINE → OFFLINE transition by the agent offline sweep, after the bank's `integration.agentHeartbeatTimeout`) | entity (the agent) | – / 30m | MEDIUM | |
+
+**Platform tuning (ws20).** Every windowed rule's threshold and window is
+also a platform setting (`alerts.<rule>.threshold` / `.window`, Security
+alerts tab, maker/checker): a stored value overlays the yml one on every
+task within one settings poll, without a restart. Thresholds range from 1
+to 4x the shipped default, windows from 1 to 60 minutes; the channels'
+minimum severities (`alerts.webhook.minSeverity`, `alerts.email.minSeverity`)
+are platform settings too.
 
 How the D1 signals map: *failed logins* → `login-failures-per-user/-ip`
 (+ `account-locked` on the 6th wrong password); *admin/root use* →
@@ -142,7 +157,11 @@ Plain HTTP to a non-loopback host is allowed but logged as a warning.
 default **5,000**, `MODOCUMENT_EXPORT_CAP_ADMIN` default **50,000**; a role
 without an entry gets 0 — fail closed). Applied by `ExportGuard` to **both**
 export paths (file download and database push) after the rows are counted
-and **before** anything is produced:
+and **before** anything is produced. ws26: machine reads of validated rows
+(`GET /api/integration/v1/jobs/{id}/results`) pass the same guard with role
+`API_CLIENT` (`MODOCUMENT_EXPORT_CAP_API_CLIENT`, default **50,000**) and
+never carry a reason, so above the cap they are refused (403
+`EXPORT_CAP_EXCEEDED`, `EXPORT_BLOCKED`); each read is an `EXPORT_RUN`:
 
 | Rows vs. cap | Reason | Result | Audit | Alert |
 |---|---|---|---|---|

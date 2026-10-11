@@ -1,0 +1,60 @@
+{
+  "name": "salary-advice-blocks-pdf",
+  "file": "salary-advice.pdf",
+  "strategy": "KEY_VALUE",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "one salary slip per PDF page; a page break starts a new record",
+  "fields": [
+    {
+      "name": "Employee",
+      "type": "TEXT"
+    },
+    {
+      "name": "Employee ID",
+      "type": "TEXT"
+    },
+    {
+      "name": "Pay Period",
+      "type": "TEXT"
+    },
+    {
+      "name": "Gross Salary",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Total Deductions",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Net Salary",
+      "type": "NUMBER"
+    }
+  ],
+  "rows": [
+    [
+      "Kavish Doorgakant",
+      "E30011",
+      "January 2024",
+      "45000.00",
+      "6120.00",
+      "38880.00"
+    ],
+    [
+      "Melanie Ah Kong",
+      "E30012",
+      "January 2024",
+      "52500.00",
+      "7360.50",
+      "45139.50"
+    ],
+    [
+      "Ravi Seeparsad",
+      "E30013",
+      "January 2024",
+      "39800.00",
+      "5214.00",
+      "34586.00"
+    ]
+  ]
+}

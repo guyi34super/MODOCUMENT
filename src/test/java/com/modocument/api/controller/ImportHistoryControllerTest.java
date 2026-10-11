@@ -2,6 +2,7 @@ package com.modocument.api.controller;
 
 import com.modocument.testsupport.FixedUser;
 import com.modocument.application.port.ImportHistoryRepository;
+import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.domain.entity.ImportHistory;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -20,7 +21,11 @@ class ImportHistoryControllerTest {
 
     private static final int USER = 1;
     private final ImportHistoryRepository repo = mock(ImportHistoryRepository.class);
-    private final ImportHistoryController controller = new ImportHistoryController(repo, FixedUser.provider(USER));
+    // Template readability is TemplateOwnership's job (TemplateVisibilityMatrixTest);
+    // a permissive mock keeps these tests on the controller's own behaviour.
+    private final TemplateOwnership templateOwnership = mock(TemplateOwnership.class);
+    private final ImportHistoryController controller =
+            new ImportHistoryController(repo, FixedUser.provider(USER), templateOwnership);
 
     private static ImportHistory importHistory(int id, String fileName) {
         ImportHistory history = new ImportHistory();

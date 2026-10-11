@@ -1,10 +1,13 @@
 package com.modocument.application.usecase;
 
 import com.modocument.testsupport.FixedUser;
+import com.modocument.application.dto.ParseContext;
+import com.modocument.application.dto.ParseProvenance;
 import com.modocument.application.dto.ParseResult;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.mapping.MappingContext;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.IngestionJobRepository;
@@ -15,12 +18,16 @@ import com.modocument.domain.entity.ImportHistory;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.entity.Template;
 import com.modocument.domain.entity.TemplateFields;
+import com.modocument.domain.model.ExtractionMode;
+import com.modocument.domain.model.FallbackReason;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +39,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,6 +67,15 @@ class IngestionJobUseCaseTest {
         @Override
         public List<IngestionJob> list() {
             return List.copyOf(store.values());
+        }
+
+        @Override
+        public int countActiveByTemplateIdOfOtherUsers(int templateId, int ownerUserId) {
+            return (int) store.values().stream()
+                    .filter(j -> j.getTemplateId() == templateId && j.getOwnerUserId() != ownerUserId)
+                    .filter(j -> j.getStatus() == com.modocument.domain.model.JobStatus.PENDING
+                            || j.getStatus() == com.modocument.domain.model.JobStatus.RUNNING)
+                    .count();
         }
 
         @Override
@@ -120,9 +139,11 @@ class IngestionJobUseCaseTest {
     private final ValidateRowsUseCase validateRows = mock(ValidateRowsUseCase.class);
     private static final int USER = 1;
 
+    private final AuditRecorder audit = mock(AuditRecorder.class);
+
     private final IngestionJobUseCase useCase = new IngestionJobUseCase(
             jobs, templates, templateFields, importHistory, importDetails,
-            parseStep, autoMap, validateRows, FixedUser.provider(USER));
+            parseStep, autoMap, validateRows, FixedUser.provider(USER), audit);
 
     private static final TableData PARSED = new TableData(
             List.of("first_name"), List.of(Map.of("first_name", "Ada")));
@@ -131,7 +152,7 @@ class IngestionJobUseCaseTest {
 
     @BeforeEach
     void setUp() {
-        when(templates.getByIdAndOwner(1, USER)).thenReturn(Optional.of(new Template(1, "T", null)));
+        when(templates.getAccessible(1, USER, com.modocument.domain.entity.Bank.DEFAULT_BANK_ID)).thenReturn(Optional.of(new Template(1, "T", null)));
         when(importHistory.add(any(ImportHistory.class))).thenAnswer(invocation -> {
             ImportHistory h = invocation.getArgument(0);
             h.setImportHistoryId(42);
@@ -687,5 +708,79 @@ class IngestionJobUseCaseTest {
 
         assertThat(useCase.views(jobs.list())).hasSize(2);
         verify(templateFields, times(1)).listByTemplateId(1);
+    }
+
+    // ---- ws23 parse provenance ------------------------------------------------
+
+    private IngestionJob parsedWith(ParseProvenance provenance) {
+        when(parseStep.parse(any())).thenReturn(new ParseResult(PARSED, Map.of(), provenance));
+        IngestionJob job = useCase.create("people.csv", 1);
+        return useCase.resume(job.getIngestionJobId(), JobStep.PARSED);
+    }
+
+    @Test
+    void provenanceStored() {
+        IngestionJob job = parsedWith(ParseProvenance.code("KEY_VALUE", 0.87654, FallbackReason.ERROR));
+
+        assertThat(job.getStatus()).isEqualTo(JobStatus.COMPLETED);
+        assertThat(job.getParsedBy()).isEqualTo("CODE");
+        assertThat(job.getParseStrategy()).isEqualTo("KEY_VALUE");
+        assertThat(job.getParseConfidence()).isEqualByComparingTo(new BigDecimal("0.877"));
+        assertThat(job.getParseFallbackReason()).isEqualTo("ERROR");
+
+        var view = useCase.view(job);
+        assertThat(view.parsedBy()).isEqualTo("CODE");
+        assertThat(view.parseStrategy()).isEqualTo("KEY_VALUE");
+        assertThat(view.parseConfidence()).isEqualTo(0.877);
+        assertThat(view.parseFallbackReason()).isEqualTo("ERROR");
+    }
+
+    @Test
+    void aCodeFallbackIsAuditedWithLabelsAndAScoreOnly() {
+        IngestionJob job = parsedWith(ParseProvenance.code("DELIMITED", 0.9, FallbackReason.QUOTA));
+
+        ArgumentCaptor<Object> values = ArgumentCaptor.forClass(Object.class);
+        verify(audit).success(eq("INGESTION_PARSE_FALLBACK"), eq("IngestionJob"),
+                eq(String.valueOf(job.getIngestionJobId())), isNull(), values.capture());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> audited = (Map<String, Object>) values.getValue();
+        assertThat(audited).containsOnlyKeys("parsedBy", "reason", "strategy", "confidence");
+        assertThat(values.getValue().toString())
+                .contains("QUOTA", "DELIMITED", "0.9")
+                .doesNotContain("Ada");
+    }
+
+    @Test
+    void aiResultsFastPathsAndCodeOnlyAreNotFallbacks() {
+        parsedWith(ParseProvenance.ai(ParseProvenance.LLM_SINGLE_PASS));
+        parsedWith(ParseProvenance.code(ParseProvenance.STRUCTURED, null, null));
+        IngestionJob codeOnly = parsedWith(
+                ParseProvenance.code("ROW_LINE", 0.5, FallbackReason.MODE_CODE_ONLY));
+
+        assertThat(codeOnly.getParseFallbackReason()).isEqualTo("MODE_CODE_ONLY");
+        verify(audit, never()).success(eq("INGESTION_PARSE_FALLBACK"), any(), any(), any(), any());
+    }
+
+    @Test
+    void aParseWithoutProvenanceLeavesTheColumnsEmpty() {
+        IngestionJob job = parsedWith(null);
+
+        assertThat(job.getParsedBy()).isNull();
+        assertThat(job.getParseConfidence()).isNull();
+        assertThat(useCase.view(job).parsedBy()).isNull();
+    }
+
+    @Test
+    void theParseStageGetsTheTemplateModeAndTheJobBank() {
+        Template template = new Template(1, "T", null);
+        template.setExtractionMode("CODE_ONLY");
+        when(templates.getById(1)).thenReturn(Optional.of(template));
+
+        parsedWith(ParseProvenance.code("ROW_LINE", 0.9, FallbackReason.MODE_CODE_ONLY));
+
+        ArgumentCaptor<ParseContext> context = ArgumentCaptor.forClass(ParseContext.class);
+        verify(parseStep).parse(context.capture());
+        assertThat(context.getValue().extractionMode()).isEqualTo(ExtractionMode.CODE_ONLY);
+        assertThat(context.getValue().bankId()).isEqualTo(FixedUser.provider(USER).requireBankId());
     }
 }

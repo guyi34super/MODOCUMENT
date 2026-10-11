@@ -5,6 +5,7 @@ import com.modocument.application.dto.TableExtractionHints;
 import com.modocument.application.dto.TableExtractionPlan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
@@ -28,21 +29,38 @@ public class StructuredTableMaterializer {
     private final RowLineTableMaterializer rowLineMaterializer;
     private final TabularNormalizer tabularNormalizer;
     private final ParsingProperties parsingProperties;
+    /** Null = the yml switch only (unit-test wiring). */
+    private final ParsingSettings parsingSettings;
 
     public StructuredTableMaterializer(MarkdownTableMaterializer markdownMaterializer,
                                          RowLineTableMaterializer rowLineMaterializer,
                                          TabularNormalizer tabularNormalizer,
                                          ParsingProperties parsingProperties) {
+        this(markdownMaterializer, rowLineMaterializer, tabularNormalizer, parsingProperties,
+                null);
+    }
+
+    /** ws20: the deterministic switch is the caller's bank's setting, read per call. */
+    @Autowired
+    public StructuredTableMaterializer(MarkdownTableMaterializer markdownMaterializer,
+                                         RowLineTableMaterializer rowLineMaterializer,
+                                         TabularNormalizer tabularNormalizer,
+                                         ParsingProperties parsingProperties,
+                                         ParsingSettings parsingSettings) {
         this.markdownMaterializer = markdownMaterializer;
         this.rowLineMaterializer = rowLineMaterializer;
         this.tabularNormalizer = tabularNormalizer;
         this.parsingProperties = parsingProperties;
+        this.parsingSettings = parsingSettings;
     }
 
     public Optional<TableData> tryMaterialize(Path file, String text,
                                                 TableExtractionHints hints,
                                                 TableExtractionPlan plan) {
-        if (!parsingProperties.isDeterministicEnabled()) {
+        boolean deterministic = parsingSettings == null
+                ? parsingProperties.isDeterministicEnabled()
+                : parsingSettings.deterministicEnabledForCurrentBank();
+        if (!deterministic) {
             return Optional.empty();
         }
         if (!isEligible(hints, plan)) {

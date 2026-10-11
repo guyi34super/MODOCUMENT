@@ -8,10 +8,11 @@
 #                 cap, so a traffic spike (or an LLM-cost attack) scales out
 #                 bounded, never unbounded.
 #   SEC-018       Secrets ONLY from SSM Parameter Store / Secrets Manager:
-#                 MODOCUMENT_JWT_SECRET, MODOCUMENT_MFA_KEY, DB credentials,
+#                 MODOCUMENT_JWT_SECRET, MODOCUMENT_MFA_KEY,
+#                 MODOCUMENT_CONNECTOR_KEY (ws26), DB credentials,
 #                 and — until the first admin exists — the bootstrap-admin
-#                 pair. Nothing secret in the task definition JSON, tfvars or
-#                 state.
+#                 pair (likewise the platform-admin pair, v1.1.0). Nothing
+#                 secret in the task definition JSON, tfvars or state.
 #   SEC-028       ALB listener pinned to a TLS 1.2+ security policy. HSTS is
 #                 emitted by the APP (SecurityConfig) when X-Forwarded-Proto
 #                 is https — the ALB must keep forwarding that header (it
@@ -44,6 +45,19 @@
 # DB TLS: var.db_jdbc_url carries sslmode=verify-full&sslrootcert=
 # /app/certs/rds-global-bundle.pem — the AWS RDS CA bundle baked into the
 # app image at build time (repo Dockerfile, rds-ca stage).
+#
+# RELEASES (ws24, docs/release/runbook.md): Terraform owns the task
+# definition TEMPLATE (family, roles, environment, secrets, health checks,
+# users/capabilities) and the first revision the service starts with
+# (var.app_image / var.frontend_image = a released X.Y.Z tag). From then on
+# CI owns REVISIONS: the release/deploy workflows copy the latest revision
+# of the family, pin both images by digest, register it and update the
+# service. The service therefore ignores task_definition (and desired_count,
+# owned by autoscaling), so a `terraform apply` never rolls a release back
+# to the tfvars image. A Terraform-only change (new env var or secret)
+# registers a new revision here and reaches the running service with the
+# next CI deploy (deploy.yml with the current version re-deploys it).
+# Failed deployments roll back automatically (deployment circuit breaker).
 #
 # NOT APPLIED — `terraform validate` passes (see the README status); plan/apply pending.
 # ---------------------------------------------------------------------------
@@ -222,6 +236,16 @@ locals {
     var.bootstrap_admin_secret_arns.email,
     var.bootstrap_admin_secret_arns.password,
   ]
+  # Platform owner (ws21, v1.1.0): the two PLATFORM_ADMIN accounts, seeded
+  # once by BootstrapPlatformRunner; same on/off lifecycle as the above.
+  platform_admin_secrets = var.platform_admin_secret_arns == null ? [] : [
+    { name = "MODOCUMENT_PLATFORM_ADMIN_EMAILS", valueFrom = var.platform_admin_secret_arns.emails },
+    { name = "MODOCUMENT_PLATFORM_ADMIN_PASSWORDS", valueFrom = var.platform_admin_secret_arns.passwords },
+  ]
+  platform_admin_secret_arns = var.platform_admin_secret_arns == null ? [] : [
+    var.platform_admin_secret_arns.emails,
+    var.platform_admin_secret_arns.passwords,
+  ]
 }
 
 # Only the exact secrets the task injects — least privilege, no wildcard.
@@ -236,9 +260,10 @@ resource "aws_iam_role_policy" "execution_secrets" {
       Resource = concat([
         var.jwt_secret_arn,
         var.mfa_key_secret_arn,
+        var.connector_key_secret_arn,
         var.db_app_credentials_secret_arn,
         var.db_master_secret_arn,
-      ], local.bootstrap_admin_secret_arns)
+      ], local.bootstrap_admin_secret_arns, local.platform_admin_secret_arns)
     }]
   })
 }
@@ -275,6 +300,12 @@ resource "aws_ecs_task_definition" "this" {
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
 
+  # ws24: keep superseded revisions ACTIVE — the service may still run one
+  # (CI owns the service's revision, see the header) and the circuit
+  # breaker rolls back to the last steady one. Prune old revisions out of
+  # band.
+  skip_destroy = true
+
   container_definitions = jsonencode([
     {
       name      = "frontend"
@@ -282,9 +313,13 @@ resource "aws_ecs_task_definition" "this" {
       essential = true
       # nginx-unprivileged: master + workers as uid 101 on 8080 (ws16).
       user = "101"
-      portMappings = [
+      # ws26: the nginx mTLS server is mapped only when the mTLS listener
+      # exists (mtls.tf).
+      portMappings = concat([
         { containerPort = var.frontend_port, protocol = "tcp" }
-      ]
+        ], var.api_mtls_enabled ? [
+        { containerPort = var.frontend_mtls_port, protocol = "tcp" }
+      ] : [])
       environment = [
         # Shared awsvpc namespace: the app is on loopback, not `app:8080`.
         { name = "MODOCUMENT_API_UPSTREAM", value = "127.0.0.1:${var.app_port}" },
@@ -344,18 +379,32 @@ resource "aws_ecs_task_definition" "this" {
         { name = "SERVER_PORT", value = tostring(var.app_port) },
         { name = "MODOCUMENT_DB_URL", value = var.db_jdbc_url },
         { name = "MODOCUMENT_CORS_ALLOWED_ORIGINS", value = var.cors_allowed_origins },
-        { name = "SPRING_PROFILES_ACTIVE", value = var.spring_profiles }
+        { name = "SPRING_PROFILES_ACTIVE", value = var.spring_profiles },
+        # ws24: reported by GET /api/system/version ("environment").
+        { name = "MODOCUMENT_DEPLOY_ENVIRONMENT", value = var.deploy_environment },
+        # ws26: who may vouch for a client certificate (the ALB subnets) —
+        # empty unless the mTLS listener exists (mtls.tf), so the headers are
+        # never trusted otherwise.
+        # The app's TCP peer is the nginx container on loopback (awsvpc); nginx
+        # itself only forwards the certificate headers from the trusted ALB.
+        { name = "MODOCUMENT_MTLS_TRUSTED_PROXY_CIDRS", value = var.api_mtls_enabled ? "127.0.0.1/32" : "" },
+        # ws20 guardrails: in a deployed environment the app refuses to boot
+        # when a configured default lies outside its hard limits
+        # (SettingsStartupCheck). Never false outside local development.
+        { name = "MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS", value = "true" }
       ]
       # SEC-018: secrets injected at start from Secrets Manager / SSM. Every
       # referenced secret must HAVE a value or the task does not start.
       secrets = concat([
         { name = "MODOCUMENT_JWT_SECRET", valueFrom = var.jwt_secret_arn },
         { name = "MODOCUMENT_MFA_KEY", valueFrom = var.mfa_key_secret_arn },
+        # ws25/26: connector SecretVault key (bank integration credentials).
+        { name = "MODOCUMENT_CONNECTOR_KEY", valueFrom = var.connector_key_secret_arn },
         { name = "MODOCUMENT_DB_USERNAME", valueFrom = "${var.db_app_credentials_secret_arn}:username::" },
         { name = "MODOCUMENT_DB_PASSWORD", valueFrom = "${var.db_app_credentials_secret_arn}:password::" },
         { name = "MODOCUMENT_FLYWAY_USERNAME", valueFrom = "${var.db_master_secret_arn}:username::" },
         { name = "MODOCUMENT_FLYWAY_PASSWORD", valueFrom = "${var.db_master_secret_arn}:password::" }
-      ], local.bootstrap_admin_secrets)
+      ], local.bootstrap_admin_secrets, local.platform_admin_secrets)
       healthCheck = {
         command     = ["CMD-SHELL", "curl -fsS http://localhost:${var.app_port}/actuator/health || exit 1"]
         interval    = 30
@@ -473,13 +522,35 @@ resource "aws_ecs_service" "this" {
     container_port   = var.frontend_port
   }
 
+  # ws26: the mTLS API listener's target group (mtls.tf), when enabled.
+  dynamic "load_balancer" {
+    for_each = aws_lb_target_group.api_mtls
+    content {
+      target_group_arn = load_balancer.value.arn
+      container_name   = "frontend"
+      container_port   = var.frontend_mtls_port
+    }
+  }
+
   health_check_grace_period_seconds = 120
 
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
 
+  # ws24: a deployment whose new tasks keep failing to start or to pass
+  # health checks is stopped and the service returns to the last revision
+  # that reached a steady state. The schema stays migrated — hence the
+  # expand/contract rule (docs/release/migration-policy.md).
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   lifecycle {
-    ignore_changes = [desired_count] # autoscaling owns it
+    # desired_count: autoscaling owns it. task_definition: CI owns the
+    # revision the service runs (header "RELEASES"); Terraform only seeds
+    # the first one.
+    ignore_changes = [desired_count, task_definition]
   }
 
   tags = var.tags

@@ -43,6 +43,15 @@ resource "aws_secretsmanager_secret" "mfa_key" {
   tags = local.tags
 }
 
+# ws25/26: AES-256-GCM key of the connector SecretVault (bank integration
+# credentials at rest), separate from the MFA key. 32 random bytes, base64.
+resource "aws_secretsmanager_secret" "connector_key" {
+  name        = "${local.name}/MODOCUMENT_CONNECTOR_KEY"
+  description = "AES-256-GCM key for bank integration credentials at rest (>=32 bytes, openssl rand -base64 32)."
+
+  tags = local.tags
+}
+
 resource "aws_secretsmanager_secret" "db_app" {
   name        = "${local.name}/db-app-credentials"
   description = "JSON {username,password} for the modocument_app (NOBYPASSRLS) runtime role."
@@ -73,6 +82,27 @@ resource "aws_secretsmanager_secret" "bootstrap_admin_password" {
   tags = local.tags
 }
 
+# Platform owner (ws21, v1.1.0): BootstrapPlatformRunner seeds the platform
+# bank's two PLATFORM_ADMIN accounts once, while it has none. Same lifecycle
+# as the bootstrap admin: enable, set both values, deploy; once both platform
+# admins have changed their passwords and enrolled MFA, disable and re-apply
+# (docs/release/runbook.md "v1.1.0").
+resource "aws_secretsmanager_secret" "platform_admin_emails" {
+  count       = var.platform_admin_bootstrap_enabled ? 1 : 0
+  name        = "${local.name}/MODOCUMENT_PLATFORM_ADMIN_EMAILS"
+  description = "Two comma-separated e-mails of the platform owner's PLATFORM_ADMIN accounts (seeded once). Remove (platform_admin_bootstrap_enabled=false) once both have enrolled MFA."
+
+  tags = local.tags
+}
+
+resource "aws_secretsmanager_secret" "platform_admin_passwords" {
+  count       = var.platform_admin_bootstrap_enabled ? 1 : 0
+  name        = "${local.name}/MODOCUMENT_PLATFORM_ADMIN_PASSWORDS"
+  description = "The two temporary PLATFORM_ADMIN passwords, comma-separated, same order (password policy applies; changed at first login)."
+
+  tags = local.tags
+}
+
 # --- Modules ------------------------------------------------------------------
 
 module "network" {
@@ -82,6 +112,7 @@ module "network" {
   region                     = var.region
   vpc_cidr                   = var.vpc_cidr
   app_port                   = local.frontend_port
+  bank_egress_cidrs          = var.bank_egress_cidrs
   app_egress_https_cidrs     = var.app_egress_https_cidrs
   enable_interface_endpoints = true
   tags                       = local.tags
@@ -138,12 +169,25 @@ module "ecs_app" {
   mfa_key_secret_arn            = aws_secretsmanager_secret.mfa_key.arn
   db_app_credentials_secret_arn = aws_secretsmanager_secret.db_app.arn
   db_master_secret_arn          = module.rds.master_user_secret_arn
+  connector_key_secret_arn      = aws_secretsmanager_secret.connector_key.arn
+
+  # ws26: mutual TLS for machine clients on api.<domain> (off by default).
+  api_mtls_enabled       = var.api_mtls_enabled
+  api_domain             = var.api_domain
+  api_certificate_arn    = var.api_certificate_arn
+  api_mtls_ca_bundle_pem = var.api_mtls_ca_bundle_pem
+  api_mtls_client_cidrs  = var.api_mtls_client_cidrs
   bootstrap_admin_secret_arns = var.bootstrap_admin_enabled ? {
     email    = one(aws_secretsmanager_secret.bootstrap_admin_email[*].arn)
     password = one(aws_secretsmanager_secret.bootstrap_admin_password[*].arn)
   } : null
+  platform_admin_secret_arns = var.platform_admin_bootstrap_enabled ? {
+    emails    = one(aws_secretsmanager_secret.platform_admin_emails[*].arn)
+    passwords = one(aws_secretsmanager_secret.platform_admin_passwords[*].arn)
+  } : null
 
   cors_allowed_origins = "https://${var.app_domain}"
+  deploy_environment   = "production"
 
   # client -> CloudFront -> ALB -> nginx: the ALB (inside the VPC) is the
   # trusted proxy; the client address is the CloudFront-Viewer-Address the
@@ -210,10 +254,18 @@ module "ci_oidc" {
   name                 = local.name
   create_oidc_provider = var.create_oidc_provider
   oidc_provider_arn    = var.oidc_provider_arn
-  # Production deploys ONLY from main (pair with branch protection — ws19).
-  github_subject_patterns = ["repo:${var.github_repository}:ref:refs/heads/main"]
-  ecs_cluster_arn         = module.ecs_app.cluster_arn
-  passable_role_arns      = module.ecs_app.task_role_arns
+  # ws24: production deploys run in the GitHub environment "production"
+  # (required reviewers, v* tags only — docs/release/runbook.md), whose
+  # jobs present sub = repo:<repo>:environment:production.
+  # TRANSITION: the refs/heads/main entry is the pre-ws24 trust (pair with
+  # branch protection — ws19). Remove it once one release has shipped
+  # through the environment-gated pipeline.
+  github_subject_patterns = [
+    "repo:${var.github_repository}:environment:production",
+    "repo:${var.github_repository}:ref:refs/heads/main", # remove after one release
+  ]
+  ecs_cluster_arn    = module.ecs_app.cluster_arn
+  passable_role_arns = module.ecs_app.task_role_arns
 
   tags = local.tags
 }

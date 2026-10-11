@@ -39,6 +39,55 @@ the test suite.
 - **LLM table extraction** (Spring AI structured output) turns the extracted text of
   unstructured documents into the same table shape.
 
+### Code-based fallback and extraction modes
+When the AI cannot produce the table, a **code-based extractor** reads it instead, with
+no LLM involved.
+- **How it reads a document.** Several strategies run and the best-scoring table wins:
+  - delimited text (delimiter sniffing, quotes, BOM, windows-1252);
+  - native spreadsheet cells;
+  - markdown and `Row N:` tables;
+  - whitespace-aligned columns (PDF text);
+  - `Label: value` forms, one record per repeated block;
+  - per-field value regexes.
+- **Confidence.** Each candidate gets a score: 0.4 field coverage + 0.3 value shape +
+  0.2 structure + 0.1 row-count agreement. It is accepted at
+  `extraction.code.minConfidence` (default 0.75).
+- **Normalisation.** Dates become ISO, using the field's own date formats first.
+  Numbers are read locale-aware.
+- **Extraction mode.** Each template sets one (`extractionMode`); `null` inherits the
+  bank's `extraction.defaultMode` setting.
+  - `AI_WITH_CODE_FALLBACK` (default): AI first. Code takes over in these cases:
+    - the bank turned AI off;
+    - no key is configured;
+    - the AI circuit breaker is open;
+    - the user's LLM quota is spent;
+    - the model fails, times out, returns something unusable or is withheld by the
+      output scanner;
+    - the gateway refuses the prompt.
+
+    In batched extraction only the failed batches go to code, recorded as
+    `AI_PARTIAL`. So do the remaining batches once the 10-minute AI budget is
+    spent. If code cannot reach the threshold either, the job fails, naming both
+    failures.
+  - `CODE_ONLY`: never calls the AI. Scores from 0.40 pass with a low-confidence flag.
+  - `AI_ONLY`: the AI or a failed job (the pre-phase-2 behaviour).
+- **Field hints help the extractor.** Each template field may carry:
+  - `aliases`: alternative header or label texts, which the column auto-mapper uses
+    too;
+  - `labelPattern`: a regex for the label;
+  - `valuePattern`: a regex with one capture group;
+  - `dateFormats`.
+
+  The patterns are vetted against ReDoS on save. A dangerous or invalid one is a 400.
+- **Provenance on every job.** The job records `parsedBy` (`AI` / `CODE` /
+  `AI_PARTIAL`), `parseStrategy`, `parseConfidence` and `parseFallbackReason`. Each
+  fallback is audited as `INGESTION_PARSE_FALLBACK` (labels and the score only).
+- **Fast failure.** A failing model reaches the fallback within seconds: one retry on
+  a 5xx, a 5 s connect timeout and a 120 s read timeout (`modocument.ai.http.*`,
+  `spring.ai.retry.*`).
+- Structured files (CSV, Excel, clean markdown tables) are parsed by code first in
+  every mode, so they never wait for the AI.
+
 ### Resumable ingestion jobs
 - Every ingestion runs as a **job** with per-stage SQL checkpoints:
   `UPLOADED → PARSED → MAPPED → VALIDATED → EXPORTED`.
@@ -164,8 +213,12 @@ the test suite.
   operator explicitly configures an external endpoint** via
   `MODOCUMENT_AI_BASE_URL` / `MODOCUMENT_AI_API_KEY` / `MODOCUMENT_AI_MODEL`
   (the legacy `AIFILES_OPENAI_*` names keep working). The app boots and passes
-  its suite with **no AI endpoint reachable at all** — every AI feature degrades
-  to its non-AI path.
+  its suite with **no AI endpoint reachable at all**.
+  - Ingestion and the transform fall back to code extraction. So do mapping,
+    document creation, record cleaning and OCR.
+  - Chat edits, schema inference, run summaries and the raw AI endpoints answer 503.
+  - Feature by feature, with the AI circuit breaker and the per-bank AI switch:
+    [docs/security/ai-controls.md](docs/security/ai-controls.md#availability-and-code-fallback-ws23).
 - **One gateway, no raw paths** (gate C9): every LLM call goes through the single
   `AiGateway` (`infrastructure/ai`) — a guard test fails the build on any other
   class touching the Spring AI chat types. Call sites pseudonymise identifiers
@@ -331,9 +384,12 @@ export MODOCUMENT_JWT_SECRET=$(openssl rand -base64 48)
 export MODOCUMENT_MFA_KEY=$(openssl rand -base64 48)
 export POSTGRES_PASSWORD=$(openssl rand -hex 24)
 export MODOCUMENT_APP_DB_PASSWORD=$(openssl rand -hex 24)
-# First-run administrator (self-registration is disabled):
+# First-run administrators (self-registration is disabled). Every user
+# change needs a second approver, so seed the second admin too:
 export MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 export MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD=<a-strong-password>
+export MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_EMAIL=admin2@example.com
+export MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_PASSWORD=<another-strong-password>
 docker compose up --build
 
 # with LOCAL AI (the default endpoint): add the ollama service, then pull
@@ -398,6 +454,28 @@ curl -X POST http://localhost:8080/api/auth/login \
 
 curl http://localhost:8080/Templates/GetAll -H "Authorization: Bearer <token>"
 ```
+
+#### First run: two administrators
+
+Creating, re-roling or disabling a user is maker/checker: a **second**
+administrator must approve it. A fresh install with a single administrator
+could therefore never add anyone, so seed the second one at the same time:
+
+| Variable | |
+|---|---|
+| `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD` | First ADMIN (required on an empty database in production). |
+| `MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_SECOND_ADMIN_PASSWORD` | Optional second ADMIN — set both or neither. |
+
+Both passwords also accept the `_FILE` form (Docker secrets), must pass the
+password policy, and are **temporary**: each administrator must choose a
+new password (and enrol TOTP) at first sign-in.
+`MODOCUMENT_BOOTSTRAP_ADMIN_SKIP_PASSWORD_CHANGE=true` keeps the configured
+passwords on throwaway dev stacks only (refused unless
+`modocument.security.permit-dev-paths=true`). Seeding runs once, on an empty
+user table; at every startup the app warns loudly while the default bank has
+fewer than two enabled ADMIN/APPROVER accounts — on a running install the
+platform owner can add a break-glass administrator
+([docs/platform/platform-owner.md](docs/platform/platform-owner.md)).
 
 Endpoints: `POST /api/auth/login`, `POST /api/auth/refresh`,
 `POST /api/auth/logout`, `GET /api/auth/me`, `PUT /api/auth/profile`,
@@ -544,8 +622,8 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 | `GET /api/extraction/jobs/{id}/records?kind=raw\|processed` | Cursor-paged record peek |
 | `GET /api/extraction/jobs/{id}/audit` | Cursor-paged audit trail (fetches, robots/domain blocks, retries, dedups, LLM calls) |
 | `POST /api/extraction/jobs/{id}/bridge` | Hand records to the document pipeline (auto-map + validate → standard ingestion job) |
-| `POST /api/extraction/jobs/{id}/infer-schema` | LLM: suggest a template schema from sample records |
-| `GET /api/extraction/jobs/{id}/summary` | LLM: short human summary of the run |
+| `POST /api/extraction/jobs/{id}/infer-schema` | Suggest a template schema from sample records (LLM; code inference when the AI is unavailable, `generatedBy`) |
+| `GET /api/extraction/jobs/{id}/summary` | Short human summary of the run (LLM; counter-based when the AI is unavailable, `generatedBy`) |
 | `GET /api/extraction/metrics` | Queue depth, compliance counters, worker pool state |
 
 ### Legacy pipeline & utilities
@@ -880,3 +958,4 @@ column); the owner executes and files the evidence. Status detail and dates:
 | SEC-031 | SIEM reference test (one detection end-to-end with a bank's real SIEM) | Rushal Seeruthun | alert received from a staged `ACCOUNT_LOCKED` burst | **App side done (ws18):** bank-scoped feed `GET /api/siem/events` + signed single-bank push ([`docs/security/siem-event-schema.md`](docs/security/siem-event-schema.md), `SiemFeedE6Test`) and the alert channels (`AlertingGateD1Test`); infra side: metric filter + alarm in [`modules/security-monitoring`](infra/terraform/modules/security-monitoring) |
 | A8 | **Branch protection switched on** + seeded-vulnerable-PR drill | Bhavish Nobeen | ruleset screenshot/export + the blocked drill PR | settings and drill runbook in [`docs/security/branch-protection.md`](docs/security/branch-protection.md); the CI gauntlet and CODEOWNERS already exist (ws19) |
 | SEC-038 | Certification path decision (ISO 27001 / SOC 2) | Reezvi Pydiah | decision memo | evidence pack under [`docs/security/`](docs/security/) is structured to serve either |
+| ws26 | **Per-bank private connectivity** (site-to-site VPN or AWS PrivateLink) for DIRECT-mode integrations. Implement it per bank at onboarding, only when the bank does not run the on-prem Connector Agent | Bhavish Nobeen (with each bank's network team) | VPN/endpoint configuration + the approved `BankEgressRule` rows | `bank_egress_cidrs` SG seam in [`modules/network`](infra/terraform/modules/network); the agent alternative needs no inbound path ([`docs/integration/agent.md`](docs/integration/agent.md)) |

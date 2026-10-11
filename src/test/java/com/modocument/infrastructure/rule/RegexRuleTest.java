@@ -5,6 +5,7 @@ import com.modocument.domain.model.ValidationError;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RegexRuleTest {
 
@@ -64,6 +65,16 @@ class RegexRuleTest {
 
         assertThat(error).isNotNull();
         assertThat(error.errorMessage()).isEqualTo("Invalid validation configuration.");
+    }
+
+    @Test
+    void abortsCatastrophicBacktrackingAfterTheMatchTimeout() {
+        // Polynomial blow-up JDK 21 cannot memoise; the SafeRegex deadline stops it.
+        String config = "{\"Pattern\":\"^(.*,){10}X\"}";
+
+        assertThatThrownBy(() -> rule.validate(1, "Notes", "a,".repeat(40), config))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Regex match timed out after " + RegexRule.MATCH_TIMEOUT_MILLIS + " ms.");
     }
 
     @Test

@@ -1,0 +1,23 @@
+{
+  "name": "employees-docx",
+  "file": "employees.docx",
+  "strategy": "DELIMITED",
+  "minConfidence": 0.85,
+  "maxConfidence": 1.0,
+  "fields": [
+    {"name": "Employee Number", "type": "TEXT", "aliases": ["Emp No"]},
+    {"name": "Full Name", "type": "TEXT", "aliases": ["Name"]},
+    {"name": "Start Date", "type": "DATE"},
+    {"name": "Email", "type": "TEXT"}
+  ],
+  "rows": [
+    ["1001", "Aisha Khan", "2022-03-05", "aisha.khan@example.com"],
+    ["1002", "Ben Carter", "2020-01-17", "ben.carter@example.com"],
+    ["1003", "Clara Wong", "2019-07-01", "clara.wong@example.com"],
+    ["1004", "Daniel Roy", "2021-10-30", "daniel.roy@example.com"],
+    ["1005", "Elif Sahin", "2023-02-02", "elif.sahin@example.com"],
+    ["1006", "Femi Ade", "2018-12-12", "femi.ade@example.com"],
+    ["1007", "Gita Rao", "2022-08-08", "gita.rao@example.com"],
+    ["1008", "Hiro Sato", "2017-05-20", "hiro.sato@example.com"]
+  ]
+}

@@ -83,7 +83,11 @@ class OpenApiContractTest {
             "/api/auth/refresh",
             "/api/auth/mfa/verify",
             "/api/auth/providers",
-            "/api/probe/synthetic");
+            "/api/probe/synthetic",
+            // ws26: the client authenticates inside the request.
+            "/api/integration/oauth/token",
+            // ws26: the one-time enrolment token in the body is the credential.
+            "/api/agent/v1/enroll");
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -219,6 +223,10 @@ class OpenApiContractTest {
             if (llm.stream().anyMatch(p -> p.matches(PathContainer.parsePath(path)))) {
                 expected.add(method + " " + path);
             }
+            // ws26: the machine API is metered per client (MachineApiInterceptor).
+            if (path.startsWith("/api/integration/v1/")) {
+                expected.add(method + " " + path);
+            }
             if (op.at("/responses/429").isObject()) {
                 assertThat(op.at("/responses/429/$ref").asText())
                         .isEqualTo("#/components/responses/TooManyRequests");
@@ -228,7 +236,8 @@ class OpenApiContractTest {
         // Anonymous routes with their own per-IP/account throttles.
         expected.addAll(Set.of(
                 "POST /api/auth/login", "POST /api/auth/refresh", "POST /api/auth/mfa/verify",
-                "GET /api/probe/synthetic"));
+                "GET /api/probe/synthetic", "POST /api/integration/oauth/token",
+                "POST /api/agent/v1/enroll"));
         assertThat(documented).containsExactlyElementsOf(expected);
     }
 

@@ -15,8 +15,20 @@ undecided request (`CANCELLED`).
 | `USER_CREATE`      | Create a user in the maker's bank         | `user:admin`     | `POST /api/admin/users` → 202                    | `change:approve` |
 | `USER_ROLE_CHANGE` | Change a user's role (mover, B5)          | `user:admin`     | `PUT /api/admin/users/{id}/role` → 202           | `change:approve` |
 | `USER_DISABLE`     | Disable a user (leaver switch, PRIV-017)  | `user:admin`     | `PUT /api/admin/users/{id}/disabled` (true) → 202 | `change:approve` |
+| `USER_PASSWORD_RESET` | Temporary password + forced change; every session killed (ws22) | `user:admin` | `POST /api/admin/users/{id}/password-reset` → 202 | `change:approve` |
+| `USER_MFA_RESET`   | Remove a user's TOTP enrolment + recovery codes; sessions killed (ws22) | `user:admin` | `POST /api/admin/users/{id}/mfa-reset` → 202 | `change:approve` |
 | `TEMPLATE_UPDATE`  | Rename/redescribe a template              | `template:write` | `PUT /Templates/Update` → 202                    | `change:approve` |
 | `TEMPLATE_DELETE`  | Delete a template (+ fields, rules)       | `template:write` | `DELETE /Templates/{id}` → 202                   | `change:approve` |
+| `SETTING_UPDATE`   | Security-tier bank settings (ws20); payload `{changes:[{key, from, to, baseVersion}]}`; audited `SECURITY_SETTING_UPDATED` per key | `settings:write` | `PUT /api/admin/settings` → 202 (operational keys in the same request apply at once) | `change:approve` (same bank) |
+| `PLATFORM_SETTING_UPDATE` | Platform security defaults and every bank-bound (`bankMin`/`bankMax`) change (ws20); payload `{changes:[{key, from, to, bankMin?, bankMax?, baseVersion}]}`. With a top-level `bankId` (`{bankId, changes:[{key, from, to, baseVersion}]}`) it sets that customer bank's own value of **platform-set** settings (the allowed API-client auth methods), written in the bank's tenant at apply; audited `PLATFORM_SETTING_UPDATED` (layer `BANK_BY_PLATFORM` + `bankId` for a per-bank change) | `platform:settings` | `PUT /api/platform/settings` → 202; `PUT /api/platform/banks/{bankId}/settings` → 202 | `change:approve` (a second platform admin) |
+| `BANK_CREATE`      | Onboard a customer bank with ≥ 2 first users (≥ 1 ADMIN, ≥ 2 ADMIN/APPROVER), each with MustChangePassword (ws21) | `platform:banks` | `POST /api/platform/banks` → 202 | `change:approve` (a second platform admin) |
+| `BANK_SUSPEND`     | Suspend a customer bank: every user's TokenVersion bumped, refresh tokens revoked, sign-in refused (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/suspend` → 202 | `change:approve` (a second platform admin) |
+| `BANK_ADMIN_ADD`   | Break-glass: a new ADMIN (MustChangePassword) in a customer bank (ws21) | `platform:banks` | `POST /api/platform/banks/{id}/admins` → 202 | `change:approve` (a second platform admin) |
+| `API_CLIENT_CREATE` | A machine identity for a bank system (ws26); payload `{name, authMethod, scopes, allowedCidrs, expiresAt, certFingerprint?, certSubject?}` — no secret at submit. APPLY generates the client id and secret, stores the Argon2id hash, seals the plaintext (SecretVault) for the **maker's** one-time read within 24 h (`GET …/api-clients/{id}/initial-secret`) and sets the change's target to the new client; audited `API_CLIENT_CREATED` | `integration:admin` | `POST /api/admin/integrations/api-clients` → 202 | `change:approve` (same bank) |
+| `EGRESS_RULE_APPROVE` | Open a bank's requested private-network destination (host or CIDR + port) to its DIRECT connections (ws25); payload `{ruleId}` (+ `bankId, bankCode, host\|cidr, port, reason` for review only); the rule must still be `PENDING` at apply; audited `EGRESS_RULE_APPROVED` in the bank and the platform bank. Revoking is direct, by the bank (`DELETE /api/admin/integrations/egress-rules/{id}`). Details: [docs/integration/secrets.md](../integration/secrets.md) | `platform:banks` | `POST /api/platform/egress-rules/{id}/approve` → 202 | `change:approve` (a second platform admin) |
+| `AGENT_REGISTER`   | Register an on-prem Connector Agent (ws26); payload `{name}`. Applying creates the agent `PENDING_ENROLMENT` with a one-time enrolment token (15 min; only its SHA-256 is kept, the token is sealed for the **maker**, who reads it once via `GET /api/admin/integrations/agents/{id}/enrolment`); audited `AGENT_REGISTERED`, then `AGENT_ENROLLED` when the agent enrols. Revoking (`POST …/agents/{id}/revoke`, audit `AGENT_REVOKED`) is direct | `integration:admin` | `POST /api/admin/integrations/agents` → 202 | `change:approve` (same bank) |
+| `INTEGRATION_CONNECTION_CHANGE` | A new integration connection, or a change of an existing one's host, settings, mode or credentials (ws25). The secret is **sealed at submit** by the SecretVault: the queue holds `{connectionId?, name, type, mode, agentId?, config, authType, secretCiphertext?, secretKeyVersion?, secretRef?, baseVersion?}` and the API strips `secretCiphertext` from every response. Apply refuses a connection changed since the request (`baseVersion`), resets it to UNTESTED and audits `INTEGRATION_CONNECTION_CHANGED` | `integration:admin` | `POST /api/admin/integrations/connections` → 202, `PUT …/{id}` (anything but a rename) → 202 | `change:approve` (a second admin) |
+| `INTEGRATION_FLOW_ENABLE` | Enable an OUTBOUND flow — data leaving the bank's tenant — or re-enable one an admin widened (masking turned off, more payload kinds or events, another connection, target, template, mapping or format: the flow is disabled at once). Payload `{flowId, flowVersion}`: a flow edited after the request is refused at apply. Audited `INTEGRATION_FLOW_ENABLED` | `integration:admin` | `POST /api/admin/integrations/flows/{id}/enable` → 202 (outbound), `PUT …/flows/{id}` that widens an enabled outbound flow → 202 | `change:approve` (a second admin) |
 
 Everything can also be submitted through the generic
 `POST /api/admin/changes` (`{changeType, payload, comment}`); the use case
@@ -28,6 +40,64 @@ privilege shortcut.
 single-admin operation. It only restores access that two users already
 approved granting — the lower-risk direction — and keeping it direct means
 an accidental disable can be undone without waiting for a second admin.
+The same reasoning keeps two phase-2 actions direct: lifting a login
+lockout (`POST /api/admin/users/{id}/unlock`, audit `USER_UNLOCKED`) and
+renaming a user (`PATCH /api/admin/users/{id}`, display name only, audit
+`USER_UPDATED`). Every phase-2 user action refuses the caller's own account
+(409), and the password reset refuses IdP-owned (OIDC) accounts (409).
+`USER_PASSWORD_RESET` follows `USER_CREATE`: the temporary password is
+checked against the password policy and hashed at submit; the queue holds
+`{userId, targetEmail, passwordHash}` and the hash never leaves the backend.
+API clients (ws26) follow the same rule: creating one is `API_CLIENT_CREATE`,
+while **revoking** (`POST …/api-clients/{id}/revoke`: REVOKED + TokenVersion
+bump, audit `API_CLIENT_REVOKED`) and **rotating** the secret
+(`POST …/{id}/rotate`, the old secret valid 24 h more, audit
+`API_CLIENT_ROTATED`) are direct, single-admin operations — neither widens
+what the client may do.
+
+The platform owner's bank changes (ws21, details in
+[docs/platform/platform-owner.md](../platform/platform-owner.md)) follow the
+same rules between two PLATFORM_ADMINs of the platform bank. `BANK_CREATE`
+and `BANK_ADMIN_ADD` hash every temporary password at submit (the queue
+holds `{code, name, users:[{email, displayName, role, passwordHash}]}` /
+`{bankId, bankCode, bankName, email, displayName, passwordHash, reason}`,
+and the API strips the hashes at any depth). `BANK_ADMIN_ADD` checks the
+temporary password against the TARGET bank's password policy. `BANK_CREATE`
+writes the bank, its first users and `BANK_ONBOARDED` in one system
+transaction; if the approval then fails after that commit, a compensating
+transaction deletes the bank and its users again and audits
+`BANK_ONBOARDING_REVERTED` in the platform bank. Reactivating a suspended bank
+(`POST /api/platform/banks/{id}/reactivate`) is direct — the lower-risk
+direction.
+Both resets share the `admin-security` rate-limit bucket (10 per window).
+
+The integration hub (ws25) keeps the lower-risk directions direct:
+renaming a connection (`PUT …/connections/{id}` changing only the name,
+200), deleting a connection no flow uses, creating or editing a flow (it
+is created DISABLED), enabling an INBOUND flow (data enters the bank's own
+tenant), disabling any flow, and running an enabled flow. All of them are
+audited (`INTEGRATION_CONNECTION_CHANGED`, `INTEGRATION_FLOW_SAVED`,
+`INTEGRATION_FLOW_DELETED`, `INTEGRATION_FLOW_ENABLED`,
+`INTEGRATION_FLOW_DISABLED`).
+
+## Who sees and who decides
+
+Every change type has exactly one checker audience
+(`application/security/ChangeAudience`; the switch is exhaustive, so a new
+type does not compile until it is placed, and `PendingChangeAudienceTest`
+walks every type against every role):
+
+| Audience | Types | Listed to and decided by |
+|---|---|---|
+| **Bank** | `USER_CREATE`, `USER_ROLE_CHANGE`, `USER_DISABLE`, `USER_PASSWORD_RESET`, `USER_MFA_RESET`, `TEMPLATE_UPDATE`, `TEMPLATE_DELETE`, `SETTING_UPDATE`, `INTEGRATION_CONNECTION_CHANGE`, `INTEGRATION_FLOW_ENABLE`, `API_CLIENT_CREATE`, `AGENT_REGISTER` | any other `change:approve` holder of the maker's bank (APPROVER, ADMIN; in the platform bank another PLATFORM_ADMIN) |
+| **Platform** | `PLATFORM_SETTING_UPDATE`, `BANK_CREATE`, `BANK_SUSPEND`, `BANK_ADMIN_ADD`, `EGRESS_RULE_APPROVE` | a second platform admin only: `change:approve` **plus** the type's own platform permission (`platform:settings` / `platform:banks`), which `PermissionChecker` grants only inside the platform bank. A platform type found in any other bank is decided by nobody |
+
+`GET /api/admin/changes` returns the rows the caller may decide plus the
+caller's own submissions; it needs `change:approve` or the maker permission
+of at least one type (so an integration or platform maker sees their own
+requests without holding `change:approve`). Approve/reject answer 403 to a
+checker outside the type's audience, before the self-approval check (409,
+`SodPolicy`), which still applies to everyone.
 
 ## Flow
 
@@ -56,6 +126,16 @@ POST .../{id}/cancel (maker only)      ├─ applier.apply() — the EXISTING
   that an invariant refuses (e.g. the last-admin guard) rolls the domain
   change back, answers the checker with the refusal, and bookkeeps the row
   as `FAILED` in an independent transaction.
+- Settings (ws20): `SettingUpdateApplier` / `PlatformSettingUpdateApplier`
+  re-judge every key at apply time against the limits in force NOW (the
+  platform may have narrowed a bank's bounds meanwhile → 400
+  `SETTING_OUT_OF_RANGE`) and write a row only if its version still equals
+  the payload's `baseVersion` (else 409 `SETTING_VERSION_CONFLICT`); either
+  refusal marks the change `FAILED`. While a change is `REQUESTED` its keys
+  are frozen (409 `SETTING_CHANGE_PENDING`). The settings use the same
+  submit path as everything else, so `POST /api/admin/changes` with
+  `SETTING_UPDATE` is validated identically (`from` is re-read from the
+  database, never trusted from the maker). Details: docs/settings/catalogue.md.
 - `PendingChange` carries `BankId` and is covered by the standard RLS tenant
   policy (the afterMigrate callback); the application additionally filters
   every read by the caller's bank and asserts maker/checker bank equality on
@@ -117,7 +197,8 @@ workstream's design review.
 | `CHANGE_APPLY_FAILED`   | FAILED   | approved apply hit a changed invariant     |
 
 The applier's own domain rows (`USER_CREATED`, `USER_ROLE_CHANGED`,
-`USER_DISABLED`, `TEMPLATE_UPDATED`, `TEMPLATE_DELETED`) are written in the
+`USER_DISABLED`, `USER_PASSWORD_RESET`, `USER_MFA_RESET`, `TEMPLATE_UPDATED`,
+`TEMPLATE_DELETED`, `SECURITY_SETTING_UPDATED`, `PLATFORM_SETTING_UPDATED`) are written in the
 approval's transaction with the **checker** as actor; `CHANGE_REQUESTED`
 names the maker. Together the trail answers "who asked, who approved, what
 happened" for every critical change.

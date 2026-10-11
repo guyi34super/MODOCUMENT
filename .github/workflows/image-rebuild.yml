@@ -4,9 +4,14 @@ name: Weekly image rebuild
 # image tags (`docker build --pull` re-resolves maven:3.9-eclipse-temurin-21,
 # eclipse-temurin:21-jre, node:22-alpine and nginxinc/nginx-unprivileged:alpine
 # — the non-root runtime bases of ws16/SUP-S04), so OS/base-layer patches
-# land without waiting for an application change. Trivy (gate E3) then scans
-# both images and FAILS the run on CRITICAL vulnerabilities — a red run here
-# is the signal that a patched rebuild must ship.
+# are noticed without waiting for an application change. Trivy (gate E3)
+# then scans both images for FIXABLE HIGH/CRITICAL vulnerabilities.
+#
+# ws24: this workflow never pushes an image. Shipping a patched base is a
+# patch release through release.yml (docs/release/runbook.md §6: 72 hours
+# for a critical CVE). When fixable findings exist, the `report` job opens —
+# or updates — the issue "Security: base image refresh" with the findings,
+# and the run stays red while a fixable CRITICAL remains.
 
 on:
   schedule:
@@ -24,8 +29,15 @@ concurrency:
 jobs:
   rebuild-and-scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      findings: ${{ steps.summary.outputs.findings }}
+      critical: ${{ steps.summary.outputs.critical }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
 
       - name: Rebuild backend image from current base tags
         run: docker build --pull -t modocument-app:weekly .
@@ -37,31 +49,99 @@ jobs:
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           image-ref: modocument-app:weekly
-          format: table
-          exit-code: '1'
-          severity: CRITICAL
+          scanners: vuln
+          format: json
+          output: trivy-app.json
+          severity: HIGH,CRITICAL
           ignore-unfixed: true
+          exit-code: '0'
 
       - name: Trivy scan frontend image
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           image-ref: modocument-frontend:weekly
-          format: table
-          exit-code: '1'
-          severity: CRITICAL
+          scanners: vuln
+          format: json
+          output: trivy-frontend.json
+          severity: HIGH,CRITICAL
           ignore-unfixed: true
+          exit-code: '0'
 
-      # TODO(SEC-026): push the freshly rebuilt images once a registry
-      # exists. No registry is provisioned yet, so this is a documented stub —
-      # uncomment and fill in when one is (use a least-privilege robot
-      # credential stored as repo secrets, and add `packages: write` /
-      # registry-specific permissions to THIS job only, not the workflow).
-      #
-      # - name: Log in to registry
-      #   run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "$REGISTRY" -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
-      # - name: Tag and push
-      #   run: |
-      #     docker tag modocument-app:weekly "$REGISTRY/modocument-app:$(date +%Y%m%d)"
-      #     docker tag modocument-frontend:weekly "$REGISTRY/modocument-frontend:$(date +%Y%m%d)"
-      #     docker push "$REGISTRY/modocument-app:$(date +%Y%m%d)"
-      #     docker push "$REGISTRY/modocument-frontend:$(date +%Y%m%d)"
+      - name: Summarise fixable findings
+        id: summary
+        run: |
+          findings=0
+          critical=0
+          {
+            echo "Weekly rebuild [run ${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) found fixable HIGH/CRITICAL vulnerabilities in the rebuilt images (\`$(date -u +%Y-%m-%d)\`)."
+            echo
+            echo "Ship the patched bases as a patch release (docs/release/runbook.md §6 — 72 hours for a CRITICAL): \`scripts/bump-version.sh X.Y.Z+1\`, tag \`vX.Y.Z+1-rc.1\`, then \`vX.Y.Z+1\`."
+            echo
+          } > findings.md
+          for image in app frontend; do
+            rows="$(jq -r '[.Results[]?.Vulnerabilities[]? | select(.FixedVersion != null and .FixedVersion != "")] | length' "trivy-$image.json")"
+            crit="$(jq -r '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL" and .FixedVersion != null and .FixedVersion != "")] | length' "trivy-$image.json")"
+            findings=$((findings + rows))
+            critical=$((critical + crit))
+            echo "### modocument-$image: $rows fixable ($crit critical)" >> findings.md
+            if [ "$rows" -gt 0 ]; then
+              {
+                echo
+                echo "| Severity | Vulnerability | Package | Installed | Fixed in |"
+                echo "|---|---|---|---|---|"
+                jq -r '[.Results[]?.Vulnerabilities[]? | select(.FixedVersion != null and .FixedVersion != "")]
+                  | sort_by(.Severity) | .[:100][]
+                  | "| \(.Severity) | \(.VulnerabilityID) | \(.PkgName) | \(.InstalledVersion) | \(.FixedVersion) |"' \
+                  "trivy-$image.json"
+              } >> findings.md
+            fi
+            echo >> findings.md
+          done
+          echo "findings=$findings" >> "$GITHUB_OUTPUT"
+          echo "critical=$critical" >> "$GITHUB_OUTPUT"
+          cat findings.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the findings
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-rebuild-findings
+          path: |
+            findings.md
+            trivy-app.json
+            trivy-frontend.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # Opens or updates the tracking issue. The only job with write access, and
+  # only to issues; it touches no code and no registry.
+  report:
+    needs: rebuild-and-scan
+    if: needs.rebuild-and-scan.outputs.findings != '0'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: 'Security: base image refresh'
+      CRITICAL: ${{ needs.rebuild-and-scan.outputs.critical }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: image-rebuild-findings
+      - name: 'Open or update the issue "Security: base image refresh"'
+        run: |
+          number="$(gh issue list --state open --search "\"$TITLE\" in:title" --json number,title \
+            | jq -r --arg title "$TITLE" '[.[] | select(.title == $title)][0].number // empty')"
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file findings.md
+            gh issue comment "$number" --body "Still present in run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} (findings updated in the description)."
+            echo "Updated issue #$number"
+          else
+            gh issue create --title "$TITLE" --body-file findings.md
+          fi
+      - name: Stay red while a fixable CRITICAL remains
+        if: env.CRITICAL != '0'
+        run: |
+          echo "::error::$CRITICAL fixable CRITICAL vulnerabilities in the rebuilt images — ship a patch release."
+          exit 1

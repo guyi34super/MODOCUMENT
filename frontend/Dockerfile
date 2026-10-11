@@ -49,4 +49,20 @@ COPY --from=build /build/dist /usr/share/nginx/html
 # Explicit even though the base image already sets it: the image never
 # runs as root, whatever a later edit adds above.
 USER 101
-EXPOSE 8080
+# 8080: browsers and every API call. 8443 (ws26): the mTLS API server, the
+# target of the ALB's optional api.<domain> listener (frontend/nginx.conf).
+EXPOSE 8080 8443
+
+# OCI image labels (ws24) from release.yml's build args, the same ones the
+# API image takes (empty for a plain build). The bundle's own version is
+# package.json's (vite.config.js), which scripts/check-version-sync.sh keeps
+# equal to the release.
+ARG MODOCUMENT_VERSION=
+ARG GIT_COMMIT=
+ARG BUILD_TIME=
+LABEL org.opencontainers.image.title="MoDocument frontend" \
+      org.opencontainers.image.description="MoDocument single-page app behind unprivileged nginx" \
+      org.opencontainers.image.source="https://github.com/guyi34super/MODOCUMENT" \
+      org.opencontainers.image.version="${MODOCUMENT_VERSION}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_TIME}"

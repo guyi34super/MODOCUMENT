@@ -2,6 +2,7 @@ package com.modocument.infrastructure.persistence;
 
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.domain.entity.IngestionJob;
+import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Repository;
@@ -12,6 +13,10 @@ import java.util.Optional;
 
 @Repository
 public class IngestionJobRepositoryImpl implements IngestionJobRepository {
+
+    /** Not terminal (COMPLETED / FAILED / CANCELLED): the job may still run or be resumed. */
+    private static final List<JobStatus> ACTIVE_STATUSES =
+            List.of(JobStatus.PENDING, JobStatus.RUNNING);
 
     private final IngestionJobJpaRepository jpa;
 
@@ -51,6 +56,12 @@ public class IngestionJobRepositoryImpl implements IngestionJobRepository {
     @Override
     public int countByTemplateId(int templateId) {
         return (int) jpa.countByTemplateId(templateId);
+    }
+
+    @Override
+    public int countActiveByTemplateIdOfOtherUsers(int templateId, int ownerUserId) {
+        return (int) jpa.countByTemplateIdAndOwnerUserIdNotAndStatusIn(templateId, ownerUserId,
+                ACTIVE_STATUSES);
     }
 
     @Override

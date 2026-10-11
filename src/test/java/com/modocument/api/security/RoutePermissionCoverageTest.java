@@ -54,6 +54,13 @@ class RoutePermissionCoverageTest {
             // ws18 (SUP-S11): synthetic probe for external uptime monitors —
             // GET only, rate-limited per ip, version + db boolean only.
             "/api/probe/synthetic",
+            // ws26: OAuth2 client-credentials token endpoint — the client
+            // authenticates inside (secret or certificate), per-IP limited.
+            "/api/integration/oauth/token",
+            // ws26: Connector Agent enrolment — its credential is the
+            // one-time enrolment token in the body (single use, 15 min,
+            // constant-time hash compare), rate-limited per ip.
+            "/api/agent/v1/enroll",
             "/error");
 
     private static final List<String> PUBLIC_PREFIXES = List.of(
@@ -74,6 +81,13 @@ class RoutePermissionCoverageTest {
      * approve/reject decisions on /api/admin/changes) and DOC_RELEASE with
      * ws11 (the release/reject/queue/review routes on
      * /api/doccreation/instances).
+     */
+    /**
+     * Permissions whose routes have not landed yet. Empty since wave 3: every
+     * phase-2 permission now guards a route (ws20 settings, ws21 platform
+     * banks, ws22 template publish, ws24 system info and announcements, ws25
+     * integration admin and runs, ws26 client scopes and agent connect). A
+     * future permission is listed here until its first route lands.
      */
     private static final Set<Permission> RESERVED = EnumSet.noneOf(Permission.class);
 

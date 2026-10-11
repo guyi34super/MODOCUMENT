@@ -107,7 +107,13 @@ public class PiiMaskingService {
                 view.reachableSteps(),
                 view.exportInfo(),
                 view.createdDate(),
-                view.updatedDate());
+                view.updatedDate(),
+                view.parsedBy(),
+                view.parseStrategy(),
+                view.parseConfidence(),
+                view.parseFallbackReason(),
+                view.parseMinConfidence(),
+                view.parseLowConfidence());
     }
 
     /** Masks every view of a listing the same way as a single view. */

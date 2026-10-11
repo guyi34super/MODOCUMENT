@@ -3,6 +3,8 @@ package com.modocument.infrastructure.security.oidc;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.TenantContext;
 import com.modocument.application.usecase.AuthUseCase;
+import com.modocument.domain.entity.Bank;
+import com.modocument.domain.model.BankKind;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
 import org.slf4j.Logger;
@@ -18,6 +20,7 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * The whole OIDC front door (ws07), registered ONLY when at least one
@@ -67,14 +70,27 @@ public class OidcClientConfig {
      * first login. Under the dev/test profiles (permit-dev-paths) this only
      * warns — the H2 schema boots empty and banks are created through the
      * app — mirroring BootstrapAdminRunner's stance.
+     *
+     * <p>ws21: a provider mapped to the PLATFORM bank (by its configured
+     * code, or to a bank whose Kind is PLATFORM) fails startup under every
+     * profile — OIDC never provisions into the platform owner's bank.
      */
     @Bean
     public ApplicationRunner oidcBankCodeValidator(
             OidcProperties properties, BankJpaRepository banks,
-            @Value("${modocument.security.permit-dev-paths:false}") boolean permitDevPaths) {
+            @Value("${modocument.security.permit-dev-paths:false}") boolean permitDevPaths,
+            @Value("${modocument.platform.bank-code:MOI-PLATFORM}") String platformBankCode) {
         return args -> TenantContext.runAsSystem(() ->
                 properties.getProviders().forEach((registrationId, provider) -> {
-                    if (banks.findByCode(provider.getBankCode()).isPresent()) {
+                    Optional<Bank> bank = banks.findByCode(provider.getBankCode());
+                    if (platformBankCode.equals(provider.getBankCode())
+                            || bank.map(b -> b.getKind() == BankKind.PLATFORM).orElse(false)) {
+                        throw new IllegalStateException("OIDC provider '" + registrationId
+                                + "' maps to the platform bank '" + provider.getBankCode()
+                                + "'; OIDC may only provision into customer banks. Fix "
+                                + "modocument.oidc.providers." + registrationId + ".bank-code.");
+                    }
+                    if (bank.isPresent()) {
                         return;
                     }
                     String message = "OIDC provider '" + registrationId + "' maps to bank code '"

@@ -3,6 +3,8 @@ package com.modocument.application.usecase;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.application.security.RoleAssignmentPolicy;
+import com.modocument.domain.model.BankKind;
 import com.modocument.domain.model.Role;
 
 import java.util.Locale;
@@ -60,13 +62,22 @@ final class ChangePayloads {
         return node.asInt();
     }
 
-    /** Same vocabulary and refusal message the ws09 endpoints used. */
-    static Role parseRole(String value) {
+    /**
+     * Same vocabulary and refusal message the ws09 endpoints used, decided
+     * by {@link RoleAssignmentPolicy} for the kind of the bank the user
+     * lives in (ws21): a customer bank admits only the four bank roles, the
+     * platform bank only PLATFORM_ADMIN; API_CLIENT never parses.
+     */
+    static Role parseRole(String value, BankKind bankKind) {
+        Role role;
         try {
-            return Role.valueOf(value.trim().toUpperCase(Locale.ROOT));
+            role = Role.valueOf(value.trim().toUpperCase(Locale.ROOT));
         } catch (RuntimeException invalid) {
-            throw new IllegalArgumentException(
-                    "Unknown role '" + value + "'; use ADMIN, APPROVER, READ_WRITE or READ_ONLY.");
+            role = null;
         }
+        if (!RoleAssignmentPolicy.isAssignable(bankKind, role)) {
+            throw new IllegalArgumentException(RoleAssignmentPolicy.refusal(bankKind, value));
+        }
+        return role;
     }
 }

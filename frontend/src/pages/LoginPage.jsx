@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { useAuth } from '../context/AuthContext';
 import { activateMfa, enrollMfa } from '../api/auth';
@@ -21,6 +21,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -49,6 +50,9 @@ export default function LoginPage() {
   // client.js lands here with ?expired=1 when the silent refresh failed:
   // the session hit its idle/absolute bound (or was revoked server-side).
   const sessionExpired = searchParams.get('expired') === '1';
+  // A password change ends every session on purpose (BUG-02): say so
+  // neutrally instead of claiming the session expired.
+  const passwordChanged = location.state?.notice === 'password-changed';
 
   // 'credentials' | 'code' | 'enroll' | 'enroll-code'
   const [step, setStep] = useState('credentials');
@@ -173,9 +177,17 @@ export default function LoginPage() {
                 Single sign-on failed. Try again, or contact your administrator.
               </p>
             )}
-            {!oidcError && sessionExpired && (
+            {!oidcError && sessionExpired && !passwordChanged && (
               <p className="mb-4 rounded border border-line bg-danger-bg px-3 py-2 text-sm text-danger-ink">
                 Your session expired. Please sign in again.
+              </p>
+            )}
+            {!oidcError && passwordChanged && (
+              <p
+                role="status"
+                className="mb-4 rounded border border-line bg-success-bg px-3 py-2 text-sm text-success-ink"
+              >
+                Password changed — sign in again with your new password.
               </p>
             )}
             <form onSubmit={submitCredentials} className="space-y-4">

@@ -1,15 +1,36 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import AnnouncementBanner from './AnnouncementBanner';
 
 // Nav mirrors the product journey: Home, then the numbered document flow,
-// then the extraction toolset and account.
+// then the extraction toolset and account. ws21: a PLATFORM_ADMIN sees the
+// Platform section instead of every domain section (`hideFor`) — it holds no
+// domain permission, so those pages would only answer 403.
+const PLATFORM_ONLY = ['PLATFORM_ADMIN'];
+
 const sections = [
   {
+    label: 'Platform',
+    links: [
+      { to: '/platform', label: 'Overview', end: true, roles: PLATFORM_ONLY },
+      { to: '/platform/banks', label: 'Banks', roles: PLATFORM_ONLY },
+      // ws20/ws22: platform defaults and the bounds banks may choose from.
+      { to: '/platform/settings', label: 'Settings', roles: PLATFORM_ONLY },
+      // ws24: announcements (maintenance / release banners) and release notes.
+      { to: '/platform/announcements', label: 'Announcements', roles: PLATFORM_ONLY },
+      { to: '/platform/releases', label: 'Release notes', roles: PLATFORM_ONLY },
+      // ws25: private destinations banks asked to reach (EGRESS_RULE_APPROVE).
+      { to: '/platform/egress-rules', label: 'Egress rules', roles: PLATFORM_ONLY },
+    ],
+  },
+  {
+    hideFor: PLATFORM_ONLY,
     links: [{ to: '/', label: 'Home', end: true }],
   },
   {
     label: 'Document Flow',
+    hideFor: PLATFORM_ONLY,
     links: [
       { to: '/templates', label: 'Design Templates', step: 1 },
       { to: '/validation', label: 'Set Field Rules', step: 2 },
@@ -18,6 +39,7 @@ const sections = [
   },
   {
     label: 'Document Creation',
+    hideFor: PLATFORM_ONLY,
     links: [
       { to: '/creation/blueprints', label: 'Blueprints' },
       { to: '/creation/documents', label: 'My Documents' },
@@ -25,6 +47,7 @@ const sections = [
   },
   {
     label: 'Data Extraction',
+    hideFor: PLATFORM_ONLY,
     links: [
       { to: '/extraction/sources', label: 'Extraction Sources' },
       { to: '/extraction/jobs', label: 'Extraction Jobs' },
@@ -35,14 +58,38 @@ const sections = [
     // change:approve regardless — hiding links is UX, not security).
     label: 'Administration',
     links: [
-      { to: '/admin/users', label: 'Users', roles: ['ADMIN'] },
-      { to: '/admin/changes', label: 'Approvals', roles: ['ADMIN', 'APPROVER'] },
+      // Phase 2 (ws22): the bank admin's overview + quick actions.
+      { to: '/admin', label: 'Admin dashboard', roles: ['ADMIN'], end: true },
+      // PLATFORM_ADMIN: their own platform bank's admins + platform approvals.
+      { to: '/admin/users', label: 'Users', roles: ['ADMIN', 'PLATFORM_ADMIN'] },
+      // Phase 2 (ws20/ws22): bank settings within the platform's limits.
+      { to: '/admin/settings', label: 'Settings', roles: ['ADMIN'] },
+      {
+        to: '/admin/changes',
+        label: 'Approvals',
+        roles: ['ADMIN', 'APPROVER', 'PLATFORM_ADMIN'],
+      },
       // ws11: the document release queue sits beside the changes queue.
       { to: '/approvals/releases', label: 'Releases', roles: ['ADMIN', 'APPROVER'] },
       // ws14: retention purge evidence + data-subject requests.
       { to: '/admin/retention', label: 'Privacy & retention', roles: ['ADMIN'] },
       // ws18: security alerts raised for the bank + their delivery evidence.
       { to: '/admin/alerts', label: 'Security alerts', roles: ['ADMIN'] },
+    ],
+  },
+  {
+    // ws25/ws26 integration hub: integration:admin (ADMIN); the run history
+    // also integration:run (READ_WRITE).
+    label: 'Integrations',
+    hideFor: PLATFORM_ONLY,
+    links: [
+      { to: '/admin/integrations', label: 'Integration hub', roles: ['ADMIN'], end: true },
+      { to: '/admin/integrations/connections', label: 'Connections', roles: ['ADMIN'] },
+      { to: '/admin/integrations/flows', label: 'Flows', roles: ['ADMIN'] },
+      { to: '/admin/integrations/runs', label: 'Runs', roles: ['ADMIN', 'READ_WRITE'] },
+      { to: '/admin/integrations/api-clients', label: 'API clients', roles: ['ADMIN'] },
+      { to: '/admin/integrations/agents', label: 'Agents', roles: ['ADMIN'] },
+      { to: '/admin/integrations/egress-rules', label: 'Egress destinations', roles: ['ADMIN'] },
     ],
   },
   {
@@ -101,6 +148,13 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-white">
+      {/* First tab stop: keyboard users skip the app bar and the sidebar. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:text-accent focus:shadow"
+      >
+        Skip to main content
+      </a>
       <header className="fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between border-b border-line bg-white px-5">
         <div className="flex items-center gap-3">
           <button
@@ -110,6 +164,7 @@ export default function Layout() {
             className="cursor-pointer rounded p-2 text-ink hover:bg-neutral-200/60"
           >
             <svg
+              aria-hidden="true"
               width="18"
               height="18"
               viewBox="0 0 18 18"
@@ -160,6 +215,7 @@ export default function Layout() {
         } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         {sections
+          .filter((section) => !section.hideFor?.includes(user?.role))
           .map((section) => ({
             ...section,
             links: section.links.filter(
@@ -209,10 +265,17 @@ export default function Layout() {
 
       {/* z-order contract: sticky PageHeader z-10 < docked sidebar z-10 <
           app bar z-20 < wizard toolbar z-30 < chat drawer/FAB z-40 <
-          mobile sidebar backdrop z-40 and drawer z-[45] < toasts z-50.
+          mobile sidebar backdrop z-40 and drawer z-[45] < Modal/ConfirmDialog
+          z-[48] < toasts z-50 (a toast stays readable over an open dialog).
           Sticky in-page elements use top-14 (below the app bar). */}
-      <main className={`pt-14 transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-64' : ''}`}>
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className={`pt-14 outline-none transition-[margin] duration-200 ${sidebarOpen ? 'lg:ml-64' : ''}`}
+      >
         <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+          {/* ws24: maintenance/release/info banners + "new version" prompt. */}
+          <AnnouncementBanner />
           <Outlet />
         </div>
       </main>

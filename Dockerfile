@@ -44,8 +44,53 @@ COPY pom.xml .
 RUN mvn -B -q dependency:go-offline
 
 COPY src ./src
+# CHANGELOG.md → classpath:release/CHANGELOG.md (pom.xml copy-resources) for
+# GET /api/system/release-notes; .dockerignore re-includes it (!CHANGELOG.md).
+COPY CHANGELOG.md ./
+
+# Release identity (ws24), declared after the dependency layer so a new
+# commit never invalidates the go-offline cache. All three are optional
+# (a plain `docker build .` still works, the version endpoint then reports
+# commit null):
+#   MODOCUMENT_VERSION  X.Y.Z or X.Y.Z-rc.N — must name pom.xml's version
+#                       (the build fails otherwise); OCI label only, the app
+#                       reports the pom version (BuildProperties).
+#   GIT_COMMIT          full or short lowercase hex commit id. .git is not in
+#                       the build context, so git-commit-id-maven-plugin is
+#                       skipped and this writes the fallback git.properties.
+#   BUILD_TIME          ISO-8601 UTC (2026-10-10T12:00:00Z): becomes Maven's
+#                       project.build.outputTimestamp → BuildProperties time
+#                       (+ reproducible jar entry timestamps).
+# release.yml (Wave 2) passes all three; the same values become the OCI
+# labels of the runtime stage below.
+ARG MODOCUMENT_VERSION=
+ARG GIT_COMMIT=
+ARG BUILD_TIME=
 # Tests run in CI (mvn -B verify); the image build just packages.
-RUN mvn -B -q -DskipTests package
+RUN set -eu; \
+    if [ -n "$GIT_COMMIT" ]; then \
+        if ! printf '%s' "$GIT_COMMIT" | grep -Eq '^[0-9a-f]{7,40}$'; then \
+            echo "GIT_COMMIT must be a 7-40 character lowercase hex commit id" >&2; exit 1; \
+        fi; \
+        printf 'git.commit.id=%s\ngit.commit.id.abbrev=%s\n' \
+            "$GIT_COMMIT" "$(printf '%s' "$GIT_COMMIT" | cut -c1-7)" \
+            > src/main/resources/git.properties; \
+    fi; \
+    if [ -n "$BUILD_TIME" ] \
+        && ! printf '%s' "$BUILD_TIME" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'; then \
+        echo "BUILD_TIME must be ISO-8601 UTC, e.g. 2026-10-10T12:00:00Z" >&2; exit 1; \
+    fi; \
+    if [ -n "$MODOCUMENT_VERSION" ] \
+        && ! printf '%s' "$MODOCUMENT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$'; then \
+        echo "MODOCUMENT_VERSION must be X.Y.Z or X.Y.Z-rc.N" >&2; exit 1; \
+    fi; \
+    mvn -B -q -DskipTests -Dmaven.gitcommitid.skip=true \
+        ${BUILD_TIME:+-Dproject.build.outputTimestamp=$BUILD_TIME} package; \
+    built="$(sed -n 's/^build\.version=//p' target/classes/META-INF/build-info.properties)"; \
+    if [ -n "$MODOCUMENT_VERSION" ] && [ "${MODOCUMENT_VERSION%-rc.*}" != "$built" ]; then \
+        echo "MODOCUMENT_VERSION=$MODOCUMENT_VERSION does not match pom.xml version $built" >&2; exit 1; \
+    fi; \
+    test -f target/classes/release/CHANGELOG.md
 
 # ---- runtime stage ----------------------------------------------------------
 FROM eclipse-temurin:21-jre
@@ -112,5 +157,18 @@ EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://localhost:8080/actuator/health || exit 1
+
+# OCI image labels (ws24) from the same build args as the build stage
+# (validated there; empty when not passed). Declared last so a new commit
+# only rewrites this metadata, never the apt/user layers above.
+ARG MODOCUMENT_VERSION=
+ARG GIT_COMMIT=
+ARG BUILD_TIME=
+LABEL org.opencontainers.image.title="MoDocument" \
+      org.opencontainers.image.description="MoDocument document processing service (API)" \
+      org.opencontainers.image.source="https://github.com/guyi34super/MODOCUMENT" \
+      org.opencontainers.image.version="${MODOCUMENT_VERSION}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

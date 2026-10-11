@@ -16,8 +16,15 @@ variable "oidc_provider_arn" {
 }
 
 variable "github_subject_patterns" {
-  description = "OIDC sub claims allowed to assume the deploy role, e.g. [\"repo:guyi34super/MODOCUMENT:ref:refs/heads/main\"]."
+  description = "OIDC sub claims (StringLike patterns) allowed to assume the deploy role, e.g. [\"repo:guyi34super/MODOCUMENT:environment:production\"]."
   type        = list(string)
+
+  validation {
+    condition = length(var.github_subject_patterns) > 0 && alltrue([
+      for s in var.github_subject_patterns : can(regex("^repo:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+:.+$", s))
+    ])
+    error_message = "Every subject must be pinned to one repository: repo:<owner>/<repo>:<ref|environment|*>. A wildcard owner or repository would let other repositories deploy."
+  }
 }
 
 variable "ecs_cluster_arn" {

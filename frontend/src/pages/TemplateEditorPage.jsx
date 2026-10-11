@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { getTemplateDataTypes } from '../api/cache';
 import {
   createField,
@@ -12,8 +12,20 @@ import {
 import { isPendingChange } from '../api/changes';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
-import { Button, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
+import {
+  Button,
+  Callout,
+  Card,
+  ErrorBanner,
+  Field,
+  inputClass,
+  Spinner,
+  Switch,
+  Tag,
+} from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import TemplateExtractionSection from './TemplateExtractionSection';
 
 // PII classification options (ws12): '' means "classify automatically on
 // first use" — the server then persists its inference, which shows up here.
@@ -35,6 +47,18 @@ export default function TemplateEditorPage() {
   const isNew = !id;
   const navigate = useNavigate();
   const toast = useToast();
+  const user = useAuth()?.user;
+  const [searchParams] = useSearchParams();
+  // ws22: template:publish (bank ADMIN) may create a template shared with
+  // the whole bank; /templates/new?visibility=BANK preselects it.
+  const canPublish = user?.role === 'ADMIN';
+  const sharedRequested = searchParams.get('visibility') === 'BANK';
+  const [shareWithBank, setShareWithBank] = useState(sharedRequested && canPublish);
+  // Edit mode: what the server says about this template (visibility, owner,
+  // and whether the caller may change it).
+  const [access, setAccess] = useState({ visibility: 'PRIVATE', editable: true });
+  // ws23: the stored extraction mode and what it inherits when unset.
+  const [extraction, setExtraction] = useState({ extractionMode: null, defaultExtractionMode: null });
 
   const [dataTypes, setDataTypes] = useState([]);
   const [name, setName] = useState('');
@@ -58,10 +82,21 @@ export default function TemplateEditorPage() {
       const [template, fields] = await Promise.all([getTemplate(id), getAllFields(id)]);
       setName(template.name || '');
       setDescription(template.description || '');
+      setAccess({
+        visibility: template.visibility || 'PRIVATE',
+        // Older payloads carry no flag: the caller owns what they can open.
+        editable: template.editable !== false,
+        ownedByMe: template.ownedByMe !== false,
+        ownerName: template.ownerName,
+      });
       savedDetails.current = {
         name: template.name || '',
         description: template.description || '',
       };
+      setExtraction({
+        extractionMode: template.extractionMode ?? null,
+        defaultExtractionMode: template.defaultExtractionMode ?? null,
+      });
       setSavedFields(fields);
       setError('');
     } catch (err) {
@@ -99,6 +134,7 @@ export default function TemplateEditorPage() {
       const payload = {
         name,
         description,
+        visibility: shareWithBank ? 'BANK' : 'PRIVATE',
         fields: draftFields
           .filter((f) => f.fieldName.trim())
           .map((f) => ({
@@ -110,7 +146,9 @@ export default function TemplateEditorPage() {
       };
       const created = await toast.promise(createWithFields(payload), {
         loading: 'Creating template…',
-        success: 'Template created',
+        success: shareWithBank
+          ? 'Template created and shared with your bank'
+          : 'Template created',
       });
       navigate(`/templates/${created.templateId}`);
     } catch {
@@ -193,12 +231,31 @@ export default function TemplateEditorPage() {
     }
   };
 
+  const readOnly = !isNew && !access.editable;
+  const shared = access.visibility === 'BANK';
+
   return (
     <div>
       <PageHeader
         crumbs={[{ label: 'Design Templates', to: '/templates' }, { label: isNew ? 'New' : name || '…' }]}
-        title={isNew ? 'New Template' : name ? `Edit: ${name}` : 'Edit template'}
-        subtitle={isNew ? 'Create a template together with its fields' : 'Update details and manage fields'}
+        title={
+          isNew
+            ? shareWithBank
+              ? 'New shared template'
+              : 'New Template'
+            : readOnly
+              ? name || 'Template'
+              : name
+                ? `Edit: ${name}`
+                : 'Edit template'
+        }
+        subtitle={
+          isNew
+            ? 'Create a template together with its fields'
+            : readOnly
+              ? 'Shared with your bank — read only'
+              : 'Update details and manage fields'
+        }
         actions={
           !isNew && (
             <Button variant="secondary" onClick={goToRules}>
@@ -208,6 +265,32 @@ export default function TemplateEditorPage() {
         }
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
+
+      {!isNew && !loading && shared && (
+        <div className="mb-4">
+          {readOnly ? (
+            <Callout variant="info" title="Shared template — read only">
+              {access.ownerName ? `${access.ownerName} shared this template` : 'This template is shared'}{' '}
+              with everyone in your bank. You can use it for uploads, extraction and validation;
+              only an administrator can change it.
+            </Callout>
+          ) : (
+            <p className="flex items-center gap-2 text-sm text-muted">
+              <Tag tone="info">Shared</Tag>
+              Everyone in your bank can use this template; changes affect all of them.
+            </p>
+          )}
+        </div>
+      )}
+
+      {isNew && sharedRequested && !canPublish && (
+        <div className="mb-4">
+          <Callout variant="info">
+            Only an administrator can share a template with the bank — this one will be private
+            to you.
+          </Callout>
+        </div>
+      )}
 
       {dataTypes.length === 0 && !loading && (
         <div className="mb-4 flex items-start justify-between gap-3 rounded-md bg-danger-bg px-4 py-3 text-sm text-danger-ink">
@@ -231,6 +314,21 @@ export default function TemplateEditorPage() {
             <Field label="Description">
               <input className={inputClass} value={description} onChange={(e) => setDescription(e.target.value)} />
             </Field>
+            {canPublish && (
+              <div className="flex items-center gap-3">
+                <Switch
+                  label="Share with bank"
+                  checked={shareWithBank}
+                  onChange={setShareWithBank}
+                />
+                <span className="text-sm text-ink">
+                  Share with bank{' '}
+                  <span className="text-muted">
+                    — everyone in your bank can use it; only administrators can change it.
+                  </span>
+                </span>
+              </div>
+            )}
           </Card>
 
           <Card>
@@ -315,58 +413,73 @@ export default function TemplateEditorPage() {
         <div className="space-y-5">
           <Card className="space-y-4">
             <Field label="Name">
-              <input required className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+              <input
+                required
+                readOnly={readOnly}
+                className={inputClass}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
             </Field>
             <Field label="Description">
-              <input className={inputClass} value={description} onChange={(e) => setDescription(e.target.value)} />
+              <input
+                readOnly={readOnly}
+                className={inputClass}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
             </Field>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={saveDetails} disabled={busy}>
-                {busy ? 'Saving…' : 'Save details'}
-              </Button>
-              <span className="text-xs text-muted">
-                Applies to name and description only — field changes below save immediately.
-              </span>
-            </div>
+            {!readOnly && (
+              <div className="flex flex-wrap items-center gap-3">
+                <Button onClick={saveDetails} disabled={busy}>
+                  {busy ? 'Saving…' : 'Save details'}
+                </Button>
+                <span className="text-xs text-muted">
+                  Applies to name and description only — field changes below save immediately.
+                </span>
+              </div>
+            )}
           </Card>
 
           <Card>
             <h2 className="mb-3 text-lg font-normal">Fields ({savedFields.length})</h2>
-            <form onSubmit={addField} className="mb-4 flex gap-2">
-              <input
-                ref={fieldNameRef}
-                placeholder="New field name"
-                className={inputClass}
-                value={newField.fieldName}
-                onChange={(e) => setNewField((f) => ({ ...f, fieldName: e.target.value }))}
-              />
-              <select
-                className={`${inputClass} w-40`}
-                value={newField.templateDataTypeId}
-                onChange={(e) => setNewField((f) => ({ ...f, templateDataTypeId: e.target.value }))}
-              >
-                {dataTypes.map((t) => (
-                  <option key={t.templateDataTypeId} value={t.templateDataTypeId}>
-                    {t.dataType}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="PII kind"
-                className={`${inputClass} w-44`}
-                value={newField.piiKind}
-                onChange={(e) => setNewField((f) => ({ ...f, piiKind: e.target.value }))}
-              >
-                {PII_KINDS.map((k) => (
-                  <option key={k.value} value={k.value}>
-                    {k.label}
-                  </option>
-                ))}
-              </select>
-              <Button type="submit" disabled={busy}>
-                Add
-              </Button>
-            </form>
+            {!readOnly && (
+              <form onSubmit={addField} className="mb-4 flex gap-2">
+                <input
+                  ref={fieldNameRef}
+                  placeholder="New field name"
+                  className={inputClass}
+                  value={newField.fieldName}
+                  onChange={(e) => setNewField((f) => ({ ...f, fieldName: e.target.value }))}
+                />
+                <select
+                  className={`${inputClass} w-40`}
+                  value={newField.templateDataTypeId}
+                  onChange={(e) => setNewField((f) => ({ ...f, templateDataTypeId: e.target.value }))}
+                >
+                  {dataTypes.map((t) => (
+                    <option key={t.templateDataTypeId} value={t.templateDataTypeId}>
+                      {t.dataType}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="PII kind"
+                  className={`${inputClass} w-44`}
+                  value={newField.piiKind}
+                  onChange={(e) => setNewField((f) => ({ ...f, piiKind: e.target.value }))}
+                >
+                  {PII_KINDS.map((k) => (
+                    <option key={k.value} value={k.value}>
+                      {k.label}
+                    </option>
+                  ))}
+                </select>
+                <Button type="submit" disabled={busy}>
+                  Add
+                </Button>
+              </form>
+            )}
             <DataTable
               maxHeight="50vh"
               columns={[
@@ -383,22 +496,48 @@ export default function TemplateEditorPage() {
                   // masking matrix masks these kinds in exports/reports.
                   render: (field) => piiKindLabel(field.piiKind),
                 },
-                {
-                  key: 'actions',
-                  label: '',
-                  render: (field) => (
-                    <div className="flex justify-end">
-                      <Button size="sm" variant="danger" onClick={() => removeField(field)}>
-                        Delete
-                      </Button>
-                    </div>
-                  ),
-                },
+                ...(readOnly
+                  ? []
+                  : [
+                      {
+                        key: 'actions',
+                        label: '',
+                        render: (field) => (
+                          <div className="flex justify-end">
+                            <Button size="sm" variant="danger" onClick={() => removeField(field)}>
+                              Delete
+                            </Button>
+                          </div>
+                        ),
+                      },
+                    ]),
               ]}
               rows={savedFields}
               emptyMessage="No fields yet — add the first one above."
             />
           </Card>
+
+          <TemplateExtractionSection
+            template={{
+              templateId: Number(id),
+              // The server's name/description: saving the mode must not
+              // also save an unsaved edit of the details above.
+              name: savedDetails.current.name,
+              description: savedDetails.current.description,
+              ...extraction,
+            }}
+            fields={savedFields}
+            typeName={typeName}
+            readOnly={readOnly}
+            onTemplateSaved={(patch) => setExtraction((current) => ({ ...current, ...patch }))}
+            onFieldSaved={(updated) =>
+              setSavedFields((fields) =>
+                fields.map((f) =>
+                  f.templateFieldsId === updated.templateFieldsId ? { ...f, ...updated } : f
+                )
+              )
+            }
+          />
 
           <div className="flex justify-end">
             <Button onClick={goToRules}>

@@ -56,7 +56,25 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     // V80 (ws10): the maker/checker queue is bank-scoped.
                     "pendingchange",
                     // V160 (ws18): a bank's security alerts are its own.
-                    "alertlog");
+                    "alertlog",
+                    // V200 (ws20): a bank's settings overrides; the platform
+                    // layer is the platform bank's rows (WITH CHECK keeps
+                    // every other bank out of them).
+                    "banksetting",
+                    // V241 (ws24): banners, owned by the platform bank.
+                    "announcement",
+                    // V251 (ws25): a bank's private egress destinations.
+                    "bankegressrule",
+                    // V260 (ws26): machine identity — looked up before any
+                    // tenant only through ApiClientAuthenticator (SYSTEM).
+                    "apiclient", "apiclientsecret", "apiclientinitialsecret",
+                    "idempotencykey",
+                    // V261 (ws26): a bank's on-prem Connector Agents.
+                    "integrationagent",
+                    // V250/V252 (ws25): the integration hub's connections,
+                    // flows, runs, run log, outbox and event stream.
+                    "integrationconnection", "integrationflow", "integrationrun",
+                    "integrationrunevent", "outbounddelivery", "integrationevent");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

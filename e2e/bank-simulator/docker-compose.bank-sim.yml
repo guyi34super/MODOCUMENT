@@ -1,0 +1,91 @@
+# MoDocument bank simulator — the "bank" side of the Wave-3 integration E2E
+# (plan §6, test plan §3 and §5.6). TEST ONLY: throwaway data, per-run
+# credentials, and an SFTP host key committed on purpose so it can be pinned.
+#
+#   bank-db    PostgreSQL 16: view integration.customers (inbound flows read it),
+#              table integration.staging_results (outbound flows write it);
+#              reader / writer roles with least privilege (db/bank-sim.sql)
+#   bank-rest  REST stub (Node, no deps): paginated GET, POST capture with
+#              Idempotency-Key, OAuth2 client-credentials token endpoint, and a
+#              webhook receiver that verifies X-MoDocument-Signature + the
+#              5-minute X-MoDocument-Timestamp window (rest-stub/)
+#   bank-sftp  atmoz/sftp with the PINNED test host keys (sftp/host-keys),
+#              folders inbound/ (seeded), inbound/processed/, outbound/
+#
+# Standalone (paths are relative to this file):
+#   docker compose -f e2e/bank-simulator/docker-compose.bank-sim.yml \
+#     --env-file e2e/.run/bank-sim.env up -d --wait
+# With the E2E stack (same project and network, so the app reaches
+# bank-db:5432, http://bank-rest:18090 and bank-sftp:22): the overlay
+# docker-compose.e2e-bank-sim.yml (repo root) includes this file and passes
+# the coordinates to the Playwright runner; CI uses it on main.
+#
+# Every credential is REQUIRED and generated per run (README: "Per-run
+# secrets"); nothing secret has a default.
+
+services:
+  bank-db:
+    # Every image is pinned by digest (Wave 4), like docker-compose.e2e.yml;
+    # the tag stays for readability.
+    image: postgres:16@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
+    environment:
+      POSTGRES_DB: bank
+      POSTGRES_USER: bankadmin
+      POSTGRES_PASSWORD: ${BANK_SIM_DB_ADMIN_PASSWORD:?Set BANK_SIM_DB_ADMIN_PASSWORD (openssl rand -hex 24)}
+      BANK_SIM_DB_READER: modoc_reader
+      BANK_SIM_DB_READER_PASSWORD: ${BANK_SIM_DB_READER_PASSWORD:?Set BANK_SIM_DB_READER_PASSWORD}
+      BANK_SIM_DB_WRITER: modoc_writer
+      BANK_SIM_DB_WRITER_PASSWORD: ${BANK_SIM_DB_WRITER_PASSWORD:?Set BANK_SIM_DB_WRITER_PASSWORD}
+    volumes:
+      - ./db/00-init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+      - ./db/bank-sim.sql:/bank-sim/bank-sim.sql:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:55433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankadmin -d bank"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  bank-rest:
+    image: node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+    working_dir: /stub
+    command: ["node", "/stub/server.mjs"]
+    environment:
+      BANK_SIM_HOST: 0.0.0.0
+      BANK_SIM_PORT: "18090"
+      BANK_SIM_CLIENT_ID: ${BANK_SIM_CLIENT_ID:?Set BANK_SIM_CLIENT_ID}
+      BANK_SIM_CLIENT_SECRET: ${BANK_SIM_CLIENT_SECRET:?Set BANK_SIM_CLIENT_SECRET}
+      BANK_SIM_API_KEY: ${BANK_SIM_API_KEY:?Set BANK_SIM_API_KEY}
+      BANK_SIM_WEBHOOK_SECRET: ${BANK_SIM_WEBHOOK_SECRET:?Set BANK_SIM_WEBHOOK_SECRET}
+    volumes:
+      - ./rest-stub:/stub:ro
+    ports:
+      - "127.0.0.1:18090:18090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:18090/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  bank-sftp:
+    # atmoz/sftp publishes no version tags; its `alpine` tag is a single
+    # linux/amd64 manifest (the CI runners' architecture), pinned here.
+    image: atmoz/sftp:alpine@sha256:7e439fabeae536fa254340724c042e11999924d906417dbb5c73602ad518813f
+    # user:password:uid:gid — the account MoDocument's SFTP connector uses.
+    command: ["${BANK_SIM_SFTP_USER:-bank}:${BANK_SIM_SFTP_PASSWORD:?Set BANK_SIM_SFTP_PASSWORD}:1001:100"]
+    environment:
+      BANK_SIM_SFTP_USER: ${BANK_SIM_SFTP_USER:-bank}
+    volumes:
+      - ./sftp/host-keys:/keys:ro
+      - ./sftp/sftp.d:/etc/sftp.d:ro
+      - ./sftp/seed:/seed:ro
+    ports:
+      - "127.0.0.1:2222:22"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 22 || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20

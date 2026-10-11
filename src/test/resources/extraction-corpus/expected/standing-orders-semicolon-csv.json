@@ -1,0 +1,70 @@
+{
+  "name": "standing-orders-semicolon-csv",
+  "file": "standing-orders.csv",
+  "strategy": "DELIMITED",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "semicolon delimiter, quoted ';' inside payee names, decimal comma, d/M/yyyy dates",
+  "fields": [
+    {
+      "name": "Order Id",
+      "type": "TEXT"
+    },
+    {
+      "name": "Payee",
+      "type": "TEXT"
+    },
+    {
+      "name": "Amount",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Next Execution",
+      "type": "DATE",
+      "dateFormats": [
+        "d/M/yyyy"
+      ]
+    },
+    {
+      "name": "Frequency",
+      "type": "TEXT"
+    }
+  ],
+  "rows": [
+    [
+      "SO-88120",
+      "Mauritius Telecom; fibre",
+      "1450.00",
+      "2024-02-01",
+      "MONTHLY"
+    ],
+    [
+      "SO-88121",
+      "CEB electricity",
+      "2310.55",
+      "2024-02-05",
+      "MONTHLY"
+    ],
+    [
+      "SO-88122",
+      "Swan Life; policy 7781",
+      "12000.00",
+      "2024-02-15",
+      "QUARTERLY"
+    ],
+    [
+      "SO-88123",
+      "Ecole du Centre",
+      "8500.00",
+      "2024-03-01",
+      "TERMLY"
+    ],
+    [
+      "SO-88124",
+      "CWA water",
+      "640.20",
+      "2024-02-20",
+      "MONTHLY"
+    ]
+  ]
+}

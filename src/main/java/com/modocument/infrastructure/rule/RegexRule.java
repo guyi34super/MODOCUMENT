@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.port.ValidationRuleValidator;
 import com.modocument.application.validation.RegexValidationErrorMessages;
+import com.modocument.application.validation.SafeRegex;
 import com.modocument.domain.model.RuleType;
 import com.modocument.domain.model.ValidationError;
 import org.springframework.stereotype.Component;
@@ -19,7 +20,7 @@ import java.util.regex.PatternSyntaxException;
 public class RegexRule implements ValidationRuleValidator {
 
     /** Matching is aborted once it exceeds this budget, like the original 200 ms regex timeout. */
-    static final long MATCH_TIMEOUT_MILLIS = 200;
+    static final long MATCH_TIMEOUT_MILLIS = SafeRegex.DEFAULT_MATCH_TIMEOUT_MILLIS;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -58,7 +59,9 @@ public class RegexRule implements ValidationRuleValidator {
             return null;
         }
 
-        CharSequence guarded = new DeadlineCharSequence(rawValue, MATCH_TIMEOUT_MILLIS);
+        // SafeRegex checks a deadline while the engine reads the value, so
+        // runaway backtracking is cut short.
+        CharSequence guarded = SafeRegex.withDeadline(rawValue, MATCH_TIMEOUT_MILLIS);
         // C#'s Regex.IsMatch is an unanchored search; the seeded patterns carry
         // their own ^...$ anchors, so find() reproduces the same semantics.
         if (!compiled.pattern().matcher(guarded).find()) {
@@ -91,49 +94,5 @@ public class RegexRule implements ValidationRuleValidator {
         }
         CACHE.put(configJson, result);
         return result;
-    }
-
-    /**
-     * Java's regex engine has no built-in timeout; this wrapper checks a
-     * deadline on every charAt access so runaway backtracking is cut short.
-     */
-    private static final class DeadlineCharSequence implements CharSequence {
-
-        private final CharSequence delegate;
-        private final long deadlineNanos;
-
-        DeadlineCharSequence(CharSequence delegate, long timeoutMillis) {
-            this.delegate = delegate;
-            this.deadlineNanos = System.nanoTime() + timeoutMillis * 1_000_000;
-        }
-
-        private DeadlineCharSequence(CharSequence delegate, long deadlineNanos, boolean raw) {
-            this.delegate = delegate;
-            this.deadlineNanos = deadlineNanos;
-        }
-
-        @Override
-        public char charAt(int index) {
-            if (System.nanoTime() > deadlineNanos) {
-                throw new IllegalStateException("Regex match timed out after "
-                        + MATCH_TIMEOUT_MILLIS + " ms.");
-            }
-            return delegate.charAt(index);
-        }
-
-        @Override
-        public int length() {
-            return delegate.length();
-        }
-
-        @Override
-        public CharSequence subSequence(int start, int end) {
-            return new DeadlineCharSequence(delegate.subSequence(start, end), deadlineNanos, true);
-        }
-
-        @Override
-        public String toString() {
-            return delegate.toString();
-        }
     }
 }

@@ -1,8 +1,11 @@
 package com.modocument.application.port;
 
 import com.modocument.domain.document.ExtractionJob;
+import com.modocument.domain.model.ExtractionJobStatus;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /** Persistence port for extraction jobs. */
@@ -23,4 +26,11 @@ public interface ExtractionJobStore {
 
     /** Atomically adds delta to the named counter (concurrent workers). */
     void increment(String jobId, String counter, long delta);
+
+    /**
+     * Admin dashboard (phase 2, ws22): how many jobs of ONE bank — any
+     * owner — were created at or after {@code since}, per status. Counts
+     * only; statuses without jobs are absent from the map.
+     */
+    Map<ExtractionJobStatus, Long> countByStatusSince(int bankId, Instant since);
 }

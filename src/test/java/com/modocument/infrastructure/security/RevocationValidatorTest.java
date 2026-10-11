@@ -5,6 +5,7 @@ import com.modocument.domain.entity.RevokedToken;
 import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.RevokedTokenJpaRepository;
+import com.modocument.testsupport.StubBankDirectory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,8 +38,11 @@ class RevocationValidatorTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    /** ws21: bank status per test; unknown banks read as active. */
+    private final StubBankDirectory banks = new StubBankDirectory();
+
     private RevocationValidator validator() {
-        return new RevocationValidator(jdbc);
+        return new RevocationValidator(jdbc, banks);
     }
 
     private AppUser storedUser() {
@@ -117,6 +121,29 @@ class RevocationValidatorTest {
         users.saveAndFlush(user);
 
         assertThat(validator().validate(issuedEarlier).hasErrors()).isTrue();
+    }
+
+    /**
+     * ws21 suspension, defense in depth: even a token whose version still
+     * matches dies once its user's bank is suspended — with the generic
+     * revocation description, never "suspended".
+     */
+    @Test
+    void aTokenOfASuspendedBankIsRejectedGenerically() {
+        AppUser user = storedUser();
+        Jwt issuedEarlier = token(user.getAppUserId(), UUID.randomUUID().toString(),
+                user.getTokenVersion());
+        assertThat(validator().validate(issuedEarlier).hasErrors()).isFalse();
+
+        banks.suspended(user.getBankId());
+
+        OAuth2TokenValidatorResult result = validator().validate(issuedEarlier);
+        assertThat(result.hasErrors()).isTrue();
+        assertThat(result.getErrors()).allSatisfy(error ->
+                assertThat(error.getDescription()).doesNotContainIgnoringCase("suspend"));
+
+        banks.customer(user.getBankId()); // reactivated
+        assertThat(validator().validate(issuedEarlier).hasErrors()).isFalse();
     }
 
     @Test

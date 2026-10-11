@@ -4,6 +4,9 @@
 target
 wwwroot
 *.md
+# ws24: the changelog ships in the image as classpath:release/CHANGELOG.md
+# (GET /api/system/release-notes) — the only Markdown file let back in.
+!CHANGELOG.md
 docker-compose.yml
 # Local secrets / env files never enter the build context (SEC-018), and the
 # frontend has its own image and build context.
@@ -11,3 +14,8 @@ docker-compose.yml
 .env.*
 application-local-secrets.yml
 frontend
+# ws26: the Connector Agent is a standalone project with its own image and
+# build context (agent/Dockerfile).
+agent
+# Wave 4: the local mTLS listener's throwaway keys (scripts/dev-mtls-certs.sh)
+.mtls-dev

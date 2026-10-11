@@ -1,0 +1,67 @@
+{
+  "name": "branch-limits-markdown-txt",
+  "file": "branch-limits.txt",
+  "strategy": "MARKDOWN_TABLE",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "markdown table under a heading, empty note cells, italic footer",
+  "fields": [
+    {
+      "name": "Branch",
+      "type": "TEXT"
+    },
+    {
+      "name": "Branch Code",
+      "type": "TEXT"
+    },
+    {
+      "name": "Credit Limit",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Cash Limit",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Notes",
+      "type": "TEXT"
+    }
+  ],
+  "rows": [
+    [
+      "Port Louis Main",
+      "BR-001",
+      "5000000.00",
+      "1000000.00",
+      "Head Office"
+    ],
+    [
+      "Curepipe",
+      "BR-004",
+      "2000000.00",
+      "500000.00",
+      ""
+    ],
+    [
+      "Rose-Hill",
+      "BR-006",
+      "1500000.00",
+      "400000.00",
+      ""
+    ],
+    [
+      "Grand Baie",
+      "BR-011",
+      "1000000.00",
+      "250000.00",
+      "Seasonal"
+    ],
+    [
+      "Mahebourg",
+      "BR-015",
+      "750000.00",
+      "150000.00",
+      ""
+    ]
+  ]
+}

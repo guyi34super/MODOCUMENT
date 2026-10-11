@@ -2,9 +2,12 @@ package com.modocument.infrastructure.alerting;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.domain.model.AlertSeverity;
+import com.modocument.domain.model.settings.SettingKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -15,6 +18,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
+import java.util.Locale;
 
 /**
  * The PHONE PATH (gate D1): a generic JSON POST to
@@ -54,8 +58,17 @@ public class WebhookAlertChannel implements AlertChannel {
     private final AlertProperties.Webhook config;
     private final ObjectMapper objectMapper;
     private final RestClient client;
+    /** Null = the yml minimum severity only (unit-test wiring). */
+    private final SettingsReader settings;
 
     public WebhookAlertChannel(AlertProperties properties, ObjectMapper objectMapper) {
+        this(properties, objectMapper, null);
+    }
+
+    @Autowired
+    public WebhookAlertChannel(AlertProperties properties, ObjectMapper objectMapper,
+                               SettingsReader settings) {
+        this.settings = settings;
         this.config = properties.getWebhook();
         this.objectMapper = objectMapper;
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
@@ -83,9 +96,22 @@ public class WebhookAlertChannel implements AlertChannel {
         return config.getUrl() != null && !config.getUrl().isBlank();
     }
 
+
+    /**
+     * The platform setting {@code alerts.webhook.minSeverity} (INFO/LOW/MEDIUM; HIGH and CRITICAL
+     * always pass), read per alert; with nothing stored the yml value.
+     */
     @Override
     public AlertSeverity minSeverity() {
-        return config.getMinSeverity();
+        if (settings == null) {
+            return config.getMinSeverity();
+        }
+        String effective = settings.getEnumForPlatform(SettingKeys.ALERT_WEBHOOK_MIN_SEVERITY);
+        try {
+            return AlertSeverity.valueOf(effective.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException unknown) {
+            return config.getMinSeverity();
+        }
     }
 
     @Override

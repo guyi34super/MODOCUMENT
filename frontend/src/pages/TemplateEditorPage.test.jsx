@@ -1,12 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from '../context/AuthContext';
 import { ToastProvider } from '../context/ToastContext';
 import TemplateEditorPage from './TemplateEditorPage';
 
 import { getTemplateDataTypes } from '../api/cache';
-import { createField, getAllFields, getTemplate } from '../api/templates';
+import { createField, createWithFields, getAllFields, getTemplate } from '../api/templates';
 
 vi.mock('../api/cache', () => ({
   getTemplateDataTypes: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('../api/templates', () => ({
   getAllFields: vi.fn(),
   getTemplate: vi.fn(),
   updateTemplate: vi.fn(),
+  updateField: vi.fn(),
 }));
 
 function renderEditPage() {
@@ -63,7 +65,8 @@ describe('TemplateEditorPage (edit mode)', () => {
       templateDataTypeId: 1,
       piiKind: null, // "auto": the server classifies on first use
     });
-    expect(await screen.findByText('Age')).toBeInTheDocument();
+    // The fields table (the extraction section lists the field too).
+    expect(await within(screen.getByRole('table')).findByText('Age')).toBeInTheDocument();
     expect(input).toHaveValue('');
     expect(input).toHaveFocus();
   });
@@ -117,3 +120,104 @@ describe('TemplateEditorPage (edit mode)', () => {
     ).toBeGreaterThanOrEqual(1);
   });
 });
+
+function renderAs(role, entry, path) {
+  localStorage.setItem('modoc.token', 'test-token');
+  localStorage.setItem('modoc.user', JSON.stringify({ userId: 5, role }));
+  return render(
+    <MemoryRouter initialEntries={[entry]}>
+      <AuthProvider>
+        <ToastProvider>
+          <Routes>
+            <Route path={path} element={<TemplateEditorPage />} />
+            <Route path="/templates/:id" element={<div>EDITOR OF CREATED</div>} />
+          </Routes>
+        </ToastProvider>
+      </AuthProvider>
+    </MemoryRouter>
+  );
+}
+
+describe('TemplateEditorPage (ws22 bank-shared templates)', () => {
+  beforeEach(() => {
+    getTemplateDataTypes.mockResolvedValue([{ templateDataTypeId: 1, dataType: 'Text' }]);
+    getAllFields.mockResolvedValue([
+      { templateFieldsId: 1, templateId: 8, fieldName: 'Amount', templateDataTypeId: 1 },
+    ]);
+    createWithFields.mockReset().mockResolvedValue({ templateId: 9, visibility: 'BANK' });
+  });
+
+  it('?visibility=BANK preselects sharing for an administrator and sends it', async () => {
+    renderAs('ADMIN', '/templates/new?visibility=BANK', '/templates/new');
+
+    expect(await screen.findByRole('heading', { name: 'New shared template' })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Share with bank' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await userEvent.type(screen.getByLabelText('Name'), 'KYC');
+    await userEvent.type(screen.getByPlaceholderText('Field name'), 'Amount');
+    await userEvent.click(screen.getByRole('button', { name: 'Create template' }));
+
+    await waitFor(() =>
+      expect(createWithFields).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'KYC', visibility: 'BANK' })
+      )
+    );
+  });
+
+  it('creates a private template for a non-administrator even from the shared link', async () => {
+    renderAs('READ_WRITE', '/templates/new?visibility=BANK', '/templates/new');
+
+    expect(await screen.findByText(/Only an administrator can share a template/)).toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: 'Share with bank' })).toBeNull();
+    await userEvent.type(screen.getByLabelText('Name'), 'Mine');
+    await userEvent.type(screen.getByPlaceholderText('Field name'), 'Amount');
+    await userEvent.click(screen.getByRole('button', { name: 'Create template' }));
+
+    await waitFor(() =>
+      expect(createWithFields).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: 'PRIVATE' })
+      )
+    );
+  });
+
+  it('opens a colleague\'s shared template read-only', async () => {
+    getTemplate.mockResolvedValue({
+      templateId: 8,
+      name: 'KYC form',
+      description: 'bank-wide',
+      visibility: 'BANK',
+      ownedByMe: false,
+      editable: false,
+      ownerName: 'Grace Admin',
+    });
+    renderAs('READ_WRITE', '/templates/8', '/templates/:id');
+
+    expect(await screen.findByText('Shared template — read only')).toBeInTheDocument();
+    expect(screen.getByText(/Grace Admin shared this template/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveAttribute('readonly');
+    expect(screen.queryByRole('button', { name: 'Save details' })).toBeNull();
+    expect(screen.queryByPlaceholderText('New field name')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(within(screen.getByRole('table')).getByText('Amount')).toBeInTheDocument();
+  });
+
+  it('keeps a shared template editable for an administrator, with a reminder', async () => {
+    getTemplate.mockResolvedValue({
+      templateId: 8,
+      name: 'KYC form',
+      description: '',
+      visibility: 'BANK',
+      ownedByMe: false,
+      editable: true,
+      ownerName: 'Grace Admin',
+    });
+    renderAs('ADMIN', '/templates/8', '/templates/:id');
+
+    expect(await screen.findByPlaceholderText('New field name')).toBeInTheDocument();
+    expect(screen.getByText(/changes affect all of them/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save details' })).toBeInTheDocument();
+  });
+});
+

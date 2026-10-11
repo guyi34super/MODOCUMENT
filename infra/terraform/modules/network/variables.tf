@@ -38,6 +38,27 @@ variable "enable_interface_endpoints" {
   default     = false
 }
 
+variable "bank_egress_cidrs" {
+  description = <<-EOT
+    ws26 bank integration hub, DIRECT mode: bank networks (reached over a
+    per-bank VPN/PrivateLink, see the root README "implement later" list)
+    that app tasks may open DATABASE (1433 SQL Server, 1521 Oracle, 3306
+    MariaDB/MySQL, 5432 PostgreSQL) and SFTP (22) connections to. Empty (the
+    default) = no such egress rule exists. The app additionally allows a
+    private destination only when the bank's BankEgressRule is approved
+    (platform maker/checker): this list is the network-level ceiling.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for c in var.bank_egress_cidrs : can(cidrhost(c, 0)) && try(tonumber(split("/", c)[1]) > 0, false)
+    ])
+    error_message = "bank_egress_cidrs entries must be CIDRs, never /0."
+  }
+}
+
 variable "tags" {
   description = "Common resource tags."
   type        = map(string)

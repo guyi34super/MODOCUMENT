@@ -1,0 +1,4 @@
+# TEST-ONLY known_hosts for the bank simulator SFTP server (compose service
+# bank-sftp:22, published on 127.0.0.1:2222). The RSA host key's fingerprint
+# is in host-key-fingerprints.TEST-ONLY.txt.
+bank-sftp,[127.0.0.1]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAqyaKS00OoHJuK9atwc8XQsZKQk9yli6TnK9qtIABQH

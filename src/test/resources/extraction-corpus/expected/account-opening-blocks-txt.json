@@ -1,0 +1,68 @@
+{
+  "name": "account-opening-blocks-txt",
+  "file": "account-opening.txt",
+  "strategy": "KEY_VALUE",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "note": "blocks separated by dashed rules; title underline",
+  "fields": [
+    {
+      "name": "Request Ref",
+      "type": "TEXT"
+    },
+    {
+      "name": "Account Type",
+      "type": "TEXT"
+    },
+    {
+      "name": "Applicant",
+      "type": "TEXT"
+    },
+    {
+      "name": "Currency",
+      "type": "TEXT"
+    },
+    {
+      "name": "Initial Deposit",
+      "type": "NUMBER"
+    },
+    {
+      "name": "Received",
+      "type": "DATE"
+    }
+  ],
+  "rows": [
+    [
+      "AOR-7001",
+      "Savings",
+      "Jean-Marc Labonte",
+      "MUR",
+      "5000.00",
+      "2024-04-02"
+    ],
+    [
+      "AOR-7002",
+      "Current",
+      "Pooja Ramlall",
+      "USD",
+      "1000.00",
+      "2024-04-02"
+    ],
+    [
+      "AOR-7003",
+      "Savings",
+      "Li Wen Chung",
+      "MUR",
+      "250.00",
+      "2024-04-03"
+    ],
+    [
+      "AOR-7004",
+      "Fixed Deposit",
+      "Nadia Bundhoo",
+      "EUR",
+      "20000.00",
+      "2024-04-04"
+    ]
+  ]
+}

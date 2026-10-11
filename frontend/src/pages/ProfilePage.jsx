@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import * as authApi from '../api/auth';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
+import AppVersionCard from '../components/AppVersionCard';
 import { Button, Card, ErrorBanner, Field, inputClass } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 
@@ -78,10 +79,14 @@ export default function ProfilePage() {
     try {
       await toast.promise(authApi.changePassword(currentPassword, newPassword), {
         loading: 'Changing password…',
-        success: 'Password changed',
+        success: 'Password changed — sign in with your new password',
       });
-      setCurrentPassword('');
-      setNewPassword('');
+      // The change ended every session server-side (BUG-02): sign out
+      // locally and sign in again, instead of the next call bouncing to
+      // "session expired".
+      await logout({ revoke: false });
+      navigate('/login', { replace: true, state: { notice: 'password-changed' } });
+      return;
     } catch {
       // The error toast is already shown.
     } finally {
@@ -340,6 +345,9 @@ export default function ProfilePage() {
           Log out
         </Button>
       </Card>
+
+      {/* ws24: SPA and server version (data-testid="app-version"). */}
+      <AppVersionCard className="mt-5" />
     </div>
   );
 }

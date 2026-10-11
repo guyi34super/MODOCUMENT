@@ -28,6 +28,30 @@ spring:
       api-key: test-key
 
 modocument:
+  integration:
+    # ws25: fixed TEST-ONLY connector key (base64 of 32 zero bytes - a
+    # deliberately worthless value) so the secret vault works in the H2
+    # suite; real deployments set MODOCUMENT_CONNECTOR_KEY.
+    connector-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    engine:
+      # ws25: no scheduled integration tick against the shared H2 schema;
+      # the engine tests drive IntegrationScheduler.tick() directly, and
+      # "Run now" executes in the request thread (deterministic).
+      scheduler-enabled: false
+      synchronous: true
+    connectors:
+      # The connector tests talk to loopback JDK HTTP stubs.
+      allow-plain-http: true
+  agent:
+    offline-sweep:
+      # No scheduled agent offline sweep racing deterministic tests;
+      # AgentOfflineSweepTest drives sweep() directly.
+      enabled: false
+  platform:
+    # ws21 BankDirectory: no caching in tests. Test contexts with different
+    # configurations recreate the shared H2 schema (ddl-auto: create), so a
+    # bank id cached by one context can name a different bank later.
+    bank-cache-ttl: 0s
   retention:
     # No scheduled purge racing deterministic tests; the ws14 retention gate
     # tests re-enable it (and drive the job explicitly) via test properties.
@@ -38,6 +62,12 @@ modocument:
       # gate tests drive AlertSweepJob.runOnce() explicitly. Immediate
       # (post-commit) alerting stays on everywhere.
       enabled: false
+  settings:
+    # ws20: no scheduled ConfigRevision poll against the shared H2 schema
+    # (every cached test context would poll it). Writes reload their own
+    # snapshot after commit and the settings endpoints refresh explicitly;
+    # SettingsPropagationPgIT drives the poller directly.
+    poll-interval-ms: 3600000
   security:
     jwt:
       # Test-only signing key; production requires MODOCUMENT_JWT_SECRET.

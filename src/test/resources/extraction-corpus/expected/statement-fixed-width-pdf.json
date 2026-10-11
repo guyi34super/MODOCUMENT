@@ -1,0 +1,25 @@
+{
+  "name": "statement-fixed-width-pdf",
+  "file": "statement-fixed-width.pdf",
+  "strategy": "FIXED_WIDTH",
+  "minConfidence": 0.8,
+  "maxConfidence": 1.0,
+  "fields": [
+    {"name": "Date", "type": "DATE"},
+    {"name": "Description", "type": "TEXT"},
+    {"name": "Debit", "type": "NUMBER"},
+    {"name": "Credit", "type": "NUMBER"},
+    {"name": "Balance", "type": "NUMBER"}
+  ],
+  "rows": [
+    ["2024-01-02", "Opening balance", "", "", "1000.00"],
+    ["2024-01-05", "Salary ACME Ltd", "", "2500.00", "3500.00"],
+    ["2024-01-08", "Grocery store (card 4417)", "45.10", "", "3454.90"],
+    ["2024-01-11", "ATM withdrawal", "200.00", "", "3254.90"],
+    ["2024-01-15", "Electricity bill", "1120.35", "", "2134.55"],
+    ["2024-01-19", "Refund - online order", "", "64.99", "2199.54"],
+    ["2024-01-22", "Transfer to savings", "500.00", "", "1699.54"],
+    ["2024-01-26", "Interest", "", "3.12", "1702.66"],
+    ["2024-01-31", "Monthly fee", "15.00", "", "1687.66"]
+  ]
+}

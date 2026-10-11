@@ -1,0 +1,13 @@
+KYC periodic review - Q1 2024
+
+The following customers were reviewed by the compliance desk.
+
+| Customer Id | Customer Name | Risk Rating | Review Date |
+|:------------|:--------------|:-----------:|------------:|
+| C-501 | Priya Naidoo | Low | 2024-01-12 |
+| C-502 | Marc Antoine | Medium | 2024-01-19 |
+| C-503 | Li Wei | High | 2024-02-02 |
+| C-504 | Fatima Joomun | Low | 2024-02-16 |
+| C-505 | Oliver Grant | Medium | 2024-03-01 |
+
+Reviews rated High go to the MLRO within five working days.

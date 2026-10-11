@@ -2,6 +2,8 @@ package com.modocument.api.controller;
 
 import com.modocument.infrastructure.ai.AiErrorMessages;
 import com.modocument.infrastructure.ai.AiNotConfiguredException;
+import com.modocument.infrastructure.ai.AiUnavailableException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.core.Ordered;
@@ -25,6 +27,21 @@ public class AiExceptionHandler {
     public ResponseEntity<Map<String, String>> handleNotConfigured(AiNotConfiguredException e) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(Map.of("error", e.getMessage()));
+    }
+
+    /**
+     * ws23: the AI circuit breaker is open, or the bank turned AI off — 503
+     * like "not configured", with a Retry-After while the circuit is open.
+     */
+    @ExceptionHandler(AiUnavailableException.class)
+    public ResponseEntity<Map<String, String>> handleUnavailable(AiUnavailableException e) {
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE);
+        if (e.retryAfterSeconds() != null) {
+            response.header(HttpHeaders.RETRY_AFTER, String.valueOf(e.retryAfterSeconds()));
+        }
+        return response.body(Map.of(
+                "error", e.getMessage(),
+                "code", e.reason() == null ? "AI_UNAVAILABLE" : e.reason().name()));
     }
 
     /**

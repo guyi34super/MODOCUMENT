@@ -17,14 +17,23 @@ export const providers = () => api.get('/api/auth/providers');
  */
 export const refresh = () => api.post('/api/auth/refresh');
 
-/** Revokes the access token and every refresh token server-side. */
-export const logout = () => api.post('/api/auth/logout');
+/**
+ * Revokes the access token and every refresh token server-side. A 401 here
+ * means the session is already gone — never a reason for the
+ * "session expired" redirect (BUG-02).
+ */
+export const logout = () => api.post('/api/auth/logout', undefined, { noExpiryRedirect: true });
 
 export const me = () => api.get('/api/auth/me');
 
 export const updateProfile = (displayName, settings) =>
   api.put('/api/auth/profile', { displayName, settings });
 
+/**
+ * Changes the caller's password. The backend then ENDS every session of the
+ * account (TokenVersion bump, refresh tokens revoked, cookie cleared): the
+ * caller must sign in again — use AuthContext.logout({ revoke: false }).
+ */
 export const changePassword = (currentPassword, newPassword) =>
   api.put('/api/auth/password', { currentPassword, newPassword });
 

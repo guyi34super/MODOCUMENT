@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.ImportHistoryRepository;
+import com.modocument.application.usecase.TemplateOwnership;
 import com.modocument.domain.entity.ImportHistory;
 import com.modocument.domain.model.Permission;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 @RestController
@@ -25,10 +28,13 @@ public class ImportHistoryController {
 
     private final ImportHistoryRepository repo;
     private final CurrentUserProvider currentUser;
+    private final TemplateOwnership templateOwnership;
 
-    public ImportHistoryController(ImportHistoryRepository repo, CurrentUserProvider currentUser) {
+    public ImportHistoryController(ImportHistoryRepository repo, CurrentUserProvider currentUser,
+                                   TemplateOwnership templateOwnership) {
         this.repo = repo;
         this.currentUser = currentUser;
+        this.templateOwnership = templateOwnership;
     }
 
     @RequiresPermission(Permission.IMPORT_READ)
@@ -58,6 +64,12 @@ public class ImportHistoryController {
     @RequiresPermission(Permission.IMPORT_WRITE)
     @PostMapping("/ImportHistory/Create")
     public ResponseEntity<?> create(@Valid @RequestBody ImportHistory dto) {
+        // ws22: an import names the template it used — a USE of the template,
+        // so it must be readable (own, or shared with the bank). Unchecked,
+        // the response's embedded template leaked another user's template.
+        if (!templateUsable(dto.getTemplateId())) {
+            return templateNotFound(dto.getTemplateId());
+        }
         ImportHistory entity = new ImportHistory();
         entity.setOwnerUserId(currentUser.requireUserId());
         entity.setBankId(currentUser.requireBankId());
@@ -78,6 +90,9 @@ public class ImportHistoryController {
                 repo.getByIdAndOwner(dto.getImportHistoryId(), currentUser.requireUserId());
         if (existingOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
+        }
+        if (!templateUsable(dto.getTemplateId())) {
+            return templateNotFound(dto.getTemplateId());
         }
         ImportHistory existing = existingOpt.get();
         existing.setImportDate(dto.getImportDate());
@@ -108,5 +123,19 @@ public class ImportHistoryController {
         }
         repo.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    private boolean templateUsable(int templateId) {
+        try {
+            templateOwnership.requireReadable(templateId);
+            return true;
+        } catch (NoSuchElementException notReadable) {
+            return false;
+        }
+    }
+
+    private static ResponseEntity<?> templateNotFound(int templateId) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Template " + templateId + " not found."));
     }
 }

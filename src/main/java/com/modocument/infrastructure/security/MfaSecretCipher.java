@@ -5,19 +5,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.util.Base64;
 
 /**
- * Encrypts TOTP secrets at rest (SEC-014): AES-256-GCM with a fresh random
- * 96-bit IV per encryption, stored alongside the ciphertext as
+ * Encrypts TOTP secrets at rest (SEC-014): AES-256-GCM ({@link AesGcm}, no
+ * associated data) with a fresh random 96-bit IV per encryption, stored alongside the ciphertext as
  * {@code base64(iv) ':' base64(ciphertext)}. The 256-bit key is derived
  * (SHA-256, domain-separated) from {@code MODOCUMENT_MFA_KEY}, which must be
  * at least 32 bytes in production — the app refuses to start otherwise.
@@ -31,14 +28,9 @@ public class MfaSecretCipher {
 
     private static final Logger log = LoggerFactory.getLogger(MfaSecretCipher.class);
 
-    private static final String TRANSFORMATION = "AES/GCM/NoPadding";
-    private static final int IV_BYTES = 12;
-    private static final int TAG_BITS = 128;
     private static final int MIN_KEY_BYTES = 32;
 
-    private static final SecureRandom RANDOM = new SecureRandom();
-
-    private final SecretKeySpec key;
+    private final SecretKey key;
 
     public MfaSecretCipher(
             @Value("${modocument.security.mfa.key:}") String mfaKey,
@@ -63,20 +55,15 @@ public class MfaSecretCipher {
                             + " bytes (e.g. `openssl rand -base64 48`) and set it in the "
                             + "environment before starting the app.");
         }
-        this.key = new SecretKeySpec(
-                sha256("modocument-mfa-secret-encryption:" + material), "AES");
+        this.key = AesGcm.key(sha256("modocument-mfa-secret-encryption:" + material));
     }
 
     /** @return {@code base64(iv) ':' base64(ciphertext+tag)} */
     public String encrypt(String plaintext) {
-        byte[] iv = new byte[IV_BYTES];
-        RANDOM.nextBytes(iv);
         try {
-            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, iv));
-            byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(iv) + ":"
-                    + Base64.getEncoder().encodeToString(ciphertext);
+            AesGcm.Box box = AesGcm.encrypt(key, plaintext.getBytes(StandardCharsets.UTF_8), null);
+            return Base64.getEncoder().encodeToString(box.nonce()) + ":"
+                    + Base64.getEncoder().encodeToString(box.ciphertextWithTag());
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("MFA secret encryption failed.", e);
         }
@@ -94,9 +81,8 @@ public class MfaSecretCipher {
         try {
             byte[] iv = Base64.getDecoder().decode(stored.substring(0, separator));
             byte[] ciphertext = Base64.getDecoder().decode(stored.substring(separator + 1));
-            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, iv));
-            return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
+            return new String(AesGcm.decrypt(key, new AesGcm.Box(iv, ciphertext), null),
+                    StandardCharsets.UTF_8);
         } catch (GeneralSecurityException | IllegalArgumentException e) {
             throw new IllegalStateException("MFA secret decryption failed.", e);
         }

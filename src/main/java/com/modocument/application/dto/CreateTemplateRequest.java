@@ -23,6 +23,20 @@ public class CreateTemplateRequest {
     @Valid
     private List<CreateTemplateFieldDto> fields;
 
+    /**
+     * ws22: {@code PRIVATE} (default when absent) or {@code BANK} — sharing
+     * with the bank at creation requires template:publish (403 otherwise).
+     */
+    @Size(max = 10)
+    private String visibility;
+
+    /**
+     * ws23: AI_WITH_CODE_FALLBACK, CODE_ONLY or AI_ONLY; null inherits the
+     * bank's {@code extraction.defaultMode}.
+     */
+    @Size(max = 30)
+    private String extractionMode;
+
     public CreateTemplateRequest() {
     }
 
@@ -54,5 +68,21 @@ public class CreateTemplateRequest {
 
     public void setFields(List<CreateTemplateFieldDto> fields) {
         this.fields = fields;
+    }
+
+    public String getVisibility() {
+        return visibility;
+    }
+
+    public void setVisibility(String visibility) {
+        this.visibility = visibility;
+    }
+
+    public String getExtractionMode() {
+        return extractionMode;
+    }
+
+    public void setExtractionMode(String extractionMode) {
+        this.extractionMode = extractionMode;
     }
 }

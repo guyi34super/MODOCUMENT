@@ -16,6 +16,9 @@ public interface DocInstanceJpaRepository extends JpaRepository<DocInstance, Int
     /** ws11: the per-bank release queue / released listing. */
     List<DocInstance> findByBankIdAndStatusOrderByDocInstanceIdDesc(int bankId, String status);
 
+    /** Admin dashboard (phase 2): the size of the bank's release queue. */
+    long countByBankIdAndStatus(int bankId, String status);
+
     /**
      * ws11 nightly SoD scan: RELEASED instances released by their own author
      * or submitter — the invariant says there are none.

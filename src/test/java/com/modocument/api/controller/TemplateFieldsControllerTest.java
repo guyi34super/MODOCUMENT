@@ -82,6 +82,17 @@ class TemplateFieldsControllerTest {
         assertThat(returned.getTemplateId()).isEqualTo(1);
     }
 
+    /** The editor's data type is kept (it used to be dropped: FK violation on id 0). */
+    @Test
+    void createKeepsTheRequestedDataType() {
+        TemplateFields request = templateFields(0, 1, "Amount");
+        request.setTemplateDataTypeId(2);
+
+        ResponseEntity<?> result = controller.create(request);
+
+        assertThat(((TemplateFields) result.getBody()).getTemplateDataTypeId()).isEqualTo(2);
+    }
+
     /** ws12 (PRIV-004): the explicit PII tag round-trips through create/update/get. */
     @Test
     void piiKindRoundTripsThroughCreateUpdateAndGet() {

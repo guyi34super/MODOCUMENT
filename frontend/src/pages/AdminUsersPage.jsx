@@ -1,20 +1,27 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as adminApi from '../api/admin';
 import { isPendingChange } from '../api/changes';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import PageHeader from '../components/PageHeader';
+import Modal from '../components/Modal';
+import ConfirmDialog from '../components/ConfirmDialog';
+import CreateUserForm, { rolesFor } from '../components/CreateUserForm';
 import { Button, Card, ErrorBanner, Field, Spinner, inputClass } from '../components/ui';
-
-const ROLES = ['ADMIN', 'APPROVER', 'READ_WRITE', 'READ_ONLY'];
-
-const emptyForm = { email: '', displayName: '', role: 'READ_ONLY', temporaryPassword: '' };
+import { generateTemporaryPassword } from '../utils/temporaryPassword';
 
 function formatDate(value) {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+/** The toast line for an action that may come back as a pending change. */
+function pendingOr(result, pendingText, directText) {
+  return isPendingChange(result)
+    ? `Sent for approval: ${pendingText} (change #${result.pendingChangeId})`
+    : directText;
 }
 
 /**
@@ -24,19 +31,32 @@ function formatDate(value) {
  * gated (ws10): the server answers 202 with a pending change that a second
  * administrator must approve, and this page says so instead of pretending
  * the change happened. Only re-enabling applies immediately.
+ *
+ * Phase 2 (ws22) row actions, each in its own dialog: Unlock (direct),
+ * Reset password and Reset MFA (maker/checker — "Sent for approval"), and
+ * Edit (display name, direct). None is offered on the caller's own row; the
+ * password reset is hidden for IdP-managed (SSO) accounts.
  */
 export default function AdminUsersPage() {
   const toast = useToast();
   const { user: me } = useAuth();
+  const passwordFieldId = useId();
 
   const [users, setUsers] = useState(null);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState(emptyForm);
+  const roles = rolesFor(me?.role);
   // 'users' | 'review' — the access-review worksheet view (SEC-013).
   const [view, setView] = useState('users');
   const [review, setReview] = useState(null);
+
+  // The open row dialog: { kind, user, role? } with kind one of
+  // role | disable | unlock | password | mfa | edit.
+  const [dialog, setDialog] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [temporaryPassword, setTemporaryPassword] = useState('');
+  const [mfaReason, setMfaReason] = useState('');
+  const [displayName, setDisplayName] = useState('');
 
   const load = useCallback(() => {
     adminApi
@@ -58,70 +78,117 @@ export default function AdminUsersPage() {
     }
   };
 
-  const submitCreate = async (e) => {
-    e.preventDefault();
-    setBusy(true);
+  const openDialog = (kind, target, extra = {}) => {
+    setTemporaryPassword('');
+    setMfaReason('');
+    setDisplayName(target.displayName || '');
+    setDialog({ kind, user: target, ...extra });
+  };
+
+  const closeDialog = () => {
+    if (!saving) setDialog(null);
+  };
+
+  /**
+   * Runs one dialog action behind a toast. A refusal keeps a form dialog
+   * open (fix the input and retry); a confirmation closes either way.
+   */
+  const runAction = async (call, messages, { keepOpenOnError = false } = {}) => {
+    setSaving(true);
     try {
-      await toast.promise(adminApi.createUser(form), {
-        loading: 'Submitting user creation…',
-        success: (result) =>
-          isPendingChange(result)
-            ? `Creating ${form.email} was submitted for approval — a second administrator must approve it (change #${result.pendingChangeId})`
-            : `User ${form.email} created — they must change the temporary password on first login`,
-      });
-      setForm(emptyForm);
-      setShowCreate(false);
+      await toast.promise(call, messages);
+      setDialog(null);
       load();
     } catch {
       // The error toast is already shown.
+      if (!keepOpenOnError) setDialog(null);
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   };
 
-  const changeRole = async (target, role) => {
-    if (role === target.role) return;
-    if (
-      !window.confirm(
-        `Request changing ${target.email} from ${target.role} to ${role}? ` +
-          'A second administrator must approve it; on approval the target is ' +
-          'signed out immediately.'
-      )
-    ) {
-      return;
-    }
-    try {
-      await toast.promise(adminApi.setUserRole(target.id, role), {
-        loading: 'Submitting role change…',
-        success: (result) =>
-          isPendingChange(result)
-            ? `Role change for ${target.email} submitted for approval (change #${result.pendingChangeId})`
-            : `${target.email} is now ${role}`,
-      });
-      load();
-    } catch {
-      // The error toast is already shown.
-    }
+  const submitRole = () => {
+    const { user: target, role } = dialog;
+    return runAction(adminApi.setUserRole(target.id, role), {
+      loading: 'Submitting role change…',
+      success: (result) =>
+        isPendingChange(result)
+          ? `Role change for ${target.email} submitted for approval (change #${result.pendingChangeId})`
+          : `${target.email} is now ${role}`,
+    });
   };
 
-  const toggleDisabled = async (target) => {
+  const submitDisabled = () => {
+    const target = dialog.user;
     const disabling = !target.disabled;
-    const question = disabling
-      ? `Request disabling ${target.email}? A second administrator must approve ` +
-        'it; on approval the account becomes unusable immediately.'
-      : `Enable ${target.email}? They will be able to sign in again.`;
-    if (!window.confirm(question)) return;
-    try {
-      await toast.promise(adminApi.setUserDisabled(target.id, disabling), {
-        loading: disabling ? 'Submitting disable request…' : 'Enabling…',
+    return runAction(adminApi.setUserDisabled(target.id, disabling), {
+      loading: disabling ? 'Submitting disable request…' : 'Enabling…',
+      success: (result) =>
+        isPendingChange(result)
+          ? `Disabling ${target.email} submitted for approval (change #${result.pendingChangeId})`
+          : `${target.email} ${disabling ? 'disabled' : 'enabled'}`,
+    });
+  };
+
+  const submitUnlock = () => {
+    const target = dialog.user;
+    return runAction(adminApi.unlockUser(target.id), {
+      loading: 'Unlocking…',
+      success: `${target.email} unlocked — they can sign in again`,
+    });
+  };
+
+  const submitPasswordReset = (e) => {
+    e?.preventDefault();
+    if (!temporaryPassword) return undefined;
+    const target = dialog.user;
+    return runAction(
+      adminApi.resetUserPassword(target.id, temporaryPassword),
+      {
+        loading: 'Submitting password reset…',
         success: (result) =>
-          isPendingChange(result)
-            ? `Disabling ${target.email} submitted for approval (change #${result.pendingChangeId})`
-            : `${target.email} ${disabling ? 'disabled' : 'enabled'}`,
-      });
-      load();
+          pendingOr(
+            result,
+            `password reset for ${target.email}`,
+            `Password of ${target.email} reset`
+          ),
+      },
+      { keepOpenOnError: true }
+    );
+  };
+
+  const submitMfaReset = (e) => {
+    e?.preventDefault();
+    if (!mfaReason.trim()) return undefined;
+    const target = dialog.user;
+    return runAction(
+      adminApi.resetUserMfa(target.id, mfaReason.trim()),
+      {
+        loading: 'Submitting MFA reset…',
+        success: (result) =>
+          pendingOr(result, `MFA reset for ${target.email}`, `MFA of ${target.email} reset`),
+      },
+      { keepOpenOnError: true }
+    );
+  };
+
+  const submitEdit = (e) => {
+    e?.preventDefault();
+    if (!displayName.trim()) return undefined;
+    const target = dialog.user;
+    return runAction(
+      adminApi.updateUser(target.id, { displayName: displayName.trim() }),
+      { loading: 'Saving…', success: `Display name of ${target.email} updated` },
+      { keepOpenOnError: true }
+    );
+  };
+
+  const copyPassword = async () => {
+    try {
+      await navigator.clipboard.writeText(temporaryPassword);
+      toast.success('Temporary password copied');
     } catch {
-      // The error toast is already shown.
+      toast.error('Copy is not available here — select the password and copy it manually.');
     }
   };
 
@@ -135,6 +202,13 @@ export default function AdminUsersPage() {
       // The error toast is already shown.
     }
   };
+
+  const target = dialog?.user;
+  const cancelButton = (
+    <Button type="button" variant="secondary" onClick={closeDialog} disabled={saving}>
+      Cancel
+    </Button>
+  );
 
   return (
     <div>
@@ -156,7 +230,7 @@ export default function AdminUsersPage() {
             <Button variant="secondary" onClick={exportCsv}>
               Export CSV
             </Button>
-            <Button onClick={() => setShowCreate((open) => !open)}>
+            <Button aria-expanded={showCreate} onClick={() => setShowCreate((open) => !open)}>
               {showCreate ? 'Close' : 'Create user'}
             </Button>
           </>
@@ -164,8 +238,8 @@ export default function AdminUsersPage() {
       />
       <ErrorBanner message={error} onDismiss={() => setError('')} />
       <p className="mb-4 text-sm text-muted">
-        Creating, re-roling or disabling a user needs a second administrator&apos;s approval
-        (maker/checker) — track requests under{' '}
+        Creating, re-roling or disabling a user and resetting a password or MFA need a second
+        administrator&apos;s approval (maker/checker) — track requests under{' '}
         <Link to="/admin/changes" className="text-accent hover:underline">
           Approvals
         </Link>
@@ -175,53 +249,13 @@ export default function AdminUsersPage() {
       {showCreate && (
         <Card className="mb-5">
           <h2 className="mb-3 text-lg font-normal">Create user</h2>
-          <form onSubmit={submitCreate} className="space-y-4">
-            <Field label="Email">
-              <input
-                type="email"
-                required
-                className={inputClass}
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-              />
-            </Field>
-            <Field label="Display name">
-              <input
-                className={inputClass}
-                value={form.displayName}
-                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-              />
-            </Field>
-            <Field label="Role" hint="Least privilege: pick the lowest role that does the job.">
-              <select
-                className={inputClass}
-                value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}
-              >
-                {ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {role}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field
-              label="Temporary password"
-              hint="At least 12 characters. The user must replace it on first login."
-            >
-              <input
-                type="password"
-                required
-                minLength={12}
-                className={inputClass}
-                value={form.temporaryPassword}
-                onChange={(e) => setForm({ ...form, temporaryPassword: e.target.value })}
-              />
-            </Field>
-            <Button type="submit" disabled={busy}>
-              {busy ? 'Creating…' : 'Create user'}
-            </Button>
-          </form>
+          <CreateUserForm
+            roles={roles}
+            onSubmitted={() => {
+              setShowCreate(false);
+              load();
+            }}
+          />
         </Card>
       )}
 
@@ -229,16 +263,18 @@ export default function AdminUsersPage() {
         <Card padding="compact">
           {!users && <Spinner label="Loading users…" />}
           {users && (
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="Users">
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="px-2 py-2">Email</th>
-                  <th className="px-2 py-2">Name</th>
-                  <th className="px-2 py-2">Role</th>
-                  <th className="px-2 py-2">Status</th>
-                  <th className="px-2 py-2">Last login</th>
-                  <th className="px-2 py-2">MFA</th>
-                  <th className="px-2 py-2" />
+                  <th scope="col" className="px-2 py-2">Email</th>
+                  <th scope="col" className="px-2 py-2">Name</th>
+                  <th scope="col" className="px-2 py-2">Role</th>
+                  <th scope="col" className="px-2 py-2">Status</th>
+                  <th scope="col" className="px-2 py-2">Last login</th>
+                  <th scope="col" className="px-2 py-2">MFA</th>
+                  <th scope="col" className="px-2 py-2">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -259,9 +295,13 @@ export default function AdminUsersPage() {
                             aria-label={`Role of ${row.email}`}
                             className="rounded border border-line px-1.5 py-0.5 text-sm"
                             value={row.role || ''}
-                            onChange={(e) => changeRole(row, e.target.value)}
+                            onChange={(e) => {
+                              if (e.target.value !== row.role) {
+                                openDialog('role', row, { role: e.target.value });
+                              }
+                            }}
                           >
-                            {ROLES.map((role) => (
+                            {roles.map((role) => (
                               <option key={role} value={role}>
                                 {role}
                               </option>
@@ -279,18 +319,67 @@ export default function AdminUsersPage() {
                         >
                           {row.disabled ? 'Disabled' : 'Active'}
                         </span>
+                        {row.locked && (
+                          <span
+                            className="ml-1 inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800"
+                            title={`Locked until ${formatDate(row.lockedUntil)}`}
+                          >
+                            Locked
+                          </span>
+                        )}
                       </td>
                       <td className="px-2 py-2 text-muted">{formatDate(row.lastLoginAt)}</td>
                       <td className="px-2 py-2 text-muted">{row.mfaEnabled ? 'On' : 'Off'}</td>
-                      <td className="px-2 py-2 text-right">
+                      <td className="px-2 py-2">
                         {!self && (
-                          <Button
-                            variant={row.disabled ? 'secondary' : 'danger'}
-                            size="sm"
-                            onClick={() => toggleDisabled(row)}
-                          >
-                            {row.disabled ? 'Enable' : 'Disable'}
-                          </Button>
+                          <div className="flex flex-wrap justify-end gap-1.5">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              aria-label={`Edit ${row.email}`}
+                              onClick={() => openDialog('edit', row)}
+                            >
+                              Edit
+                            </Button>
+                            {row.locked && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                aria-label={`Unlock ${row.email}`}
+                                onClick={() => openDialog('unlock', row)}
+                              >
+                                Unlock
+                              </Button>
+                            )}
+                            {!row.authProvider && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                aria-label={`Reset password of ${row.email}`}
+                                onClick={() => openDialog('password', row)}
+                              >
+                                Reset password
+                              </Button>
+                            )}
+                            {row.mfaEnabled && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                aria-label={`Reset MFA of ${row.email}`}
+                                onClick={() => openDialog('mfa', row)}
+                              >
+                                Reset MFA
+                              </Button>
+                            )}
+                            <Button
+                              variant={row.disabled ? 'secondary' : 'danger'}
+                              size="sm"
+                              aria-label={`${row.disabled ? 'Enable' : 'Disable'} ${row.email}`}
+                              onClick={() => openDialog('disable', row)}
+                            >
+                              {row.disabled ? 'Enable' : 'Disable'}
+                            </Button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -311,16 +400,16 @@ export default function AdminUsersPage() {
           </p>
           {!review && <Spinner label="Generating worksheet…" />}
           {review && (
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="Access review">
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-                  <th className="px-2 py-2">Email</th>
-                  <th className="px-2 py-2">Role</th>
-                  <th className="px-2 py-2">Status</th>
-                  <th className="px-2 py-2">MFA</th>
-                  <th className="px-2 py-2">Last login</th>
-                  <th className="px-2 py-2">Days since</th>
-                  <th className="px-2 py-2">Inactivity</th>
+                  <th scope="col" className="px-2 py-2">Email</th>
+                  <th scope="col" className="px-2 py-2">Role</th>
+                  <th scope="col" className="px-2 py-2">Status</th>
+                  <th scope="col" className="px-2 py-2">MFA</th>
+                  <th scope="col" className="px-2 py-2">Last login</th>
+                  <th scope="col" className="px-2 py-2">Days since</th>
+                  <th scope="col" className="px-2 py-2">Inactivity</th>
                 </tr>
               </thead>
               <tbody>
@@ -353,6 +442,190 @@ export default function AdminUsersPage() {
           )}
         </Card>
       )}
+
+      {/* ---------------------------------------------------- row dialogs */}
+
+      <ConfirmDialog
+        open={dialog?.kind === 'role'}
+        title="Change role"
+        confirmLabel="Request change"
+        busy={saving}
+        onConfirm={submitRole}
+        onCancel={closeDialog}
+      >
+        <p>
+          Request changing <strong>{target?.email}</strong> from {target?.role} to{' '}
+          {dialog?.role}? A second administrator must approve it; on approval the user is
+          signed out immediately.
+        </p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={dialog?.kind === 'disable'}
+        title={target?.disabled ? 'Enable user' : 'Disable user'}
+        confirmLabel={target?.disabled ? 'Enable' : 'Request disable'}
+        tone={target?.disabled ? 'default' : 'danger'}
+        busy={saving}
+        onConfirm={submitDisabled}
+        onCancel={closeDialog}
+      >
+        {target?.disabled ? (
+          <p>
+            Enable <strong>{target?.email}</strong>? They will be able to sign in again.
+          </p>
+        ) : (
+          <p>
+            Request disabling <strong>{target?.email}</strong>? A second administrator must
+            approve it; on approval the account becomes unusable immediately.
+          </p>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={dialog?.kind === 'unlock'}
+        title="Unlock account"
+        confirmLabel="Unlock"
+        busy={saving}
+        onConfirm={submitUnlock}
+        onCancel={closeDialog}
+      >
+        <p>
+          Unlock <strong>{target?.email}</strong>? The login lockout ends now (it would
+          otherwise last until {formatDate(target?.lockedUntil)}) and the failed-attempt
+          counters reset. The password does not change.
+        </p>
+      </ConfirmDialog>
+
+      <Modal
+        open={dialog?.kind === 'password'}
+        onClose={closeDialog}
+        title="Reset password"
+        description={target?.email}
+        footer={
+          <>
+            {cancelButton}
+            <Button
+              type="button"
+              onClick={submitPasswordReset}
+              disabled={saving || !temporaryPassword}
+            >
+              Request reset
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={submitPasswordReset} className="space-y-3">
+          <p className="text-muted">
+            A second administrator must approve the reset. On approval every session of the user
+            ends and they must choose a new password at their next sign-in.
+          </p>
+          <div>
+            <label htmlFor={passwordFieldId} className="mb-1 block font-medium text-ink">
+              Temporary password
+            </label>
+            <div className="flex gap-2">
+              <input
+                id={passwordFieldId}
+                type="text"
+                required
+                minLength={12}
+                autoComplete="off"
+                spellCheck={false}
+                className={`${inputClass} font-mono`}
+                value={temporaryPassword}
+                onChange={(e) => setTemporaryPassword(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setTemporaryPassword(generateTemporaryPassword())}
+              >
+                Generate
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={copyPassword}
+                disabled={!temporaryPassword}
+              >
+                Copy
+              </Button>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              At least 12 characters. Hand it to the user over a separate channel — it is not
+              shown again.
+            </p>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={dialog?.kind === 'mfa'}
+        onClose={closeDialog}
+        title="Reset MFA"
+        description={target?.email}
+        footer={
+          <>
+            {cancelButton}
+            <Button
+              type="button"
+              variant="danger"
+              onClick={submitMfaReset}
+              disabled={saving || !mfaReason.trim()}
+            >
+              Request MFA reset
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={submitMfaReset} className="space-y-3">
+          <p className="text-muted">
+            Removes the user&apos;s authenticator enrolment and recovery codes. A second
+            administrator must approve it; on approval the user is signed out and sets up MFA
+            again at the next sign-in (administrators are required to).
+          </p>
+          <Field label="Reason" hint="Shown to the approver and kept in the audit trail.">
+            <textarea
+              required
+              maxLength={500}
+              rows={3}
+              className={inputClass}
+              value={mfaReason}
+              onChange={(e) => setMfaReason(e.target.value)}
+            />
+          </Field>
+        </form>
+      </Modal>
+
+      <Modal
+        open={dialog?.kind === 'edit'}
+        onClose={closeDialog}
+        title="Edit user"
+        description={target?.email}
+        footer={
+          <>
+            {cancelButton}
+            <Button type="button" onClick={submitEdit} disabled={saving || !displayName.trim()}>
+              Save
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={submitEdit} className="space-y-3">
+          <Field label="Display name">
+            <input
+              required
+              maxLength={200}
+              className={inputClass}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
+          </Field>
+          <p className="text-xs text-muted">
+            The email address is the sign-in identity and cannot be changed.
+          </p>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -4,34 +4,48 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.IngestionJobDto;
 import com.modocument.application.dto.ParseContext;
+import com.modocument.application.dto.ParseProvenance;
 import com.modocument.application.dto.ParseResult;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.dto.ValidationRequest;
 import com.modocument.application.mapping.MappingContext;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.privacy.LogSafe;
 import com.modocument.application.port.ImportDetailsRepository;
 import com.modocument.application.port.IngestionParseStep;
 import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.IngestionJobRepository;
+import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.port.TemplateRepository;
+import com.modocument.application.port.integration.IntegrationEventLog;
 import com.modocument.domain.entity.ImportDetails;
 import com.modocument.domain.entity.ImportHistory;
 import com.modocument.domain.entity.IngestionJob;
+import com.modocument.domain.entity.Template;
 import com.modocument.domain.entity.TemplateFields;
+import com.modocument.domain.model.ExtractionMode;
 import com.modocument.domain.model.JobStatus;
 import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.WizardStep;
+import com.modocument.domain.model.integration.FlowEvent;
+import com.modocument.domain.model.settings.SettingKeys;
 import com.modocument.infrastructure.ai.AiErrorMessages;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -52,6 +66,8 @@ public class IngestionJobUseCase {
     private static final int STEP_TRANSFORMING = 1;
     private static final int STEP_MAPPING = 2;
     private static final int STEP_VALIDATING = 3;
+    /** The shipped {@code extraction.code.minConfidence} (CodeTableExtractor.DEFAULT_MIN_CONFIDENCE). */
+    static final double SHIPPED_MIN_CONFIDENCE = 0.75;
 
     private final IngestionJobRepository jobs;
     private final TemplateRepository templates;
@@ -62,7 +78,15 @@ public class IngestionJobUseCase {
     private final AutoMapUseCase autoMap;
     private final ValidateRowsUseCase validateRows;
     private final CurrentUserProvider currentUser;
+    private final AuditRecorder audit;
+    /** ws25: the integration event stream (null in unit-test wiring = no events). */
+    private final IntegrationEventLog eventLog;
+    /** ws25: joins a job's terminal save and its event in one transaction (null = no tx). */
+    private final TransactionTemplate eventTx;
+    /** Wave 4: the bank's code-confidence threshold for job views (null in unit tests = shipped default). */
+    private SettingsReader settings;
 
+    /** Without an audit recorder (parse fallbacks are not audited) — unit tests. */
     public IngestionJobUseCase(IngestionJobRepository jobs,
                                TemplateRepository templates,
                                TemplateFieldsRepository templateFields,
@@ -72,6 +96,47 @@ public class IngestionJobUseCase {
                                AutoMapUseCase autoMap,
                                ValidateRowsUseCase validateRows,
                                CurrentUserProvider currentUser) {
+        this(jobs, templates, templateFields, importHistory, importDetails, parseStep, autoMap,
+                validateRows, currentUser, null);
+    }
+
+    /** With an audit recorder, no integration events — unit tests. */
+    public IngestionJobUseCase(IngestionJobRepository jobs,
+                               TemplateRepository templates,
+                               TemplateFieldsRepository templateFields,
+                               ImportHistoryRepository importHistory,
+                               ImportDetailsRepository importDetails,
+                               IngestionParseStep parseStep,
+                               AutoMapUseCase autoMap,
+                               ValidateRowsUseCase validateRows,
+                               CurrentUserProvider currentUser,
+                               AuditRecorder audit) {
+        this(jobs, templates, templateFields, importHistory, importDetails, parseStep, autoMap,
+                validateRows, currentUser, audit, null, null);
+    }
+
+    /**
+     * ws25: a job reaching VALIDATED or FAILED publishes INGESTION_VALIDATED /
+     * INGESTION_FAILED to the integration event log in the SAME transaction
+     * as the job's terminal save (the outbox rows of subscribed outbound
+     * flows commit with it, or not at all).
+     */
+    @Autowired
+    public IngestionJobUseCase(IngestionJobRepository jobs,
+                               TemplateRepository templates,
+                               TemplateFieldsRepository templateFields,
+                               ImportHistoryRepository importHistory,
+                               ImportDetailsRepository importDetails,
+                               IngestionParseStep parseStep,
+                               AutoMapUseCase autoMap,
+                               ValidateRowsUseCase validateRows,
+                               CurrentUserProvider currentUser,
+                               AuditRecorder audit,
+                               IntegrationEventLog eventLog,
+                               PlatformTransactionManager transactionManager) {
+        this.eventLog = eventLog;
+        this.eventTx = transactionManager == null ? null : new TransactionTemplate(transactionManager);
+        this.audit = audit;
         this.jobs = jobs;
         this.templates = templates;
         this.templateFields = templateFields;
@@ -84,13 +149,23 @@ public class IngestionJobUseCase {
     }
 
     public IngestionJob create(String fileName, int templateId) {
+        return create(fileName, templateId, null);
+    }
+
+    /**
+     * ws25: {@link #create(String, int)} for a machine caller acting as its
+     * owner (the integration API's {@code POST /files}): {@code origin}, e.g.
+     * {@code api-client:<id>}, is stamped on the job (null = a person).
+     */
+    public IngestionJob create(String fileName, int templateId, String origin) {
         int owner = currentUser.requireUserId();
-        // The template must exist AND belong to the caller — otherwise a user
-        // could stamp their own jobs against someone else's template.
-        templates.getByIdAndOwner(templateId, owner).orElseThrow(
+        int bankId = currentUser.requireBankId();
+        // The template must exist AND be usable by the caller — their own, or
+        // shared with their bank (ws22 read/use rule) — otherwise a user could
+        // stamp their own jobs against someone else's private template.
+        templates.getAccessible(templateId, owner, bankId).orElseThrow(
                 () -> new NoSuchElementException("Template " + templateId + " not found."));
 
-        int bankId = currentUser.requireBankId();
         ImportHistory history = new ImportHistory();
         history.setOwnerUserId(owner);
         history.setBankId(bankId);
@@ -107,6 +182,7 @@ public class IngestionJobUseCase {
         job.setImportHistoryId(savedHistory.getImportHistoryId());
         job.setCurrentStep(JobStep.UPLOADED);
         job.setStatus(JobStatus.PENDING);
+        job.setOrigin(origin == null ? null : abbreviateTo(origin, 100));
         return jobs.save(job);
     }
 
@@ -138,7 +214,11 @@ public class IngestionJobUseCase {
      * review before validation.
      */
     public IngestionJob resume(int jobId, JobStep until) {
-        IngestionJob job = get(jobId);
+        return advance(get(jobId), until);
+    }
+
+    /** The stage runner behind {@link #resume}, for a job already resolved (and authorized). */
+    private IngestionJob advance(IngestionJob job, JobStep until) {
         requireActive(job);
 
         if (job.getStatus() == JobStatus.RUNNING) {
@@ -175,6 +255,105 @@ public class IngestionJobUseCase {
             job = runStage(job, JobStep.VALIDATED, this::doValidate);
         }
         return job;
+    }
+
+    // ---- ws25: machine-created jobs (integration flows, API clients) ---------
+
+    /**
+     * JSON-records ingestion (ws25, {@code RecordsIngestion}): the records ARE
+     * the parsed table, so parsing is skipped and the job runs map → validate
+     * against the template. The job belongs to {@code ownerUserId} (the user
+     * who created the flow or API client) in {@code bankId}, records its
+     * {@code origin}, and may use a BANK-shared template of that bank only.
+     */
+    public IngestionJob createFromRecords(int bankId, int ownerUserId, int templateId,
+                                          String externalBatchId,
+                                          List<Map<String, Object>> records, String origin) {
+        requireSharedTemplate(templateId, bankId);
+        if (records == null || records.isEmpty()) {
+            throw new IllegalArgumentException("At least one record is required.");
+        }
+        LinkedHashSet<String> columns = new LinkedHashSet<>();
+        List<Map<String, String>> rows = new java.util.ArrayList<>(records.size());
+        for (Map<String, Object> record : records) {
+            Map<String, String> row = new LinkedHashMap<>();
+            if (record != null) {
+                for (Map.Entry<String, Object> cell : record.entrySet()) {
+                    if (cell.getKey() == null || cell.getKey().isBlank()) {
+                        continue;
+                    }
+                    columns.add(cell.getKey());
+                    row.put(cell.getKey(), cellText(cell.getValue()));
+                }
+            }
+            rows.add(row);
+        }
+        if (columns.isEmpty()) {
+            throw new IllegalArgumentException("The records carry no fields.");
+        }
+        String label = externalBatchId == null || externalBatchId.isBlank() ? origin : externalBatchId;
+        IngestionJob job = newMachineJob(bankId, ownerUserId, templateId,
+                abbreviateTo("records:" + (label == null ? "batch" : label), 255), origin);
+        job.setParsedTableJson(toJson(new TableData(new java.util.ArrayList<>(columns), rows)));
+        job.setCurrentStep(JobStep.PARSED);
+        job = jobs.save(job);
+        recordImportDetails(job, STEP_TRANSFORMING, job.getParsedTableJson());
+        return advance(job, JobStep.VALIDATED);
+    }
+
+    /**
+     * A file a machine delivered (an SFTP pull), already stored in uploads/
+     * under {@code storedName}: the normal pipeline from parse (AI or code
+     * extraction) through validation, owned like {@link #createFromRecords}.
+     */
+    public IngestionJob createFromStoredFile(int bankId, int ownerUserId, int templateId,
+                                             String storedName, String origin) {
+        requireSharedTemplate(templateId, bankId);
+        IngestionJob job = jobs.save(newMachineJob(bankId, ownerUserId, templateId, storedName, origin));
+        return advance(job, JobStep.VALIDATED);
+    }
+
+    private void requireSharedTemplate(int templateId, int bankId) {
+        templates.getById(templateId)
+                .filter(template -> template.getBankId() == bankId && template.isShared())
+                .orElseThrow(() -> new NoSuchElementException("Template " + templateId
+                        + " not found (machine jobs use bank-shared templates only)."));
+    }
+
+    private IngestionJob newMachineJob(int bankId, int ownerUserId, int templateId,
+                                       String fileName, String origin) {
+        ImportHistory history = new ImportHistory();
+        history.setOwnerUserId(ownerUserId);
+        history.setBankId(bankId);
+        history.setFileName(fileName);
+        history.setTemplateId(templateId);
+        history.setImportDate(LocalDateTime.now(ZoneOffset.UTC));
+        ImportHistory savedHistory = importHistory.add(history);
+
+        IngestionJob job = new IngestionJob();
+        job.setOwnerUserId(ownerUserId);
+        job.setBankId(bankId);
+        job.setFileName(fileName);
+        job.setTemplateId(templateId);
+        job.setImportHistoryId(savedHistory == null ? null : savedHistory.getImportHistoryId());
+        job.setCurrentStep(JobStep.UPLOADED);
+        job.setStatus(JobStatus.PENDING);
+        job.setOrigin(origin == null ? null : abbreviateTo(origin, 100));
+        return job;
+    }
+
+    private static String cellText(Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof Map || value instanceof java.util.Collection) {
+            return toJson(value);
+        }
+        return String.valueOf(value);
+    }
+
+    private static String abbreviateTo(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max);
     }
 
     /** Re-runs mapping on the parsed table; downstream checkpoints are cleared. */
@@ -333,6 +512,9 @@ public class IngestionJobUseCase {
             stage.run(job);
             job.setCurrentStep(target);
             job.setStatus(JobStatus.COMPLETED);
+            if (target == JobStep.VALIDATED) {
+                return saveAndPublish(job, FlowEvent.INGESTION_VALIDATED, target);
+            }
             return jobs.save(job);
         } catch (Exception e) {
             String message = toJobErrorMessage(e);
@@ -343,7 +525,52 @@ public class IngestionJobUseCase {
             // the same PII/credential scrub as a log line (PRIV-005): a
             // parser or driver message can quote the very values that failed.
             job.setErrorMessage(LogSafe.scrub(abbreviate(message)));
+            return saveAndPublish(job, FlowEvent.INGESTION_FAILED, target);
+        }
+    }
+
+    /**
+     * ws25: the terminal save and its integration event commit together
+     * (transactional outbox). Without an event log (unit tests) it is the
+     * plain save.
+     */
+    private IngestionJob saveAndPublish(IngestionJob job, FlowEvent event, JobStep step) {
+        if (eventLog == null) {
             return jobs.save(job);
+        }
+        java.util.function.Supplier<IngestionJob> work = () -> {
+            IngestionJob saved = jobs.save(job);
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("jobId", saved.getIngestionJobId());
+            data.put("templateId", saved.getTemplateId());
+            data.put("status", saved.getStatus() == null ? null : saved.getStatus().name());
+            data.put("step", step.name());
+            if (event == FlowEvent.INGESTION_VALIDATED) {
+                data.put("rejectedRows", rejectedRowCount(saved));
+            }
+            if (saved.getOrigin() != null) {
+                data.put("origin", saved.getOrigin());
+            }
+            eventLog.publish(saved.getBankId(), event, "IngestionJob",
+                    String.valueOf(saved.getIngestionJobId()), data);
+            return saved;
+        };
+        return eventTx == null ? work.get() : eventTx.execute(status -> work.get());
+    }
+
+    /** Distinct rows with at least one validation failure. */
+    private long rejectedRowCount(IngestionJob job) {
+        if (job.getValidationResultJson() == null || job.getValidationResultJson().isBlank()) {
+            return 0;
+        }
+        try {
+            return readValidationResults(job).stream()
+                    .filter(result -> result.errorMessage() != null)
+                    .map(RowValidationResult::row)
+                    .distinct()
+                    .count();
+        } catch (Exception e) {
+            return 0;
         }
     }
 
@@ -352,7 +579,9 @@ public class IngestionJobUseCase {
                 job.getFileName(),
                 job.getTemplateId(),
                 job.getOwnerUserId(),
-                templateFields.listByTemplateId(job.getTemplateId())));
+                templateFields.listByTemplateId(job.getTemplateId()),
+                job.getBankId() > 0 ? job.getBankId() : null,
+                templateExtractionMode(job.getTemplateId())));
         TableData table = parsed.table();
         if (table != null && table.getColumns() != null && !table.getColumns().isEmpty()
                 && (table.getRows() == null || table.getRows().isEmpty())) {
@@ -367,8 +596,47 @@ public class IngestionJobUseCase {
         job.setParsedTableJson(toJson(table));
         job.setSuggestedMappingJson(parsed.suggestedMapping().isEmpty()
                 ? null : toJson(parsed.suggestedMapping()));
+        recordProvenance(job, parsed.provenance());
         clearDownstream(job, JobStep.PARSED);
         recordImportDetails(job, STEP_TRANSFORMING, job.getParsedTableJson());
+    }
+
+    /** The template's own extraction mode (null = inherit the bank default). */
+    private ExtractionMode templateExtractionMode(int templateId) {
+        try {
+            return templates.getById(templateId)
+                    .map(Template::getExtractionMode)
+                    .map(ExtractionMode::parseLenient)
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            log.warn("Could not read the extraction mode of template {}: {}",
+                    templateId, e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
+     * ws23: stores who produced the parsed table on the job, and audits
+     * INGESTION_PARSE_FALLBACK when code stood in for an AI that was meant to
+     * run (labels and a score only — never data).
+     */
+    private void recordProvenance(IngestionJob job, ParseProvenance provenance) {
+        job.setParsedBy(provenance == null ? null : provenance.parsedBy().name());
+        job.setParseStrategy(provenance == null ? null : provenance.strategy());
+        job.setParseConfidence(provenance == null || provenance.confidence() == null ? null
+                : BigDecimal.valueOf(provenance.confidence()).setScale(3, RoundingMode.HALF_UP));
+        job.setParseFallbackReason(provenance == null || provenance.fallbackReason() == null
+                ? null : provenance.fallbackReason().name());
+        if (audit == null || provenance == null || !provenance.isFallback()) {
+            return;
+        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("parsedBy", provenance.parsedBy().name());
+        values.put("reason", provenance.fallbackReason().name());
+        values.put("strategy", provenance.strategy());
+        values.put("confidence", provenance.confidence());
+        audit.success("INGESTION_PARSE_FALLBACK", "IngestionJob",
+                String.valueOf(job.getIngestionJobId()), null, values);
     }
 
     private void doMap(IngestionJob job) {
@@ -541,7 +809,35 @@ public class IngestionJobUseCase {
         List<String> reachable = reachableSteps(job, unmapped).stream()
                 .map(WizardStep::name)
                 .toList();
-        return IngestionJobDto.from(job, unmapped, reachable);
+        IngestionJobDto view = IngestionJobDto.from(job, unmapped, reachable);
+        return job.getParseConfidence() == null ? view
+                : view.withConfidenceThreshold(minConfidence(job.getBankId()));
+    }
+
+    /** Wave 4: wired by Spring; unit tests without it judge against the shipped 0.75. */
+    @Autowired(required = false)
+    public void setSettingsReader(SettingsReader settings) {
+        this.settings = settings;
+    }
+
+    /**
+     * The bank's {@code extraction.code.minConfidence} (in-memory snapshot
+     * read). An unreadable setting never breaks a job view: the shipped
+     * default stands in.
+     */
+    private double minConfidence(int bankId) {
+        if (settings != null) {
+            try {
+                BigDecimal value = settings.getDecimal(SettingKeys.EXTRACTION_CODE_MIN_CONFIDENCE, bankId);
+                if (value != null) {
+                    return value.doubleValue();
+                }
+            } catch (RuntimeException e) {
+                log.debug("extraction.code.minConfidence unreadable for bank {}: {}", bankId,
+                        e.getClass().getSimpleName());
+            }
+        }
+        return SHIPPED_MIN_CONFIDENCE;
     }
 
     /** Exports operate on finished work only; the message names the blocker. */
