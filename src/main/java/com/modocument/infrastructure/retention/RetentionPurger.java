@@ -78,6 +78,8 @@ public class RetentionPurger {
     private final DocImageAssetJpaRepository docAssets;
     private final FileStore storage;
     private final AuditRecorder audit;
+    /** BUG-12: where a file delete that keeps failing after the commit waits for a retry. */
+    private final PendingFileDeletes pendingDeletes;
     /** ws28 (SE4): the AI result cache follows the customer-data retention. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.modocument.infrastructure.persistence.AiResultCacheJpaRepository aiResultCache;
@@ -91,7 +93,8 @@ public class RetentionPurger {
                            DocContentBlockJpaRepository docBlocks,
                            DocImageAssetJpaRepository docAssets,
                            FileStore storage,
-                           AuditRecorder audit) {
+                           AuditRecorder audit,
+                           PendingFileDeletes pendingDeletes) {
         this.uploadedFiles = uploadedFiles;
         this.ingestionJobs = ingestionJobs;
         this.importDetails = importDetails;
@@ -102,6 +105,7 @@ public class RetentionPurger {
         this.docAssets = docAssets;
         this.storage = storage;
         this.audit = audit;
+        this.pendingDeletes = pendingDeletes;
     }
 
     /**
@@ -185,7 +189,7 @@ public class RetentionPurger {
                 .newValues(evidence)
                 .build());
 
-        AfterCommitFileDeleter.deleteAfterCommit(storage, filesToDelete);
+        AfterCommitFileDeleter.deleteAfterCommit(storage, filesToDelete, bankId, pendingDeletes);
         return summary;
     }
 

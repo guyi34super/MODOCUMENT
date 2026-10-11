@@ -45,9 +45,13 @@ Every action the application writes is listed below. The list is generated from
 
 The windowed alert rule **`access-denied-burst`** raises a MEDIUM alert when one actor, or one
 address for anonymous refusals, accumulates `alerts.accessDeniedBurst.threshold` (default 3)
-`ACCESS_DENIED` rows within `alerts.accessDeniedBurst.window` (default 5 minutes). Its group-by is
-`ACTOR_OR_IP`. Rows are aggregated per minute, so the threshold counts *minutes with refusals*,
-not individual refusals. The `count` on each row gives the volume. See
+refusals within `alerts.accessDeniedBurst.window` (default 5 minutes). Its group-by is
+`ACTOR_OR_IP`. Rows are aggregated per minute, so the windowed sweep sums the `count` of each
+`ACCESS_DENIED` row instead of counting rows (OBS-01, v1.2.0): 50 refusals inside one minute
+(an opening row with `count: 1` and a flushed row with `count: 49`) alert like 50 refusals
+spread over five minutes, and the alert reports 50 events. The suppressed tail of a minute is
+written when its window ends, so a one-minute burst alerts within about two sweeps. Only the
+`count` number is read from the row's values. See
 [alerting-and-export-caps.md](alerting-and-export-caps.md).
 
 ## Viewer and API
@@ -124,8 +128,8 @@ The actor columns are not masked.
 | `VALIDATION_RULE_DELETED` | Templates | SUCCESS | ValidationRule | **ws28.** `DELETE /ValidationRules` (either form) that removed a rule. |
 | `FILE_UPLOADED` | Ingestion | SUCCESS | UploadedFile | **ws28.** A file was stored: `/api/fileupload/upload`, the multipart `POST /api/ingestion/jobs`, the integration API `POST /files`. Entity id = stored name; values = size, SHA-256 (never the original name, which can carry personal data). |
 | `INGESTION_JOB_CREATED` | Ingestion | SUCCESS | IngestionJob | **ws28.** An ingestion job was created (template, stored file name, origin `user` or `api-client:<id>`). |
-| `INGESTION_REMAPPED` | Ingestion | SUCCESS | IngestionJob | **ws28.** `POST /api/ingestion/jobs/{id}/remap` re-ran mapping. |
-| `INGESTION_ROWS_EDITED` | Ingestion | SUCCESS | IngestionJob | **ws28.** `PUT /api/ingestion/jobs/{id}/rows`; values = row count and changed rows (never cell values). |
+| `INGESTION_REMAPPED` | Ingestion | SUCCESS | IngestionJob | **ws28.** `POST /api/ingestion/jobs/{id}/remap` re-ran mapping (no values); `PUT /api/ingestion/jobs/{id}/mapping` applied a manual mapping (BUG-10): values = `source: MANUAL` and `mappedColumns` (a count, never cell values). |
+| `INGESTION_ROWS_EDITED` | Ingestion | SUCCESS | IngestionJob | **ws28.** `PUT /api/ingestion/jobs/{id}/rows`; values = row count and changed rows (never cell values). Also `POST /api/ingestion/jobs/{id}/chat-edit` (BUG-11): the same counts plus `source: CHAT_EDIT`. |
 | `INGESTION_PARSE_FALLBACK` | Ingestion | — | — | A job was parsed by code extraction instead of the AI. |
 | `JOB_DELETED` | Ingestion | — | — | An ingestion job (and its files) was deleted by its owner. |
 | `EXPORT_RUN` | Exports | — | — | The export log: a file or database export succeeded (format/target, rows, cap). |

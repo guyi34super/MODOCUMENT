@@ -309,6 +309,14 @@ modocument:
     customer-data-days: ${MODOCUMENT_RETENTION_DAYS:30}
     # Daily, off-peak; six-field Spring cron (seconds first).
     cron: ${MODOCUMENT_RETENTION_CRON:0 41 2 * * *}
+    # ws29 (BUG-12): a stored-object delete that still fails after the purge,
+    # a DSR erase or a job deletion committed (3 in-call attempts) is queued
+    # in PendingFileDelete and retried by PendingFileDeleteSweeper until the
+    # store confirms it (backoff 5 min doubling to 6 h). The flag gates only
+    # the schedule.
+    file-delete-retry:
+      enabled: ${MODOCUMENT_FILE_DELETE_RETRY_ENABLED:true}
+      interval-ms: ${MODOCUMENT_FILE_DELETE_RETRY_INTERVAL_MS:300000}
   housekeeping:
     # ws27 (v1.2.0) daily housekeeping (HousekeepingJob): deletes RefreshToken
     # rows expired/revoked > 30 days ago, RevokedToken rows past their token
@@ -487,8 +495,9 @@ modocument:
       # ws28: refusals outside method security - an AccessDeniedException
       # inside a use case, an owner-scoped 404 probe, an invalid or revoked
       # bearer token. ACCESS_DENIED rows are AGGREGATED (at most one per
-      # actor-or-ip per entity type per minute, newValues.count), so the
-      # threshold counts aggregated rows: minutes with refusals in the window.
+      # actor-or-ip per entity type per minute, newValues.count); the sweep
+      # sums those counts (OBS-01), so the threshold counts refusals in the
+      # window, also when they all land inside one minute.
       - name: access-denied-burst
         description: Repeated refused access (use-case denials, ownership probes, invalid tokens) from one user or address
         trigger: WINDOWED

@@ -13,7 +13,6 @@ import com.modocument.infrastructure.security.JwtService;
 import com.modocument.testsupport.StubAiServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -32,14 +31,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * QA, optimization round, test plan A6/A7 (contracts §4): the two ingestion
  * edit paths the plan names next to the ones {@code AuditTrailGapsTest}
- * covers. Both change a job's mapped rows and both are UNAUDITED today, so
- * the repros are {@code @Disabled} with their bug ids (docs/qa/optimization-signoff.md):
+ * covers. Both change a job's mapped rows; both were unaudited in rc.1 and
+ * are fixed (bug ids in docs/qa/optimization-signoff.md):
  * <ul>
  *   <li>BUG-10: {@code PUT /api/ingestion/jobs/{id}/mapping} (the manual
- *       mapping editor) rewrites the mapped rows without an
+ *       mapping editor) rewrites the mapped rows and must write one
  *       {@code INGESTION_REMAPPED} row;</li>
  *   <li>BUG-11: {@code POST /api/ingestion/jobs/{id}/chat-edit} (the AI edits
- *       cell values) writes no {@code INGESTION_ROWS_EDITED} row.</li>
+ *       cell values) must write one {@code INGESTION_ROWS_EDITED} row without
+ *       cell values.</li>
  * </ul>
  * Runs in the shared AI-stub context; the chat edit gets a real (loopback)
  * model answer through the whole AI gateway.
@@ -118,8 +118,6 @@ class IngestionEditAuditQaTest extends AiStubApiTestSupport {
     }
 
     @Test
-    @Disabled("BUG-10: PUT /api/ingestion/jobs/{id}/mapping rewrites the mapped rows without an "
-            + "INGESTION_REMAPPED audit row (contracts §4, test plan A6)")
     void aManualMappingChangeIsAuditedOnce() throws Exception {
         IngestionJob job = validatedJob();
 
@@ -132,8 +130,6 @@ class IngestionEditAuditQaTest extends AiStubApiTestSupport {
     }
 
     @Test
-    @Disabled("BUG-11: POST /api/ingestion/jobs/{id}/chat-edit changes cell values without an "
-            + "INGESTION_ROWS_EDITED audit row (contracts §4, test plan A7)")
     void aChatEditIsAuditedOnceWithoutCellValues() throws Exception {
         IngestionJob job = validatedJob();
         AI.mode(StubAiServer.Mode.OK);

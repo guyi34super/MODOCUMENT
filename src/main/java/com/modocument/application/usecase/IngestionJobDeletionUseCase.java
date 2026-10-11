@@ -10,6 +10,7 @@ import com.modocument.infrastructure.export.FileExportService;
 import com.modocument.infrastructure.file.store.FileStoreKeys;
 import com.modocument.infrastructure.file.UploadStorage;
 import com.modocument.infrastructure.retention.AfterCommitFileDeleter;
+import com.modocument.infrastructure.retention.PendingFileDeletes;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,19 +42,23 @@ public class IngestionJobDeletionUseCase {
     private final UploadStorage uploadStorage;
     private final FileStore storage;
     private final AuditRecorder audit;
+    /** BUG-12: where a file delete that keeps failing after the commit waits for a retry. */
+    private final PendingFileDeletes pendingDeletes;
 
     public IngestionJobDeletionUseCase(IngestionJobRepository jobs,
                                        UploadedFileRepository uploads,
                                        CurrentUserProvider currentUser,
                                        UploadStorage uploadStorage,
                                        FileStore storage,
-                                       AuditRecorder audit) {
+                                       AuditRecorder audit,
+                                       PendingFileDeletes pendingDeletes) {
         this.jobs = jobs;
         this.uploads = uploads;
         this.currentUser = currentUser;
         this.uploadStorage = uploadStorage;
         this.storage = storage;
         this.audit = audit;
+        this.pendingDeletes = pendingDeletes;
     }
 
     @Transactional
@@ -93,7 +98,8 @@ public class IngestionJobDeletionUseCase {
         snapshot.put("archiveCopiesDeleted", filesToDelete.size() - (uploadDeleted ? 1 : 0));
         audit.success("JOB_DELETED", "IngestionJob", String.valueOf(jobId), snapshot, null);
 
-        AfterCommitFileDeleter.deleteAfterCommit(storage, filesToDelete);
+        AfterCommitFileDeleter.deleteAfterCommit(storage, filesToDelete, job.getBankId(),
+                pendingDeletes);
     }
 
     private boolean exists(String key) {

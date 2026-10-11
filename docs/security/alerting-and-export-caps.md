@@ -76,7 +76,7 @@ HIGH < CRITICAL), `enabled`.
 | `login-failures-per-user` | windowed | `LOGIN_FAILED` | actor | ≥ 5 / 5m | HIGH | `MODOCUMENT_ALERT_LOGIN_FAILURES_PER_USER`, `..._WINDOW` |
 | `login-failures-per-ip` | windowed | `LOGIN_FAILED` | ip | ≥ 5 / 5m | HIGH | `MODOCUMENT_ALERT_LOGIN_FAILURES_PER_IP`, `..._WINDOW` |
 | `authorization-denied-burst` | windowed | `AUTHORIZATION_DENIED` | actor | ≥ 10 / 5m | MEDIUM | `MODOCUMENT_ALERT_AUTHZ_DENIED_THRESHOLD` |
-| `access-denied-burst` (ws28) | windowed | `ACCESS_DENIED` (aggregated rows: one per actor/ip per entity type per minute, see [audit-events.md](audit-events.md)) | actor, else ip | ≥ 3 rows / 5m | MEDIUM | `MODOCUMENT_ALERT_ACCESS_DENIED_THRESHOLD`; settings `alerts.accessDeniedBurst.*` |
+| `access-denied-burst` (ws28) | windowed | `ACCESS_DENIED` (aggregated rows: one per actor/ip per entity type per minute, see [audit-events.md](audit-events.md)) | actor, else ip | ≥ 3 refusals / 5m (the sum of the rows' `count`, OBS-01) | MEDIUM | `MODOCUMENT_ALERT_ACCESS_DENIED_THRESHOLD`; settings `alerts.accessDeniedBurst.*` |
 | `admin-action-burst` | windowed | any SUCCESS by role ADMIN | actor | ≥ 30 / 10m | MEDIUM | `MODOCUMENT_ALERT_ADMIN_BURST_THRESHOLD` |
 | `export-burst` | windowed | `EXPORT_RUN` | actor | ≥ 5 / 10m | MEDIUM | `MODOCUMENT_ALERT_EXPORT_BURST_THRESHOLD` |
 | `security-setting-changed` (ws20) | immediate | `SECURITY_SETTING_UPDATED` | actor (the approver) | – / 5m | MEDIUM | |

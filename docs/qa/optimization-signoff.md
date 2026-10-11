@@ -27,17 +27,16 @@ Conditions:
 1. Bump the release version before tagging: `pom.xml`, `agent/pom.xml`,
    `frontend/package.json` still say `1.1.0` (`scripts/bump-version.sh`,
    checked by `scripts/check-version-sync.sh`).
-2. BUG-10, BUG-11 (unaudited ingestion edits) and BUG-12 (a failed object
+2. ~~BUG-10, BUG-11 (unaudited ingestion edits) and BUG-12 (a failed object
    delete after a purge/erase is never retried) are fixed before `v1.2.0`
-   (final), or explicitly waived by the Supervisor: the round promises an
-   audit trail for every data change (contracts §4) and that a failed delete
-   "is retried, not lost" (plan F4). BUG-12 matters most once the S3 store
-   is live.
+   (final), or explicitly waived by the Supervisor.~~ **Met — fixed after
+   rc.1** (§4a): the repros run enabled and pass.
 3. The items of §5 that need Docker or AWS (image size and CDS start, MinIO
    S3 contract IT, `terraform plan` incl. CloudFront) are checked in CI /
    on staging before `v1.2.0`.
-4. Supervisor decision on OBS-01 (the `access-denied-burst` rule counts
-   minutes, so a one-minute flood does not alert) — fix or accept.
+4. ~~Supervisor decision on OBS-01 (the `access-denied-burst` rule counts
+   minutes, so a one-minute flood does not alert) — fix or accept.~~
+   **Fixed after rc.1** (§4a): the rule counts refusals.
 
 ## 2. Results per area
 
@@ -45,22 +44,23 @@ Conditions:
 |---|---|---|---|
 | **Speed & DB** | SE1, SE4 | `ReadPathQueryCountTest` (flat statement counts), `RequestPrincipalStateQueryCountTest` (one AppUsers read), `PerfIndexPlanPgIT` (index use), `HousekeepingJobTest` + `HousekeepingRlsPgIT` + QA `HousekeepingRetentionSettingQaTest`, QA `IngestionSummaryPagingQaTest`; perf API bench | **Accepted.** Jobs list 16.5 MB → 20.3 kB, p50 330 → 11 ms; dashboard data 16.5 MB → 4.3 kB, p50 352 → 12 ms (same load) |
 | **Frontend load** | SE3 | Vitest (`preloadRecovery`, `usePolling`, paged pages, `AuditLogPage`), perf cold load (vite + real nginx), `perf/nginx-check.sh` 38/38, E2E OPT-L1/L1b/X3 | **Accepted** with BUG-09 open. Initial JS 614.9 → 292.2 kB raw (≤ 300 kB ✓), 182.8 → 93.0 kB gzip; cold-load API bytes 16.5 MB → 5.4 kB; data loaded 504 → 149 ms after sign-in |
-| **Cost & footprint** | SE4, SE5 | jar inspection, `RowBatchOutputTokensTest`, `IngestionParseStepImplTest` cache tests, QA `AiResultCacheRlsPgIT`, E2E OPT-P7, `OcrServiceTest`, `S3FileStoreTest`, `FileStoreContract` + QA `FileStoreTraversalQaTest`, QA `AfterCommitFileDeleterQaTest` | **Accepted** with BUG-12 open. Jar −212 MB (−57 %, Playwright/Kafka/zstd out); a re-uploaded document makes zero model calls; no cross-bank cache hit under RLS. Image/CDS: §5 |
+| **Cost & footprint** | SE4, SE5 | jar inspection, `RowBatchOutputTokensTest`, `IngestionParseStepImplTest` cache tests, QA `AiResultCacheRlsPgIT`, E2E OPT-P7, `OcrServiceTest`, `S3FileStoreTest`, `FileStoreContract` + QA `FileStoreTraversalQaTest`, QA `AfterCommitFileDeleterQaTest` | **Accepted** (BUG-12 fixed, §4a). Jar −212 MB (−57 %, Playwright/Kafka/zstd out); a re-uploaded document makes zero model calls; no cross-bank cache hit under RLS. Image/CDS: §5 |
 | **Code health / API hygiene** | SE2, SE5 | `DeprecatedEndpointsTest`, QA `ApiHygieneQaTest` (20 deprecated routes × 3 headers, removed routes 404 × 4 roles × 3 methods), `RestApiConnectorRedirectTest` + QA `HttpWebFetcherRedirectQaTest` (crawler), `DatabaseExportServiceTest`; suite −10 % at the same load, 19 test contexts | **Accepted** |
 | **Connector library (connector-core)** | connector engineer | `mvn -B -f connector-core/pom.xml verify` (25: two-phase SFTP read, oversized file noted and left, REST PAGE without a size reads to the first empty page, DB identifiers), agent `RestConnectorPaginationTest` / `DatabaseConnectorSqlTest`, `SftpIntegrationConnectorTest`; QA `SftpInboundPartialFailureQaTest` (2: through the real `FlowRunner`); E2E integration hub 25 live incl. the agent DB pull (quoted identifiers) | **Accepted.** A file that fails ingestion mid-run stays in the folder, the files after it are still ingested and moved, the run FAILS naming the file; an oversized file is skipped, left and noted. AC-INT-15 (SFTP E2E) needs the compose simulator and did not need a change (it asserts only the happy path, still valid) |
-| **Audit** | SE2 (SE3 UI) | `AuditTrailGapsTest`, `AuditLogApiTest`, `AuditLogRlsPgIT`, `AuditThrottleTest`, `JpaAuditRecorderThrottleTest`, `AuditActionCatalogueDocTest`; QA `AccessDeniedBurstAlertTest`, `AuditViewAuditQaTest`, `IngestionEditAuditQaTest`; E2E OPT-V9 | **Accepted** with BUG-10, BUG-11 and OBS-01 open. Viewer RLS-isolated (PG IT + E2E across two onboarded banks); viewing audited once per 15 min, no recursion |
+| **Audit** | SE2 (SE3 UI) | `AuditTrailGapsTest`, `AuditLogApiTest`, `AuditLogRlsPgIT`, `AuditThrottleTest`, `JpaAuditRecorderThrottleTest`, `AuditActionCatalogueDocTest`; QA `AccessDeniedBurstAlertTest`, `AuditViewAuditQaTest`, `IngestionEditAuditQaTest`; E2E OPT-V9 | **Accepted** (BUG-10, BUG-11, OBS-01 fixed, §4a). Viewer RLS-isolated (PG IT + E2E across two onboarded banks); viewing audited once per 15 min, no recursion |
 
 ### Checklist summary (`optimization-test-plan.md`)
 
 86 rows carry a status: **78 PASS** (`[x]`), **4 FAIL → bug** (`[!]`: A6
-BUG-10, A7 BUG-11, L1 BUG-09, F4 BUG-12), **4 open** (`[ ]`: C7 CloudFront
+BUG-10, A7 BUG-11, L1 BUG-09, F4 BUG-12 — A6, A7 and F4 are `[x]` since the
+§4a fixes: **81 PASS, 1 FAIL**), **4 open** (`[ ]`: C7 CloudFront
 needs AWS; F2 the store has no per-bank key prefix to test — cross-bank
 access is refused above it; D2, D8 owner configuration / CI, not re-verified
 by QA). The items the Supervisor asked for:
 
 | Item | Status | Test |
 |---|---|---|
-| Each new audit action once, right actor/entity (§4) | PASS except BUG-10, BUG-11 | `AuditTrailGapsTest` (8 tests), `DocInstanceControllerAuditTest`, `ExtractionJobControllerAuditTest`; repros `IngestionEditAuditQaTest#aManualMappingChangeIsAuditedOnce`, `#aChatEditIsAuditedOnceWithoutCellValues` (`@Disabled`) |
+| Each new audit action once, right actor/entity (§4) | PASS (BUG-10, BUG-11 fixed, §4a) | `AuditTrailGapsTest` (8 tests), `DocInstanceControllerAuditTest`, `ExtractionJobControllerAuditTest`; `IngestionEditAuditQaTest#aManualMappingChangeIsAuditedOnce`, `#aChatEditIsAuditedOnceWithoutCellValues` (enabled) |
 | Audit viewer RLS-isolated | PASS | `AuditLogRlsPgIT` (3), `AuditLogApiTest#anotherBanksIdsCursorsAndFiltersFindNothing`, E2E OPT-V9 |
 | Viewing the audit log audited, deduplicated | PASS | `AuditViewAuditQaTest` (3, QA), `AuditLogApiTest#viewingIsAuditedOncePerActorWithinTheWindow`, `AuditThrottleTest#dedupeWritesTheFirstReadPerWindowAndReleaseRetries` |
 | SSRF redirect refusal (REST connector + crawler) | PASS | `RestApiConnectorRedirectTest` (4), `HttpWebFetcherRedirectQaTest` (4, QA: metadata, private, unlisted loopback, IPv6 loopback, `file:`, 2nd-hop refusal, loop bound) |
@@ -72,7 +72,7 @@ by QA). The items the Supervisor asked for:
 | Lazy-route stale-chunk reload | PASS (reload once, no loop) / **BUG-09** (blank page after) | Vitest `preloadRecovery.test.js`; E2E OPT-L1, OPT-L1b; OPT-L1c `test.fixme` |
 | gzip and cache headers on nginx | PASS | `perf/nginx-check.sh` → `perf/results/wave2-run2/nginx.json` (38/38, real `frontend/nginx.conf` on nginx 1.24), `scripts/check-nginx-headers.sh` |
 | AI result cache: hit on re-upload, none across banks | PASS | E2E OPT-P7 (zero fake-LLM calls), `IngestionParseStepImplTest` (2), `AiResultCacheRlsPgIT` (QA, RLS) |
-| `access-denied-burst` alert | PASS (as designed) / OBS-01 | `AccessDeniedBurstAlertTest` (3, QA: fires once at 3, not at 2, groups by user or IP, window bound, dedupe) |
+| `access-denied-burst` alert | PASS (OBS-01 fixed, §4a) | `AccessDeniedBurstAlertTest` (5: fires once at 3, not at 2, groups by user or IP, window bound, dedupe; a one-minute burst of 50 alerts with 50 events, 2 refusals in a minute do not, the 3rd does) |
 
 ## 3. Test inventory (this run)
 
@@ -104,10 +104,10 @@ No assertion was weakened.
 | ID | Severity | Owner | Finding | Repro / evidence |
 |---|---|---|---|---|
 | **BUG-09** | P3 | SE3 | **No React error boundary.** When a lazy route chunk is still missing after the one guarded reload (a deploy that removed it, a CDN gap), the rejected `import()` unmounts the whole tree: the user sees a blank white page with no message. Test plan L1 expects the error to surface. | Build, sign in, block or delete `assets/AuditLogPage-*.js`, click "Audit log": one reload, then a blank page (console: failed to fetch dynamically imported module). `e2e/tests/phase2/optimization.spec.js` OPT-L1c (`test.fixme`). Fix: an error boundary around the routes' `<Suspense>` with a "Reload" action |
-| **BUG-10** | P3 | SE2 | **`PUT /api/ingestion/jobs/{id}/mapping` is not audited.** The manual mapping editor rewrites the job's mapped rows (which source column feeds which field) without any audit row; contracts §4 / plan A6 name it under `INGESTION_REMAPPED` (`IngestionJobUseCase#updateMapping` has no `audit.success`). | Create a VALIDATED job, `PUT …/mapping {"mapping":{"Name":"City","City":"Name"}}` → 200, `AuditEvent` has no row. `IngestionEditAuditQaTest#aManualMappingChangeIsAuditedOnce` (`@Disabled("BUG-10: …")`, fails on the audit assertion only when enabled) |
-| **BUG-11** | P3 | SE2 | **Chat edit is not audited.** `POST /api/ingestion/jobs/{id}/chat-edit` changes cell values (AI-applied) without an `INGESTION_ROWS_EDITED` row; plan A7 names it (`ChatEditTableUseCase#handle` saves the job, no audit). `PUT …/rows` is audited correctly. | VALIDATED job, model answers a changed table, `POST …/chat-edit {"instruction":"Set City to Paris for all rows"}` → 200 with "Paris", no audit row. `IngestionEditAuditQaTest#aChatEditIsAuditedOnceWithoutCellValues` (`@Disabled("BUG-11: …")`) |
-| **BUG-12** | P3 | SE1, SE5 | **A failed object delete after a purge / DSR erase / job deletion is lost.** `AfterCommitFileDeleter` deletes the stored files after the row deletes commit, but on an error it only logs `WARN Could not delete stored file` and drops the key; nothing points at the object any more, so it is never retried — customer data outlives its retention or erasure (plan F4: "retried, not lost"). The S3 SDK's own retries cover short blips only; a persistent failure (throttling storm, a missing `s3:DeleteObject` grant) orphans every file of the run. | A `FileStore` whose first `delete` throws `IOException("503 Slow Down")`: `deleteAfterCommit` returns, the object stays forever. `AfterCommitFileDeleterQaTest#aFailedDeleteIsRetriedNotLost` (`@Disabled("BUG-12: …")`). Fix idea: persist failed keys (an outbox row) and retry them from the housekeeping job |
-| OBS-01 | Medium (design) | SE2, Supervisor | **`access-denied-burst` counts minutes, not refusals.** ACCESS_DENIED is aggregated per actor-or-IP per entity type per minute (an opening row with `count: 1`, then one flushed row with the rest), and the windowed sweep counts rows. 50 or 5,000 refusals inside one minute = 2 rows < threshold 3 → no alert; three single probes in three minutes do alert. Documented in `application.yml`/`audit-events.md`, but the plan read A15 as "one row with count = 50" and A20 as "fires at threshold". Suggest: sum `newValues.count` in the window for this rule (or a per-minute count threshold). | `AccessDeniedBurstAlertTest` pins the as-built behaviour (fires at 3 rows, not at 2; 50 probes → 2 rows summing to 50) |
+| **BUG-10** (fixed, §4a) | P3 | SE2 | **`PUT /api/ingestion/jobs/{id}/mapping` is not audited.** The manual mapping editor rewrites the job's mapped rows (which source column feeds which field) without any audit row; contracts §4 / plan A6 name it under `INGESTION_REMAPPED` (`IngestionJobUseCase#updateMapping` has no `audit.success`). | Create a VALIDATED job, `PUT …/mapping {"mapping":{"Name":"City","City":"Name"}}` → 200, `AuditEvent` has no row. `IngestionEditAuditQaTest#aManualMappingChangeIsAuditedOnce` (`@Disabled("BUG-10: …")`, fails on the audit assertion only when enabled) |
+| **BUG-11** (fixed, §4a) | P3 | SE2 | **Chat edit is not audited.** `POST /api/ingestion/jobs/{id}/chat-edit` changes cell values (AI-applied) without an `INGESTION_ROWS_EDITED` row; plan A7 names it (`ChatEditTableUseCase#handle` saves the job, no audit). `PUT …/rows` is audited correctly. | VALIDATED job, model answers a changed table, `POST …/chat-edit {"instruction":"Set City to Paris for all rows"}` → 200 with "Paris", no audit row. `IngestionEditAuditQaTest#aChatEditIsAuditedOnceWithoutCellValues` (`@Disabled("BUG-11: …")`) |
+| **BUG-12** (fixed, §4a) | P3 | SE1, SE5 | **A failed object delete after a purge / DSR erase / job deletion is lost.** `AfterCommitFileDeleter` deletes the stored files after the row deletes commit, but on an error it only logs `WARN Could not delete stored file` and drops the key; nothing points at the object any more, so it is never retried — customer data outlives its retention or erasure (plan F4: "retried, not lost"). The S3 SDK's own retries cover short blips only; a persistent failure (throttling storm, a missing `s3:DeleteObject` grant) orphans every file of the run. | A `FileStore` whose first `delete` throws `IOException("503 Slow Down")`: `deleteAfterCommit` returns, the object stays forever. `AfterCommitFileDeleterQaTest#aFailedDeleteIsRetriedNotLost` (`@Disabled("BUG-12: …")`). Fix idea: persist failed keys (an outbox row) and retry them from the housekeeping job |
+| OBS-01 (fixed, §4a) | Medium (design) | SE2, Supervisor | **`access-denied-burst` counts minutes, not refusals.** ACCESS_DENIED is aggregated per actor-or-IP per entity type per minute (an opening row with `count: 1`, then one flushed row with the rest), and the windowed sweep counts rows. 50 or 5,000 refusals inside one minute = 2 rows < threshold 3 → no alert; three single probes in three minutes do alert. Documented in `application.yml`/`audit-events.md`, but the plan read A15 as "one row with count = 50" and A20 as "fires at threshold". Suggest: sum `newValues.count` in the window for this rule (or a per-minute count threshold). | `AccessDeniedBurstAlertTest` pins the as-built behaviour (fires at 3 rows, not at 2; 50 probes → 2 rows summing to 50) |
 | OBS-02 | Low (spec) | SE2, Supervisor | `audit.readAuditEnabled=false` gates `SENSITIVE_DATA_VIEWED` only; `AUDIT_LOG_VIEWED` is always written (plan R4 expected both). Code, setting description and `audit-events.md` agree; arguably the safer choice. Confirm and update the plan. | `JpaAuditRecorder#recordRead` |
 | OBS-03 | Low | SE3 | nginx gzips at the default `gzip_comp_level 1`: the initial JS crosses the wire as 108.1 kB vs 93.0 kB at level 6 (+16 %, ~15 kB per cold load). `gzip_comp_level 5` or `gzip_static` with build-time `.gz`/`.br` would recover it. Also: chunked API answers below `gzip_min_length` are gzipped anyway (no Content-Length), so a 2-byte JSON becomes 34 bytes — harmless. | `perf/results/wave2-run2/frontend.json`, `nginx.json` |
 | OBS-04 | Info | SE1 | The backend itself never compresses (the API bench sees `identity`); compression is nginx's (and CloudFront's) job. Direct-to-app clients (agent, Integration API on 8443 through nginx — compressed there) are unaffected. | `perf/results/wave2/api.json` |
@@ -120,6 +120,25 @@ No assertion was weakened.
 
 Bug numbering continues the project series (BUG-01…08 were phase 1/2; this
 round's first is BUG-09).
+
+## 4a. Fixes after rc.1 (BUG-10, BUG-11, BUG-12, OBS-01)
+
+| ID | Status | Fix | Test |
+|---|---|---|---|
+| BUG-10 | **Fixed** | `IngestionJobUseCase#updateMapping` writes one `INGESTION_REMAPPED` row after the save (values: `source: MANUAL`, `mappedColumns` count; no cell values), like the remap path | `IngestionEditAuditQaTest#aManualMappingChangeIsAuditedOnce` (`@Disabled` removed) |
+| BUG-11 | **Fixed** | `ChatEditTableUseCase#handle` writes one `INGESTION_ROWS_EDITED` row after the save with `rows` / `changedRows` counts and `source: CHAT_EDIT`, the same shape as `PUT …/rows`; never cell values | `IngestionEditAuditQaTest#aChatEditIsAuditedOnceWithoutCellValues` (`@Disabled` removed) |
+| BUG-12 | **Fixed** | `AfterCommitFileDeleter`: 3 in-call attempts per key (100/500 ms apart; after one key exhausts them, one attempt each for the rest of the batch), then the key goes to the bank-scoped, RLS-covered `PendingFileDelete` table (V290, REQUIRES_NEW from `afterCommit`). `PendingFileDeleteSweeper` (every 5 min, `modocument.retention.file-delete-retry.*`; `runAsSystem` lists bank ids only, then `runAs(bank)`) retries with backoff 5 min → 6 h and removes the row only when the store confirms the delete. Wired into the retention purge, DSR erase and job deletion | `AfterCommitFileDeleterQaTest#aFailedDeleteIsRetriedNotLost` (`@Disabled` removed), `AfterCommitFileDeleterTest` (3), `PendingFileDeleteSweeperTest` (3), `PendingFileDeleteRlsPgIT` (RLS read/WITH CHECK, sweep), `RlsPolicyCoveragePgIT` inventory |
+| OBS-01 | **Fixed** | The windowed sweep weighs each `ACCESS_DENIED` row by its `newValues.count` (`AuditWindowReader#aggregatedCounts` reads only that number; `AlertSweepJob` sums it per group), so the threshold counts refusals; the alert's event count is the refusals | `AccessDeniedBurstAlertTest#aBurstOfRefusalsInsideOneMinuteAlertsOnTheRefusalsNotTheRows`, `#refusalsBelowTheThresholdInsideOneMinuteDoNotAlertAndTheThirdDoes` |
+
+Not in scope of BUG-12: the doc-creation `StoredFileCleanup` (instance,
+asset and blueprint deletes) still logs a failed delete; those are user
+deletes of doc-creation content, not the retention/DSR/job paths of F4.
+
+Gates on the fix commit: connector-core installed; backend H2
+(`mvn -B verify`) **1,926 tests, 0 failures, 0 skipped** (the three
+`@Disabled` repros now run; 20 Spring "Started" lines, unchanged);
+PostgreSQL (`-Ppostgres-it`) **86 PgITs pass** (+ `PendingFileDeleteRlsPgIT`)
+plus the same H2 suite. No route or settings-catalogue change.
 
 ## 5. Needs Docker or AWS (not provable in this sandbox)
 

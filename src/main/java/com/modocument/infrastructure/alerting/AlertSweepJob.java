@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * The WINDOWED trigger path (ws18, gate D1, SEC-032): a sweep every minute
@@ -22,7 +23,9 @@ import java.util.Optional;
  * ExtractionSchedulingConfig) that, per windowed rule, counts the matching
  * audit rows of the last {@code window} grouped by bank + actor/ip/entity
  * and raises an alert for every group at or above the threshold — e.g.
- * >= 5 LOGIN_FAILED for one user within 5 minutes. Dedupe (in
+ * >= 5 LOGIN_FAILED for one user within 5 minutes. A row counts as one
+ * event, except an aggregated ACCESS_DENIED row, which counts as the
+ * refusals it stands for ({@code newValues.count}, OBS-01). Dedupe (in
  * {@link AlertService}) turns a sustained burst into ONE alert per window.
  * Worst-case detection latency = one sweep interval, well inside the
  * 5-minute target.
@@ -115,6 +118,11 @@ public class AlertSweepJob {
             log.warn("Windowed rule {} hit the {}-row read cap; counts are lower bounds",
                     rule.name(), AuditWindowReader.MAX_ROWS);
         }
+        // OBS-01: an aggregated ACCESS_DENIED row stands for newValues.count
+        // refusals, so a group's size is the sum of its rows' counts — a
+        // burst inside one minute (one opening + one flushed row) reaches the
+        // threshold like the same refusals spread over several minutes.
+        Map<UUID, Integer> counts = TenantContext.runAsSystem(() -> reader.aggregatedCounts(rows));
         // Rows arrive newest first, so each group's first row is its newest.
         Map<String, List<AuditFacts>> groups = new LinkedHashMap<>();
         for (AuditFacts row : rows) {
@@ -126,15 +134,25 @@ public class AlertSweepJob {
         }
         List<AlertLog> raised = new ArrayList<>();
         for (List<AuditFacts> group : groups.values()) {
-            if (group.size() < rule.threshold()) {
+            int events = eventCount(group, counts);
+            if (events < rule.threshold()) {
                 continue;
             }
             AuditFacts newest = group.get(0);
             Optional<AlertLog> alert = alerts.raise(new AlertCandidate(rule, newest.bankId(),
-                    rule.groupKey(newest), AlertService.windowedSummary(rule, newest, group.size()),
-                    newest.auditEventId(), group.size()));
+                    rule.groupKey(newest), AlertService.windowedSummary(rule, newest, events),
+                    newest.auditEventId(), events));
             alert.ifPresent(raised::add);
         }
         return raised;
+    }
+
+    /** The events a group's rows stand for: 1 per row, an aggregated row's count for it. */
+    static int eventCount(List<AuditFacts> group, Map<UUID, Integer> counts) {
+        long events = 0;
+        for (AuditFacts row : group) {
+            events += counts.getOrDefault(row.auditEventId(), 1);
+        }
+        return (int) Math.min(Integer.MAX_VALUE, events);
     }
 }

@@ -33,11 +33,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code access-denied-burst} WINDOWED rule (MEDIUM, group ACTOR_OR_IP,
  * default threshold 3 within 5 minutes) fires ONCE when a user or an
  * address reaches the threshold of ACCESS_DENIED rows in the window, and
- * not below it. ACCESS_DENIED rows are aggregated per minute, so the rows
- * of the window stand for minutes with refusals; the tests seed one row per
- * minute directly and drive the sweep ({@link AlertSweepJob#runOnce()}).
- * The aggregation itself (many probes in one minute -> at most two rows
- * whose counts add up) is pinned through the real HTTP path.
+ * not below it. ACCESS_DENIED rows are aggregated per minute and each row
+ * carries the refusals it stands for ({@code newValues.count}); the sweep
+ * sums those counts (OBS-01), so the threshold counts refusals, not minutes
+ * with refusals. The first tests seed rows ({@code count 1}) directly and
+ * drive the sweep ({@link AlertSweepJob#runOnce()}); the aggregation itself
+ * (many probes in one minute -> at most two rows whose counts add up) and
+ * the one-minute burst alert are pinned through the real HTTP path.
  */
 class AccessDeniedBurstAlertTest extends DetectionGateTestSupport {
 
@@ -119,8 +121,8 @@ class AccessDeniedBurstAlertTest extends DetectionGateTestSupport {
         assertThat(raised.get(0).getSummary()).contains("ip " + ip);
     }
 
-    @Test
-    void fiftyProbesInOneMinuteAreAggregatedIntoAtMostTwoRowsWhoseCountsAddUp() throws Exception {
+    /** Another user's job: every read of it by the prober is an owner-scoped 404 probe. */
+    private IngestionJob someoneElsesJob() {
         AppUser owner = newUser(bank, "adb-owner", Role.READ_WRITE, null);
         IngestionJob job = new IngestionJob();
         job.setOwnerUserId(owner.getAppUserId());
@@ -130,13 +132,22 @@ class AccessDeniedBurstAlertTest extends DetectionGateTestSupport {
         job.setStatus(JobStatus.PENDING);
         job.setCreatedDate(LocalDateTime.now());
         job.setUpdatedDate(LocalDateTime.now());
-        job = jobs.save(job);
+        return jobs.save(job);
+    }
 
-        for (int i = 0; i < 50; i++) {
+    private void probe(IngestionJob job, int times) throws Exception {
+        for (int i = 0; i < times; i++) {
             mvc.perform(get("/api/ingestion/jobs/" + job.getIngestionJobId())
                             .header("Authorization", bearer(prober)))
                     .andExpect(status().isNotFound());
         }
+    }
+
+    @Test
+    void fiftyProbesInOneMinuteAreAggregatedIntoAtMostTwoRowsWhoseCountsAddUp() throws Exception {
+        IngestionJob job = someoneElsesJob();
+
+        probe(job, 50);
         recorder.flushAggregatedDenials(Instant.now().plusSeconds(120));
 
         List<AuditRow> rows = auditRows(bank, "ACCESS_DENIED");
@@ -148,5 +159,53 @@ class AccessDeniedBurstAlertTest extends DetectionGateTestSupport {
             total += Integer.parseInt(m.group(1));
         }
         assertThat(total).as("the counts add up to the refusals").isEqualTo(50);
+    }
+
+    /**
+     * OBS-01: a burst inside ONE minute is two aggregated rows (the opening
+     * row, count 1, and the flushed tail, count 49) - below a threshold of 3
+     * rows, but 50 refusals. The sweep sums the counts, so it alerts once,
+     * reporting the 50 refusals.
+     */
+    @Test
+    void aBurstOfRefusalsInsideOneMinuteAlertsOnTheRefusalsNotTheRows() throws Exception {
+        IngestionJob job = someoneElsesJob();
+
+        probe(job, 50);
+        recorder.flushAggregatedDenials(Instant.now().plusSeconds(120));
+        assertThat(auditRows(bank, "ACCESS_DENIED")).as("two aggregated rows, < 3").hasSize(2);
+
+        List<AlertLog> raised = raisedForBank(sweep.runOnce());
+
+        assertThat(raised).hasSize(1);
+        AlertLog alert = raised.get(0);
+        assertThat(alert.getSeverity()).isEqualTo(AlertSeverity.MEDIUM);
+        assertThat(alert.getEventCount()).as("the refusals, not the rows").isEqualTo(50);
+        assertThat(alert.getSummary()).contains("50 ACCESS_DENIED")
+                .contains("user #" + prober.getAppUserId());
+        assertThat(raisedForBank(sweep.runOnce())).as("dedupe: still one alert").isEmpty();
+        assertThat(alerts(bank, RULE)).hasSize(1);
+    }
+
+    /**
+     * OBS-01, the other side: two refusals inside one minute (count 1 + 1)
+     * stay below the threshold of 3; the third refusal reaches it.
+     */
+    @Test
+    void refusalsBelowTheThresholdInsideOneMinuteDoNotAlertAndTheThirdDoes() throws Exception {
+        IngestionJob job = someoneElsesJob();
+
+        probe(job, 2);
+        recorder.flushAggregatedDenials(Instant.now().plusSeconds(120));
+        assertThat(auditRows(bank, "ACCESS_DENIED")).hasSize(2);
+        assertThat(raisedForBank(sweep.runOnce())).as("2 refusals < threshold 3").isEmpty();
+
+        probe(job, 1);
+        // The flush above opened the key's next window, so the third refusal
+        // is counted there and written by the next flush.
+        recorder.flushAggregatedDenials(Instant.now().plusSeconds(240));
+        List<AlertLog> raised = raisedForBank(sweep.runOnce());
+        assertThat(raised).as("the 3rd refusal reaches the threshold").hasSize(1);
+        assertThat(raised.get(0).getEventCount()).isEqualTo(3);
     }
 }

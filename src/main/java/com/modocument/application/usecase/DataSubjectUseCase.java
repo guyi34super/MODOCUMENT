@@ -27,6 +27,7 @@ import com.modocument.infrastructure.persistence.ImportDetailsJpaRepository;
 import com.modocument.infrastructure.persistence.IngestionJobJpaRepository;
 import com.modocument.infrastructure.persistence.UploadedFileJpaRepository;
 import com.modocument.infrastructure.retention.AfterCommitFileDeleter;
+import com.modocument.infrastructure.retention.PendingFileDeletes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -90,6 +91,8 @@ public class DataSubjectUseCase {
     private final FileStore storage;
     private final AuditRecorder audit;
     private final ObjectMapper objectMapper;
+    /** BUG-12: where a file delete that keeps failing after the commit waits for a retry. */
+    private final PendingFileDeletes pendingDeletes;
 
     public DataSubjectUseCase(CurrentUserProvider currentUser,
                               IngestionJobJpaRepository jobs,
@@ -101,7 +104,8 @@ public class DataSubjectUseCase {
                               DocImageAssetJpaRepository docAssets,
                               FileStore storage,
                               AuditRecorder audit,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              PendingFileDeletes pendingDeletes) {
         this.currentUser = currentUser;
         this.jobs = jobs;
         this.importDetails = importDetails;
@@ -113,6 +117,7 @@ public class DataSubjectUseCase {
         this.storage = storage;
         this.audit = audit;
         this.objectMapper = objectMapper;
+        this.pendingDeletes = pendingDeletes;
     }
 
     // ------------------------------------------------------------- results
@@ -276,7 +281,7 @@ public class DataSubjectUseCase {
                 .newValues(evidence)
                 .build());
 
-        AfterCommitFileDeleter.deleteAfterCommit(storage, filesToDelete);
+        AfterCommitFileDeleter.deleteAfterCommit(storage, filesToDelete, bankId, pendingDeletes);
         log.info("DSR erase removed {} item(s) across {} store(s) for subject ref {}",
                 total, counts.size(), scan.subjectRef);
         return new EraseResult(total, counts);
