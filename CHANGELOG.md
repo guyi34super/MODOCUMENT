@@ -37,6 +37,32 @@ All notable changes to MoDocument are recorded here. The format follows
   The catalogue is in `docs/security/audit-events.md`.
 - Alert rule `access-denied-burst` (windowed, MEDIUM), tunable with
   `alerts.accessDeniedBurst.threshold|window`.
+- Audit log page `/admin/audit` (ADMIN, APPROVER) and `/platform/audit` (PLATFORM_ADMIN):
+  filters, "Load more" keyset paging, CSV export, an old → new diff view, entity links and,
+  on the platform variant, counts per bank.
+- `GET /api/dashboard/summary` (`ingestion:read`): the dashboard's counts and newest rows in one
+  call, from count queries.
+- Paged lists. `GET /api/ingestion/jobs?view=summary&page=&size=` returns an
+  `IngestionJobSummary` page (`{items, page, size, total}`, at most 200 per page) with no parsed,
+  mapped or validation JSON. The same envelope is used by `GET /api/admin/users`, the pending
+  change list and integration runs when `page` is sent; without `page` the old array is returned.
+- File storage port with two backends, chosen by `modocument.storage.backend`: `local` (the
+  default, today's disk layout) and `s3` (SSE-KMS, keys under `bank/{id}/…`). Uploads, export
+  copies, doc-creation assets and exports, retention and DSR deletes all go through it.
+  Terraform gets a `file-store` module (versioned, encrypted, TLS-only bucket with lifecycle
+  rules, task-role IAM).
+- OCR works in the image: `tesseract-ocr` with English data is installed, so scanned PDFs and
+  images are read instead of silently skipped.
+- AI result cache (`ai.resultCache.enabled`): an identical document text, template version,
+  mode, model and prompt version reuses the earlier result instead of calling the model. It is
+  bank-scoped under RLS and purged with retention.
+- `HousekeepingJob` (daily): bounded deletes of old refresh tokens, expired revoked-token
+  entries, finished integration runs and their logs, terminal outbox rows, unreferenced
+  integration events and expired idempotency keys, audited `HOUSEKEEPING_COMPLETED` per bank.
+  New setting `integration.historyRetention` (90 days, 7–400).
+- `connector-core`: one connector library (REST, database, SFTP, webhook) shared by the server
+  and the Connector Agent. The agent gains OAuth2 client-credentials and mTLS for REST
+  connections. See `docs/integration/connector-sharing.md`.
 
 ### Changed
 - **Migration note — database export.** `POST /api/ingestion/jobs/{id}/export/database` no
@@ -50,6 +76,53 @@ All notable changes to MoDocument are recorded here. The format follows
   egress rule. Example: `jdbc:postgresql://db:5432/staging?sslmode=require` becomes
   `{"vendor":"POSTGRESQL","host":"db","port":5432,"database":"staging","sslmode":"require"}`.
   H2 targets are no longer accepted.
+- **Faster reads.**
+  - The ingestion job list no longer returns every job's JSON. The UI asks for the summary page:
+    13.7 MB → 18 KB for 50 jobs of 1,000 rows. The legacy unpaged list is capped at the 200
+    newest jobs. A single job's JSON columns are parsed once per request.
+  - N+1 queries removed: `/ImportDetails/GetAll` (bank query instead of an in-memory filter),
+    the doc release queue, the blueprint list, the pending-change list, the Integration API
+    `/templates` and template owner names.
+  - Each authenticated request reads `AppUsers` once instead of twice.
+- **Database.**
+  - New indexes (built `CONCURRENTLY`) for the audit alert window, dashboard run counts, the
+    outbox and run ticks, the pending-change list and housekeeping. The alert sweep's query is
+    bounded to its window.
+  - Hikari pool sized explicitly (max 20, `MODOCUMENT_DB_POOL_MAX`; leak detection on) and
+    Hibernate JDBC batching (50, ordered inserts and updates).
+  - Extraction records are saved one transaction per batch, not per record. The outbound
+    dispatcher claims deliveries with a single `UPDATE … RETURNING` on PostgreSQL.
+- **Scheduling.** A scheduler pool of 4 threads; the integration tick runs on its own executor,
+  so a slow bank endpoint no longer delays settings sync or alerts.
+- **Frontend load.** Pages are code-split (initial JS 614.9 kB → 292 kB, 182.8 → 93 kB gzip).
+  `qrcode` loads only on MFA enrolment. nginx compresses CSS, JS, JSON and SVG, caches
+  `/assets/` for a year as immutable and serves `index.html` with `no-cache`. Polling pauses in
+  hidden tabs and never overlaps calls; version and supported-types calls are made once per
+  session.
+- **AI cost.** Row batches use a column/rows output shape (−38 % output tokens on the golden
+  corpus; the old shape is still parsed). Chat edits and extraction agents use the configured
+  default model.
+- **Footprint.**
+  - The application jar is 369 MB → 157 MB. MongoDB and Kafka moved to the `scale` Maven
+    profile; a default jar started in scale mode refuses to start.
+  - The image uses a layered jar and an AppCDS archive (startup about 25 % faster). The JVM
+    runs with `MaxRAMPercentage=70`, G1 and exit on out-of-memory.
+  - Terraform: tasks of 1 vCPU / 3 GiB (two per node), the NAT gateway count, RDS Multi-AZ and
+    log retention are variables (staging: one NAT, single-AZ, 90-day logs; about −$128 a
+    month). CloudFront caches and compresses `/assets/*`.
+- **Connector behaviour (server and agent now share one implementation).**
+  - SFTP reads are two-phase: a file is moved or deleted only after MoDocument has accepted it.
+    A file that cannot be ingested stays in the folder and fails the run.
+  - An oversized SFTP file is skipped and left in place on both sides (the agent used to fail
+    the run).
+  - Agent database flows quote table and column names like DIRECT flows, so they are
+    **case-sensitive**. On Oracle, name the view in upper case. The schema comes from the
+    connection's `schema` setting.
+  - Database values arrive as text and binary columns are not record data, as on the server.
+    Cursors stored by older agents still work.
+  - Full list: `docs/integration/connector-sharing.md` §6.
+- CI: the PostgreSQL job runs only the integration tests, JaCoCo runs behind `-Pcoverage`, and
+  Docker builds use Maven and buildx caches. Test Spring contexts 27 → 19.
 
 ### Deprecated
 - Unused legacy routes (sunset 2027-04-01). Each answers with `Deprecation`, `Sunset` and `Link`
@@ -65,6 +138,9 @@ All notable changes to MoDocument are recorded here. The format follows
 - `POST /api/aifiles/send` (an open AI prompt proxy) and the unused
   `POST /api/transform/transform`. Both were removed under the security exception of the
   versioning policy.
+- Playwright and the JavaScript-rendering web fetcher (189 MiB). Web extraction sources fetch
+  pages as plain HTML, as the image always did; the "Render JavaScript" option is shown as
+  unavailable.
 
 ### Security
 - SSRF: the extraction REST connector and the web crawler no longer let the HTTP client follow
