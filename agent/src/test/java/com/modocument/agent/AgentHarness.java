@@ -54,14 +54,17 @@ final class AgentHarness {
         if (allowListYaml != null) {
             Files.writeString(allowList, allowListYaml);
         }
-        this.h2Url = "jdbc:h2:mem:bank-" + root.getFileName() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        // DATABASE_TO_LOWER: unquoted names fold to lower case, as on a real
+        // PostgreSQL server (the connector quotes the identifiers it is given).
+        this.h2Url = "jdbc:h2:mem:bank-" + root.getFileName()
+                + ";MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
         DatabaseConnector.ConnectionFactory connections = factory != null ? factory : (url, properties) -> {
             connectionsOpened.incrementAndGet();
             return DriverManager.getConnection(h2Url, "sa", "");
         };
         CloudClient client = new CloudClient(cloud.url(), true, MAPPER, tls);
-        TaskExecutor executor = new TaskExecutor(List.of(new DatabaseConnector(connections, MAPPER),
-                new RestConnector(MAPPER), new SftpConnector(MAPPER)), new AllowList(allowList),
+        TaskExecutor executor = new TaskExecutor(List.of(new DatabaseConnector(connections),
+                new RestConnector(), new SftpConnector()), new AllowList(allowList),
                 new LocalSecrets(secretsDir, env::get, MAPPER), client);
         this.loop = new AgentLoop(client, new CredentialStore(stateDir, MAPPER), executor, stateDir,
                 "1.0.0", "test-host", token, 0, Duration.ofSeconds(30), Duration.ofSeconds(5), auth);

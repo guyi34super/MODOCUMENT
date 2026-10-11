@@ -1,4 +1,4 @@
-package com.modocument.infrastructure.integration.connector;
+package com.modocument.connector.core.webhook;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;

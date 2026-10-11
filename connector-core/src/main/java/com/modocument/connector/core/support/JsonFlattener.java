@@ -1,4 +1,4 @@
-package com.modocument.infrastructure.extraction.connector;
+package com.modocument.connector.core.support;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -10,20 +10,25 @@ import java.util.Map;
 /**
  * Turns API JSON into flat string records: the array at a dot-path becomes
  * one record per element, nested objects flatten to dotted keys, nested
- * arrays are kept as compact JSON strings.
+ * arrays are kept as compact JSON strings. Used by the REST_API connector
+ * (server and agent) and the server's extraction REST connector.
  */
 public final class JsonFlattener {
 
     private JsonFlattener() {
     }
 
-    /** Node at a dot-path ("data.items"); empty/null path = root. */
+    /** Node at a dot-path ("data.items", or "$.data.items"); empty/null path = root. */
     public static JsonNode atPath(JsonNode root, String dotPath) {
         if (root == null || dotPath == null || dotPath.isBlank()) {
             return root;
         }
+        String path = dotPath.strip();
+        if (path.startsWith("$.")) {
+            path = path.substring(2);
+        }
         JsonNode node = root;
-        for (String part : dotPath.split("\\.")) {
+        for (String part : path.split("\\.")) {
             if (node == null) {
                 return null;
             }

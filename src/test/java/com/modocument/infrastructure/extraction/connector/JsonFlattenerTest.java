@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.extraction.connector;
 
+import com.modocument.connector.core.support.JsonFlattener;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;

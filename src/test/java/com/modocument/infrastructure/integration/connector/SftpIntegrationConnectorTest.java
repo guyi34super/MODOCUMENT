@@ -1,5 +1,6 @@
 package com.modocument.infrastructure.integration.connector;
 
+import com.modocument.connector.core.support.ConnectorLimits;
 import com.modocument.application.port.integration.ConnectionContext;
 import com.modocument.application.port.integration.ConnectionTestResult;
 import com.modocument.application.port.integration.EgressGuard;
@@ -42,8 +43,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The SFTP connector against an embedded Apache MINA SFTP server (ws25,
  * AC-INT-07): pinned host key (an unknown/changed key is refused), password
- * auth, folder confinement, the size cap, read → processed/, and the atomic
- * temp-upload-then-rename write.
+ * auth, folder confinement, the size cap, the two-phase read (download, then
+ * processed/ only once acknowledged), and the atomic temp-upload-then-rename
+ * write.
  */
 class SftpIntegrationConnectorTest {
 
@@ -176,6 +178,11 @@ class SftpIntegrationConnectorTest {
                 .containsExactly("a.csv", "b.csv");
         assertThat(new String(batch.files().get(0).content(), StandardCharsets.UTF_8)).contains("Ada");
         assertThat(batch.files().get(0).remotePath()).isEqualTo("inbox/a.csv");
+        // Two-phase read: nothing moves until the caller acknowledges.
+        assertThat(root.resolve("in/inbox/a.csv")).exists();
+        assertThat(root.resolve("in/inbox/processed")).doesNotExist();
+        assertThat(batch.notes()).singleElement().asString().contains("huge.csv");
+        batch.acknowledgeAll();
         assertThat(root.resolve("in/inbox/processed/a.csv")).exists();
         assertThat(root.resolve("in/inbox/a.csv")).doesNotExist();
         // Over the size cap: skipped and left in place.
@@ -189,6 +196,8 @@ class SftpIntegrationConnectorTest {
         ReadBatch batch = connector.read(context(fingerprint, PASSWORD),
                 Map.of("folder", "inbox", "afterRead", "DELETE"), null, 10);
         assertThat(batch.files()).hasSize(1);
+        assertThat(root.resolve("in/inbox/c.csv")).exists();
+        batch.acknowledgeAll();
         assertThat(root.resolve("in/inbox/c.csv")).doesNotExist();
         assertThat(root.resolve("in/inbox/processed/c.csv")).doesNotExist();
     }

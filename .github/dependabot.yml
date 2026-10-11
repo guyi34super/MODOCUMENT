@@ -9,7 +9,12 @@
 version: 2
 updates:
   - package-ecosystem: maven
-    directory: /
+    # The app, and the standalone connector-core and agent projects (their
+    # shared pins, e.g. MINA SSHD, move together in the grouped PR).
+    directories:
+      - /
+      - /connector-core
+      - /agent
     schedule:
       interval: weekly
       day: monday

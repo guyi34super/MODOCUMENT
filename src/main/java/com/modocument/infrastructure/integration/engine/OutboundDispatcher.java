@@ -314,21 +314,10 @@ public class OutboundDispatcher {
         return key;
     }
 
+    /** Records per write call: the agent chunks with the same rule (connector-core). */
     static int batchSize(ConnectionType type, Map<String, Object> target) {
-        Object raw = target.get("batchSize");
-        int fallback = switch (type) {
-            case REST_API -> 100;
-            case DATABASE -> 500;
-            default -> Integer.MAX_VALUE;
-        };
-        if (raw == null) {
-            return fallback;
-        }
-        try {
-            return Math.max(1, Integer.parseInt(String.valueOf(raw)));
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
+        return com.modocument.connector.core.spi.OutboundBatch.batchSize(
+                com.modocument.connector.core.spi.ConnectionType.valueOf(type.name()), target);
     }
 
     static List<OutboundBatch> chunks(OutboundBatch batch, String key, int size) {
