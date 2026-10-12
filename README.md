@@ -334,9 +334,14 @@ no LLM involved.
 ### Run locally (no API key, no AI endpoint needed)
 
 ```bash
-# once: generate local secrets into the gitignored .env — docker compose reads
-# it automatically and refuses to start without them (no insecure defaults,
-# even for local dev). Keep the file: the DB passwords are fixed at first boot.
+# once: copy .env.example → .env, fill in generated secrets (see placeholders
+# there). Mau team bootstrap email is pre-filled as team.mau.ai@gmail.com for
+# empty-database installs; passwords stay local only. docker compose reads .env
+# automatically and refuses to start without required secrets (no insecure
+# defaults, even for local dev). Keep the file: the DB passwords are fixed at
+# first boot.
+#
+# Or generate from scratch:
 cat > .env <<EOF
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 MODOCUMENT_APP_DB_PASSWORD=$(openssl rand -hex 24)
