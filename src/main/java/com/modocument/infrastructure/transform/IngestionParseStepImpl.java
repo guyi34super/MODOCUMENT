@@ -30,6 +30,7 @@ import com.modocument.infrastructure.ai.AiErrorMessages;
 import com.modocument.infrastructure.ai.AiFailureClassifier;
 import com.modocument.infrastructure.ai.AiNotConfiguredException;
 import com.modocument.infrastructure.ai.AiPreflight;
+import com.modocument.infrastructure.ai.AiResultCache;
 import com.modocument.infrastructure.ai.LlmExtractionFailedException;
 import com.modocument.infrastructure.ai.LlmStructuredJsonParser;
 import com.modocument.infrastructure.file.ExcelParsingProperties;
@@ -161,10 +162,16 @@ public class IngestionParseStepImpl implements IngestionParseStep {
     @Override
     public ParseResult parse(ParseContext context) {
         String fileName = context.fileName();
-        Path file = uploadStorage.resolve(fileName);
-        if (!Files.exists(file)) {
+        // FileStore.localCopy (ws29): the file itself on local storage, a
+        // cached download on S3 — the parsers below need a Path.
+        Path file;
+        try {
+            file = uploadStorage.localCopy(fileName);
+        } catch (java.nio.file.NoSuchFileException e) {
             throw new NoSuchElementException(
                     "File '" + fileName + "' not found in uploads folder.");
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("Could not read the uploaded file.", e);
         }
         Integer bankId = context.bankId() != null
                 ? context.bankId() : TenantContext.currentBankId().orElse(null);
@@ -194,7 +201,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
         if (deterministic.isPresent()) {
             return deterministic.get();
         }
-        return extractWithLlm(run, session, text, hints, plan);
+        return extractWithLlmCached(run, session, text, hints, plan);
     }
 
     /** AI first, code whenever the AI is skipped or fails (the default mode). */
@@ -219,7 +226,7 @@ public class IngestionParseStepImpl implements IngestionParseStep {
             return codeFallback(run, text, hints, skip.get(), null);
         }
         try {
-            return extractWithLlm(run, session, text, hints, plan);
+            return extractWithLlmCached(run, session, text, hints, plan);
         } catch (RuntimeException aiFailure) {
             FallbackReason reason = AiFailureClassifier.classify(aiFailure);
             if (reason == FallbackReason.PROMPT_REFUSED) {
@@ -376,6 +383,48 @@ public class IngestionParseStepImpl implements IngestionParseStep {
     }
 
     // ---- LLM extraction ----------------------------------------------------------
+
+    /** ws28: wired by Spring; null (unit-test wiring) = no result cache. */
+    private AiResultCache resultCache;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setResultCache(AiResultCache resultCache) {
+        this.resultCache = resultCache;
+    }
+
+    /**
+     * ws28: the AI result cache in front of {@link #extractWithLlm}. Same
+     * document text + template version + mode/options + model + prompt
+     * version in the same bank → the stored AI result, no AI call (no
+     * tokens, no quota). A successful pure-AI parse is stored afterwards.
+     */
+    private ParseResult extractWithLlmCached(Run run, PiiTokenizer.Session session, String text,
+                                             TableExtractionHints hints, TableExtractionPlan plan) {
+        String key = null;
+        if (resultCache != null && run.bankId != null && resultCache.enabled(run.bankId)) {
+            key = resultCache.key(text, run.context.templateId(), run.context.templateFields(),
+                    cacheMode(run), TableExtractionPrompt.VERSION);
+            Optional<ParseResult> cached = resultCache.lookup(run.bankId, key);
+            if (cached.isPresent()) {
+                log.info("AI result cache hit for a '{}' document; no AI call", run.extension);
+                return cached.get();
+            }
+        }
+        ParseResult result = extractWithLlm(run, session, text, hints, plan);
+        if (key != null) {
+            resultCache.store(run.bankId, key, TableExtractionPrompt.VERSION, result);
+        }
+        return result;
+    }
+
+    /** Everything besides text, template, model and prompt that shapes the AI's answer. */
+    private static String cacheMode(Run run) {
+        return run.mode.name()
+                + "|ext=" + run.extension
+                + "|combined=" + run.parsing.isCombinedExtractionMapping()
+                + "|batch=" + run.parsing.getLlmBatchSize()
+                + "|singlePassMax=" + run.parsing.getLlmSinglePassMaxRows();
+    }
 
     private ParseResult extractWithLlm(Run run, PiiTokenizer.Session session, String text,
                                        TableExtractionHints hints, TableExtractionPlan plan) {

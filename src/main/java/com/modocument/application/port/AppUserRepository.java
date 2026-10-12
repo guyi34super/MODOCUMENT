@@ -28,4 +28,22 @@ public interface AppUserRepository {
 
     /** How many enabled (not disabled) accounts with this role the bank has (ws21). */
     long countActiveByRole(int bankId, Role role);
+
+    /**
+     * ws28: several users by id in one statement, keyed by id (unknown ids
+     * absent). AppUsers is not under RLS: callers resolve only ids taken
+     * from rows of their own bank (makers, owners, submitters).
+     */
+    default java.util.Map<Integer, AppUser> getByIds(java.util.Collection<Integer> ids) {
+        java.util.Map<Integer, AppUser> byId = new java.util.LinkedHashMap<>();
+        for (Integer id : ids) {
+            getById(id).ifPresent(user -> byId.put(id, user));
+        }
+        return byId;
+    }
+
+    /** ws28: the users of ONE bank among {@code ids} — the bank filter is the scoping. */
+    default List<AppUser> listByBankAndIds(int bankId, java.util.Collection<Integer> ids) {
+        return getByIds(ids).values().stream().filter(user -> user.getBankId() == bankId).toList();
+    }
 }

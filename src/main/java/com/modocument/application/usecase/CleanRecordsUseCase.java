@@ -6,6 +6,7 @@ import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.AiPurpose;
 import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.infrastructure.prompt.PromptFactory;
 import com.modocument.application.privacy.PiiTokenizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,10 +51,7 @@ public class CleanRecordsUseCase {
      */
     public List<Map<String, String>> clean(List<String> columns,
                                            List<Map<String, String>> rows, String dataSpec) {
-        PromptStrategy strategy = promptStrategies.stream()
-                .filter(s -> s.getType().equals("DataCleaning"))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("DataCleaning prompt not registered."));
+        PromptStrategy strategy = PromptFactory.lookup(promptStrategies, "DataCleaning");
 
         // One session for the whole run: tokens stay stable across batches.
         // Sensitive cells travel as placeholders — the model cannot reformat

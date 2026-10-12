@@ -131,7 +131,7 @@ class IngestionParseStepImplTest {
         for (String name : List.of("book.xlsx", "book.xlsm", "people.csv", "notes.txt", "report.pdf")) {
             Path file = tempDir.resolve(name);
             Files.writeString(file, "x");
-            when(uploadStorage.resolve(name)).thenReturn(file);
+            when(uploadStorage.localCopy(name)).thenReturn(file);
         }
 
         PromptStrategy strategy = mock(PromptStrategy.class);
@@ -613,7 +613,7 @@ class IngestionParseStepImplTest {
 
     private ParseContext cp1252Context() throws IOException {
         Path csv = ExtractionCorpus.generate("cp1252-customers.csv", tempDir);
-        when(uploadStorage.resolve("cp1252-customers.csv")).thenReturn(csv);
+        when(uploadStorage.localCopy("cp1252-customers.csv")).thenReturn(csv);
         UncheckedIOException utf8Refused = new UncheckedIOException(
                 "Could not read file", new MalformedInputException(1));
         when(documentParser.extract(csv)).thenThrow(utf8Refused);
@@ -628,8 +628,8 @@ class IngestionParseStepImplTest {
     // ---- still fatal in every mode (AC-EXT-06) --------------------------------------
 
     @Test
-    void aMissingFileIsFatalInEveryMode() {
-        when(uploadStorage.resolve("gone.csv")).thenReturn(tempDir.resolve("gone.csv"));
+    void aMissingFileIsFatalInEveryMode() throws IOException {
+        when(uploadStorage.localCopy("gone.csv")).thenThrow(new java.nio.file.NoSuchFileException("uploads/gone.csv"));
         for (ExtractionMode mode : ExtractionMode.values()) {
             assertThatThrownBy(() -> step.parse(new ParseContext("gone.csv", 1, 1, List.of(),
                     null, mode)))
@@ -661,5 +661,88 @@ class IngestionParseStepImplTest {
                 2,
                 2,
                 "full text");
+    }
+
+    // ---- ws28: the AI result cache ---------------------------------------------------
+
+    private final Map<String, com.modocument.domain.entity.AiResultCacheEntry> cacheRows =
+            new java.util.HashMap<>();
+
+    /** The cache over an in-memory stand-in for the AiResultCache table. */
+    private com.modocument.infrastructure.ai.AiResultCache resultCache() {
+        com.modocument.infrastructure.persistence.AiResultCacheJpaRepository repository =
+                mock(com.modocument.infrastructure.persistence.AiResultCacheJpaRepository.class);
+        when(repository.findByBankIdAndCacheKey(anyInt(), anyString())).thenAnswer(call ->
+                Optional.ofNullable(cacheRows.get(call.getArgument(0) + "/" + call.getArgument(1))));
+        when(repository.save(any())).thenAnswer(call -> {
+            com.modocument.domain.entity.AiResultCacheEntry entry = call.getArgument(0);
+            entry.setId((long) cacheRows.size() + 1);
+            cacheRows.put(entry.getBankId() + "/" + entry.getCacheKey(), entry);
+            return entry;
+        });
+        @SuppressWarnings("unchecked")
+        org.springframework.beans.factory.ObjectProvider<io.micrometer.core.instrument.MeterRegistry> meters =
+                mock(org.springframework.beans.factory.ObjectProvider.class);
+        when(meters.getIfAvailable()).thenReturn(meterRegistry);
+        return new com.modocument.infrastructure.ai.AiResultCache(repository, settings, meters, "qwen2.5");
+    }
+
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
+    private ParseContext cachedCsv(int bankId, List<TemplateFields> fields) {
+        when(documentParser.extract(any())).thenReturn(
+                new DocumentExtractionResult("Name,City\nAda,London", "local"));
+        when(hintsBuilder.build(any(), anyString(), anyString()))
+                .thenReturn(new TableExtractionHints(".csv", "local", 2, List.of("Name", "City"), 1));
+        when(batchPlanner.plan(anyString(), any(), any()))
+                .thenReturn(TableExtractionPlan.singlePass("Name,City\nAda,London", 1, 2));
+        when(aiFilesService.sendPrompt(any(PromptEnvelope.class))).thenReturn("""
+                {"columns":["Name","City"],"mapping":{"Name":"FirstName","City":null},
+                "rows":[{"Name":"Ada","City":"London"}]}
+                """);
+        when(settings.getBool(SettingKeys.AI_RESULT_CACHE_ENABLED, bankId)).thenReturn(true);
+        return new ParseContext("people.csv", 1, 1, fields, bankId, ExtractionMode.AI_ONLY);
+    }
+
+    @Test
+    void theSameDocumentParsedAgainIsServedFromTheResultCacheWithoutAnAiCall() {
+        step.setResultCache(resultCache());
+        ParseContext context = cachedCsv(5, List.of(templateField("FirstName")));
+
+        ParseResult first = step.parse(context);
+        ParseResult second = step.parse(context);
+
+        verify(aiFilesService, times(1)).sendPrompt(any(PromptEnvelope.class));
+        assertThat(second.table().getColumns()).isEqualTo(first.table().getColumns());
+        assertThat(second.table().getRows()).isEqualTo(first.table().getRows());
+        assertThat(second.suggestedMapping()).isEqualTo(first.suggestedMapping());
+        assertThat(second.provenance()).isEqualTo(first.provenance());
+        assertThat(cacheRows).hasSize(1);
+        assertThat(cacheRows.values().iterator().next().getPromptVersion())
+                .isEqualTo(com.modocument.infrastructure.prompt.TableExtractionPrompt.VERSION);
+        // A hit is a metric, never an audit row.
+        assertThat(meterRegistry.counter("modocument.ai.result_cache", "result", "hit").count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("modocument.ai.result_cache", "result", "miss").count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    void theResultCacheIsPerBankPerTemplateVersionAndCanBeSwitchedOff() {
+        step.setResultCache(resultCache());
+        step.parse(cachedCsv(5, List.of(templateField("FirstName"))));
+
+        // Another bank never sees bank 5's result.
+        step.parse(cachedCsv(6, List.of(templateField("FirstName"))));
+        // A changed template (another field) is another key.
+        step.parse(cachedCsv(5, List.of(templateField("FirstName"), templateField("City"))));
+        verify(aiFilesService, times(3)).sendPrompt(any(PromptEnvelope.class));
+
+        // ai.resultCache.enabled=false: no lookup, the AI is asked again.
+        ParseContext off = cachedCsv(5, List.of(templateField("FirstName")));
+        when(settings.getBool(SettingKeys.AI_RESULT_CACHE_ENABLED, 5)).thenReturn(false);
+        step.parse(off);
+        verify(aiFilesService, times(4)).sendPrompt(any(PromptEnvelope.class));
     }
 }

@@ -1,5 +1,10 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
+import java.util.LinkedHashMap;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -34,10 +39,35 @@ public class ValidationRuleController {
 
     private final ValidationRuleRepository repo;
     private final TemplateOwnership ownership;
+    private final AuditRecorder audit;
 
     public ValidationRuleController(ValidationRuleRepository repo, TemplateOwnership ownership) {
+        this(repo, ownership, spec -> { });
+    }
+
+    @Autowired
+    public ValidationRuleController(ValidationRuleRepository repo, TemplateOwnership ownership,
+                                    AuditRecorder audit) {
         this.repo = repo;
         this.ownership = ownership;
+        this.audit = audit;
+    }
+
+    /** "templateId:fieldName:ruleType" — the rule's composite key. */
+    private static String ruleId(int templateId, String fieldName, RuleType ruleType) {
+        return templateId + ":" + fieldName + ":" + ruleType.name();
+    }
+
+    private static Map<String, Object> snapshot(int templateId, String fieldName,
+                                                RuleType ruleType, String configJson) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("templateId", templateId);
+        values.put("fieldName", fieldName);
+        values.put("ruleType", ruleType.name());
+        if (configJson != null) {
+            values.put("config", configJson);
+        }
+        return values;
     }
 
     @RequiresPermission(Permission.VALIDATION_READ)
@@ -76,10 +106,20 @@ public class ValidationRuleController {
             return ResponseEntity.badRequest().body(Map.of("error", "config cannot be serialized."));
         }
 
+        String fieldName = request.getFieldName().trim();
+        Optional<ValidationRule> previous = repo.getRulesByTemplate(request.getTemplateId()).stream()
+                .filter(r -> fieldName.equals(r.getFieldName()) && r.getRuleType() == ruleType.get())
+                .findFirst();
         ValidationRule rule = new ValidationRule(
-                request.getTemplateId(), request.getFieldName().trim(), ruleType.get(), configJson);
+                request.getTemplateId(), fieldName, ruleType.get(), configJson);
         rule.setBankId(ownership.requireBankId());
         ValidationRule saved = repo.save(rule);
+        audit.success(previous.isPresent() ? AuditActions.VALIDATION_RULE_UPDATED
+                        : AuditActions.VALIDATION_RULE_CREATED, "ValidationRule",
+                ruleId(request.getTemplateId(), fieldName, ruleType.get()),
+                previous.map(p -> snapshot(p.getTemplateId(), p.getFieldName(), p.getRuleType(),
+                        p.getConfigJson())).orElse(null),
+                snapshot(request.getTemplateId(), fieldName, ruleType.get(), configJson));
         return ResponseEntity.ok(saved);
     }
 
@@ -112,9 +152,13 @@ public class ValidationRuleController {
                     .body(Map.of("error", "Unknown rule type '" + ruleType + "'."));
         }
         ownership.requireWritable(templateId);
-        return repo.delete(templateId, fieldName, parsed.get())
-                ? ResponseEntity.noContent().build()
-                : ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)
+        if (repo.delete(templateId, fieldName, parsed.get())) {
+            audit.success(AuditActions.VALIDATION_RULE_DELETED, "ValidationRule",
+                    ruleId(templateId, fieldName, parsed.get()),
+                    snapshot(templateId, fieldName, parsed.get(), null), null);
+            return ResponseEntity.noContent().build();
+        }
+        return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND)
                         .body(Map.of("error", "No " + parsed.get() + " rule on field '"
                                 + fieldName + "' for template " + templateId + "."));
     }

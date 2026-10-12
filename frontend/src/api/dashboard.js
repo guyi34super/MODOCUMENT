@@ -17,3 +17,11 @@ import { api } from './client';
 //     integrations:{runs24h:{ok, failed}, deadLetters, agentsOffline, apiCalls24h} }
 
 export const getDashboard = () => api.get('/api/admin/dashboard');
+
+// v1.2.0 (docs/optimization/contracts.md §5): the user Home page's counts in
+// one call instead of four full lists —
+//   { templates, ingestion:{total, byStatus:{…}, recent:[IngestionJobSummary ×8]},
+//     extraction:{total, running, recent:[…×5]}, imports:{total, recent:[…×5]} }
+// (`templates` is read as a count, or as a list when the server sends one).
+// A server without it answers 404; DashboardPage then loads the lists.
+export const getHomeSummary = () => api.get('/api/dashboard/summary');

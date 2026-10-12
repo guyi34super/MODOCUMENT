@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ToastProvider } from '../context/ToastContext';
-import ExtractionJobDetailPage from './ExtractionJobDetailPage';
+import ExtractionJobDetailPage, { jobChanged } from './ExtractionJobDetailPage';
 
 import {
   getAudit,
@@ -114,6 +114,58 @@ describe('ExtractionJobDetailPage', () => {
     expect(screen.getByText('Extraction completed — 3 processed records')).toBeInTheDocument();
     expect(screen.queryByText('Updating live…')).not.toBeInTheDocument();
     expect(getRecords).toHaveBeenCalled();
+  });
+
+  it('does not poll while the tab is hidden and refreshes as soon as it is shown', async () => {
+    vi.useFakeTimers();
+    let visibility = 'visible';
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    getJob.mockResolvedValueOnce(job('RUNNING')).mockResolvedValue(job('COMPLETED', 3));
+    renderPage();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getJob).toHaveBeenCalledTimes(1);
+
+    visibility = 'hidden';
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(25_000);
+    });
+    expect(getJob).toHaveBeenCalledTimes(1);
+
+    visibility = 'visible';
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getJob).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Extraction completed — 3 processed records')).toBeInTheDocument();
+  });
+
+  it('stops polling once the job is terminal', async () => {
+    vi.useFakeTimers();
+    getJob.mockResolvedValueOnce(job('RUNNING')).mockResolvedValue(job('COMPLETED', 1));
+    renderPage();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+    }
+    expect(getJob).toHaveBeenCalledTimes(2);
+  });
+
+  it('jobChanged only reports a status or counter change', () => {
+    const base = job('RUNNING', 1);
+    expect(jobChanged(base, { ...base, updatedAt: 'later' })).toBe(false);
+    expect(jobChanged(base, job('RUNNING', 2))).toBe(true);
+    expect(jobChanged(base, job('PAUSED', 1))).toBe(true);
+    expect(jobChanged(null, base)).toBe(true);
   });
 
   it('toasts the audit-trail hint when a watched run ends with zero records', async () => {

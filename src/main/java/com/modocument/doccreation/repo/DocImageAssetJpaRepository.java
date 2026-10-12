@@ -10,4 +10,7 @@ public interface DocImageAssetJpaRepository extends JpaRepository<DocImageAsset,
     List<DocImageAsset> findByInstanceIdOrderByDocImageAssetId(int instanceId);
 
     void deleteByInstanceId(int instanceId);
+
+    /** ws28: the assets of several instances, in id order. */
+    List<DocImageAsset> findByInstanceIdInOrderByDocImageAssetId(java.util.Collection<Integer> instanceIds);
 }

@@ -15,7 +15,7 @@ public class WebSourceConfig {
     private List<String> allowedDomains = new ArrayList<>();
     private Integer maxDepth;
     private Integer maxPages;
-    /** Render JavaScript with Playwright when available (falls back to HTTP). */
+    /** Kept for API compatibility: JS rendering is unavailable (ws29), the page is fetched as plain HTTP. */
     private boolean renderJs;
     /** Extra politeness delay; only ever raises the effective per-host delay. */
     private Long perHostDelayMillis;

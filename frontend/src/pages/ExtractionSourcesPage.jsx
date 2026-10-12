@@ -194,10 +194,13 @@ export default function ExtractionSourcesPage() {
                     <input type="number" min="1" className={inputClass} value={form.maxPages} onChange={set('maxPages')} />
                   </Field>
                 </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={form.renderJs} onChange={set('renderJs')} />
-                  Render JavaScript (needs Playwright browsers on the server)
+                <label className="flex items-center gap-2 text-sm text-slate-500">
+                  <input type="checkbox" checked={false} disabled aria-describedby="render-js-help" />
+                  Render JavaScript
                 </label>
+                <p id="render-js-help" className="text-xs text-slate-500">
+                  Not available on this server: pages are fetched as plain HTML.
+                </p>
               </>
             )}
 

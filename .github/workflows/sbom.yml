@@ -29,7 +29,10 @@ jobs:
           java-version: '21'
           cache: maven
       # Tests already gate merges in ci.yml; here we only need the resolved
-      # dependency graph, so skip them.
+      # dependency graph, so skip them. connector-core is a sibling Maven
+      # project: installed first, it appears in the BOM as the component
+      # com.modocument:modocument-connector-core with its own dependencies.
+      - run: mvn -B -q -f connector-core/pom.xml -DskipTests install
       - run: mvn -B -DskipTests -Psbom package
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

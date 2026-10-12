@@ -1,5 +1,7 @@
 package com.modocument.application.usecase;
 
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.UploadedFileRepository;
 import com.modocument.domain.entity.UploadedFile;
@@ -7,6 +9,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
@@ -25,10 +29,13 @@ public class UploadOwnership {
 
     private final UploadedFileRepository uploads;
     private final CurrentUserProvider currentUser;
+    private final AuditRecorder audit;
 
-    public UploadOwnership(UploadedFileRepository uploads, CurrentUserProvider currentUser) {
+    public UploadOwnership(UploadedFileRepository uploads, CurrentUserProvider currentUser,
+                           AuditRecorder audit) {
         this.uploads = uploads;
         this.currentUser = currentUser;
+        this.audit = audit;
     }
 
     /** Records the caller as owner of a file just stored by UploadStorage. */
@@ -42,7 +49,16 @@ public class UploadOwnership {
         entity.setSizeBytes(sizeBytes);
         entity.setSha256Hex(sha256Hex);
         entity.setUploadedAt(LocalDateTime.now(ZoneOffset.UTC));
-        return uploads.add(entity);
+        UploadedFile saved = uploads.add(entity);
+        // ws28: every stored upload (the plain upload, the ingestion upload
+        // and the integration API's POST /files) is audited here, once. The
+        // original name stays out: file names can carry personal data.
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("storedName", storedName);
+        values.put("sizeBytes", sizeBytes);
+        values.put("sha256", sha256Hex);
+        audit.success(AuditActions.FILE_UPLOADED, "UploadedFile", storedName, null, values);
+        return saved;
     }
 
     /**
@@ -73,6 +89,10 @@ public class UploadOwnership {
      */
     public void require(String storedName) {
         uploads.getByStoredNameAndOwner(storedName, currentUser.requireUserId()).orElseThrow(
-                () -> new NoSuchElementException("File '" + storedName + "' not found."));
+                () -> {
+                    // ws28: owner-scoped 404 probe, audited ACCESS_DENIED (aggregated).
+                    audit.record(AuditActions.notFoundProbe("UploadedFile", storedName));
+                    return new NoSuchElementException("File '" + storedName + "' not found.");
+                });
     }
 }

@@ -234,15 +234,80 @@ variable "max_instances" {
 }
 
 variable "task_cpu" {
-  description = "Task CPU units."
+  description = "Task CPU units. ws29: 1024 (was 2048) so two tasks share an m6i.large (2048 units) — twice the tasks for the same nodes; the JVM sizes itself from the container limit (docker-entrypoint.sh)."
   type        = string
-  default     = "2048"
+  default     = "1024"
+
+  validation {
+    condition     = contains(["256", "512", "1024", "2048", "4096", "8192"], var.task_cpu)
+    error_message = "task_cpu must be one of 256, 512, 1024, 2048, 4096, 8192."
+  }
 }
 
 variable "task_memory" {
-  description = "Task memory (MiB)."
+  description = "Task memory (MiB). ws29: 3072 (was 6144): two tasks fit in an m6i.large's ~7.4 GiB ECS-registered memory."
   type        = string
-  default     = "6144"
+  default     = "3072"
+
+  validation {
+    condition     = can(tonumber(var.task_memory)) && tonumber(var.task_memory) >= 1024
+    error_message = "task_memory must be a number of MiB, at least 1024."
+  }
+}
+
+variable "app_cpu" {
+  description = "CPU units reserved for the app container (of task_cpu)."
+  type        = number
+  default     = 896
+}
+
+variable "app_memory" {
+  description = "Hard memory limit of the app container (MiB, of task_memory). The JVM heap is 70% of it (MaxRAMPercentage); the rest is metaspace, threads and the soffice/tesseract children."
+  type        = number
+  default     = 2816
+
+  validation {
+    condition     = var.app_memory >= 1024
+    error_message = "app_memory must be at least 1024 MiB (JVM + LibreOffice conversions)."
+  }
+}
+
+variable "frontend_cpu" {
+  description = "CPU units reserved for the frontend nginx container (of task_cpu)."
+  type        = number
+  default     = 128
+}
+
+variable "frontend_memory" {
+  description = "Hard memory limit of the frontend nginx container (MiB, of task_memory)."
+  type        = number
+  default     = 256
+
+  validation {
+    condition     = var.frontend_memory >= 64
+    error_message = "frontend_memory must be at least 64 MiB."
+  }
+}
+
+variable "log_retention_days" {
+  description = "ws29: CloudWatch retention of the app/frontend log group (days); was 400. The audit trail lives in the database and the locked archive, not here."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653], var.log_retention_days)
+    error_message = "log_retention_days must be a CloudWatch Logs retention value (1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, ...)."
+  }
+}
+
+variable "file_store" {
+  description = "ws29: the S3 file store (file-store module outputs). Set: the app runs with MODOCUMENT_STORAGE_BACKEND=s3 on this bucket/key and the task role may use exactly them. null: files stay on the container disk (lost on task replacement — not for production)."
+  type = object({
+    bucket_name = string
+    bucket_arn  = string
+    kms_key_arn = string
+  })
+  default = null
 }
 
 variable "min_tasks" {
@@ -252,9 +317,14 @@ variable "min_tasks" {
 }
 
 variable "max_tasks" {
-  description = "Service maximum task count — the SEC-002/003 cost/abuse cap."
+  description = "Service maximum task count — the SEC-002/003 cost/abuse cap. Must be placeable: <= max_instances x tasks per node (2 for the default task size on m6i.large; checked at plan)."
   type        = number
-  default     = 6
+  default     = 8
+
+  validation {
+    condition     = var.max_tasks >= 1
+    error_message = "max_tasks must be at least 1."
+  }
 }
 
 variable "tags" {

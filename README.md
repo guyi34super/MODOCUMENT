@@ -144,9 +144,12 @@ no LLM involved.
   `GET /api/ingestion/jobs/{id}/export/file?format=csv|json|xlsx|tsv|xml` — a copy is
   archived under `wwwroot/exports/`.
 - **Push directly to your own database**: `POST /api/ingestion/jobs/{id}/export/database`
-  with `{jdbcUrl, username, password, tableName, createTableIfMissing}`. Supports
-  `jdbc:postgresql:` and `jdbc:h2:` targets, auto-creates the table when asked, inserts
-  in batches. Table/column identifiers are strictly validated **and** quoted; row values
+  with `{vendor, host, port, database, schema, sslmode, username, password, tableName,
+  createTableIfMissing}`. The vendor is `POSTGRESQL`, `ORACLE`, `SQLSERVER` or `MARIADB`.
+  The server builds the JDBC URL itself (the integration hub's `DbDialect`), with
+  allow-listed options and connect, login, socket and query timeouts. A raw `jdbcUrl` is
+  refused since 1.2.0. The destination passes the bank's egress check. The table is
+  created when asked, and rows are inserted in one all-or-nothing batch. Table/column identifiers are strictly validated **and** quoted; row values
   only ever travel as bound parameters (no SQL injection); credentials are used for the
   one export and never persisted or logged.
 - **Per-role export row caps** (ws18, gate D2): above the cap (READ_WRITE 5,000,
@@ -202,9 +205,10 @@ no LLM involved.
   existing document pipeline: columns are auto-mapped onto your template, rows are
   validated by the rule engine, and a standard ingestion job is created — so review,
   chat editing, and CSV/JSON/XLSX/database export work on extracted data unchanged.
-- Websites are fetched with plain HTTP by default; **Playwright** (headless Chromium)
-  renders JS-heavy pages when `extraction.web.render-js-enabled=true` and its browsers
-  are installed, degrading to HTTP otherwise.
+- Websites are fetched with plain HTTP (server-rendered HTML). JavaScript rendering
+  (Playwright) was removed in v1.2.0 (ws29) — its ~200 MB driver was more than half
+  the application jar and the image never carried the browsers; a source with
+  `renderJs` set is fetched as plain HTTP, as it always was in the container.
 
 ### AI integration (Spring AI) — local by default, gated and audited
 - **Local models are the default** (gate C8): out of the box the app talks to a
@@ -236,16 +240,23 @@ no LLM involved.
 - **Vision OCR is off by default** (`OCR_VISION_ENABLED=false`): page images
   cannot be pseudonymised, so sending them to a vision model is an explicit
   opt-in; local Tesseract OCR remains the default.
-- Legacy AI endpoints preserved (all through the gateway, tokenized):
-  `POST /api/aifiles/send` (diagnostics prompt — pseudonymised before sending,
-  detokenized in the reply), `POST /api/transform/transform` (classify + extract
-  to JSON), `POST /api/automapper/generate` (column mapping).
+- Legacy AI endpoint, deprecated in 1.2.0 (through the gateway, tokenized):
+  `POST /api/automapper/generate` (column mapping). The open prompt proxy
+  `POST /api/aifiles/send` and `POST /api/transform/transform` were removed in
+  1.2.0 ([docs/api/versioning-policy.md](docs/api/versioning-policy.md) §7).
 - Full control description: [docs/security/ai-controls.md](docs/security/ai-controls.md).
 
 ### Platform
 - Legacy CRUD APIs: `/Templates/*`, `/TemplateFields/*`, `/TemplateDataTypes/*`,
-  `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*`.
-- File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`).
+  `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*`. The unused ones are
+  deprecated (sunset 2027-04-01) and answer with `Deprecation`/`Sunset` headers, see
+  [docs/api/versioning-policy.md](docs/api/versioning-policy.md) §7.
+- File upload: `POST /api/fileupload/upload` (multipart → `wwwroot/uploads/`; deprecated,
+  use the multipart `POST /api/ingestion/jobs`).
+- **Audit viewer API** (1.2.0): `GET /api/admin/audit` (filters, keyset paging),
+  `/api/admin/audit/export` (CSV), `/api/admin/audit/actions`, and the platform's
+  `/api/platform/audit[/counts]`; catalogue in
+  [docs/security/audit-events.md](docs/security/audit-events.md).
 - **OpenAPI** generated from code at `/v3/api-docs` (all profiles); Swagger UI at `/swagger-ui` (`local` only).
 - `local` profile: same PostgreSQL + Flyway as production, plus dev conveniences
   (Swagger, in-memory extraction). The JWT signing key is **not** committed —
@@ -258,8 +269,9 @@ no LLM involved.
 - **Infrastructure as code**: the AWS af-south-1 go-live topology as Terraform under
   [`infra/terraform/`](infra/terraform/README.md) — written, not yet applied (see the
   deployment checklist and "Implement later" below).
-- **CI/CD supply chain** (ws19, gates A7/A8/E3/E8): `ci.yml` runs `mvn -B verify`
-  (with a JaCoCo coverage summary), the real-PostgreSQL suite, the frontend tests/build
+- **CI/CD supply chain** (ws19, gates A7/A8/E3/E8): `ci.yml` runs `mvn -B verify -Pcoverage`
+  (with a JaCoCo coverage summary), a `-Pscale` compile check, the real-PostgreSQL and
+  S3 (S3Mock) integration suites (failsafe only), the frontend tests/build
   and the nginx security-header check on every push/PR to `main`; `security.yml` adds
   gitleaks (full history), Semgrep (registry packs + [`.semgrep/modocument.yml`](.semgrep/modocument.yml)),
   dependency review and `npm audit --audit-level=high`; `sbom.yml` publishes CycloneDX
@@ -358,7 +370,7 @@ machine:
 
 ```bash
 # once: install Ollama and pull the default models
-ollama pull qwen2.5 && ollama pull mistral && ollama pull deepseek-r1:8b
+ollama pull qwen2.5
 SPRING_PROFILES_ACTIVE=local mvn spring-boot:run
 ```
 
@@ -396,8 +408,6 @@ docker compose up --build
 # the models once — prompts never leave the compose network
 docker compose --profile ai-local up --build
 docker compose exec ollama ollama pull qwen2.5
-docker compose exec ollama ollama pull mistral
-docker compose exec ollama ollama pull deepseek-r1:8b
 
 # EXTERNAL endpoint (explicit opt-in; any OpenAI-compatible API)
 MODOCUMENT_AI_BASE_URL=https://openrouter.ai/api \
@@ -503,14 +513,20 @@ stays as the break-glass path. Nothing is active until
 
 Both open auth endpoints are rate-limited per IP and per email
 (`modocument.security.rate-limit.auth.*`), and the LLM-backed endpoints
-(`/api/aifiles/send`, `/api/automapper/generate`, chat-edit) carry a per-user
+(`/api/automapper/generate`, chat-edit) carry a per-user
 quota (`modocument.security.rate-limit.llm.*`); exceeding either returns `429`.
 
 ### Build & test
 
 ```bash
+mvn -B -f connector-core/pom.xml install   # the shared connector library, first
 mvn -B verify
 ```
+
+`connector-core/` (the DATABASE, REST_API, SFTP and WEBHOOK connectors the
+app and the on-prem agent share) is a sibling Maven project, not a module:
+install it once, and again after changing it
+(docs/integration/connector-sharing.md).
 
 ## Configuration
 
@@ -532,8 +548,11 @@ mvn -B verify
 | LLM quota | `modocument.security.rate-limit.llm.*` (`per-user-max`, `window-millis`) | 60/user per hour → `429` |
 | Database | `spring.datasource.url` / `MODOCUMENT_DB_URL` (+ `MODOCUMENT_DB_USERNAME`, `MODOCUMENT_DB_PASSWORD`) | PostgreSQL `localhost:5432/modocument` |
 | CORS origins | `modocument.cors.allowed-origins` / `MODOCUMENT_CORS_ALLOWED_ORIGINS` | localhost dev origins — set your frontend origin in production |
-| Storage root | `modocument.storage.root` / `MODOCUMENT_STORAGE_ROOT` | `wwwroot` (uploads + export copies; mount a volume) |
-| Profile | `SPRING_PROFILES_ACTIVE` | default (PostgreSQL); `local` adds dev conveniences, `scale` adds Mongo+Kafka extraction |
+| File store | `modocument.storage.backend` / `MODOCUMENT_STORAGE_BACKEND` | `local`; `s3` on ECS (uploads, exports, doc assets in S3 — ws29) |
+| Storage root (local) | `modocument.storage.root` / `MODOCUMENT_STORAGE_ROOT` | `wwwroot` (uploads + export copies; mount a volume) |
+| S3 file store | `modocument.storage.s3.*`: `bucket`, `prefix`, `region`, `kms-key-id`, `temp-cache-mb` (`MODOCUMENT_STORAGE_S3_*`) | bucket required with `s3`; region from the AWS chain; KMS = bucket default; 512 MiB local-copy cache |
+| JVM flags (image) | `JAVA_TOOL_OPTIONS` (appended after the image defaults), `JAVA_OPTS` (command line), `MODOCUMENT_CDS=off` | `-XX:MaxRAMPercentage=70 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError` + the AppCDS archive |
+| Profile | `SPRING_PROFILES_ACTIVE` | default (PostgreSQL); `local` adds dev conveniences, `scale` adds Mongo+Kafka extraction (needs a `-Pscale` build) |
 | Extraction store | `extraction.store` / `EXTRACTION_STORE` | `memory`; set `mongo` (or the `scale` profile) for multi-instance runs |
 | MongoDB URI | `spring.data.mongodb.uri` / `EXTRACTION_MONGO_URI` | `mongodb://localhost:27017/modocument`; **required** (authenticated URI) on the `scale` profile |
 | Kafka distribution | `extraction.kafka.enabled` / `EXTRACTION_KAFKA_ENABLED` | `false` (workers poll the store queue) |
@@ -542,7 +561,7 @@ mvn -B verify
 | Crawler identity | `extraction.web.user-agent` | `MoDocumentBot/1.0 (+https://example.com/bot)` — set a real contact URL |
 | Crawl politeness | `extraction.web.default-delay-millis` (robots crawl-delay always honored) | `1000` |
 | Crawl caps | `extraction.web.max-pages-default` / `max-depth-default` | 100 pages, depth 2 |
-| JS rendering | `extraction.web.render-js-enabled` (needs Playwright browsers) | `false` |
+| JS rendering | `extraction.web.render-js-enabled` — no effect since v1.2.0 (Playwright removed) | `false` |
 
 LLM calls go through [Spring AI](https://docs.spring.io/spring-ai/reference/); the
 legacy `aifiles.openai.*` keys are bridged into the Spring AI OpenAI auto-configuration,
@@ -565,7 +584,7 @@ the template-classification snippet. Plain numbers/dates in non-sensitive column
 deliberately stay raw so format cleanup still works.
 
 Boundaries to know: document-to-table extraction (`TableExtraction` / `POST
-/Transform`), vision OCR, and the raw `POST /api/aifiles/send` passthrough inherently
+/Transform`) and vision OCR inherently
 send document content to the LLM — finding values in raw text *is* their job.
 Tokenized cells cannot be content-reformatted by the model (it never sees them), and
 prose summaries may paraphrase a placeholder — which degrades to vagueness, never to a
@@ -624,18 +643,16 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 | `POST /api/extraction/jobs/{id}/bridge` | Hand records to the document pipeline (auto-map + validate → standard ingestion job) |
 | `POST /api/extraction/jobs/{id}/infer-schema` | Suggest a template schema from sample records (LLM; code inference when the AI is unavailable, `generatedBy`) |
 | `GET /api/extraction/jobs/{id}/summary` | Short human summary of the run (LLM; counter-based when the AI is unavailable, `generatedBy`) |
-| `GET /api/extraction/metrics` | Queue depth, compliance counters, worker pool state |
+| `GET /api/extraction/metrics` | Queue depth, compliance counters, worker pool state (deprecated in 1.2.0) |
 
 ### Legacy pipeline & utilities
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/fileupload/upload` | Multipart upload to `wwwroot/uploads/` |
-| `POST /api/transform/transform` | Classify a file against a template and extract fields to JSON via the LLM |
-| `POST /api/automapper/generate` | LLM column-to-schema mapping |
+| `POST /api/fileupload/upload` | Multipart upload to `wwwroot/uploads/` (deprecated in 1.2.0) |
+| `POST /api/automapper/generate` | LLM column-to-schema mapping (deprecated in 1.2.0) |
 | `POST /Validation/validate` | Run rows through a template's rule engine |
-| `POST /api/aifiles/send` | Send a raw prompt to the chat model |
-| `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*` | Legacy CRUD |
+| `/ProcessStep/*`, `/ImportHistory/*`, `/ImportDetails/*` | Legacy CRUD (partly deprecated in 1.2.0) |
 
 ### Document creation
 
@@ -692,8 +709,9 @@ curl -X POST localhost:8080/api/ingestion/jobs/1/chat-edit -H 'Content-Type: app
 # 5. export — download a file, or push to your own database
 curl -OJ "localhost:8080/api/ingestion/jobs/1/export/file?format=xlsx"
 curl -X POST localhost:8080/api/ingestion/jobs/1/export/database -H 'Content-Type: application/json' \
-     -d '{"jdbcUrl": "jdbc:postgresql://myhost:5432/staging",
-          "username": "loader", "password": "***", "tableName": "Contacts", "createTableIfMissing": true}'
+     -d '{"vendor": "POSTGRESQL", "host": "myhost", "port": 5432, "database": "staging",
+          "sslmode": "require", "username": "loader", "password": "***",
+          "tableName": "Contacts", "createTableIfMissing": true}'
 ```
 
 If a stage fails (LLM outage, unreadable scan, ...), the job stores the error and stays
@@ -837,18 +855,17 @@ service (the bundled `postgres` service is then unnecessary).
     defaults); the host port is bound to `127.0.0.1` only.
   - `docling` (optional, `--profile docling` + `DOCLING_BASEURL=http://docling:5001`):
     [docling-serve](https://github.com/docling-project/docling-serve) on port 5001 for
-    rich layout-aware conversion — not needed for the standard flow. Note
-    the slim app image has no native Tesseract, so the local OCR fallback silently
-    disables itself there — but with `AIFILES_OPENAI_APIKEY` set the container still
-    gets full-quality image/scan OCR via the vision model, even without docling.
+    rich layout-aware conversion — not needed for the standard flow. The app
+    image ships Tesseract (`tesseract-ocr` + English traineddata, v1.2.0) for the
+    local OCR fallback on scanned PDFs; with `AIFILES_OPENAI_APIKEY` set the
+    container also gets image/scan OCR via the vision model, even without docling.
   - `mongodb` + `kafka` (optional, `--profile extraction`): the extraction store and
-    work-distribution bus. Run `APP_PROFILES=scale docker compose --profile
-    extraction up --build` to switch the app onto them. JS rendering (Playwright) is
-    off in the container image — the crawler uses plain HTTP there; install the
-    Playwright browsers locally (`npx playwright install chromium` or
-    `mvn exec:java -e -D exec.mainClass=com.microsoft.playwright.CLI -D
-    'exec.args=install chromium'`) and set `extraction.web.render-js-enabled=true`
-    to enable it in local runs.
+    work-distribution bus. Run `APP_PROFILES=scale APP_MAVEN_PROFILES=scale docker
+    compose --profile extraction up --build` to switch the app onto them: the
+    default build ships neither client (v1.2.0, Maven profile `scale`; locally
+    `mvn -Pscale spring-boot:run`), and a default jar started with the `scale`
+    profile stops with a message saying so. The crawler fetches pages over plain
+    HTTP (JavaScript rendering was removed in v1.2.0).
 
 ## Production deployment checklist
 
@@ -902,8 +919,11 @@ installed). Whatever hosting you use, the application-level checklist is:
   `GET /api/probe/synthetic` (build version + one database round trip through
   the whole proxy → app → DB path). SLA and probe/status-page plan:
   [`docs/security/sla-and-status.md`](docs/security/sla-and-status.md).
-- **Files** — mount a volume at the storage root (`MODOCUMENT_STORAGE_ROOT`,
-  default `wwwroot/`) so uploads and export copies survive restarts.
+- **Files** — on ECS the app keeps uploads, export copies and doc assets in an
+  S3 bucket (`MODOCUMENT_STORAGE_BACKEND=s3`, SSE-KMS, versioned, TLS-only —
+  `infra/terraform/modules/file-store`, v1.2.0), so they survive task
+  replacement and every task sees them. Elsewhere mount a volume at the storage
+  root (`MODOCUMENT_STORAGE_ROOT`, default `wwwroot/`).
 - **Backups** — nightly snapshots with 90-day retention and a cross-region
   copy into a **locked** vault (`infra/terraform/modules/backups`); flip the
   irreversible locks only after the restore drill passes (gate D6).
@@ -958,4 +978,7 @@ column); the owner executes and files the evidence. Status detail and dates:
 | SEC-031 | SIEM reference test (one detection end-to-end with a bank's real SIEM) | Rushal Seeruthun | alert received from a staged `ACCOUNT_LOCKED` burst | **App side done (ws18):** bank-scoped feed `GET /api/siem/events` + signed single-bank push ([`docs/security/siem-event-schema.md`](docs/security/siem-event-schema.md), `SiemFeedE6Test`) and the alert channels (`AlertingGateD1Test`); infra side: metric filter + alarm in [`modules/security-monitoring`](infra/terraform/modules/security-monitoring) |
 | A8 | **Branch protection switched on** + seeded-vulnerable-PR drill | Bhavish Nobeen | ruleset screenshot/export + the blocked drill PR | settings and drill runbook in [`docs/security/branch-protection.md`](docs/security/branch-protection.md); the CI gauntlet and CODEOWNERS already exist (ws19) |
 | SEC-038 | Certification path decision (ISO 27001 / SOC 2) | Reezvi Pydiah | decision memo | evidence pack under [`docs/security/`](docs/security/) is structured to serve either |
+| ws29 | **S3 file store live**: apply `modules/file-store` (bucket, CMK, task-role policy, `MODOCUMENT_STORAGE_*` env) per environment, deploy, then upload → parse → export → doc generate on staging; the `storage-s3` CI job (S3Mock contract suite) green | Bhavish Nobeen | bucket listing with the new objects + the staging smoke run | [`modules/file-store`](infra/terraform/modules/file-store), [`docs/release/runbook.md`](docs/release/runbook.md) §14 |
+| ws29 | **Image checks on a Docker host**: Tesseract reports available (`OcrService`), the AppCDS archive is mapped, startup time before/after — not measurable in the dev sandbox (no Docker daemon) | Bhavish Nobeen | `docker run` log lines + timings | Dockerfile, [`docs/release/runbook.md`](docs/release/runbook.md) §14 |
+| ws29 | **uploads/ storage-side expiry**: blueprints and assets of documents still being edited share `uploads/` with customer uploads, so the bucket's 30-day expiry covers `exports/` only; give them their own prefix, then set `uploads_expiry_days = 30` | Bhavish Nobeen | lifecycle rule applied | `uploads_expiry_days` in [`modules/file-store`](infra/terraform/modules/file-store) |
 | ws26 | **Per-bank private connectivity** (site-to-site VPN or AWS PrivateLink) for DIRECT-mode integrations. Implement it per bank at onboarding, only when the bank does not run the on-prem Connector Agent | Bhavish Nobeen (with each bank's network team) | VPN/endpoint configuration + the approved `BankEgressRule` rows | `bank_egress_cidrs` SG seam in [`modules/network`](infra/terraform/modules/network); the agent alternative needs no inbound path ([`docs/integration/agent.md`](docs/integration/agent.md)) |

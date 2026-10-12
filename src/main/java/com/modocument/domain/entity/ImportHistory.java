@@ -14,6 +14,8 @@ import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
 
+// ws28: an initialized Hibernate proxy (LAZY association) serializes like the entity.
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Entity
 @Table(name = "ImportHistory")
 public class ImportHistory {
@@ -44,7 +46,7 @@ public class ImportHistory {
     @Column(name = "TemplateId")
     private int templateId;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY) // ws28: fetched by the repositories that need it
     @JoinColumn(name = "TemplateId", insertable = false, updatable = false)
     private Template template;
 

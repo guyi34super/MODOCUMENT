@@ -1,201 +1,225 @@
 # Design note: one connector library for the server and the agent
 
-Status: **proposal for a later release**. Nothing in this note is built yet.
+Status: **built in 1.2.0** (optimization round, Wave 2), as option B below.
 Owner: SE4 (connectors), with SE5 (agent, CI, release) and the Supervisor
 (`pom.xml`, workflows).
 
-## 1. Problem
+## 1. Problem (before 1.2.0)
 
-The bank integration hub has two copies of every connector.
+The bank integration hub had two copies of every connector.
 
 | Concern | Server (`src/main/java/.../infrastructure/integration/connector/`) | Agent (`agent/src/main/java/.../agent/exec/`) |
 |---|---|---|
 | SPI | `application/port/integration/IntegrationConnector` (validate, test, read, write) | `Connector` (authorize, test, read, write) |
 | DATABASE | `DatabaseIntegrationConnector` + `DbDialect` + `export/JdbcIdentifiers` (≈ 790 lines) | `DatabaseConnector` (≈ 510 lines) |
-| REST_API | `RestApiIntegrationConnector` + `OutboundHttp` + `TlsMaterial` (≈ 820 lines) | `RestConnector` (≈ 270 lines) |
+| REST_API | `RestApiIntegrationConnector` + `OutboundHttp` + `TlsMaterial` (≈ 820 lines) | `RestConnector` (≈ 500 lines) |
 | SFTP | `SftpIntegrationConnector` (≈ 500 lines) | `SftpConnector` (≈ 330 lines) |
 | WEBHOOK | `WebhookIntegrationConnector` + `WebhookSigner` | none (DIRECT only) |
 | Wire shapes | `ConnectionContext`, `SecretMaterial`, `ReadBatch`, `OutboundBatch`, `WriteResult`, `AgentSftpFile` | `cloud/Protocol` records, hand-written SFTP record maps |
 | Destination check | `EgressGuard` (bank egress rules, SE1) | `AllowList` (bank-owned `allowlist.yml`) |
 
-The copies have already drifted:
-
-- **REST pagination.** The server supports `NONE`, `PAGE`, `CURSOR` and
-  `LINK`. The agent supports `NONE` only and refuses the rest.
-- **SFTP read semantics.** The server moves or deletes each file while it
-  reads it. The agent defers `MOVE`/`DELETE` until MoDocument has accepted
-  the records. The agent's way is the safer one: a failed upload does not
-  lose the file.
-- **Oversized SFTP files.** The server skips them with a WARN. The agent
-  fails the run.
-- **SFTP record shape.** Wave 4 pinned it in `AgentSftpFile`, but the
-  agent still writes the map by hand.
-
-Every security rule must be kept twice: identifiers only (never free SQL),
-paths confined to the configured folder, a pinned SSH host key, timeouts on
-every call, and secrets kept out of messages. Each fix must land twice,
-and each copy needs its own tests.
+The copies had drifted (section 6 lists every difference and how it was
+resolved), and every security rule — identifiers only, paths confined, a
+pinned SSH host key, timeouts on every call, secrets kept out of messages —
+had to be kept, fixed and tested twice.
 
 ## 2. Goal and non-goals
 
 **Goal:** one implementation of the DATABASE, REST_API, SFTP and WEBHOOK
 connectors, used by the server for DIRECT connections and by the agent for
-AGENT connections, with one contract test suite.
+AGENT connections.
 
-**Non-goals:**
+**Non-goals (kept):**
 
 - Changing the agent protocol (`/api/agent/v1`, contracts §7.4). Agents of
-  release N keep working with a server of release N+1.
-- Putting Spring into the agent's connector code.
-- Moving the application's `src/` (see option C, section 3).
+  release N keep working with a server of release N+1; the SFTP record
+  shape is unchanged.
+- Spring in the connector code.
+- Moving the application's `src/` (option C).
+- Changing the integration API, the DB schema or the server's
+  `IntegrationConnector` SPI.
 
 ## 3. Packaging options
 
 | Option | Shape | Main cost | Verdict |
 |---|---|---|---|
 | A. Copy-and-sync | Keep two copies, add a parity test | Drift continues; every fix still lands twice | Rejected |
-| **B. Sibling Maven project** | `connector-core/` with its own `pom.xml`, next to `agent/`. Both builds depend on `com.modocument:modocument-connector-core:${version}`. CI installs it into the local repository first. | One extra build step per job; Docker builds need the core sources | **Recommended** |
+| **B. Sibling Maven project** | `connector-core/` with its own `pom.xml`, next to `agent/`. Both builds depend on `com.modocument:modocument-connector-core:${project.version}`. It is installed into the local repository first. | One extra build step per job; Docker builds need the core sources | **Built (1.2.0)** |
 | C. Root reactor | Root `pom.xml` becomes an aggregator; the app moves to `app/`, with modules `connector-core`, `app`, `agent` | Moves every app path (Dockerfile, CI, semgrep and gitleaks paths, IDE settings, `docs/` links); large merge risk | Later, if ever |
 
-Option B fits the current rule (contracts §7.5: `agent/` is a standalone
-Maven project, not a reactor module). It can become option C later without
-code changes.
+A root aggregator *without* moving the app (the root pom listing
+`connector-core`, itself and `agent` as modules) is not possible: the root
+pom IS the app (`packaging jar`), and an aggregator must be `packaging pom`.
+Option B keeps contracts §7.5 (`agent/` is a standalone Maven project, not a
+reactor module) and can become option C later without code changes.
 
-## 4. Module layout (`connector-core/`)
+## 4. As built
 
 ```
 connector-core/
-  pom.xml                     groupId com.modocument, artifactId modocument-connector-core,
-                              version = the release version (check-version-sync.sh)
-  src/main/java/com/modocument/connector/
-    spi/        Connector (= today's IntegrationConnector), ConnectionContext, SecretMaterial,
-                ReadBatch (+ InboundFile), OutboundBatch, WriteResult, ConnectionTestResult,
-                DestinationGuard, ReadAcknowledgement
-    model/      ConnectionType, ConnectionMode, DbVendor, DbWriteMode, OutboundAuthType,
-                PayloadFormat, PayloadKind (moved from domain/model/integration)
-    wire/       AgentSftpFile, the AgentTask / OutboundBatch JSON records of the agent protocol
-    support/    ConnectorLimits, ConnectorErrors (+ the LogSafe scrubbing the messages need),
-                Specs, JsonFlattener
-    db/         DatabaseConnector, DbDialect, JdbcIdentifiers
-    rest/       RestApiConnector, OutboundHttp, TlsMaterial
-    sftp/       SftpConnector
-    webhook/    WebhookConnector, WebhookSigner
-  src/test/java/com/modocument/connector/
-    contract/   ConnectorContractSuite: abstract JUnit 5 suites, published as a test-jar
+  pom.xml          com.modocument:modocument-connector-core, the release version
+                   (check-version-sync.sh / bump-version.sh). Plain Java 21, NO
+                   Spring: jackson-databind, sshd-sftp (2.15.0, as both consumers),
+                   slf4j-api. Versions come from the Spring Boot 3.5.3 BOM as a
+                   version table only, so all three builds resolve the same ones.
+                   JDBC drivers stay in the consuming builds (no driver licences).
+  src/main/java/com/modocument/connector/core/
+    spi/      Connector (validate, authorize, test, read, write), ConnectionContext,
+              ConnectionType, Operation, SecretMaterial, DestinationGuard,
+              ReadBatch (+ InboundFile, notes), ReadAcknowledgement,
+              OutboundBatch (+ chunks, batchSize), WriteResult, ConnectionTestResult
+    support/  ConnectorLimits, ConnectorErrors, Redaction, Specs, JsonFlattener
+    db/       DatabaseConnector, DbDialect, DbIdentifiers, DbTarget
+    rest/     RestApiConnector, OutboundHttp, OutboundAuthType, TlsMaterial
+    sftp/     SftpConnector
+    webhook/  WebhookConnector, WebhookSigner
+    wire/     AgentSftpFile (the agent protocol's SFTP record, one class for both)
+  src/test/java/...   the resolved-drift tests (section 6), on H2, an embedded
+                      MINA SSHD server and a JDK HttpServer stub
 ```
 
-Dependencies are compile scope unless noted:
+**Server** (`infrastructure/integration/connector/`): the four
+`@Component` beans keep the `IntegrationConnector` SPI and their
+constructors, and are thin adapters: `CoreBridge` maps the server's records
+to the library's and back, `OutboundHttp` holds the one library
+`OutboundHttp` (the OAuth2 token cache) of the application,
+`IntegrationConnectorProperties` builds the `ConnectorLimits`, and
+`ConnectorErrors` adds the server's full PII scrub (`LogSafe`) to the
+library's messages. `export/JdbcIdentifiers`, `export/DatabaseExportService`
+and the extraction REST connector use the library's identifier rule,
+dialects and `JsonFlattener`. The domain enums stay (JPA stores them); the
+library has its own, mapped by name.
 
-- `jackson-databind`
-- `sshd-sftp` (MINA SSHD, the version pinned today in both poms)
-- `slf4j-api`
-- `java.sql`, from the JDK
+**Agent** (`agent/exec/`): `CoreConnector` is the one adapter
+(task → `ConnectionContext`, results → what `TaskExecutor` reports);
+`DatabaseConnector`, `RestConnector` and `SftpConnector` only pick the
+library connector and the agent's page caps (500 database rows per
+watermark page, 1000 REST records: one records POST). The agent's limits:
+10 s connect, 120 s per call (the bank database's query timeout), 50 MB
+files, 20 MB responses, plain `http://` allowed (the server's connection
+validation decides what a flow may target).
 
-There is no Spring. JDBC drivers stay in the consuming builds (runtime
-scope), so the library carries no driver licences.
+### The seams
 
-### Two seams decide the design
-
-1. **`DestinationGuard`** replaces both `EgressGuard` and the agent's
-   `AllowList`:
+1. **`DestinationGuard`** (both `EgressGuard` and the agent's `AllowList`):
 
    ```java
    public interface DestinationGuard {
-       void checkHost(String host, int port);              // server: bank egress rules
-       default void checkTable(String qualifiedName) { }   // agent: allow-list tables
-       default void checkFolder(String folder) { }         // agent: allow-list SFTP folders
-       default void checkPath(String baseUrl, String path) { }  // agent: allow-list REST prefixes
+       void checkHost(String host, int port);              // right before every connection
+       default void checkTable(String qualifiedName) { }   // [schema.]table, as the spec names it
+       default void checkFolder(String folder) { }         // absolute, normalized SFTP folder
+       default void checkPath(String path) { }             // absolute REST request path
    }
    ```
 
-   The server adapts `EgressGuard` (bank id taken from the
-   `ConnectionContext`). The agent adapts `AllowList`. The connectors call
-   it before opening a connection or resolving a secret, so the agent's
-   fail-closed rule is kept.
+   The server's guard is `EgressGuard.checkDestination(bankId, host, port)`
+   for the context's bank (host checks only). The agent's is its
+   `AllowList` (all four). The connectors ask `checkHost` right before every
+   connection (database, SFTP, every HTTP request including an OAuth2 token
+   call). `Connector.authorize(context, spec, operation)` is the fail-closed
+   pre-flight the agent runs BEFORE it resolves the secret: host, then the
+   table / folder / path the operation touches, then the validation — so a
+   refused resource is reported as refused even when its name is not valid.
 
 2. **Two-phase reads.** `read(...)` returns the batch plus a
-   `ReadAcknowledgement`. The caller runs it after the records are safely
-   stored: the server after the ingestion job exists, the agent after
-   `POST /runs/{id}/records` answered 204. This adopts the agent's safer
-   SFTP behaviour on the server too. For DATABASE and REST reads the
-   acknowledgement does nothing. An oversized file becomes one rule, set in
-   `ConnectorLimits`: skip and report it in `ReadBatch.notes`.
+   `ReadAcknowledgement`. The caller acknowledges the files it has safely
+   stored: the server's `FlowRunner` the files whose ingestion job exists,
+   the agent the whole page once `POST /runs/{id}/records` answered. Only
+   acknowledged files are moved to `processed/` or deleted; a failed move
+   fails the run ("they will be read again"). On the server a file that
+   cannot be ingested (an unsupported type, say) stays in the folder, no
+   longer holds back the files after it, and fails the run with its reason
+   (before 1.2.0 it was moved to `processed/` and the run stopped there).
+   DATABASE and REST reads have nothing to acknowledge.
 
-## 5. What changes in each build
+3. **Secrets** (`SecretMaterial`, a one-method interface). The server
+   passes the vault material `IntegrationConnectors` opened; the agent its
+   `LocalSecrets` secret (a single unnamed secret answers any key; `contains`
+   tells real keys apart). `ConnectionContext.secretRequired`: true for the
+   server's DIRECT connections (validation demands the keys the auth type
+   needs, as before); false for AGENT connections on the server and in the
+   agent, where a missing key fails at call time ("The connection secret
+   has no 'token'.") and a database password stays optional.
 
-**Server (`pom.xml`, SE4 plus the Supervisor):**
+4. **Tenant** (`ConnectionContext.tenant`): the partition key of the OAuth2
+   token cache (the server passes the bank id, as its cache key did before).
 
-- Add the dependency on `modocument-connector-core`.
-- `infrastructure/integration/connector/*` shrinks to a `@Configuration`.
-  It builds the four connectors from `IntegrationConnectorProperties`, an
-  `EgressGuard` adapter and the `ObjectMapper`.
-- `application/port/integration` keeps the server-only ports:
-  `SecretVault`, `RecordsIngestion`, `IntegrationEventLog`, `AgentRunPort`
-  and `CurrentClientProvider`. Their signatures switch to the library's
-  `spi` types; this is a mechanical import change.
-- The enums leave `domain/model/integration`. JPA keeps storing them by
-  name, so there is no migration.
+## 5. Build wiring
 
-**Agent (`agent/pom.xml`, SE5):**
+| Where | What |
+|---|---|
+| Local | `mvn -B -f connector-core/pom.xml install` once (and after changing it), then `mvn -B verify`, `mvn -B -f agent/pom.xml verify` as before. `mvn -B -f connector-core/pom.xml verify` runs the library's tests. |
+| `Dockerfile` (context `.`) | `COPY connector-core` and install it (cache mount) before `dependency:go-offline`; the package step installs it again (a no-op on a warm cache, correct if BuildKit dropped the mount). `.dockerignore` keeps `connector-core/target` out. |
+| `agent/Dockerfile` (context `agent/`) | The core sources come in as the NAMED build context `connector-core`, which replaces a stage of that name: `docker buildx build --build-context connector-core=connector-core agent`. Without it the build stops at that stage with this hint. |
+| `ci.yml` | New job `connector-core` (`verify`). `build-and-test`, `backend-postgres`, `storage-s3` and `agent` install it first (`-DskipTests`); the agent job's Maven cache keys on both poms. |
+| `release.yml` | The agent image gets `--build-context connector-core=connector-core`; the agent jar step installs the core first. The API image needs nothing (its context holds the core). |
+| `sbom.yml` | Installs the core first; the backend BOM lists `com.modocument:modocument-connector-core` with its dependencies. The release's Trivy image SBOMs list it too (the jar is in both fat jars). |
+| Versions | `scripts/version-lib.sh` `SIBLING_POMS="agent/pom.xml connector-core/pom.xml"`: `check-version-sync.sh` checks both, `bump-version.sh` moves both. The consumers depend on `${project.version}`. |
+| Others | `e2e/run-local.sh` installs it first; Dependabot watches `/connector-core` (and `/agent`). |
 
-- `exec/DatabaseConnector`, `RestConnector` and `SftpConnector` are
-  deleted.
-- `TaskExecutor` maps `Protocol.AgentTask` to a `ConnectionContext`, with
-  the secret from `LocalSecrets` turned into `SecretMaterial`. It wraps
-  `AllowList` as a `DestinationGuard`.
-- `Protocol` reuses `wire/` records where the JSON is identical.
-- The agent gains REST pagination for free.
+The library is **not published** to a registry: it is embedded in both fat
+jars, and the agent jar on the GitHub Release stays a single file.
 
-## 6. CI
+## 6. Resolved drift
 
-`ci.yml` (SE5):
+Rule used: **validation follows the server.** Every flow spec — AGENT ones
+included — is validated by the server's connector when it is saved and
+before every run (`IntegrationFlowUseCase`), so the agent only ever received
+specs that pass the server's rules; adopting them changes nothing for stored
+flows. Runtime behaviour takes the safer or more complete side. Each row is
+pinned by tests in `connector-core` (and the existing suites on both sides).
 
-| Job | Today | After |
-|---|---|---|
-| `connector-core` (new) | none | `mvn -B -f connector-core/pom.xml install`: unit tests plus the contract suites against Testcontainers PostgreSQL and MariaDB, the MINA SSHD test server and a JDK HttpServer stub. Oracle and SQL Server stay in the existing vendor job. |
-| `build-and-test` | `mvn -B verify` | first `mvn -B -q -f connector-core/pom.xml install -DskipTests`, then the same |
-| `backend-postgres` | `mvn -B verify -Ppostgres-it` | same pre-step |
-| `agent` | `mvn -B -f agent/pom.xml verify` | same pre-step; the agent runs `ConnectorContractSuite` from the test-jar against its adapters |
+| # | Drift | Before (server / agent) | 1.2.0, both sides | Pinned by |
+|---|---|---|---|---|
+| 1 | REST pagination | server PAGE stopped at a page shorter than `min(maxRecords, pageSize or 100)` even when no size was configured; agent read on until an empty page | the agent's rule: a short page ends the run only when a size is configured (`sizeParam` or `pageSize`), otherwise only an empty page does | `RestApiConnectorTest.pageWithoutAConfiguredSize…`, `…WithAConfiguredSize…`; agent `RestConnectorPaginationTest` |
+| 2 | REST next link | server: same origin; agent: same origin AND path | same origin AND the configured path, no fragment, ≤ 1000 characters; refused with a `SecurityException` (the agent threw `IllegalArgumentException`) | `RestApiConnectorTest.aNextLinkMustKeepTheConfiguredPath`, server `aNextLinkToAnotherHostIsRefused`, agent `aNextLinkToAnotherHostOrPathIsRefused` |
+| 3 | REST cursor / paths | server: no cursor length cap, no `$.`; agent: 1000-character cap, `$.` accepted | both: cap 1000, `$.` accepted in `cursorPath` and `recordsPath` (also in the extraction connector's `JsonFlattener`) | `RestApiConnectorTest.anOverlongCursorEndsTheRun`, `pageWithoutAConfiguredSize…` (`$.data`) |
+| 4 | REST records and auth | server: records flattened to text, all six auth types, raw file push; agent: nested JSON values, NONE/BASIC/BEARER/API key only, records only | the server's: flattened records, OAuth2 and MTLS now on the agent too, a file batch is pushed as the file | `RestApiConnectorTest.aFileBatchIsPushedAsTheRawFile`, server REST/MTLS suites |
+| 5 | SFTP move/delete timing | server moved or deleted while reading; agent after MoDocument accepted the records | **two-phase** (section 4): only acknowledged files move; on the server per file whose ingestion job exists — a file that cannot be ingested stays and fails the run, the others go through | `SftpConnectorTest.aReadMovesOnlyTheAcknowledgedFiles`, server `SftpIntegrationConnectorTest`, agent `readsMatchingFilesAndMovesThemOnceAccepted` |
+| 6 | Oversized SFTP file | server skipped it with a WARN; agent failed the run | skipped, left in place, reported in `ReadBatch.notes` (server: WARN log + run log; agent: WARN log) — one big file no longer blocks the folder | `SftpConnectorTest.anOversizedFileIsSkipped…`, server `readMatchesTheGlob…` |
+| 7 | SFTP details | agent: absolute spec folders under the base, spaces in names, `.name.part` temp files overwritten on retry, full-path `remoteReference`, `remotePath` = file name, password-or-key by secret content, no passphrase; server: relative folders only, `.tmp-<uuid>`, an existing final name = already delivered, `remotePath` relative to the base | the server's rules; `remotePath` relative to the connection folder (`inbox/a.csv`); the auth pick: `sftpAuth` (or legacy `authType PRIVATE_KEY`), else a secret holding only a `privateKeyPem` uses it, else the password. The SSH client reads no `~/.ssh` config or default keys (the agent's hardening) | `SftpConnectorTest.withoutAnAuthSetting…`, `writesAreAtomicAndIdempotent`, agent `SftpConnectorTest` |
+| 8 | DATABASE identifiers | server: quoted per vendor, `[A-Za-z_][A-Za-z0-9_]*`, schema from the connection; agent: unquoted, `$` allowed, `schema.table` in the spec | the server's: quoted (so **case-sensitive**: on Oracle name the view in upper case, as on DIRECT), schema from the connection's `schema`; the allow-list still sees `schema.table` | `DatabaseConnectorTest.authorizeAsksTheGuard…`, agent `DatabaseConnectorSqlTest`, server `identifierInjectionIsRefused…` |
+| 9 | DATABASE paging | server: `setMaxRows(max)`, "more" when a page was full; agent: SQL `LIMIT`/`TOP`/`FETCH FIRST` + 1 | `SELECT` without a vendor limit clause, `setMaxRows(max + 1)`: the look-ahead row only says whether more exists (no empty extra page) | `DatabaseConnectorTest.aPageOfExactlyMaxRows…` |
+| 10 | DATABASE cursor | server `N:/T:/Z:/D:/S:`, agent `n:/ts:/tz:/d:/s:` | written as `N:/T:/Z:/D:/S:`; the agent's old prefixes (and untyped values) still bind, so cursors stored by older agents keep working | `DatabaseConnectorTest.cursorsAreTyped…`, agent `AgentEndToEndTest` (`ts:` cursor) |
+| 11 | DATABASE values | server: text, binary dropped; agent: native JSON types, binary as base64 | text (numbers as their plain string, timestamps ISO), binary columns not record data | `DatabaseConnectorTest.valuesArriveAsText…` |
+| 12 | DATABASE writes | server: nested values `toString()`, 500-row transactions (dispatcher); agent: nested values as JSON, one transaction per payload | nested values as JSON text; the agent chunks writes like the server's dispatcher (`OutboundBatch.chunks`: `batchSize`, else 100 REST / 500 DATABASE rows, keys `<key>-<n>`) | `DatabaseConnectorTest.nestedRecordValues…`, `SupportTest.writeChunks…` |
+| 13 | DATABASE connection | agent: `DriverManager` discovery, `sslmode` for PostgreSQL/MariaDB only, Oracle `@//host`; server: the vendor's driver class, allow-listed options with the `sslmode` translation, `@tcp://host` | the server's | agent `DatabaseConnectorSqlTest.jdbcUrls…`, server `urlsAreBuiltPerVendor…` |
+| 14 | Timeouts and caps | agent: 10 s connect, 60 s REST, 120 s SQL, 20 s SFTP; server: `ConnectorLimits` (10 s / 30 s by default) | `ConnectorLimits` everywhere; the agent's are 10 s / 120 s, 50 MB files, 20 MB responses | `CoreConnector.LIMITS` |
+| 15 | Error messages | agent: raw exception text, masked against local secret values | the library's `ConnectorErrors` / `Redaction` (credential shapes) on test results; the agent still masks its secret values, the server adds its PII scrub | `SupportTest.errorMessagesAreClassified…`, agent `SecretsNeverLoggedTest` |
 
-The pre-step takes about 20 s with a warm `~/.m2` cache. The `cache-dependency-path`
-of each job adds `connector-core/pom.xml`. `scripts/check-version-sync.sh`
-and `scripts/bump-version.sh` add `connector-core/pom.xml` to the files
-they keep in step.
+## 7. Measured
 
-## 7. Release and Docker impact
+Main code (tests and docs excluded), `git diff --numstat` against the
+Wave 1 head:
 
-- **Images.** The app Dockerfile copies `connector-core/` and installs it
-  in the build stage before `mvn package`. The agent image's context is
-  `agent/` today. It needs the core sources too, so `release.yml` passes a
-  BuildKit named context:
-  `docker buildx build --build-context core=connector-core agent`, and
-  `agent/Dockerfile` adds `COPY --from=core . /core` plus an install step.
-  The release pipeline still builds each image once.
-- **Artifacts.** The library is **not published** to a registry. It is an
-  internal module embedded in both fat jars. The agent jar attached to the
-  GitHub Release stays a single file.
-- **SBOM.** Both CycloneDX SBOMs list `modocument-connector-core` with the
-  release version, and its transitive dependencies (they are the same as
-  today's). Trivy policy is unchanged.
-- **Compatibility.** The wire protocol does not change. Agents of the
-  previous release keep working, and banks see the change only as REST
-  pagination support after upgrading the agent. `agent/README.md` and
-  this folder's `agent.md` lose their "own minimal connectors" caveat.
-- **No database change.** Rollback is the normal image rollback.
-
-## 8. Plan (one PR per step, each releasable on its own)
-
-| Step | Content | Behaviour change | Gate |
+| | Removed | Added | Net |
 |---|---|---|---|
-| 0 (done, Wave 4) | Pin the agent SFTP record shape (`AgentSftpFile`). Agent deliveries are audited as `EXPORT_RUN` like DIRECT ones. | none | existing |
-| 1 | Create `connector-core` with `spi/`, `model/`, `wire/` and `support/`. The server depends on it. Add the CI pre-steps and the version-sync entry. | none | full server suite |
-| 2 | Move the four server connectors into the library behind `DestinationGuard`. Add the contract suites. Introduce two-phase reads on the server. | server SFTP moves files after ingestion | full suite plus vendor ITs plus the bank-simulator E2E (pull, process, push) |
-| 3 | The agent switches to the library and its `exec/` copies are deleted. The agent runs the contract suite. | agent gains REST pagination | agent suite plus E2E through the agent |
-| 4 (optional) | Root reactor (option C) | none | full CI |
+| Server (`src/main`) | 2,580 | 241 | −2,339 (the connector package: 2,691 → 516 lines) |
+| Agent (`agent/src/main`) | 1,358 | 256 | −1,102 (connectors: 1,455 → 349 lines) |
+| `connector-core/src/main` | — | 3,474 | +3,474 (≈ 890 of it moved unchanged: `DbDialect`, `Specs`, `TlsMaterial`, `WebhookSigner`, `ConnectorLimits`, `JsonFlattener`, `AgentSftpFile`) |
+| **Total** | **3,938** | **3,971** | **+33** |
 
-Effort: about 2 days for step 1, 3–4 days for step 2 (mostly tests) and
-2 days for step 3.
+Tests: `connector-core` 25 new (748 lines); the server's connector suites
+unchanged apart from imports and the acknowledgement step in
+`SftpIntegrationConnectorTest`; the agent's 41 kept (three rewritten for
+the resolved drift, section 6).
 
-The main risk is in step 2. The server's SFTP behaviour changes (moving
-files later), so QA re-tests the inbound SFTP flow against the bank
-simulator with an ingestion failure in the middle of a run.
+**Duplication left** (none of it connector logic):
+
+- the record types at the edges: the server's SPI records and domain enums,
+  mapped by `CoreBridge` (61 lines); the agent's `Protocol.OutboundBatch`
+  wire record, mapped in `CoreConnector`;
+- `OutboundDispatcher.chunks` (server record types, ≈ 20 lines) mirrors
+  `OutboundBatch.chunks`; its `batchSize` already delegates;
+- `DatabaseExportService.translateSslMode` (≈ 20 lines) mirrors the
+  connector's (it overrides explicit options where the connector keeps
+  them);
+- `Redaction`'s three credential patterns repeat three of `PiiPatterns`'.
+
+## 8. Next steps (optional)
+
+- A contract test suite published as a test-jar, run by both consumers
+  against their adapters.
+- Move the server's SPI records to the library's `spi` types (a mechanical
+  import change), then `CoreBridge` goes away.
+- Option C (root reactor) if the extra install step ever hurts.

@@ -9,19 +9,13 @@ import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.security.JwtService;
 import com.modocument.infrastructure.transform.code.ExtractionCorpus;
 import com.modocument.testsupport.StubAiServer;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.client.ResourceAccessException;
 
@@ -48,30 +42,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * blocks), which no deterministic fast path can read, so the AI is always
  * tried first.
  */
-@SpringBootTest(properties = "modocument.ai.http.read-timeout=2s")
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-class IngestionFallbackIntegrationTest {
+class IngestionFallbackIntegrationTest extends AiStubApiTestSupport {
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final StubAiServer AI = new StubAiServer();
-
-    @TempDir
-    static Path storageRoot;
-
     @TempDir
     Path documents;
-
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry registry) {
-        registry.add("modocument.storage.root", () -> storageRoot.toString());
-        registry.add("spring.ai.openai.base-url", AI::baseUrl);
-    }
-
-    @AfterAll
-    static void stopStub() {
-        AI.close();
-    }
 
     @Autowired
     private MockMvc mvc;
@@ -227,10 +202,12 @@ class IngestionFallbackIntegrationTest {
 
         assertExtractedByCode(job);
         assertThat(job.get("parseFallbackReason").asText()).isEqualTo("CIRCUIT_OPEN");
-        mvc.perform(post("/api/aifiles/send")
+        // ws28: /api/aifiles/send is gone; the automapper is another AI
+        // endpoint with no code path, so it answers the open circuit's 503.
+        mvc.perform(post("/api/automapper/generate")
                         .header("Authorization", auth)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"prompt\": \"hello\"}"))
+                        .param("extractedFields", "Date,Reference,Amount")
+                        .param("filename", job.get("fileName").asText()))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().exists("Retry-After"))
                 .andExpect(jsonPath("$.code").value("CIRCUIT_OPEN"));

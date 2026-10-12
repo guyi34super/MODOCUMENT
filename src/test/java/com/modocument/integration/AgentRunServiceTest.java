@@ -229,20 +229,20 @@ class AgentRunServiceTest extends IntegrationTestSupport {
 
     @Test
     void theSftpFileRecordIsOneSharedShape() {
-        com.modocument.application.port.integration.AgentSftpFile file =
-                com.modocument.application.port.integration.AgentSftpFile.of("stmt.csv", "inbox/stmt.csv",
+        com.modocument.connector.core.wire.AgentSftpFile file =
+                com.modocument.connector.core.wire.AgentSftpFile.of("stmt.csv", "inbox/stmt.csv",
                         "a,b\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         Map<String, Object> record = file.toRecord();
         assertThat(record).containsOnlyKeys("fileName", "remotePath", "size", "contentBase64");
-        assertThat(com.modocument.application.port.integration.AgentSftpFile.fromRecord(record, 1024))
+        assertThat(com.modocument.connector.core.wire.AgentSftpFile.fromRecord(record, 1024))
                 .isEqualTo(file);
         assertThat(file.decode(1024)).hasSize(4);
         assertThatThrownBy(() -> file.decode(3)).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("3-byte cap");
-        assertThatThrownBy(() -> com.modocument.application.port.integration.AgentSftpFile.fromRecord(
+        assertThatThrownBy(() -> com.modocument.connector.core.wire.AgentSftpFile.fromRecord(
                 Map.of("fileName", "a\\b.csv", "contentBase64", "YQ=="), 1024))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(com.modocument.application.port.integration.AgentSftpFile.fromRecord(
+        assertThat(com.modocument.connector.core.wire.AgentSftpFile.fromRecord(
                 Map.of("fileName", "a.csv", "contentBase64", "YQ=="), 1024).remotePath()).isEqualTo("a.csv");
     }
 }

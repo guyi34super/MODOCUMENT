@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { getTemplates } from '../api/cache';
+import { getHomeSummary } from '../api/dashboard';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Badge, Button, Callout, Card, Spinner } from '../components/ui';
@@ -54,7 +55,8 @@ const STEP_LABELS = {
 
 /** What this job is actually waiting on, using the gates the server reports. */
 function waitingOn(job) {
-  const unmapped = job.unmappedFields?.length ?? 0;
+  // A job summary (v1.2.0) carries the count; the full job, the field list.
+  const unmapped = job.unmappedFieldCount ?? job.unmappedFields?.length ?? 0;
   if (unmapped > 0) {
     return `${unmapped} field${unmapped === 1 ? '' : 's'} still to map`;
   }
@@ -65,36 +67,118 @@ function waitingOn(job) {
   return STEP_LABELS[job.currentStep] || '';
 }
 
+const byIdDesc = (a, b) => b.ingestionJobId - a.ingestionJobId;
+const byImportDateDesc = (a, b) => (b.importDate || '').localeCompare(a.importDate || '');
+
+/** Set once the server answered 404 for the summary: don't ask again this session. */
+let summaryUnavailable = false;
+
+/** Test hook. */
+export function resetSummaryProbe() {
+  summaryUnavailable = false;
+}
+
+/**
+ * The page's view model, from either source:
+ * { templateCount, templateNames: Map, ingestion:{total, byStatus, recent},
+ *   extraction:{total, running, failed}, imports:[recent] }.
+ */
+function fromSummary(summary, templateList) {
+  const templates = Array.isArray(summary?.templates) ? summary.templates : templateList || [];
+  const ingestion = summary?.ingestion || {};
+  const extraction = summary?.extraction || {};
+  return {
+    templateCount: Array.isArray(summary?.templates)
+      ? summary.templates.length
+      : Number(summary?.templates) || 0,
+    templateNames: new Map(templates.map((t) => [t.templateId, t.name])),
+    ingestion: {
+      total: Number(ingestion.total) || 0,
+      byStatus: ingestion.byStatus || {},
+      recent: [...(ingestion.recent || [])].sort(byIdDesc),
+    },
+    extraction: {
+      total: Number(extraction.total) || 0,
+      running: Number(extraction.running ?? extraction.byStatus?.RUNNING) || 0,
+      failed: Number(extraction.failed ?? extraction.byStatus?.FAILED) || 0,
+    },
+    imports: [...(summary?.imports?.recent || [])].sort(byImportDateDesc).slice(0, 8),
+  };
+}
+
+/**
+ * The pre-v1.2.0 path: four lists. Partial results beat a blank page — one
+ * failing endpoint used to leave the whole dashboard on a spinner forever,
+ * so each panel falls back to empty and the banner names what failed.
+ */
+async function loadLists() {
+  const sources = [
+    ['templates', () => getTemplates()],
+    ['ingestionJobs', () => api.get('/api/ingestion/jobs')],
+    ['extractionJobs', () => api.get('/api/extraction/jobs')],
+    ['imports', () => api.get('/ImportHistory/GetAll')],
+  ];
+  const settled = await Promise.allSettled(sources.map(([, fetcher]) => fetcher()));
+  const lists = {};
+  const failures = [];
+  settled.forEach((result, i) => {
+    const [key] = sources[i];
+    if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+      lists[key] = result.value;
+    } else {
+      lists[key] = [];
+      failures.push(`${key} (${result.reason?.message || 'failed'})`);
+    }
+  });
+  const extractionByStatus = countBy(lists.extractionJobs, 'status');
+  return {
+    failures,
+    loaded: {
+      templateCount: lists.templates.length,
+      templateNames: new Map(lists.templates.map((t) => [t.templateId, t.name])),
+      ingestion: {
+        total: lists.ingestionJobs.length,
+        byStatus: countBy(lists.ingestionJobs, 'status'),
+        recent: [...lists.ingestionJobs].sort(byIdDesc),
+      },
+      extraction: {
+        total: lists.extractionJobs.length,
+        running: extractionByStatus.RUNNING || 0,
+        failed: extractionByStatus.FAILED || 0,
+      },
+      imports: [...lists.imports].sort(byImportDateDesc).slice(0, 8),
+    },
+  };
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
   /**
-   * Partial results beat a blank page: one failing endpoint used to leave the
-   * whole dashboard on a spinner forever, so each panel falls back to empty and
-   * the banner names what could not be loaded.
+   * v1.2.0: one GET /api/dashboard/summary (counts + the few recent rows the
+   * page shows) instead of four full lists. A server without the endpoint
+   * (404) gets the lists, as before.
    */
   const load = useCallback(async () => {
     setLoading(true);
-    const sources = [
-      ['templates', () => getTemplates()],
-      ['ingestionJobs', () => api.get('/api/ingestion/jobs')],
-      ['extractionJobs', () => api.get('/api/extraction/jobs')],
-      ['imports', () => api.get('/ImportHistory/GetAll')],
-    ];
-    const settled = await Promise.allSettled(sources.map(([, fetcher]) => fetcher()));
-    const loaded = {};
-    const failures = [];
-    settled.forEach((result, i) => {
-      const [key] = sources[i];
-      if (result.status === 'fulfilled' && Array.isArray(result.value)) {
-        loaded[key] = result.value;
-      } else {
-        loaded[key] = [];
-        failures.push(`${key} (${result.reason?.message || 'failed'})`);
+    let loaded = null;
+    let failures = [];
+    if (!summaryUnavailable) {
+      try {
+        const [summary, names] = await Promise.all([
+          getHomeSummary(),
+          // Names for the activity table; the session cache usually has them.
+          getTemplates().catch(() => null),
+        ]);
+        loaded = fromSummary(summary, names);
+      } catch (err) {
+        if (err?.status === 404) summaryUnavailable = true;
+        // Any failure: the lists below still give a usable page.
       }
-    });
+    }
+    if (!loaded) ({ loaded, failures } = await loadLists());
     setData(loaded);
     setError(failures.length ? `Could not load ${failures.join(', ')}.` : '');
     setLoading(false);
@@ -104,27 +188,16 @@ export default function DashboardPage() {
     load();
   }, [load]);
 
-  const ingestionByStatus = data ? countBy(data.ingestionJobs, 'status') : {};
-  const extractionByStatus = data ? countBy(data.extractionJobs, 'status') : {};
-  const failedCount = (ingestionByStatus.FAILED || 0) + (extractionByStatus.FAILED || 0);
-  const recentImports = data
-    ? [...data.imports]
-        .sort((a, b) => (b.importDate || '').localeCompare(a.importDate || ''))
-        .slice(0, 8)
-    : [];
-  const openJobs = data
-    ? data.ingestionJobs.filter(OPEN_JOB).sort((a, b) => b.ingestionJobId - a.ingestionJobId).slice(0, 3)
-    : [];
+  const ingestionByStatus = data?.ingestion.byStatus || {};
+  const failedCount = (ingestionByStatus.FAILED || 0) + (data?.extraction.failed || 0);
+  const recentImports = data?.imports || [];
+  const openJobs = data ? data.ingestion.recent.filter(OPEN_JOB).slice(0, 3) : [];
+  const templateCount = data?.templateCount ?? 0;
+  const jobTotal = data?.ingestion.total ?? 0;
   // Highlight the first step the user hasn't done yet. With templates but no
   // uploads, rules are the natural next stop — step 3 only once something has
   // been uploaded before.
-  const highlightStep = !data
-    ? 0
-    : data.templates.length === 0
-      ? 1
-      : data.ingestionJobs.length === 0
-        ? 2
-        : 0;
+  const highlightStep = !data ? 0 : templateCount === 0 ? 1 : jobTotal === 0 ? 2 : 0;
 
   return (
     <div>
@@ -191,9 +264,9 @@ export default function DashboardPage() {
             <StepCard
               step={1}
               title="Design Templates"
-              stat={`${data.templates.length} template${data.templates.length === 1 ? '' : 's'}`}
-              to={data.templates.length === 0 ? '/templates/new' : '/templates'}
-              cta={data.templates.length === 0 ? 'Create one' : 'Manage'}
+              stat={`${templateCount} template${templateCount === 1 ? '' : 's'}`}
+              to={templateCount === 0 ? '/templates/new' : '/templates'}
+              cta={templateCount === 0 ? 'Create one' : 'Manage'}
               highlight={highlightStep === 1}
             />
             <StepCard
@@ -207,9 +280,9 @@ export default function DashboardPage() {
             <StepCard
               step={3}
               title="Upload & Process"
-              stat={`${data.ingestionJobs.length} job${data.ingestionJobs.length === 1 ? '' : 's'} · ${ingestionByStatus.COMPLETED || 0} completed · ${ingestionByStatus.FAILED || 0} failed`}
+              stat={`${jobTotal} job${jobTotal === 1 ? '' : 's'} · ${ingestionByStatus.COMPLETED || 0} completed · ${ingestionByStatus.FAILED || 0} failed`}
               to="/ingestion"
-              cta={data.ingestionJobs.length === 0 ? 'Upload' : 'Open'}
+              cta={jobTotal === 0 ? 'Upload' : 'Open'}
               highlight={highlightStep === 3}
             />
           </div>
@@ -229,8 +302,7 @@ export default function DashboardPage() {
                 key: 'templateId',
                 label: 'Template',
                 render: (row) =>
-                  data.templates.find((t) => t.templateId === row.templateId)?.name ??
-                  row.templateId,
+                  row.templateName ?? data.templateNames.get(row.templateId) ?? row.templateId,
               },
               {
                 key: 'importDate',
@@ -259,7 +331,7 @@ export default function DashboardPage() {
             <Link to="/extraction/jobs" className="text-accent hover:underline">
               Extraction Jobs
             </Link>
-            {` — ${data.extractionJobs.length} job${data.extractionJobs.length === 1 ? '' : 's'}, ${extractionByStatus.RUNNING || 0} running`}
+            {` — ${data.extraction.total} job${data.extraction.total === 1 ? '' : 's'}, ${data.extraction.running} running`}
           </p>
         </>
       )}

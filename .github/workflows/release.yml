@@ -114,6 +114,21 @@ jobs:
         run: |
           docker buildx create --name release --driver docker-container \
             --driver-opt "image=$BUILDKIT_IMAGE" --bootstrap --use
+      # ws29: layer cache in the GitHub Actions cache (--cache-from/--cache-to
+      # type=gha below, one scope per image, mode=max so the Maven build
+      # stage is cached too). BuildKit's gha backend authenticates with the
+      # job's runtime token, which only JavaScript actions receive; this
+      # exports it (and the cache service URLs) to the run steps. The token
+      # is the job's own, scoped to this run's cache and artifacts.
+      - name: Expose the Actions cache to BuildKit
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        with:
+          script: |
+            for (const name of ['ACTIONS_RUNTIME_TOKEN', 'ACTIONS_CACHE_URL', 'ACTIONS_RESULTS_URL']) {
+              if (process.env[name]) {
+                core.exportVariable(name, process.env[name]);
+              }
+            }
       - name: Build the API image
         run: |
           mkdir -p dist
@@ -121,6 +136,8 @@ jobs:
             --build-arg MODOCUMENT_VERSION="$IMAGE_VERSION" \
             --build-arg GIT_COMMIT="$GITHUB_SHA" \
             --build-arg BUILD_TIME="$BUILD_TIME" \
+            --cache-from type=gha,scope=release-app \
+            --cache-to type=gha,scope=release-app,mode=max \
             --output type=oci,dest=dist/app.oci.tar .
       - name: Build the frontend image
         run: |
@@ -128,25 +145,36 @@ jobs:
             --build-arg MODOCUMENT_VERSION="$IMAGE_VERSION" \
             --build-arg GIT_COMMIT="$GITHUB_SHA" \
             --build-arg BUILD_TIME="$BUILD_TIME" \
+            --cache-from type=gha,scope=release-frontend \
+            --cache-to type=gha,scope=release-frontend,mode=max \
             --output type=oci,dest=dist/frontend.oci.tar frontend
-      # ws26: the Connector Agent image (agent/Dockerfile, its own context).
+      # ws26: the Connector Agent image (agent/Dockerfile, its own context;
+      # connector-core comes in as the named context the Dockerfile expects).
       - name: Build the agent image
         run: |
           docker buildx build --builder release --pull --provenance=false --sbom=false \
+            --build-context connector-core=connector-core \
             --build-arg MODOCUMENT_VERSION="$IMAGE_VERSION" \
             --build-arg GIT_COMMIT="$GITHUB_SHA" \
             --build-arg BUILD_TIME="$BUILD_TIME" \
+            --cache-from type=gha,scope=release-agent \
+            --cache-to type=gha,scope=release-agent,mode=max \
             --output type=oci,dest=dist/agent.oci.tar agent
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-          cache-dependency-path: agent/pom.xml
+          cache-dependency-path: |
+            agent/pom.xml
+            connector-core/pom.xml
       # The standalone jar for banks that run the agent without Docker
-      # (its tests ran in the tests job: ci.yml "agent").
+      # (its tests ran in the tests job: ci.yml "agent"). connector-core, a
+      # sibling Maven project the agent depends on, is installed first.
       - name: Build the agent jar
         run: |
+          mvn -B -q -f connector-core/pom.xml -DskipTests \
+            -Dproject.build.outputTimestamp="$BUILD_TIME" install
           mvn -B -q -f agent/pom.xml -DskipTests \
             -Dproject.build.outputTimestamp="$BUILD_TIME" package
           version="${IMAGE_VERSION%%-rc.*}"

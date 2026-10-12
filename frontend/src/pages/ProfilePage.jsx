@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import QRCode from 'qrcode';
 import * as authApi from '../api/auth';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
@@ -32,12 +31,24 @@ export default function ProfilePage() {
     authApi.mfaStatus().then(setMfa).catch((err) => setError(err.message));
   }, []);
 
+  // qrcode is loaded on demand (its own chunk): only enrolment needs it, so
+  // it stays out of the bundle every sign-in downloads.
   useEffect(() => {
-    if (enrollment?.otpauthUri) {
-      QRCode.toDataURL(enrollment.otpauthUri, { margin: 1, width: 176 })
-        .then(setQrDataUrl)
-        .catch(() => setQrDataUrl(''));
-    }
+    if (!enrollment?.otpauthUri) return undefined;
+    let active = true;
+    import('qrcode')
+      .then(({ default: QRCode }) =>
+        QRCode.toDataURL(enrollment.otpauthUri, { margin: 1, width: 176 })
+      )
+      .then((url) => {
+        if (active) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (active) setQrDataUrl('');
+      });
+    return () => {
+      active = false;
+    };
   }, [enrollment]);
 
   // One refresh on mount keeps the local copy honest without recurring calls.

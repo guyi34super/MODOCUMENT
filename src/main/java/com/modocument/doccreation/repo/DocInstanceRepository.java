@@ -38,4 +38,16 @@ public interface DocInstanceRepository {
     DocInstance save(DocInstance entity);
 
     void delete(int id);
+
+    /** ws28: how many instances each blueprint has (blueprints without instances are absent). */
+    default java.util.Map<Integer, Long> countByBlueprints(java.util.Collection<Integer> blueprintIds) {
+        java.util.Map<Integer, Long> counts = new java.util.LinkedHashMap<>();
+        for (Integer id : blueprintIds) {
+            long count = countByBlueprint(id);
+            if (count > 0) {
+                counts.put(id, count);
+            }
+        }
+        return counts;
+    }
 }

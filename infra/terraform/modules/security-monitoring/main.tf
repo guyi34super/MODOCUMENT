@@ -88,7 +88,7 @@ resource "aws_sns_topic_policy" "allow_events" {
 
 resource "aws_cloudwatch_log_group" "trail" {
   name              = "/cloudtrail/${var.name}"
-  retention_in_days = 400
+  retention_in_days = var.trail_log_retention_days
 
   tags = var.tags
 }

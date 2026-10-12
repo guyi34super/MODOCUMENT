@@ -7,11 +7,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class ExtractionLlmProperties {
 
     /**
-     * Model for extraction agents. Defaults to a local Ollama tag
-     * ({@code mistral:latest}); overrides the global {@code aifiles.openai.model-id}
-     * for summarize / infer-schema / clean-records only.
+     * Model for extraction agents (summarize / infer-schema / clean-records);
+     * blank (the default since ws28) = the global {@code aifiles.openai.model-id}.
+     * Set it to a pinned tag to use a different model for these agents.
      */
-    private String modelId = "mistral:latest";
+    private String modelId = "";
 
     public String getModelId() {
         return modelId;

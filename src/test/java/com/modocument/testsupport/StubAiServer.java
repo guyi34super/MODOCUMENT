@@ -29,7 +29,9 @@ public final class StubAiServer implements AutoCloseable {
         /** Accepts the request and never answers (until {@link #close()} or a mode change). */
         HANG,
         /** 400 with an OpenAI-style error body. */
-        ERROR_400
+        ERROR_400,
+        /** 200 with a chat completion whose content is {@link #answer(String)} (QA, v1.2.0). */
+        OK
     }
 
     private final HttpServer server;
@@ -40,6 +42,7 @@ public final class StubAiServer implements AutoCloseable {
     });
     private final AtomicInteger calls = new AtomicInteger();
     private volatile Mode mode = Mode.ERROR_500;
+    private volatile String answer = "{}";
     private volatile CountDownLatch release = new CountDownLatch(1);
 
     public StubAiServer() {
@@ -64,6 +67,11 @@ public final class StubAiServer implements AutoCloseable {
         mode = value;
     }
 
+    /** The assistant content OK mode answers with (a JSON document, as the prompts ask). */
+    public void answer(String content) {
+        answer = content;
+    }
+
     public int calls() {
         return calls.get();
     }
@@ -86,10 +94,20 @@ public final class StubAiServer implements AutoCloseable {
                 }
                 case ERROR_400 -> respond(exchange, 400,
                         "{\"error\":{\"message\":\"Invalid request\",\"type\":\"invalid_request_error\"}}");
+                case OK -> respond(exchange, 200, completion(answer));
                 default -> respond(exchange, 500,
                         "{\"error\":{\"message\":\"The server had an error\",\"type\":\"server_error\"}}");
             }
         }
+    }
+
+    private static String completion(String content) {
+        String escaped = content.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n");
+        return "{\"id\":\"chatcmpl-stub\",\"object\":\"chat.completion\",\"created\":0,"
+                + "\"model\":\"stub\",\"choices\":[{\"index\":0,\"message\":{\"role\":"
+                + "\"assistant\",\"content\":\"" + escaped + "\"},\"finish_reason\":\"stop\"}],"
+                + "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}";
     }
 
     private static void respond(HttpExchange exchange, int status, String json) throws IOException {

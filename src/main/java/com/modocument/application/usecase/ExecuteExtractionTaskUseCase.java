@@ -140,13 +140,21 @@ public class ExecuteExtractionTaskUseCase implements ExtractionTaskRunner {
         long rawSaved = 0;
         long processedSaved = 0;
         long deduped = 0;
-        for (ConnectorResult.FetchedItem item : result.items()) {
-            if (!rawRecords.saveIfNew(item.record())) {
+        // ws28: the raw payloads of the whole result are stored in one batch
+        // (one transaction on SQL), and the processed rows of every new
+        // payload fill shared batches of batchSize — one transaction each,
+        // instead of one per record.
+        List<ConnectorResult.FetchedItem> items = result.items();
+        boolean[] rawStored = rawRecords.saveAllIfNew(
+                items.stream().map(ConnectorResult.FetchedItem::record).toList());
+        List<ProcessedRecord> batch = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            ConnectorResult.FetchedItem item = items.get(i);
+            if (!rawStored[i]) {
                 deduped += item.rows().size();
                 continue;
             }
             rawSaved++;
-            List<ProcessedRecord> batch = new ArrayList<>();
             for (Map<String, String> row : item.rows()) {
                 batch.add(toProcessedRecord(job.getId(), item.record().getId(), row));
                 if (batch.size() >= batchSize) {
@@ -156,11 +164,11 @@ public class ExecuteExtractionTaskUseCase implements ExtractionTaskRunner {
                     batch = new ArrayList<>();
                 }
             }
-            if (!batch.isEmpty()) {
-                int saved = processedRecords.saveAllIfNew(batch);
-                processedSaved += saved;
-                deduped += batch.size() - saved;
-            }
+        }
+        if (!batch.isEmpty()) {
+            int saved = processedRecords.saveAllIfNew(batch);
+            processedSaved += saved;
+            deduped += batch.size() - saved;
         }
 
         int enqueued = enqueueFollowUps(task, job, source, result.followUps());

@@ -128,9 +128,6 @@ class TenantIsolationGatePgIT extends PgSpringItSupport {
                 post("/api/doccreation/instances/7160/generate").header("Authorization", bankBToken),
                 get("/api/doccreation/instances/7160/download").header("Authorization", bankBToken),
                 // Uploaded file (referenced by stored name)
-                post("/api/transform/transform").header("Authorization", bankBToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"fileName\":\"gate-a.csv\"}"),
                 post("/api/ingestion/jobs").header("Authorization", bankBToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fileName\":\"gate-a.csv\",\"templateId\":7200,\"autoRun\":false}"),

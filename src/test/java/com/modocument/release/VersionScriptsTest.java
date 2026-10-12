@@ -30,7 +30,7 @@ class VersionScriptsTest {
 
     private static final Path REPO = Path.of("").toAbsolutePath();
     private static final List<String> CARRIERS = List.of(
-            "pom.xml", "agent/pom.xml", "CHANGELOG.md", "frontend/package.json", "frontend/package-lock.json",
+            "pom.xml", "agent/pom.xml", "connector-core/pom.xml", "CHANGELOG.md", "frontend/package.json", "frontend/package-lock.json",
             "scripts/version-lib.sh", "scripts/check-version-sync.sh", "scripts/bump-version.sh");
 
     @TempDir
@@ -90,6 +90,14 @@ class VersionScriptsTest {
     }
 
     @Test
+    void driftInTheConnectorCorePomFails() throws IOException {
+        replace("connector-core/pom.xml", "<version>" + current + "</version>", "<version>9.9.9</version>");
+        Result result = check();
+        assertThat(result.exitCode()).isEqualTo(1);
+        assertThat(result.output()).contains("connector-core/pom.xml version '9.9.9'");
+    }
+
+    @Test
     void driftInTheLockfileFails() throws IOException {
         Path lock = tree.resolve("frontend/package-lock.json");
         List<String> lines = new ArrayList<>(Files.readAllLines(lock));
@@ -137,6 +145,9 @@ class VersionScriptsTest {
         // ws26: the Connector Agent ships with the same release number.
         assertThat(Files.readString(tree.resolve("agent/pom.xml")))
                 .contains("<artifactId>modocument-agent</artifactId>\n    <version>" + next + "</version>");
+        // The shared connector library too (the app and the agent depend on ${project.version}).
+        assertThat(Files.readString(tree.resolve("connector-core/pom.xml")))
+                .contains("<artifactId>modocument-connector-core</artifactId>\n    <version>" + next + "</version>");
         assertThat(Files.readString(tree.resolve("frontend/package.json")))
                 .contains("\"version\": \"" + next + "\"");
         String changelog = Files.readString(tree.resolve("CHANGELOG.md"));

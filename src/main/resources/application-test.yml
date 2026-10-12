@@ -11,6 +11,11 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
+    hikari:
+      # ws27: no leak WARNs from the deliberately slow test paths; and one
+      # idle connection per cached test context is plenty.
+      leak-detection-threshold: 0
+      minimum-idle: 1
   flyway:
     # Migrations are PostgreSQL-only; H2 gets its schema from ddl-auto: create.
     enabled: false
@@ -55,6 +60,14 @@ modocument:
   retention:
     # No scheduled purge racing deterministic tests; the ws14 retention gate
     # tests re-enable it (and drive the job explicitly) via test properties.
+    enabled: false
+    # ws29: no scheduled retry of failed file deletes racing the suite; the
+    # tests drive PendingFileDeleteSweeper.runOnce() directly.
+    file-delete-retry:
+      enabled: false
+  housekeeping:
+    # ws27: no scheduled housekeeping racing deterministic tests; the
+    # housekeeping tests drive HousekeepingJob/HousekeepingPurger directly.
     enabled: false
   alerts:
     sweep:

@@ -455,17 +455,16 @@ test.describe('integration hub — connections and flows @phase2 @wave3', () => 
       json: { host: '169.254.169.254', port: 80, reason: 'e2e: must be refused' },
     });
     expect(imdsRule.status).toBe(400);
-    const { view: imds } = await createConnection(adminApi, checkerApi, {
-      type: 'REST_API', config: { baseUrl: 'http://169.254.169.254/latest/meta-data' }, authType: 'NONE',
+    // BUG-06 fixed at the v1.1.0 merge (bdc8564): the metadata URL is now
+    // refused at SUBMIT with 400, as the security plan (S2) asks, so no
+    // connection to it can even be created (stricter than the connect-time
+    // refusal this spec used to assert).
+    const imds = await adminApi.request('POST', `${ADMIN}/connections`, {
+      json: { mode: 'DIRECT', name: `e2e-imds-${Date.now()}`, type: 'REST_API', config: { baseUrl: 'http://169.254.169.254/latest/meta-data' }, authType: 'NONE' },
     });
-    const metadata = await testConnection(adminApi, imds.id);
-    expect(metadata.ok).toBe(false);
-    expect(metadata.message).toMatch(/cloud metadata endpoint/i);
-    // BUG-06 (P4): the metadata URL is accepted at submit (202) and only
-    // refused at connect; the security plan (S2) wants 400 at submit. The
-    // refusal above is what protects the instance; see
-    // IntegrationSecurityQaTest#bug06MetadataDestinationRefusedAtSubmit.
-    for (const id of [privateIp.id, imds.id]) await adminApi.request('DELETE', `${ADMIN}/connections/${id}`);
+    expect(imds.status).toBe(400);
+    expect(JSON.stringify(imds.body)).toMatch(/cloud metadata endpoint/i);
+    await adminApi.request('DELETE', `${ADMIN}/connections/${privateIp.id}`);
   });
 
   test('AC-INT-08 a stale webhook timestamp is rejected by the documented verifier', async () => {

@@ -22,9 +22,9 @@ import java.util.Set;
  *
  * <p>All resolved addresses must pass, which also blunts DNS rebinding: a name
  * that resolves to both a public and an internal address is rejected. (A TOCTOU
- * gap remains between this check and the socket connect, and auto-followed HTTP
- * redirects are not re-checked hop-by-hop — noted as residual; the primary
- * control is refusing an internal *target*.)
+ * gap remains between this check and the socket connect. Since ws28 the
+ * HTTP clients never auto-follow redirects: RestApiConnector and
+ * HttpWebFetcher follow them by hand and re-check every hop here.)
  *
  * <p>Disabled or host-allow-listed via {@code modocument.security.ssrf.*};
  * tests that talk to a loopback server set {@code enabled=false}.

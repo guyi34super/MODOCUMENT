@@ -1,7 +1,6 @@
 package com.modocument.domain.document;
 
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -12,7 +11,6 @@ import java.util.Map;
  * (conditional GETs short-circuit unchanged pages), the last API cursor, and
  * the last database watermark. Keyed by sourceId.
  */
-@Document(collection = "connectorState")
 public class ConnectorState {
 
     @Id

@@ -24,7 +24,7 @@ import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
 import com.modocument.doccreation.repo.DocContentBlockRepository;
 import com.modocument.doccreation.repo.DocImageAssetRepository;
 import com.modocument.doccreation.repo.DocInstanceRepository;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.store.LocalFileStore;
 import com.modocument.infrastructure.file.UploadStorage;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
@@ -70,7 +70,7 @@ class DocInstanceUseCaseTest {
     private final FakePdfConverter pdf = new FakePdfConverter();
 
     private DocInstanceUseCase useCase;
-    private StorageProperties storage;
+    private LocalFileStore storage;
     private int blueprintId;
     private int roofSectionId;
     private int inverterSectionId;
@@ -78,7 +78,7 @@ class DocInstanceUseCaseTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        storage = new StorageProperties(tempDir.toString());
+        storage = new LocalFileStore(tempDir);
         UploadStorage uploadStorage = new UploadStorage(storage);
         // No doc:release in these tests — they cover the owner paths; the
         // ws11 review extension is exercised in DocReleaseSodIntegrationTest.
@@ -111,8 +111,8 @@ class DocInstanceUseCaseTest {
                 ownership, flows, assembler, disabledComposer, pdf, uploadStorage, storage, masking);
 
         // A real blueprint file, so generate() runs the real assembler.
-        Files.createDirectories(storage.uploadsDir());
-        Path blueprintFile = storage.uploadsDir().resolve("blueprint.docx");
+        Files.createDirectories(tempDir.resolve("uploads"));
+        Path blueprintFile = tempDir.resolve("uploads").resolve("blueprint.docx");
         try (XWPFDocument doc = new XWPFDocument()) {
             doc.createParagraph().createRun().setText("Letterhead.");   // 0
             XWPFParagraph h1 = doc.createParagraph();                   // 1
@@ -262,7 +262,7 @@ class DocInstanceUseCaseTest {
         GenerationResultDto result = useCase.generate(instanceId);
 
         assertThat(result.docxFileName()).isEqualTo("doccreation-instance" + instanceId + ".docx");
-        assertThat(Files.exists(storage.exportsDir().resolve(result.docxFileName()))).isTrue();
+        assertThat(Files.exists(tempDir.resolve("exports").resolve(result.docxFileName()))).isTrue();
         assertThat(result.pdfReady()).isFalse();
         assertThat(result.pdfError()).contains("not available");
 

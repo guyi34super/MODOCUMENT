@@ -30,4 +30,10 @@ public interface ExtractionRawRecordJpaRepository
             + " where r.bankId = :bankId and r.body is not null and r.fetchedAt < :cutoff")
     int purgeBodiesOlderThan(@Param("bankId") int bankId,
                              @Param("cutoff") java.time.Instant cutoff);
+
+    /** ws28: which of {@code hashes} the source already stored (the batch dedup pre-check). */
+    @Query("select r.contentHash from ExtractionRawRecordEntity r"
+            + " where r.sourceId = :sourceId and r.contentHash in :hashes")
+    List<String> findExistingHashes(@Param("sourceId") String sourceId,
+                                    @Param("hashes") java.util.Collection<String> hashes);
 }

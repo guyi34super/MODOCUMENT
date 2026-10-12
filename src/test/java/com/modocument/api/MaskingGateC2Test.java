@@ -1,5 +1,6 @@
 package com.modocument.api;
 
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.doccreation.dto.AddBlockRequest;
@@ -7,6 +8,7 @@ import com.modocument.doccreation.dto.BlueprintDto;
 import com.modocument.doccreation.dto.GenerationResultDto;
 import com.modocument.doccreation.usecase.DocBlueprintUseCase;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
+import com.modocument.testsupport.H2ExportTargets;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.entity.IngestionJob;
@@ -30,14 +32,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -80,17 +79,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * stays complete/raw by design (PRIV-016). The masking-matrix doc itself is
  * pinned by MaskingMatrixDocTest.
  */
-@SpringBootTest(properties = {
-        "modocument.storage.root=target/ws12-c2-storage",
-        "modocument.doccreation.section-ai-enabled=false",
-        "modocument.doccreation.generate-ai-enabled=false"
-})
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-class MaskingGateC2Test {
+class MaskingGateC2Test extends IsolatedStorageApiTestSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Path STORAGE = Path.of("target/ws12-c2-storage");
+    private static final Path STORAGE = STORAGE_ROOT;
 
     private static final String RAW_NIC = "M090976290148E";
     private static final String RAW_ACCOUNT = "00445566778899";
@@ -247,11 +239,13 @@ class MaskingGateC2Test {
         assertMaskedAndNoRawValues(Files.readString(archived), "archive copy");
 
         // Database export: the same row transform lands in the target table.
-        String targetDb = "jdbc:h2:mem:ws12c2db" + job.getIngestionJobId() + ";DB_CLOSE_DELAY=-1";
+        String database = "ws12c2db" + job.getIngestionJobId();
+        String targetDb = H2ExportTargets.h2Url(database);
         mvc.perform(post("/api/ingestion/jobs/" + job.getIngestionJobId() + "/export/database")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"jdbcUrl\":\"" + targetDb
+                        .content("{\"vendor\":\"POSTGRESQL\",\"host\":\"localhost\","
+                                + "\"database\":\"" + database
                                 + "\",\"tableName\":\"ExportedRows\"}"))
                 .andExpect(status().isOk());
         try (Connection connection = DriverManager.getConnection(targetDb);

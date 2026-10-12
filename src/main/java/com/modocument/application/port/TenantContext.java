@@ -163,6 +163,20 @@ import java.util.concurrent.Callable;
  *       {@code runAs(bank)} per bank so each bank's purge and its
  *       RETENTION_PURGE_COMPLETED audit event run strictly inside that
  *       tenant.</li>
+ *   <li>{@code PendingFileDeleteSweeper#runOnce} — ws29 (BUG-12) retry of
+ *       stored-object deletes that failed after a retention purge, DSR erase
+ *       or job deletion, every 5 minutes: {@code runAsSystem} for the
+ *       cross-bank read that lists ONLY the ids of banks with a due
+ *       PendingFileDelete row, then {@code runAs(bank)} per bank for that
+ *       bank's retries and row deletes (store keys only, no content).</li>
+ *   <li>{@code HousekeepingJob#runOnce} — the ws27 daily housekeeping
+ *       (token, integration-history and idempotency-key cleanup), the same
+ *       shape as the retention sweep: {@code runAsSystem} to list the
+ *       RLS-protected Bank table and to sweep the non-tenant RevokedToken
+ *       denylist (jti + expiry only, no BankId), then {@code runAs(bank)}
+ *       per bank so each bank's batched deletes and its
+ *       HOUSEKEEPING_COMPLETED audit event (counts only) run strictly
+ *       inside that tenant.</li>
  *   <li>{@code SodScanJob#runOnce} — the ws11 nightly separation-of-duties
  *       scan (and its manual admin trigger): the same shape as the
  *       retention sweep — {@code runAsSystem} for the cross-tenant bank
@@ -247,6 +261,12 @@ import java.util.concurrent.Callable;
  *       {@code runAs(bank)} per bank for that bank's silent agents, each
  *       flipped ONLINE → OFFLINE under a row lock with its AGENT_OFFLINE
  *       audit row in that bank. No row content is read as SYSTEM.</li>
+ *   <li>{@code AuditLogUseCase#platformCounts} — ws28 platform console
+ *       ({@code GET /api/platform/audit/counts}; AUDIT_READ, platform bank
+ *       only): {@code runAsSystem} in its own read-only REQUIRES_NEW
+ *       transaction for a cross-bank COUNTS-ONLY read of AuditEvent (total,
+ *       DENIED, FAILED per bank in a time range) plus the Bank identifying
+ *       columns. No audit row, actor, entity or value is read as SYSTEM.</li>
  * </ul>
  */
 public final class TenantContext {

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listRuns } from '../api/integrations';
+import { listRunsPage } from '../api/integrations';
+import { DEFAULT_PAGE_SIZE, toPage } from '../api/paging';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
+import Pager from '../components/Pager';
 import { Button, ErrorBanner, Spinner, inputClass } from '../components/ui';
 import { RequireIntegrationAdmin, StatusChip, formatDateTime } from './IntegrationsCommon';
 
@@ -39,16 +41,21 @@ function Runs() {
   const [status, setStatus] = useState('');
   const [runs, setRuns] = useState(null);
   const [error, setError] = useState('');
+  // v1.2.0: the history is paged server-side; a new filter starts over.
+  const [page, setPage] = useState(0);
+  const [pageInfo, setPageInfo] = useState(null);
 
   const load = useCallback(() => {
     setRuns(null);
-    listRuns({ status })
-      .then((rows) => {
-        setRuns(rows || []);
+    listRunsPage({ status, page, size: DEFAULT_PAGE_SIZE })
+      .then((answer) => {
+        const loaded = toPage(answer || [], { page, size: DEFAULT_PAGE_SIZE });
+        setRuns(loaded.items);
+        setPageInfo(loaded);
         setError('');
       })
       .catch((err) => setError(err.message));
-  }, [status]);
+  }, [status, page]);
 
   useEffect(() => {
     load();
@@ -93,7 +100,10 @@ function Runs() {
           aria-label="Status filter"
           className={`${inputClass} w-auto`}
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setPage(0);
+          }}
         >
           <option value="">All statuses</option>
           {RUN_STATUSES.map((s) => (
@@ -109,6 +119,15 @@ function Runs() {
       <ErrorBanner message={error} onDismiss={() => setError('')} />
       {!runs && !error && <Spinner label="Loading runs…" />}
       {runs && <DataTable caption="Integration runs" columns={columns} rows={runs} emptyMessage="No runs yet." />}
+      {runs && pageInfo && (
+        <Pager
+          label="Runs"
+          page={pageInfo.page}
+          size={pageInfo.size}
+          total={pageInfo.total}
+          onPage={setPage}
+        />
+      )}
     </>
   );
 }

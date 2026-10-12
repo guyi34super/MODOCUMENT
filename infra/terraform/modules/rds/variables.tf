@@ -49,6 +49,12 @@ variable "backup_retention_days" {
   default     = 35
 }
 
+variable "multi_az" {
+  description = "Synchronous standby in the second AZ (SEC-004): true in production. ws29: staging runs single-AZ (about half the instance cost; a failover rehearsal needs a temporary flip)."
+  type        = bool
+  default     = true
+}
+
 variable "deletion_protection" {
   description = "Protect the instance from terraform destroy (true in production)."
   type        = bool

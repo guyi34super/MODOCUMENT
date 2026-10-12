@@ -17,19 +17,20 @@ import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
 import com.modocument.doccreation.repo.DocContentBlockRepository;
 import com.modocument.doccreation.repo.DocImageAssetRepository;
 import com.modocument.doccreation.repo.DocInstanceRepository;
-import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.model.AuditOutcome;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.application.port.FileStore;
+import com.modocument.infrastructure.file.store.FileStoreKeys;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -69,7 +70,7 @@ public class DocReleaseUseCase {
     private final AppUserRepository users;
     private final AuditRecorder audit;
     private final SodPolicy sodPolicy;
-    private final StorageProperties storage;
+    private final FileStore storage;
     /** ws25: DOC_RELEASED joins the release transaction (outbound EVENT flows). */
     private final com.modocument.application.port.integration.IntegrationEventLog eventLog;
 
@@ -82,7 +83,7 @@ public class DocReleaseUseCase {
                              AppUserRepository users,
                              AuditRecorder audit,
                              SodPolicy sodPolicy,
-                             StorageProperties storage,
+                             FileStore storage,
                              com.modocument.application.port.integration.IntegrationEventLog eventLog) {
         this.eventLog = eventLog;
         this.instances = instances;
@@ -142,9 +143,46 @@ public class DocReleaseUseCase {
     @Transactional(readOnly = true)
     public List<PendingReleaseDto> pendingReleases() {
         int bankId = ownership.requireBankId();
-        return instances.listByBankAndStatus(bankId, DocInstance.STATUS_SUBMITTED).stream()
-                .map(this::toPendingRelease)
+        List<DocInstance> queue = instances.listByBankAndStatus(bankId, DocInstance.STATUS_SUBMITTED);
+        if (queue.isEmpty()) {
+            return List.of();
+        }
+        // ws28: the queue's blueprints, sections, blocks, assets and users are
+        // loaded in one statement each, not once per queued document.
+        Set<Integer> instanceIds = new LinkedHashSet<>();
+        Set<Integer> blueprintIds = new LinkedHashSet<>();
+        Set<Integer> userIds = new LinkedHashSet<>();
+        for (DocInstance instance : queue) {
+            instanceIds.add(instance.getDocInstanceId());
+            blueprintIds.add(instance.getBlueprintId());
+            userIds.add(instance.getOwnerUserId());
+            if (instance.getSubmittedByUserId() != null) {
+                userIds.add(instance.getSubmittedByUserId());
+            }
+        }
+        ReleaseQueueContext context = new ReleaseQueueContext(
+                blueprints.getByIds(blueprintIds),
+                sections.listByBlueprints(blueprintIds),
+                blocks.listByInstances(instanceIds),
+                assets.listByInstances(instanceIds),
+                emails(userIds));
+        return queue.stream()
+                .map(instance -> toPendingRelease(instance, context))
                 .toList();
+    }
+
+    /** Everything the release queue needs, batch-loaded once for the whole queue. */
+    private record ReleaseQueueContext(Map<Integer, DocBlueprint> blueprints,
+                                       Map<Integer, List<DocBlueprintSection>> sections,
+                                       Map<Integer, List<DocContentBlock>> blocks,
+                                       Map<Integer, List<DocImageAsset>> assets,
+                                       Map<Integer, String> emails) {
+    }
+
+    private Map<Integer, String> emails(Set<Integer> userIds) {
+        Map<Integer, String> emails = new java.util.HashMap<>();
+        users.getByIds(userIds).forEach((id, user) -> emails.put(id, user.getEmail()));
+        return emails;
     }
 
     /**
@@ -231,10 +269,14 @@ public class DocReleaseUseCase {
                     ? "No PDF was generated for this document; review the .docx instead."
                     : "The document has no generated file; ask the author to generate it again.");
         }
-        Path path = storage.exportsDir().resolve(fileName);
-        if (!Files.exists(path)) {
+        Path path;
+        try {
+            path = storage.localCopy(FileStoreKeys.export(fileName));
+        } catch (java.nio.file.NoSuchFileException e) {
             throw new IllegalStateException(
                     "The generated file is missing; ask the author to generate it again.");
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException("Could not read the generated file.", e);
         }
         return new DocInstanceUseCase.DownloadFile(path,
                 DocInstanceUseCase.sanitizeFileName(instance.getTitle()) + (pdf ? ".pdf" : ".docx"));
@@ -271,17 +313,18 @@ public class DocReleaseUseCase {
         }
     }
 
-    private PendingReleaseDto toPendingRelease(DocInstance instance) {
-        Optional<DocBlueprint> blueprint = blueprints.getById(instance.getBlueprintId());
+    private static PendingReleaseDto toPendingRelease(DocInstance instance, ReleaseQueueContext context) {
+        Optional<DocBlueprint> blueprint =
+                Optional.ofNullable(context.blueprints().get(instance.getBlueprintId()));
         Map<Integer, List<DocContentBlock>> blocksBySection =
-                blocks.listByInstance(instance.getDocInstanceId()).stream()
+                context.blocks().getOrDefault(instance.getDocInstanceId(), List.of()).stream()
                         .collect(Collectors.groupingBy(DocContentBlock::getSectionId));
         Map<Integer, DocImageAsset> assetsById =
-                assets.listByInstance(instance.getDocInstanceId()).stream()
+                context.assets().getOrDefault(instance.getDocInstanceId(), List.of()).stream()
                         .collect(Collectors.toMap(DocImageAsset::getDocImageAssetId,
                                 Function.identity()));
         List<PendingReleaseDto.ReviewSectionDto> sectionDtos = blueprint
-                .map(b -> sections.listByBlueprint(b.getDocBlueprintId()))
+                .map(b -> context.sections().getOrDefault(b.getDocBlueprintId(), List.of()))
                 .orElse(List.of()).stream()
                 .map(s -> toReviewSection(s, blocksBySection, assetsById))
                 .toList();
@@ -290,10 +333,10 @@ public class DocReleaseUseCase {
                 instance.getTitle(),
                 blueprint.map(DocBlueprint::getName).orElse(""),
                 instance.getOwnerUserId(),
-                emailOf(instance.getOwnerUserId()),
+                context.emails().get(instance.getOwnerUserId()),
                 instance.getSubmittedByUserId(),
                 instance.getSubmittedByUserId() == null
-                        ? null : emailOf(instance.getSubmittedByUserId()),
+                        ? null : context.emails().get(instance.getSubmittedByUserId()),
                 instance.getSubmittedAt(),
                 instance.getLastGeneratedDate(),
                 instance.isAiComposed(),
@@ -321,10 +364,6 @@ public class DocReleaseUseCase {
         String blueprintName = blueprints.getById(instance.getBlueprintId())
                 .map(DocBlueprint::getName).orElse("");
         return InstanceSummaryDto.from(instance, blueprintName);
-    }
-
-    private String emailOf(int userId) {
-        return users.getById(userId).map(AppUser::getEmail).orElse(null);
     }
 
     /** The audited view: the parties and the aiComposed flag, never content. */

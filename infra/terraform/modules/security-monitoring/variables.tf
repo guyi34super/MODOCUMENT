@@ -50,6 +50,17 @@ variable "app_log_group_name" {
   type        = string
 }
 
+variable "trail_log_retention_days" {
+  description = "CloudWatch retention of the CloudTrail log group (days). Security logs stay long (400 = 13 months hot); the 7-year archive is the locked log bucket."
+  type        = number
+  default     = 400
+
+  validation {
+    condition     = var.trail_log_retention_days >= 365
+    error_message = "trail_log_retention_days must be at least 365: security logs keep a year hot."
+  }
+}
+
 variable "tags" {
   description = "Common resource tags."
   type        = map(string)

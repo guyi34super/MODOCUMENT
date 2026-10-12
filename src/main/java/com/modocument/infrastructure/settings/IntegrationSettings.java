@@ -61,6 +61,15 @@ public class IntegrationSettings {
         return settings.getDuration(SettingKeys.INTEGRATION_AGENT_HEARTBEAT_TIMEOUT, bankId);
     }
 
+    /**
+     * ws27: finished runs (+ their logs), terminal outbound deliveries and
+     * integration events older than this are purged by the daily
+     * housekeeping (7–400 days, default 90).
+     */
+    public Duration historyRetention(int bankId) {
+        return settings.getDuration(SettingKeys.INTEGRATION_HISTORY_RETENTION, bankId);
+    }
+
     /** The API-client authentication methods the platform allows (platform layer). */
     public Set<ApiAuthMethod> allowedAuthMethods() {
         EnumSet<ApiAuthMethod> allowed = EnumSet.noneOf(ApiAuthMethod.class);

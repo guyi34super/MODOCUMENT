@@ -128,6 +128,24 @@ describe('Layout sidebar', () => {
     expect(screen.getByText('Administration')).toBeInTheDocument();
   });
 
+  /** v1.2.0: the audit log (audit:read — ADMIN, APPROVER; the platform its own). */
+  it('links the audit log for ADMINs and APPROVERs, and the platform one for PLATFORM_ADMINs', () => {
+    stubViewport(true);
+    for (const [role, href] of [
+      ['ADMIN', '/admin/audit'],
+      ['APPROVER', '/admin/audit'],
+      ['PLATFORM_ADMIN', '/platform/audit'],
+    ]) {
+      localStorage.setItem('modoc.user', JSON.stringify({ userId: 1, role }));
+      const { unmount } = renderLayout();
+      expect(screen.getByRole('link', { name: 'Audit log' })).toHaveAttribute('href', href);
+      unmount();
+    }
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 2, role: 'READ_WRITE' }));
+    renderLayout();
+    expect(screen.queryByRole('link', { name: 'Audit log' })).not.toBeInTheDocument();
+  });
+
   it('hides the Administration section from everyone else', () => {
     stubViewport(true);
     localStorage.setItem('modoc.user', JSON.stringify({ userId: 2, role: 'READ_WRITE' }));

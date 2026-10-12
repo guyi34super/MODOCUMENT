@@ -407,4 +407,19 @@ describe('AdminUsersPage', () => {
     expect(screen.getByText('156')).toBeInTheDocument();
     expect(accessReview).toHaveBeenCalledTimes(1);
   });
+
+  it('pages the user list (v1.2.0 envelope)', async () => {
+    listUsers.mockImplementation(({ page }) =>
+      Promise.resolve({ items: page === 0 ? [ADMIN_ROW] : [WORKER_ROW], page, size: 50, total: 51 })
+    );
+    renderPage();
+
+    expect(await screen.findByText('admin@bank.example')).toBeInTheDocument();
+    expect(listUsers).toHaveBeenCalledWith({ page: 0, size: 50 });
+    expect(screen.getByRole('navigation', { name: 'Users pages' })).toHaveTextContent('page 1 of 2');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('worker@bank.example')).toBeInTheDocument();
+    expect(listUsers).toHaveBeenLastCalledWith({ page: 1, size: 50 });
+  });
 });

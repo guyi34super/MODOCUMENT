@@ -47,6 +47,8 @@ public final class SettingKeys {
     public static final String EXPORT_CAP_ADMIN = "export.cap.admin";
     public static final String RETENTION_ENABLED = "retention.enabled";
     public static final String RETENTION_CUSTOMER_DATA_DAYS = "retention.customerDataDays";
+    /** ws27: platform-controlled per bank; SE2's sensitive-read audit (SENSITIVE_DATA_VIEWED). */
+    public static final String AUDIT_READ_AUDIT_ENABLED = "audit.readAuditEnabled";
     public static final String MASKING_SCREEN_WORKING = "privacy.masking.screenWorking";
     public static final String PRIVACY_TOKENIZE_PII = "privacy.tokenizePii";
     public static final String AI_ENABLED = "ai.enabled";
@@ -80,6 +82,10 @@ public final class SettingKeys {
             "alerts.integrationFailures.threshold";
     public static final String ALERT_INTEGRATION_FAILURES_WINDOW =
             "alerts.integrationFailures.window";
+    /** ws28 (SE2): the access-denied-burst windowed alert rule. */
+    public static final String ALERT_ACCESS_DENIED_THRESHOLD =
+            "alerts.accessDeniedBurst.threshold";
+    public static final String ALERT_ACCESS_DENIED_WINDOW = "alerts.accessDeniedBurst.window";
     public static final String ALERT_WEBHOOK_MIN_SEVERITY = "alerts.webhook.minSeverity";
     public static final String ALERT_EMAIL_MIN_SEVERITY = "alerts.email.minSeverity";
 
@@ -99,6 +105,8 @@ public final class SettingKeys {
     public static final String DOCCREATION_GENERATE_AI_ENABLED = "doccreation.generateAiEnabled";
     public static final String AI_CIRCUIT_FAILURE_THRESHOLD = "ai.circuitBreaker.failureThreshold";
     public static final String AI_CIRCUIT_OPEN_DURATION = "ai.circuitBreaker.openDuration";
+    /** ws28 (SE4): reuse cached AI parse results for identical documents (AiResultCache). */
+    public static final String AI_RESULT_CACHE_ENABLED = "ai.resultCache.enabled";
 
     // ---- Integrations (ws25/ws26 consumers; Wave 3) ----------------------
     public static final String INTEGRATION_MAX_ROWS_PER_RUN = "integration.maxRowsPerRun";
@@ -113,4 +121,6 @@ public final class SettingKeys {
     public static final String INTEGRATION_ALLOW_MTLS = "integration.auth.allowMtls";
     public static final String INTEGRATION_AGENT_HEARTBEAT_TIMEOUT =
             "integration.agentHeartbeatTimeout";
+    /** ws27: run history, terminal deliveries and events older than this are purged. */
+    public static final String INTEGRATION_HISTORY_RETENTION = "integration.historyRetention";
 }

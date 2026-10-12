@@ -16,6 +16,164 @@ All notable changes to MoDocument are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-11
+
+Optimization release: faster pages and APIs, a smaller and cheaper deployment,
+a complete audit trail with a viewer, and one connector library shared by the
+server and the Connector Agent. The ingestion job list drops from 16.5 MB to
+about 20 kB, the initial JavaScript halves (614.9 → 292 kB), and the
+application jar shrinks from 369 MB to 157 MB. Read the migration note under
+Changed before upgrading database-export callers or agent database flows.
+
+### Added
+- Audit log API: `GET /api/admin/audit` returns the caller's bank events newest first, with
+  filters (actor, action, entity, outcome, date range), keyset paging and per-role masking of
+  values. `GET /api/admin/audit/export` returns CSV, at most 50 000 rows. `GET
+  /api/admin/audit/actions` returns the action catalogue. The platform console gets
+  `GET /api/platform/audit` (the platform bank's own events) and `GET
+  /api/platform/audit/counts` (counts per bank). Permission `AUDIT_READ` (ADMIN, APPROVER,
+  PLATFORM_ADMIN). Viewing is audited `AUDIT_LOG_VIEWED` and exporting `AUDIT_LOG_EXPORTED`.
+- New audit actions:
+  - `TEMPLATE_CREATED`, `TEMPLATE_FIELD_CREATED/UPDATED/DELETED`
+  - `VALIDATION_RULE_CREATED/UPDATED/DELETED`
+  - `FILE_UPLOADED`, `INGESTION_JOB_CREATED`, `INGESTION_REMAPPED`, `INGESTION_ROWS_EDITED`
+  - `DOC_GENERATED`, `DOC_DOWNLOADED`, `EXPORT_DOWNLOADED`, `TOKEN_REFRESHED`
+  - `ACCESS_DENIED`: use-case refusals, owner-scoped 404 probes and invalid bearer tokens. It is
+    aggregated to one row per actor or address per minute, with a count.
+  - `SENSITIVE_DATA_VIEWED`: ingestion job detail, extraction records, user list and DSR search,
+    once per actor, entity and hour, gated by `audit.readAuditEnabled`.
+
+  The catalogue is in `docs/security/audit-events.md`.
+- Alert rule `access-denied-burst` (windowed, MEDIUM), tunable with
+  `alerts.accessDeniedBurst.threshold|window`.
+- Audit log page `/admin/audit` (ADMIN, APPROVER) and `/platform/audit` (PLATFORM_ADMIN):
+  filters, "Load more" keyset paging, CSV export, an old → new diff view, entity links and,
+  on the platform variant, counts per bank.
+- `GET /api/dashboard/summary` (`ingestion:read`): the dashboard's counts and newest rows in one
+  call, from count queries.
+- Paged lists. `GET /api/ingestion/jobs?view=summary&page=&size=` returns an
+  `IngestionJobSummary` page (`{items, page, size, total}`, at most 200 per page) with no parsed,
+  mapped or validation JSON. The same envelope is used by `GET /api/admin/users`, the pending
+  change list and integration runs when `page` is sent; without `page` the old array is returned.
+- File storage port with two backends, chosen by `modocument.storage.backend`: `local` (the
+  default, today's disk layout) and `s3` (SSE-KMS, keys under `bank/{id}/…`). Uploads, export
+  copies, doc-creation assets and exports, retention and DSR deletes all go through it.
+  Terraform gets a `file-store` module (versioned, encrypted, TLS-only bucket with lifecycle
+  rules, task-role IAM).
+- OCR works in the image: `tesseract-ocr` with English data is installed, so scanned PDFs and
+  images are read instead of silently skipped.
+- AI result cache (`ai.resultCache.enabled`): an identical document text, template version,
+  mode, model and prompt version reuses the earlier result instead of calling the model. It is
+  bank-scoped under RLS and purged with retention.
+- `HousekeepingJob` (daily): bounded deletes of old refresh tokens, expired revoked-token
+  entries, finished integration runs and their logs, terminal outbox rows, unreferenced
+  integration events and expired idempotency keys, audited `HOUSEKEEPING_COMPLETED` per bank.
+  New setting `integration.historyRetention` (90 days, 7–400).
+- `connector-core`: one connector library (REST, database, SFTP, webhook) shared by the server
+  and the Connector Agent. The agent gains OAuth2 client-credentials and mTLS for REST
+  connections. See `docs/integration/connector-sharing.md`.
+
+### Changed
+- **Migration note — database export.** `POST /api/ingestion/jobs/{id}/export/database` no
+  longer accepts a raw `jdbcUrl`; such a body gets a 400. Send the target as `vendor`
+  (`POSTGRESQL`, `ORACLE`, `SQLSERVER` or `MARIADB`), `host`, `port` (optional, vendor default),
+  `database`, `schema` (optional) and `sslmode` (optional: `disable`, `allow`, `prefer`,
+  `require`, `verify-ca` or `verify-full`), plus `username`, `password`, `tableName` (or `table`),
+  `createTableIfMissing` and `reason` as before. The server builds the JDBC URL with the
+  integration hub's `DbDialect` and applies connect, login, socket and query timeouts. The
+  destination passes the bank-aware egress check, so a private-network target needs an approved
+  egress rule. Example: `jdbc:postgresql://db:5432/staging?sslmode=require` becomes
+  `{"vendor":"POSTGRESQL","host":"db","port":5432,"database":"staging","sslmode":"require"}`.
+  H2 targets are no longer accepted.
+- **Faster reads.**
+  - The ingestion job list no longer returns every job's JSON. The UI asks for the summary page:
+    13.7 MB → 18 KB for 50 jobs of 1,000 rows. The legacy unpaged list is capped at the 200
+    newest jobs. A single job's JSON columns are parsed once per request.
+  - N+1 queries removed: `/ImportDetails/GetAll` (bank query instead of an in-memory filter),
+    the doc release queue, the blueprint list, the pending-change list, the Integration API
+    `/templates` and template owner names.
+  - Each authenticated request reads `AppUsers` once instead of twice.
+- **Database.**
+  - New indexes (built `CONCURRENTLY`) for the audit alert window, dashboard run counts, the
+    outbox and run ticks, the pending-change list and housekeeping. The alert sweep's query is
+    bounded to its window.
+  - Hikari pool sized explicitly (max 20, `MODOCUMENT_DB_POOL_MAX`; leak detection on) and
+    Hibernate JDBC batching (50, ordered inserts and updates).
+  - Extraction records are saved one transaction per batch, not per record. The outbound
+    dispatcher claims deliveries with a single `UPDATE … RETURNING` on PostgreSQL.
+- **Scheduling.** A scheduler pool of 4 threads; the integration tick runs on its own executor,
+  so a slow bank endpoint no longer delays settings sync or alerts.
+- **Frontend load.** Pages are code-split (initial JS 614.9 kB → 292 kB, 182.8 → 93 kB gzip).
+  `qrcode` loads only on MFA enrolment. nginx compresses CSS, JS, JSON and SVG (level 5), caches
+  `/assets/` for a year as immutable and serves `index.html` with `no-cache`. Polling pauses in
+  hidden tabs and never overlaps calls; version and supported-types calls are made once per
+  session.
+- **AI cost.** Row batches use a column/rows output shape (−38 % output tokens on the golden
+  corpus; the old shape is still parsed). Chat edits and extraction agents use the configured
+  default model.
+- **Footprint.**
+  - The application jar is 369 MB → 157 MB. MongoDB and Kafka moved to the `scale` Maven
+    profile; a default jar started in scale mode refuses to start.
+  - The image uses a layered jar and an AppCDS archive (startup about 25 % faster). The JVM
+    runs with `MaxRAMPercentage=70`, G1 and exit on out-of-memory.
+  - Terraform: tasks of 1 vCPU / 3 GiB (two per node), the NAT gateway count, RDS Multi-AZ and
+    log retention are variables (staging: one NAT, single-AZ, 90-day logs; about −$128 a
+    month). CloudFront caches and compresses `/assets/*`.
+- **Connector behaviour (server and agent now share one implementation).**
+  - SFTP reads are two-phase: a file is moved or deleted only after MoDocument has accepted it.
+    A file that cannot be ingested stays in the folder and fails the run.
+  - An oversized SFTP file is skipped and left in place on both sides (the agent used to fail
+    the run).
+  - Agent database flows quote table and column names like DIRECT flows, so they are
+    **case-sensitive**. On Oracle, name the view in upper case. The schema comes from the
+    connection's `schema` setting.
+  - Database values arrive as text and binary columns are not record data, as on the server.
+    Cursors stored by older agents still work.
+  - Full list: `docs/integration/connector-sharing.md` §6.
+- CI: the PostgreSQL job runs only the integration tests, JaCoCo runs behind `-Pcoverage`, and
+  Docker builds use Maven and buildx caches. Test Spring contexts 27 → 19.
+
+### Deprecated
+- Unused legacy routes (sunset 2027-04-01). Each answers with `Deprecation`, `Sunset` and `Link`
+  headers and is marked `deprecated` in OpenAPI:
+  - `/ImportDetails/*`, `/ProcessStep/*`
+  - TemplateDataTypes Create/Update/GetById, ImportHistory Create/Update/GetById
+  - `/TemplateFields/GetById`, `/api/automapper/generate`, `/api/fileupload/upload`,
+    `/api/extraction/metrics`
+
+  See `docs/api/versioning-policy.md` §7.
+
+### Removed
+- `POST /api/aifiles/send` (an open AI prompt proxy) and the unused
+  `POST /api/transform/transform`. Both were removed under the security exception of the
+  versioning policy.
+- Playwright and the JavaScript-rendering web fetcher (189 MiB). Web extraction sources fetch
+  pages as plain HTML, as the image always did; the "Render JavaScript" option is shown as
+  unavailable.
+
+### Fixed
+- `PUT /api/ingestion/jobs/{id}/mapping` (the manual mapping editor) writes one
+  `INGESTION_REMAPPED` audit row (source `MANUAL`, mapped column count, no cell values) (BUG-10).
+- `POST /api/ingestion/jobs/{id}/chat-edit` writes one `INGESTION_ROWS_EDITED` audit row with
+  the row and changed-row counts, never cell values, like `PUT …/rows` (BUG-11).
+- A stored-object delete that fails after a retention purge, a DSR erase or a job deletion is
+  no longer lost: 3 attempts in the call, then the key is queued in the bank-scoped
+  `PendingFileDelete` table (V290) and retried every 5 minutes with backoff until the store
+  confirms it (`modocument.retention.file-delete-retry.*`) (BUG-12).
+- Alert rule `access-denied-burst` counts refusals, not aggregated rows: the windowed sweep sums
+  the `count` of each `ACCESS_DENIED` row, so a burst inside one minute reaches the threshold
+  (OBS-01). The default stays 3 refusals per actor or address in 5 minutes; a platform admin
+  can raise it to 12 with `alerts.accessDeniedBurst.threshold`.
+- A DSR erase clears the bank's AI result cache, which holds copies of extracted rows; the
+  cache is also listed in the retention schedule (30 days).
+- A page whose code chunk is still missing after the one automatic reload shows an error with
+  "Reload page" and "Go to home" instead of a blank page (BUG-09).
+
+### Security
+- SSRF: the extraction REST connector and the web crawler no longer let the HTTP client follow
+  redirects. Each hop is re-checked against the egress policy, and credentials never follow a
+  redirect to another origin.
+
 ## [1.1.0] - 2026-10-10
 
 Phase 2: settings every admin can change within guardrails, a platform owner
@@ -221,6 +379,7 @@ workstreams) merged into `main`.
   CycloneDX SBOMs, Dependabot, CODEOWNERS review and documented
   branch-protection settings.
 
-[Unreleased]: https://github.com/guyi34super/MODOCUMENT/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/guyi34super/MODOCUMENT/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/guyi34super/MODOCUMENT/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/guyi34super/MODOCUMENT/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/guyi34super/MODOCUMENT/releases/tag/v1.0.0

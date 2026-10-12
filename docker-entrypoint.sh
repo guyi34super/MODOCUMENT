@@ -19,4 +19,27 @@ if ! mkdir -p "$storage_root/uploads" "$storage_root/exports" 2>/dev/null \
     exit 1
 fi
 
-exec java -jar /app/app.jar
+# JVM flags (ws29). Defaults go FIRST in JAVA_TOOL_OPTIONS so anything the
+# deployment already sets there wins (for -XX flags the last occurrence
+# counts); JAVA_OPTS lands on the command line and beats both.
+#   MaxRAMPercentage=70  heap sized from the container memory limit, leaving
+#                        ~30% for metaspace, threads, direct buffers and the
+#                        soffice/tesseract children
+#   UseG1GC              explicit: below 2 CPUs / 1792 MiB the JVM would
+#                        otherwise pick SerialGC
+#   ExitOnOutOfMemoryError  die and let ECS replace the task instead of
+#                        limping on in an undefined state
+jvm_defaults="-XX:MaxRAMPercentage=70 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
+export JAVA_TOOL_OPTIONS="$jvm_defaults${JAVA_TOOL_OPTIONS:+ $JAVA_TOOL_OPTIONS}"
+
+# AppCDS archive from the image build's training run (Dockerfile). Missing
+# (an image built without it) or disabled with MODOCUMENT_CDS=off: start
+# without it. A stale archive (different JVM or class path) is ignored by
+# the JVM itself (-Xshare:auto, the default) with a warning, never fatal.
+cds=""
+if [ "${MODOCUMENT_CDS:-on}" != "off" ] && [ -f /app/app.jsa ]; then
+    cds="-XX:SharedArchiveFile=/app/app.jsa"
+fi
+
+# shellcheck disable=SC2086 # JAVA_OPTS / cds are deliberately word-split
+exec java $cds ${JAVA_OPTS:-} -jar /app/app.jar

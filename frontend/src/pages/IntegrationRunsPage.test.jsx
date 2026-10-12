@@ -4,10 +4,10 @@ import userEvent from '@testing-library/user-event';
 import IntegrationRunsPage from './IntegrationRunsPage';
 import IntegrationRunDetailPage from './IntegrationRunDetailPage';
 import { READER, WRITER, renderWithProviders } from '../test/renderWithProviders';
-import { getRun, listRuns, retryRun } from '../api/integrations';
+import { getRun, listRunsPage, retryRun } from '../api/integrations';
 
 vi.mock('../api/integrations', () => ({
-  listRuns: vi.fn(),
+  listRunsPage: vi.fn(),
   getRun: vi.fn(),
   retryRun: vi.fn(),
 }));
@@ -43,7 +43,7 @@ const DETAIL = {
 
 describe('IntegrationRunsPage', () => {
   beforeEach(() => {
-    listRuns.mockReset().mockResolvedValue([FAILED, OK]);
+    listRunsPage.mockReset().mockResolvedValue([FAILED, OK]);
   });
 
   it('lists runs for READ_WRITE users too (integration:run) and filters by status', async () => {
@@ -55,16 +55,34 @@ describe('IntegrationRunsPage', () => {
     );
     expect(screen.getByText('Remote answered 503')).toBeInTheDocument();
     expect(screen.getAllByText('120 / 80')).toHaveLength(2);
-    expect(listRuns).toHaveBeenCalledWith({ status: '' });
+    expect(listRunsPage).toHaveBeenCalledWith({ status: '', page: 0, size: 50 });
 
     await userEvent.selectOptions(screen.getByLabelText('Status filter'), 'FAILED');
-    await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith({ status: 'FAILED' }));
+    await waitFor(() => expect(listRunsPage).toHaveBeenLastCalledWith({ status: 'FAILED', page: 0, size: 50 }));
+  });
+
+  it('pages the history (v1.2.0 envelope) and starts over on a new filter', async () => {
+    listRunsPage.mockImplementation(({ page }) =>
+      Promise.resolve({ items: page === 0 ? [FAILED] : [OK], page, size: 50, total: 60 })
+    );
+    renderWithProviders(<IntegrationRunsPage />, { user: WRITER, path: '/admin/integrations/runs' });
+
+    expect(await screen.findByRole('link', { name: '#90' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Runs pages' })).toHaveTextContent('1–50 of 60');
+    await userEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByRole('link', { name: '#91' })).toBeInTheDocument();
+    expect(listRunsPage).toHaveBeenLastCalledWith({ status: '', page: 1, size: 50 });
+
+    await userEvent.selectOptions(screen.getByLabelText('Status filter'), 'FAILED');
+    await waitFor(() =>
+      expect(listRunsPage).toHaveBeenLastCalledWith({ status: 'FAILED', page: 0, size: 50 })
+    );
   });
 
   it('is hidden from READ_ONLY users', async () => {
     renderWithProviders(<IntegrationRunsPage />, { user: READER, path: '/admin/integrations/runs' });
     expect(await screen.findByText('Administrators only')).toBeInTheDocument();
-    expect(listRuns).not.toHaveBeenCalled();
+    expect(listRunsPage).not.toHaveBeenCalled();
   });
 });
 

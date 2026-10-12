@@ -39,4 +39,17 @@ public class DocImageAssetRepositoryImpl implements DocImageAssetRepository {
     public void deleteByInstance(int instanceId) {
         jpa.deleteByInstanceId(instanceId);
     }
+
+    @Override
+    public java.util.Map<Integer, List<DocImageAsset>> listByInstances(
+            java.util.Collection<Integer> instanceIds) {
+        java.util.Map<Integer, List<DocImageAsset>> byInstance = new java.util.LinkedHashMap<>();
+        if (instanceIds.isEmpty()) {
+            return byInstance;
+        }
+        for (DocImageAsset asset : jpa.findByInstanceIdInOrderByDocImageAssetId(instanceIds)) {
+            byInstance.computeIfAbsent(asset.getInstanceId(), id -> new java.util.ArrayList<>()).add(asset);
+        }
+        return byInstance;
+    }
 }

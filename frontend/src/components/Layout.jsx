@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import RouteErrorBoundary from './RouteErrorBoundary';
 import { useAuth } from '../context/AuthContext';
 import AnnouncementBanner from './AnnouncementBanner';
+import { Spinner } from './ui';
 
 // Nav mirrors the product journey: Home, then the numbered document flow,
 // then the extraction toolset and account. ws21: a PLATFORM_ADMIN sees the
@@ -22,6 +24,8 @@ const sections = [
       { to: '/platform/releases', label: 'Release notes', roles: PLATFORM_ONLY },
       // ws25: private destinations banks asked to reach (EGRESS_RULE_APPROVE).
       { to: '/platform/egress-rules', label: 'Egress rules', roles: PLATFORM_ONLY },
+      // v1.2.0: the platform bank's own audit trail + per-bank counts.
+      { to: '/platform/audit', label: 'Audit log', roles: PLATFORM_ONLY },
     ],
   },
   {
@@ -75,6 +79,8 @@ const sections = [
       { to: '/admin/retention', label: 'Privacy & retention', roles: ['ADMIN'] },
       // ws18: security alerts raised for the bank + their delivery evidence.
       { to: '/admin/alerts', label: 'Security alerts', roles: ['ADMIN'] },
+      // v1.2.0: the bank's audit trail (audit:read; APPROVER read-only).
+      { to: '/admin/audit', label: 'Audit log', roles: ['ADMIN', 'APPROVER'] },
     ],
   },
   {
@@ -276,7 +282,13 @@ export default function Layout() {
         <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
           {/* ws24: maintenance/release/info banners + "new version" prompt. */}
           <AnnouncementBanner />
-          <Outlet />
+          {/* v1.2.0: route pages are lazy chunks (App.jsx); the app chrome
+              stays up while the next page's chunk loads. */}
+          <RouteErrorBoundary key={location.pathname}>
+            <Suspense fallback={<Spinner />}>
+              <Outlet />
+            </Suspense>
+          </RouteErrorBoundary>
         </div>
       </main>
     </div>

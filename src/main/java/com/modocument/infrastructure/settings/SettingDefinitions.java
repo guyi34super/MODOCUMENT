@@ -219,6 +219,14 @@ public final class SettingDefinitions {
                     .unit("days")
                     .property("modocument.retention.customer-data-days")
                     .defaultValue("30").range("1", "30").build(),
+            builder(AUDIT_READ_AUDIT_ENABLED, BOOLEAN).platformControlled().security()
+                    .group(SettingGroup.DATA_PROTECTION)
+                    .label("Audit views of sensitive data")
+                    .description("Record who viewed customer data (job data, extraction "
+                            + "records, the user list, data-subject searches) in the audit "
+                            + "trail, once per person, record and hour. Set by the platform "
+                            + "owner, per bank.")
+                    .defaultValue("true").build(),
             builder(MASKING_SCREEN_WORKING, BOOLEAN).bank().security()
                     .group(SettingGroup.DATA_PROTECTION)
                     .label("Mask PII in the editing wizard")
@@ -272,6 +280,10 @@ public final class SettingDefinitions {
                     "Integration run failures", "5", "20"),
             alertWindow(ALERT_INTEGRATION_FAILURES_WINDOW, "integration-failures",
                     "Integration run failures: window", "60m"),
+            alertThreshold(ALERT_ACCESS_DENIED_THRESHOLD, "access-denied-burst",
+                    "Refused-access burst", "3", "12"),
+            alertWindow(ALERT_ACCESS_DENIED_WINDOW, "access-denied-burst",
+                    "Refused-access burst: window", "5m"),
             builder(ALERT_WEBHOOK_MIN_SEVERITY, ENUM).platform().security()
                     .group(SettingGroup.SECURITY_ALERTS)
                     .label("Webhook: minimum severity")
@@ -366,6 +378,13 @@ public final class SettingDefinitions {
                     .label("AI circuit breaker: open duration")
                     .description("How long the circuit stays open before a trial call.")
                     .defaultValue("120s").range("10s", "30m").build(),
+            builder(AI_RESULT_CACHE_ENABLED, BOOLEAN).bank().operational()
+                    .group(SettingGroup.AI_EXTRACTION)
+                    .label("AI result cache")
+                    .description("Reuse the AI's parsed table when the same document is parsed "
+                            + "again against the same template (no new AI call); cached results "
+                            + "follow the customer-data retention.")
+                    .defaultValue("true").build(),
             builder(PARSING_LLM_BATCH_SIZE, INT).platform().operational()
                     .group(SettingGroup.AI_EXTRACTION)
                     .label("AI batch size")
@@ -436,7 +455,14 @@ public final class SettingDefinitions {
                     .group(SettingGroup.INTEGRATIONS)
                     .label("Agent offline after")
                     .description("A Connector Agent silent for this long is shown offline.")
-                    .defaultValue("2m").range("1m", "60m").build());
+                    .defaultValue("2m").range("1m", "60m").build(),
+            builder(INTEGRATION_HISTORY_RETENTION, DURATION).bank().operational()
+                    .group(SettingGroup.INTEGRATIONS)
+                    .label("Integration history kept for")
+                    .description("Finished runs with their logs, delivered or dead-lettered "
+                            + "outbound deliveries and integration events older than this "
+                            + "are deleted by the daily housekeeping.")
+                    .defaultValue("90d").range("7d", "400d").build());
 
     /** A per-user endpoint bucket of modocument.ratelimit (1 permit up to 10x the default). */
     private static SettingDefinition bucket(String key, String property, String label,

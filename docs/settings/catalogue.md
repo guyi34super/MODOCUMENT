@@ -207,6 +207,7 @@ application.yml has exactly one threshold and one window setting
 | `export.cap.admin` | Data protection | BANK | SECURITY | INT | 50000 rows | 0 – 500000 |  |  | `modocument.export.caps.ADMIN` |
 | `retention.enabled` | Data protection | BANK | SECURITY | BOOLEAN | true | true | **locked** |  | `modocument.retention.enabled` |
 | `retention.customerDataDays` | Data protection | BANK | SECURITY | INT | 30 days | 1 – 30 |  |  | `modocument.retention.customer-data-days` |
+| `audit.readAuditEnabled` | Data protection | BANK (platform-set) | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
 | `privacy.masking.screenWorking` | Data protection | BANK | SECURITY | BOOLEAN | false | true, false |  |  | `modocument.privacy.masking.screen-working` |
 | `privacy.tokenizePii` | Data protection | BANK | SECURITY | BOOLEAN | true | true | **locked** |  | `aifiles.privacy.tokenize-pii` |
 | `ai.enabled` | Data protection | BANK | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
@@ -226,6 +227,8 @@ application.yml has exactly one threshold and one window setting
 | `alerts.apiClientAuthFailures.window` | Security alerts | PLATFORM | SECURITY | DURATION | 5m | 1m – 1h |  |  | `modocument.alerts.rules[api-client-auth-failures].window` |
 | `alerts.integrationFailures.threshold` | Security alerts | PLATFORM | SECURITY | INT | 5 events | 1 – 20 |  |  | `modocument.alerts.rules[integration-failures].threshold` |
 | `alerts.integrationFailures.window` | Security alerts | PLATFORM | SECURITY | DURATION | 1h | 1m – 1h |  |  | `modocument.alerts.rules[integration-failures].window` |
+| `alerts.accessDeniedBurst.threshold` | Security alerts | PLATFORM | SECURITY | INT | 3 events | 1 – 12 |  |  | `modocument.alerts.rules[access-denied-burst].threshold` |
+| `alerts.accessDeniedBurst.window` | Security alerts | PLATFORM | SECURITY | DURATION | 5m | 1m – 1h |  |  | `modocument.alerts.rules[access-denied-burst].window` |
 | `alerts.webhook.minSeverity` | Security alerts | PLATFORM | SECURITY | ENUM | INFO | INFO, LOW, MEDIUM |  |  | `modocument.alerts.webhook.min-severity` |
 | `alerts.email.minSeverity` | Security alerts | PLATFORM | SECURITY | ENUM | INFO | INFO, LOW, MEDIUM |  |  | `modocument.alerts.email.min-severity` |
 | `extraction.defaultMode` | AI & extraction | BANK | OPERATIONAL | ENUM | AI_WITH_CODE_FALLBACK | AI_WITH_CODE_FALLBACK, CODE_ONLY, AI_ONLY |  |  | — (code default) |
@@ -240,6 +243,7 @@ application.yml has exactly one threshold and one window setting
 | `doccreation.generateAiEnabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | `modocument.doccreation.generate-ai-enabled` |
 | `ai.circuitBreaker.failureThreshold` | AI & extraction | PLATFORM | OPERATIONAL | INT | 5 failures | 1 – 50 |  |  | — (code default) |
 | `ai.circuitBreaker.openDuration` | AI & extraction | PLATFORM | OPERATIONAL | DURATION | 2m | 10s – 30m |  |  | — (code default) |
+| `ai.resultCache.enabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | — (code default) |
 | `parsing.llmBatchSize` | AI & extraction | PLATFORM | OPERATIONAL | INT | 50 rows | 5 – 500 |  |  | `modocument.parsing.llm-batch-size` |
 | `parsing.llmBatchConcurrency` | AI & extraction | PLATFORM | OPERATIONAL | INT | 8 batches | 1 – 32 |  |  | `modocument.parsing.llm-batch-concurrency` |
 | `integration.maxRowsPerRun` | Integrations | BANK | OPERATIONAL | INT | 50000 rows | 1 – 500000 |  |  | — (code default) |
@@ -252,4 +256,5 @@ application.yml has exactly one threshold and one window setting
 | `integration.auth.allowApiKeys` | Integrations | BANK (platform-set) | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
 | `integration.auth.allowMtls` | Integrations | BANK (platform-set) | SECURITY | BOOLEAN | true | true, false |  |  | — (code default) |
 | `integration.agentHeartbeatTimeout` | Integrations | BANK | OPERATIONAL | DURATION | 2m | 1m – 1h |  |  | — (code default) |
+| `integration.historyRetention` | Integrations | BANK | OPERATIONAL | DURATION | 90d | 7d – 400d |  |  | — (code default) |
 <!-- END GENERATED -->

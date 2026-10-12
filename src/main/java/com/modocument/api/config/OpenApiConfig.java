@@ -261,6 +261,29 @@ public class OpenApiConfig {
         };
     }
 
+    /**
+     * ws28 (contracts §8): a {@link DeprecatedEndpoint} handler is
+     * {@code deprecated: true}, its description names the replacement and the
+     * sunset (docs/api/versioning-policy.md §4).
+     */
+    @Bean
+    public OperationCustomizer deprecatedEndpoints() {
+        return (operation, handlerMethod) -> {
+            DeprecatedEndpoint deprecated = DeprecationHeaderInterceptor.find(handlerMethod);
+            if (deprecated == null) {
+                return operation;
+            }
+            operation.setDeprecated(true);
+            String note = "Deprecated since " + deprecated.since()
+                    + (deprecated.replacement().isBlank() ? "" : "; use " + deprecated.replacement())
+                    + "; removal not before " + deprecated.sunset()
+                    + " (responses carry Deprecation/Sunset headers).";
+            operation.setDescription(operation.getDescription() == null ? note
+                    : operation.getDescription() + "\n\n" + note);
+            return operation;
+        };
+    }
+
     private static void addRef(Operation op, String status, String component) {
         if (!op.getResponses().containsKey(status)) {
             op.getResponses().addApiResponse(status,

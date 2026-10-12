@@ -1,8 +1,6 @@
 package com.modocument.domain.document;
 
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -13,12 +11,10 @@ import java.util.Map;
  * template pipeline consumes. Deduplicated per job by dedupKey (hash of the
  * normalized field map).
  */
-@Document(collection = "processedRecords")
 public class ProcessedRecord {
 
     @Id
     private String id;
-    @Indexed
     private String jobId;
     private String rawRecordId;
     private Map<String, String> fields = new LinkedHashMap<>();

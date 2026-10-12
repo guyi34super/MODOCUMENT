@@ -17,6 +17,15 @@ server:
 spring:
   application:
     name: MoDocument
+  autoconfigure:
+    # ws29 (SE5): no Mongo/Kafka in the default deployment — the production
+    # jar does not even ship the clients (Maven `scale` profile only).
+    # application-scale.yml clears this list to re-enable them.
+    exclude:
+      - org.springframework.boot.autoconfigure.mongo.MongoAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.mongo.MongoRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
   data:
     mongodb:
       # Extraction store (raw pages/payloads, processed records, job state,
@@ -48,6 +57,25 @@ spring:
     username: ${MODOCUMENT_DB_USERNAME:modocument}
     password: ${MODOCUMENT_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
+    # ws27 (v1.2.0): explicit connection pool sizing instead of Hikari's
+    # defaults (10 connections, all of them kept idle).
+    #  * maximum-pool-size: one request can hold TWO connections at once —
+    #    its own transaction plus a REQUIRES_NEW write (DENIED/FAILED audit
+    #    rows, idempotency reservations, settings writes) — and the
+    #    integration workers, extraction worker and scheduler threads draw
+    #    from the same pool. 20 per task leaves headroom for that; keep
+    #    tasks x pool below the database's max_connections (RDS: about
+    #    LEAST(DBInstanceClassMemory/9531392, 5000)).
+    #  * leak-detection-threshold: a connection held longer than 30 s logs a
+    #    WARN with the borrowing stack trace (diagnostic only; the
+    #    connection is not taken away). The test profile turns it off.
+    hikari:
+      maximum-pool-size: ${MODOCUMENT_DB_POOL_MAX:20}
+      minimum-idle: ${MODOCUMENT_DB_POOL_MIN_IDLE:5}
+      # Milliseconds (bound straight onto HikariDataSource setters).
+      connection-timeout: 10000
+      leak-detection-threshold: ${MODOCUMENT_DB_LEAK_DETECTION_MS:30000}
+      pool-name: modocument-db
   flyway:
     # Flyway owns the schema in production (src/main/resources/db/migration);
     # the H2 local/test profiles disable it and use ddl-auto: create instead.
@@ -64,6 +92,14 @@ spring:
     url: ${spring.datasource.url}
     user: ${MODOCUMENT_FLYWAY_USERNAME:${spring.datasource.username}}
     password: ${MODOCUMENT_FLYWAY_PASSWORD:${spring.datasource.password}}
+    postgresql:
+      # ws27: a session-level advisory lock instead of Flyway's transactional
+      # one. V270 builds its indexes CONCURRENTLY (non-transactional script),
+      # and CREATE INDEX CONCURRENTLY waits for every older transaction —
+      # including the lock transaction Flyway would hold open itself, a
+      # self-deadlock. The session lock still serialises tasks that start
+      # at the same time.
+      transactional-lock: false
   jpa:
     open-in-view: false
     hibernate:
@@ -72,6 +108,29 @@ spring:
       naming:
         # Keep the exact PascalCase table/column names from the original schema.
         physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    properties:
+      hibernate:
+        # ws27: JDBC batching for multi-row writes (saveAll, cascades, dirty
+        # entities flushed together). Entities with IDENTITY ids still insert
+        # one row per statement (Hibernate needs each generated key back);
+        # their UPDATEs and DELETEs batch, as do inserts of entities with
+        # assigned ids (UUIDv7 AuditEvent, RefreshToken).
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+  task:
+    scheduling:
+      # ws27: @Scheduled jobs (settings poll, alert sweep, agent offline
+      # sweep, integration tick, extraction retry sweeper, retention, SoD,
+      # housekeeping) share this pool instead of ONE thread, so a slow job
+      # never delays the others. Each job still never overlaps itself. The
+      # integration tick additionally hands its work to its own executor
+      # (IntegrationScheduler), since outbound dispatch waits on bank
+      # endpoints.
+      pool:
+        size: ${MODOCUMENT_SCHEDULER_POOL_SIZE:4}
+      thread-name-prefix: modocument-sched-
   servlet:
     multipart:
       max-file-size: 50MB
@@ -209,9 +268,28 @@ modocument:
     admin-jobs: ${MODOCUMENT_RATELIMIT_ADMIN_JOBS:10}
     admin-security: ${MODOCUMENT_RATELIMIT_ADMIN_SECURITY:10}
   storage:
+    # ws29 (SE5) FileStore backend: `local` (default — disk under `root`) or
+    # `s3` (ECS: files survive task replacement, shared by every task).
+    backend: ${MODOCUMENT_STORAGE_BACKEND:local}
     # Root directory for uploaded files (<root>/uploads) and export copies
-    # (<root>/exports). Mount a volume here in containers.
+    # (<root>/exports) with the local backend. Mount a volume here in containers.
     root: ${MODOCUMENT_STORAGE_ROOT:wwwroot}
+    s3:
+      # Same key layout as the local root (uploads/..., exports/...), under
+      # an optional prefix. Credentials: the AWS default chain (ECS task role).
+      bucket: ${MODOCUMENT_STORAGE_S3_BUCKET:}
+      prefix: ${MODOCUMENT_STORAGE_S3_PREFIX:}
+      # Empty = the AWS default region chain (AWS_REGION on ECS).
+      region: ${MODOCUMENT_STORAGE_S3_REGION:}
+      # Empty = the bucket's default encryption (Terraform: SSE-KMS, the
+      # bucket CMK); set to name the CMK explicitly on every PUT.
+      kms-key-id: ${MODOCUMENT_STORAGE_S3_KMS_KEY_ID:}
+      # On-disk LRU cache (java.io.tmpdir) for FileStore.localCopy downloads
+      # (parsers, LibreOffice), in MiB.
+      temp-cache-mb: ${MODOCUMENT_STORAGE_S3_TEMP_CACHE_MB:512}
+      # S3-compatible endpoint (S3Mock in tests); empty on AWS.
+      endpoint: ${MODOCUMENT_STORAGE_S3_ENDPOINT:}
+      path-style: ${MODOCUMENT_STORAGE_S3_PATH_STYLE:false}
   privacy:
     masking:
       # ws12 (gate C2, PRIV-005): PII-classified values are ALWAYS masked on
@@ -231,6 +309,31 @@ modocument:
     customer-data-days: ${MODOCUMENT_RETENTION_DAYS:30}
     # Daily, off-peak; six-field Spring cron (seconds first).
     cron: ${MODOCUMENT_RETENTION_CRON:0 41 2 * * *}
+    # ws29 (BUG-12): a stored-object delete that still fails after the purge,
+    # a DSR erase or a job deletion committed (3 in-call attempts) is queued
+    # in PendingFileDelete and retried by PendingFileDeleteSweeper until the
+    # store confirms it (backoff 5 min doubling to 6 h). The flag gates only
+    # the schedule.
+    file-delete-retry:
+      enabled: ${MODOCUMENT_FILE_DELETE_RETRY_ENABLED:true}
+      interval-ms: ${MODOCUMENT_FILE_DELETE_RETRY_INTERVAL_MS:300000}
+  housekeeping:
+    # ws27 (v1.2.0) daily housekeeping (HousekeepingJob): deletes RefreshToken
+    # rows expired/revoked > 30 days ago, RevokedToken rows past their token
+    # expiry, finished integration runs (+ run logs), DELIVERED/DEAD outbox
+    # rows and integration events older than each bank's
+    # integration.historyRetention setting (default 90 days), and expired
+    # Idempotency-Key rows. Audited HOUSEKEEPING_COMPLETED per bank (counts).
+    # The flag gates only the schedule.
+    enabled: ${MODOCUMENT_HOUSEKEEPING_ENABLED:true}
+    # Daily, after the retention purge and the SoD scan; six-field Spring cron.
+    cron: ${MODOCUMENT_HOUSEKEEPING_CRON:0 7 4 * * *}
+    # Bounded per run: at most batch-size x max-batches rows per rule and
+    # bank, one short transaction per batch; a backlog drains over days.
+    batch-size: 500
+    max-batches: 100
+    refresh-token-grace: 30d
+    revoked-token-grace: 5m
   sod:
     # Nightly separation-of-duties scan (ws11, SEC-024 layer 3): re-verifies
     # per bank that no APPLIED change was approved by its own maker and no
@@ -387,6 +490,20 @@ modocument:
         actions: [AUTHORIZATION_DENIED]
         group-by: ACTOR
         threshold: ${MODOCUMENT_ALERT_AUTHZ_DENIED_THRESHOLD:10}
+        window: 5m
+        severity: MEDIUM
+      # ws28: refusals outside method security - an AccessDeniedException
+      # inside a use case, an owner-scoped 404 probe, an invalid or revoked
+      # bearer token. ACCESS_DENIED rows are AGGREGATED (at most one per
+      # actor-or-ip per entity type per minute, newValues.count); the sweep
+      # sums those counts (OBS-01), so the threshold counts refusals in the
+      # window, also when they all land inside one minute.
+      - name: access-denied-burst
+        description: Repeated refused access (use-case denials, ownership probes, invalid tokens) from one user or address
+        trigger: WINDOWED
+        actions: [ACCESS_DENIED]
+        group-by: ACTOR_OR_IP
+        threshold: ${MODOCUMENT_ALERT_ACCESS_DENIED_THRESHOLD:3}
         window: 5m
         severity: MEDIUM
       - name: admin-action-burst
@@ -642,12 +759,14 @@ modocument:
     # instruction would change more than this fraction of cells (0.6 = 60%).
     # Bulk phrasing ("all"/"every") is exempt.
     full-table-max-change-ratio: ${MODOCUMENT_CHAT_EDIT_MAX_CHANGE_RATIO:0.6}
-    # Model for validation-step chat edits (Ollama: deepseek-r1:8b).
-    model-id: ${MODOCUMENT_CHAT_EDIT_MODEL:deepseek-r1:8b}
+    # Model for validation-step chat edits; empty = the default model
+    # (aifiles.openai.model-id), the same one document parsing uses (ws28).
+    model-id: ${MODOCUMENT_CHAT_EDIT_MODEL:}
   extraction-llm:
     # Agentic extraction: schema inference, run summaries, record cleaning.
-    # Uses the same local Ollama endpoint as document parsing (AIFILES_OPENAI_BASEURL).
-    model-id: ${MODOCUMENT_EXTRACTION_MODEL:mistral:latest}
+    # Uses the same local Ollama endpoint as document parsing (AIFILES_OPENAI_BASEURL);
+    # empty = the default model (aifiles.openai.model-id), no floating :latest tag (ws28).
+    model-id: ${MODOCUMENT_EXTRACTION_MODEL:}
   doccreation:
     # Headless LibreOffice for the document-creation PDF export. Installed in
     # the Docker image; when the binary is absent (e.g. local dev) the .docx
@@ -698,8 +817,9 @@ aifiles:
     # sentinel and the AI gateway refuses calls).
     api-key: ${MODOCUMENT_AI_API_KEY:${AIFILES_OPENAI_APIKEY:ollama}}
     base-url: ${MODOCUMENT_AI_BASE_URL:${AIFILES_OPENAI_BASEURL:http://localhost:11434}}
-    # Default chat model (qwen2.5 on Ollama); extraction agents default to
-    # mistral and chat edits to deepseek-r1:8b (modocument.* keys below).
+    # THE default model (qwen2.5 on Ollama) for parsing, chat edits and the
+    # extraction agents alike; MODOCUMENT_CHAT_EDIT_MODEL /
+    # MODOCUMENT_EXTRACTION_MODEL override those two (modocument.* keys).
     model-id: ${MODOCUMENT_AI_MODEL:${AIFILES_OPENAI_MODELID:qwen2.5}}
   privacy:
     # PII tokenization for the LLM chat/analysis features (chat table edits,
@@ -788,6 +908,7 @@ extraction:
     robots-ttl-seconds: 3600
     max-body-bytes: 5242880
     request-timeout-seconds: 20
+    # No effect since ws29: JS rendering (Playwright) was removed.
     render-js-enabled: false
     max-pages-default: 100
     max-depth-default: 2

@@ -7,6 +7,7 @@ import {
   EXPORT_CAP_EXCEEDED,
   cancelJob,
   chatEdit,
+  databaseExportRequest,
   exportFilePath,
   exportFileWithReason,
   exportToDatabase,
@@ -27,6 +28,7 @@ import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner }
 import { LowConfidenceCallout, ParseProvenanceBadge } from './IngestionProvenance';
 import { useToast } from '../context/ToastContext';
 import useUnsavedGuard from '../hooks/useUnsavedGuard';
+import { DB_VENDORS, SSL_MODES, defaultPort } from '../utils/dbVendors';
 
 const WIZARD_STEPS = ['mapping', 'validation', 'export'];
 const ACTIVE_STATUSES = ['PENDING', 'RUNNING'];
@@ -1295,22 +1297,86 @@ function ExportStep({
 
       {showDbExport && (
         <form onSubmit={onDbExport} className="mt-4 space-y-3 border-t border-line pt-4">
+          {/* v1.2.0: vendor + host form; the server builds the JDBC URL
+              (no raw URL accepted any more). */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="JDBC URL">
+            <Field label="Database vendor">
+              <select
+                required
+                className={inputClass}
+                value={dbForm.vendor}
+                onChange={(e) =>
+                  onDbFormChange({
+                    vendor: e.target.value,
+                    port: dbForm.port || String(defaultPort(e.target.value)),
+                  })
+                }
+              >
+                <option value="">Choose…</option>
+                {DB_VENDORS.map((v) => (
+                  <option key={v.value} value={v.value}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="grid grid-cols-[1fr_7rem] gap-3">
+              <Field label="Host">
+                <input
+                  required
+                  className={inputClass}
+                  placeholder="db.bank.internal"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={dbForm.host}
+                  onChange={(e) => onDbFormChange({ host: e.target.value })}
+                />
+              </Field>
+              <Field label="Port">
+                <input
+                  required
+                  inputMode="numeric"
+                  pattern="[0-9]{1,5}"
+                  className={inputClass}
+                  value={dbForm.port}
+                  onChange={(e) => onDbFormChange({ port: e.target.value })}
+                />
+              </Field>
+            </div>
+            <Field label="Database">
               <input
                 required
                 className={inputClass}
-                placeholder="jdbc:sqlserver://host;databaseName=…"
-                value={dbForm.jdbcUrl}
-                onChange={(e) => onDbFormChange({ jdbcUrl: e.target.value })}
+                value={dbForm.database}
+                onChange={(e) => onDbFormChange({ database: e.target.value })}
               />
+            </Field>
+            <Field label="Schema (optional)">
+              <input
+                className={inputClass}
+                value={dbForm.schema}
+                onChange={(e) => onDbFormChange({ schema: e.target.value })}
+              />
+            </Field>
+            <Field label="SSL mode">
+              <select
+                className={inputClass}
+                value={dbForm.sslmode}
+                onChange={(e) => onDbFormChange({ sslmode: e.target.value })}
+              >
+                {SSL_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode}
+                  </option>
+                ))}
+              </select>
             </Field>
             <Field label="Table name">
               <input
                 required
                 className={inputClass}
-                value={dbForm.tableName}
-                onChange={(e) => onDbFormChange({ tableName: e.target.value })}
+                value={dbForm.table}
+                onChange={(e) => onDbFormChange({ table: e.target.value })}
               />
             </Field>
             <Field label="Username">
@@ -1371,10 +1437,15 @@ export default function IngestionJobPage() {
   const [capPrompt, setCapPrompt] = useState(null);
   const [exportReason, setExportReason] = useState('');
   const [dbForm, setDbForm] = useState({
-    jdbcUrl: '',
+    vendor: '',
+    host: '',
+    port: '',
+    database: '',
+    schema: '',
+    sslmode: 'require',
     username: '',
     password: '',
-    tableName: '',
+    table: '',
     createTableIfMissing: true,
   });
 
@@ -1542,7 +1613,7 @@ export default function IngestionJobPage() {
   const runDbExport = async (reason) => {
     setBusyAction('db-export');
     try {
-      const payload = reason ? { ...dbForm, reason } : dbForm;
+      const payload = databaseExportRequest(dbForm, reason);
       const result = await toast.promise(() => exportToDatabase(id, payload), {
         ...ACTION_MESSAGES['db-export'],
         error: capAwareError,

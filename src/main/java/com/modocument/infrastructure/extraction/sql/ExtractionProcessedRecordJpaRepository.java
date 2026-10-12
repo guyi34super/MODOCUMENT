@@ -30,4 +30,10 @@ public interface ExtractionProcessedRecordJpaRepository
             + " where r.bankId = :bankId and r.fieldsJson is not null and r.processedAt < :cutoff")
     int purgeFieldsOlderThan(@Param("bankId") int bankId,
                              @Param("cutoff") java.time.Instant cutoff);
+
+    /** ws28: which of {@code keys} the job already stored (the batch dedup pre-check). */
+    @Query("select r.dedupKey from ExtractionProcessedRecordEntity r"
+            + " where r.jobId = :jobId and r.dedupKey in :keys")
+    List<String> findExistingDedupKeys(@Param("jobId") String jobId,
+                                       @Param("keys") java.util.Collection<String> keys);
 }

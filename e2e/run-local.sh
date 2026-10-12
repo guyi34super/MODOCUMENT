@@ -13,6 +13,8 @@
 #   E2E_KEEP=1 e2e/run-local.sh          # keep the database + run dir for debugging
 #   E2E_DB_APP_ROLE=owner e2e/run-local.sh  # backend runs as the schema owner (RLS
 #                                        # bypassed) — the old BUG-01 workaround
+#   E2E_RUN_CMD='node perf/x.mjs' e2e/run-local.sh  # run this command (from the
+#                                        # repo root, same env) instead of Playwright
 #   E2E_BANK_SIM=1 e2e/run-local.sh      # also start the Wave-3 bank simulator
 #                                        # (bank DB + REST stub; no SFTP without Docker)
 #                                        # + the connector agent jar for the agent specs
@@ -112,6 +114,10 @@ fi
 
 # --- 2. Build -------------------------------------------------------------------
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
+  # connector-core: the sibling Maven project the backend and the agent depend on.
+  log "installing connector-core (tests skipped)"
+  (cd "$REPO_ROOT" && mvn -B -q -DskipTests -f connector-core/pom.xml install) >"$RUN_DIR/build-core.log" 2>&1 \
+    || { tail -50 "$RUN_DIR/build-core.log"; die "connector-core build failed"; }
   log "building backend jar (tests skipped)"
   (cd "$REPO_ROOT" && mvn -B -q -DskipTests ${E2E_MVN_ARGS:-} package) >"$RUN_DIR/build-backend.log" 2>&1 \
     || { tail -50 "$RUN_DIR/build-backend.log"; die "backend build failed"; }
@@ -327,7 +333,13 @@ set +e
     AGENT_JAR="$(ls -1 "$REPO_ROOT"/agent/target/modocument-agent-*.jar 2>/dev/null | grep -v -- '-plain' | head -1 || true)"
     [ -n "$AGENT_JAR" ] && export E2E_AGENT_JAR="$AGENT_JAR"
   fi
-  npx --no-install playwright test "$@"
+  if [ -n "${E2E_RUN_CMD:-}" ]; then
+    # Another driver against the same stack (perf/run-baseline.sh): runs
+    # from the repo root with the exports above instead of Playwright.
+    cd "$REPO_ROOT" && bash -c "$E2E_RUN_CMD"
+  else
+    npx --no-install playwright test "$@"
+  fi
 )
 TEST_STATUS=$?
 set -e

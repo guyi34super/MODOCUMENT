@@ -1,0 +1,2 @@
+# Raw logs of a perf run (large; the JSON results are what gets committed).
+results/*/*.log

@@ -213,6 +213,44 @@ class UserAdminIntegrationTest {
     }
 
     @Test
+    void theUserListPagesWithTheSharedEnvelopeAndStaysInTheCallersBank() throws Exception {
+        String adminToken = adminToken();
+
+        JsonNode first = MAPPER.readTree(mvc.perform(get("/api/admin/users")
+                        .param("page", "0").param("size", "2")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(2))
+                .andReturn().getResponse().getContentAsString());
+        long total = first.get("total").asLong();
+        assertThat(first.get("items").size()).isEqualTo((int) Math.min(2, total));
+
+        // Walking every page yields the bank's directory exactly once, never
+        // another bank's user.
+        List<String> emails = new ArrayList<>();
+        for (int page = 0; page * 2L < total; page++) {
+            JsonNode body = MAPPER.readTree(mvc.perform(get("/api/admin/users")
+                            .param("page", String.valueOf(page)).param("size", "2")
+                            .header("Authorization", bearer(adminToken)))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString());
+            body.get("items").forEach(row -> emails.add(row.get("email").asText()));
+        }
+        assertThat(emails).hasSize((int) total).doesNotHaveDuplicates()
+                .contains(admin.getEmail(), secondAdmin.getEmail(), member.getEmail())
+                .doesNotContain(outsider.getEmail());
+
+        // Past the end: an empty page, same total. Size is clamped to 200.
+        mvc.perform(get("/api/admin/users").param("page", "999").param("size", "500")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty())
+                .andExpect(jsonPath("$.size").value(200))
+                .andExpect(jsonPath("$.total").value(total));
+    }
+
+    @Test
     void nonAdminsGet403OnEveryUserAdminRoute() throws Exception {
         String memberToken = token(member.getEmail());
 

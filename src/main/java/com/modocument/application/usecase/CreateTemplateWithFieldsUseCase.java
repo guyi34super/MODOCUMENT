@@ -2,7 +2,10 @@ package com.modocument.application.usecase;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.application.audit.AuditActions;
 import com.modocument.application.dto.CreateTemplateFieldDto;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.modocument.application.dto.CreateTemplateRequest;
 import com.modocument.application.dto.CreateTemplateResponse;
 import com.modocument.application.dto.CreateTemplateRuleDto;
@@ -32,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -55,12 +59,25 @@ public class CreateTemplateWithFieldsUseCase {
     private final TemplateDataTypeRepository templateDataTypeRepository;
     private final ValidationRuleRepository validationRuleRepository;
     private final com.modocument.application.port.CurrentUserProvider currentUser;
+    private final AuditRecorder audit;
 
     public CreateTemplateWithFieldsUseCase(TemplateRepository templateRepository,
                                            TemplateFieldsRepository templateFieldsRepository,
                                            TemplateDataTypeRepository templateDataTypeRepository,
                                            ValidationRuleRepository validationRuleRepository,
                                            com.modocument.application.port.CurrentUserProvider currentUser) {
+        this(templateRepository, templateFieldsRepository, templateDataTypeRepository,
+                validationRuleRepository, currentUser, spec -> { });
+    }
+
+    @Autowired
+    public CreateTemplateWithFieldsUseCase(TemplateRepository templateRepository,
+                                           TemplateFieldsRepository templateFieldsRepository,
+                                           TemplateDataTypeRepository templateDataTypeRepository,
+                                           ValidationRuleRepository validationRuleRepository,
+                                           com.modocument.application.port.CurrentUserProvider currentUser,
+                                           AuditRecorder audit) {
+        this.audit = audit;
         this.templateRepository = templateRepository;
         this.templateFieldsRepository = templateFieldsRepository;
         this.templateDataTypeRepository = templateDataTypeRepository;
@@ -136,6 +153,18 @@ public class CreateTemplateWithFieldsUseCase {
                     field.getAliases(), field.getLabelPattern(), field.getValuePattern(),
                     field.getDateFormats()));
         }
+
+        // ws28: one TEMPLATE_CREATED for the whole composite (same transaction:
+        // a rolled-back create leaves no audit row), with the definition's size.
+        Map<String, Object> created = new LinkedHashMap<>();
+        created.put("name", template.getName());
+        created.put("visibility", visibility.name());
+        created.put("extractionMode", template.getExtractionMode());
+        created.put("fieldCount", createdFields.size());
+        created.put("ruleCount", createdFields.stream().mapToInt(f -> f.rules().size()).sum());
+        created.put("via", "CreateWithFields");
+        audit.success(AuditActions.TEMPLATE_CREATED, "Template",
+                String.valueOf(template.getTemplateId()), null, created);
 
         return new CreateTemplateResponse(
                 template.getTemplateId(), template.getName(), template.getDescription(), createdFields,

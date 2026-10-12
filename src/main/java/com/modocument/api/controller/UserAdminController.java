@@ -1,5 +1,9 @@
 package com.modocument.api.controller;
 
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,7 +31,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 /**
  * Bank-scoped user administration (ws09, gates B1/B10, PRIV-017). Every
@@ -58,6 +65,9 @@ public class UserAdminController {
     private final PendingChangeUseCase pendingChanges;
     private final ObjectMapper objectMapper;
 
+    /** ws28 (setter-injected; a no-op without Spring): the read audit. */
+    private AuditRecorder recorder = spec -> { };
+
     public UserAdminController(UserAdminUseCase userAdmin, AccessReviewUseCase accessReview,
                                PendingChangeUseCase pendingChanges, ObjectMapper objectMapper) {
         this.userAdmin = userAdmin;
@@ -66,9 +76,21 @@ public class UserAdminController {
         this.objectMapper = objectMapper;
     }
 
+    @Autowired
+    void setAuditRecorder(AuditRecorder audit) {
+        this.recorder = audit;
+    }
+
     @GetMapping("/api/admin/users")
-    public ResponseEntity<?> list() {
-        return ResponseEntity.ok(userAdmin.listUsers());
+    public ResponseEntity<?> list(@RequestParam(name = "page", required = false) Integer page,
+                                  @RequestParam(name = "size", required = false) Integer size) {
+        // ws28: with a page parameter, the paged envelope {items, page, size,
+        // total}; without one, the old plain list.
+        Object users = page != null ? userAdmin.pageUsers(page, size) : userAdmin.listUsers();
+        // ws28 read audit: the bank's user directory (names, emails, roles) was shown.
+        recorder.success(AuditActions.SENSITIVE_DATA_VIEWED, "AppUserList", null, null,
+                Map.of("view", "user-list"));
+        return ResponseEntity.ok(users);
     }
 
     /** Maker side of USER_CREATE: 202 + the pending change awaiting a second admin. */

@@ -270,6 +270,69 @@ class SqlExtractionStoreTest {
                 .isEqualTo(ExtractionJobStatus.COMPLETED);
     }
 
+    // ---- ws28: batch writes and the dashboard queries -----------------------------
+
+    private static RawRecord raw(String sourceId, String hash) {
+        RawRecord record = new RawRecord();
+        record.setJobId("job-raw-batch");
+        record.setSourceId(sourceId);
+        record.setUri("https://example.com/" + hash);
+        record.setBody("<html>" + hash + "</html>");
+        record.setContentHash(hash);
+        record.setFetchedAt(Instant.now());
+        return record;
+    }
+
+    @Test
+    void aRawBatchKeepsTheConstraintsDedupSemantics() {
+        String source = "src-batch-" + System.nanoTime();
+        assertThat(rawRecords.saveIfNew(raw(source, "h-stored"))).isTrue();
+
+        List<RawRecord> batch = List.of(raw(source, "h-new-1"), raw(source, "h-stored"),
+                raw(source, "h-new-2"), raw(source, "h-new-1"), raw(source + "-other", "h-stored"));
+        boolean[] stored = rawRecords.saveAllIfNew(batch);
+
+        assertThat(stored).containsExactly(true, false, true, false, true);
+        assertThat(batch.get(0).getId()).isNotNull();
+        assertThat(batch.get(1).getId()).isNull();
+        assertThat(batch.get(3).getId()).isNull();
+        // Re-sending the whole batch stores nothing.
+        assertThat(rawRecords.saveAllIfNew(List.of(raw(source, "h-new-1"), raw(source, "h-new-2"))))
+                .containsExactly(false, false);
+    }
+
+    @Test
+    void aProcessedBatchSkipsKeysStoredEarlierOrRepeatedInTheBatch() {
+        String job = "job-batch-" + System.nanoTime();
+        assertThat(processedRecords.saveAllIfNew(List.of(record(job, "k1", Map.of("A", "1"))))).isEqualTo(1);
+
+        List<ProcessedRecord> batch = List.of(record(job, "k1", Map.of("A", "again")),
+                record(job, "k2", Map.of("A", "2")), record(job, "k3", Map.of("A", "3")),
+                record(job, "k2", Map.of("A", "dup")));
+        assertThat(processedRecords.saveAllIfNew(batch)).isEqualTo(2);
+        assertThat(processedRecords.countByJob(job)).isEqualTo(3);
+        assertThat(batch.get(1).getId()).isNotNull();
+        assertThat(batch.get(0).getId()).isNull();
+    }
+
+    @Test
+    void theDashboardCountsAndNewestJobsComeFromTheDatabase() {
+        int owner = 900_000 + (int) (System.nanoTime() % 90_000);
+        for (ExtractionJobStatus status : List.of(ExtractionJobStatus.RUNNING, ExtractionJobStatus.RUNNING,
+                ExtractionJobStatus.FAILED, ExtractionJobStatus.COMPLETED)) {
+            ExtractionJob job = newJob(status);
+            job.setOwnerUserId(owner);
+            jobs.save(job);
+        }
+        assertThat(jobs.countByOwnerGroupedByStatus(owner))
+                .containsEntry(ExtractionJobStatus.RUNNING, 2L)
+                .containsEntry(ExtractionJobStatus.FAILED, 1L)
+                .containsEntry(ExtractionJobStatus.COMPLETED, 1L);
+        List<ExtractionJob> newest = jobs.listRecentByOwner(owner, 3);
+        assertThat(newest).hasSize(3);
+        assertThat(newest.get(0).getStatus()).isEqualTo(ExtractionJobStatus.COMPLETED);
+    }
+
     private static ProcessedRecord record(String jobId, String dedupKey, Map<String, String> fields) {
         ProcessedRecord record = new ProcessedRecord();
         record.setJobId(jobId);

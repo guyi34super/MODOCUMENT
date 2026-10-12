@@ -1,4 +1,7 @@
 # File-based secret indirection (<NAME>_FILE, SEC-018). Spring Boot 3.5 loads
 # EnvironmentPostProcessors from spring.factories (not from an .imports file).
+# ScaleModeEnvironmentGuard (ws29): scale-mode settings on a jar built without
+# the Maven `scale` profile fail fast with a clear message.
 org.springframework.boot.env.EnvironmentPostProcessor=\
-com.modocument.infrastructure.security.SecretFileEnvironmentPostProcessor
+com.modocument.infrastructure.security.SecretFileEnvironmentPostProcessor,\
+com.modocument.infrastructure.extraction.ScaleModeEnvironmentGuard

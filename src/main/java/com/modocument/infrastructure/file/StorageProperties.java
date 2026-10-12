@@ -6,10 +6,13 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Path;
 
 /**
- * Root directory for file storage: uploaded files live under
- * {@code <root>/uploads} and export copies under {@code <root>/exports}.
- * Configured via modocument.storage.root (env MODOCUMENT_STORAGE_ROOT) so
- * deployments can point it at a mounted volume.
+ * Root directory of the LOCAL file store ({@code modocument.storage.root},
+ * env MODOCUMENT_STORAGE_ROOT, default {@code wwwroot}): uploaded files live
+ * under {@code <root>/uploads}, export copies under {@code <root>/exports}.
+ * Code never resolves paths under it directly any more — every read, write
+ * and delete goes through the {@link com.modocument.application.port.FileStore}
+ * port (optimization ws29), which is this directory only when
+ * {@code modocument.storage.backend=local}.
  */
 @Component
 public class StorageProperties {
@@ -20,11 +23,7 @@ public class StorageProperties {
         this.root = Path.of(root);
     }
 
-    public Path uploadsDir() {
-        return root.resolve("uploads");
-    }
-
-    public Path exportsDir() {
-        return root.resolve("exports");
+    public Path root() {
+        return root;
     }
 }

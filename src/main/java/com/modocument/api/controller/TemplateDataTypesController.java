@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.config.DeprecatedEndpoint;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
@@ -35,6 +37,7 @@ public class TemplateDataTypesController {
     }
 
     @RequiresPermission(Permission.LOOKUP_READ)
+    @DeprecatedEndpoint(replacement = "GET /TemplateDataTypes/GetAll")
     @GetMapping("/TemplateDataTypes/GetById/{id}")
     public ResponseEntity<?> getTemplateDataTypeById(@PathVariable int id) {
         Optional<TemplateDataType> item = repo.getById(id);
@@ -47,6 +50,7 @@ public class TemplateDataTypesController {
     }
 
     @RequiresPermission(Permission.LOOKUP_ADMIN)
+    @DeprecatedEndpoint
     @PostMapping("/TemplateDataTypes/Create")
     public ResponseEntity<?> createTemplateDataType(@Valid @RequestBody TemplateDataType dto) {
         TemplateDataType entity = new TemplateDataType(0, dto.getDataType());
@@ -57,6 +61,7 @@ public class TemplateDataTypesController {
     }
 
     @RequiresPermission(Permission.LOOKUP_ADMIN)
+    @DeprecatedEndpoint
     @PutMapping("/TemplateDataTypes/Update")
     public ResponseEntity<?> updateTemplateDataType(@Valid @RequestBody TemplateDataType dto) {
         Optional<TemplateDataType> existingOpt = repo.getById(dto.getTemplateDataTypeId());

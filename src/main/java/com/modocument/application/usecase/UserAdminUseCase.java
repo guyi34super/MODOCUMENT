@@ -1,6 +1,7 @@
 package com.modocument.application.usecase;
 
 import com.modocument.application.dto.AdminUserDto;
+import com.modocument.application.dto.PagedList;
 import com.modocument.application.dto.UserDto;
 import com.modocument.application.port.AppUserRepository;
 import com.modocument.application.port.AuditEventSpec;
@@ -109,6 +110,23 @@ public class UserAdminUseCase {
         return listBankUsers().stream()
                 .map(entry -> AdminUserDto.from(entry.user(), entry.mfaEnabled()))
                 .toList();
+    }
+
+    /**
+     * One page of the bank's users (optimization ws28, contracts §5), in the
+     * same order as {@link #listUsers()}. A bank's user directory is small,
+     * so the page is cut from the one batched directory read (users + MFA)
+     * rather than a second query shape; the saving is the payload and the
+     * rendering, not the read.
+     */
+    public PagedList<AdminUserDto> pageUsers(Integer page, Integer size) {
+        List<AdminUserDto> all = listUsers();
+        int pageNo = PagedList.page(page);
+        int pageSize = PagedList.size(size);
+        long from = (long) pageNo * pageSize;
+        List<AdminUserDto> items = from >= all.size() ? List.of()
+                : all.subList((int) from, (int) Math.min(all.size(), from + pageSize));
+        return new PagedList<>(List.copyOf(items), pageNo, pageSize, all.size());
     }
 
     /**

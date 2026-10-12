@@ -66,6 +66,28 @@ data "aws_ssm_parameter" "ecs_ami" {
   name = "/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id"
 }
 
+# ws29 right-sizing: how many tasks fit on one node, from the instance type's
+# real vCPU/memory. ECS registers less memory than the instance has (OS +
+# agent); 90% is a conservative planning figure (m6i.large: 2048 CPU units,
+# ~7370 MiB -> two 1024/3072 tasks). The service's task cap must be
+# reachable with the ASG's instance cap (precondition on the scaling target).
+data "aws_ec2_instance_type" "node" {
+  instance_type = var.instance_type
+}
+
+locals {
+  node_cpu_units     = data.aws_ec2_instance_type.node.default_vcpus * 1024
+  node_memory_mib    = floor(data.aws_ec2_instance_type.node.memory_size * 0.9)
+  tasks_per_node     = min(floor(local.node_cpu_units / tonumber(var.task_cpu)), floor(local.node_memory_mib / tonumber(var.task_memory)))
+  file_store_enabled = var.file_store != null
+  file_store_env = local.file_store_enabled ? [
+    { name = "MODOCUMENT_STORAGE_BACKEND", value = "s3" },
+    { name = "MODOCUMENT_STORAGE_S3_BUCKET", value = var.file_store.bucket_name },
+    { name = "MODOCUMENT_STORAGE_S3_REGION", value = var.region },
+    { name = "MODOCUMENT_STORAGE_S3_KMS_KEY_ID", value = var.file_store.kms_key_arn },
+  ] : []
+}
+
 # --- Cluster + EC2 capacity -------------------------------------------------
 
 resource "aws_ecs_cluster" "this" {
@@ -282,9 +304,53 @@ resource "aws_iam_role" "task" {
   tags = var.tags
 }
 
+# ws29 file store: the app (task role — not the execution role) reads,
+# writes, deletes and lists objects in ITS bucket only, and may use ITS
+# key only for that bucket's SSE-KMS (kms:ViaService + encryption context).
+resource "aws_iam_role_policy" "task_file_store" {
+  count       = local.file_store_enabled ? 1 : 0
+  name_prefix = "${var.name}-file-store-"
+  role        = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "FileStoreObjects"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = "${var.file_store.bucket_arn}/*"
+      },
+      {
+        Sid      = "FileStoreList"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = var.file_store.bucket_arn
+      },
+      {
+        Sid      = "FileStoreKey"
+        Effect   = "Allow"
+        Action   = ["kms:GenerateDataKey", "kms:Decrypt"]
+        Resource = var.file_store.kms_key_arn
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "s3.${var.region}.amazonaws.com"
+          }
+          # S3 Bucket Keys: the context is the bucket ARN.
+          StringLike = {
+            "kms:EncryptionContext:aws:s3:arn" = [var.file_store.bucket_arn, "${var.file_store.bucket_arn}/*"]
+          }
+        }
+      },
+    ]
+  })
+}
+
+# ws29: the app/frontend log group was kept 400 days; operational logs are
+# useful for weeks, and the audit trail lives in the database (AuditEvent)
+# and the locked archive. var.log_retention_days (default 90).
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${var.name}"
-  retention_in_days = 400 # hot window; the 7y archive is the backups module's bucket
+  retention_in_days = var.log_retention_days
 
   tags = var.tags
 }
@@ -305,6 +371,17 @@ resource "aws_ecs_task_definition" "this" {
   # breaker rolls back to the last steady one. Prune old revisions out of
   # band.
   skip_destroy = true
+
+  lifecycle {
+    precondition {
+      condition     = var.app_cpu + var.frontend_cpu <= tonumber(var.task_cpu)
+      error_message = "app_cpu + frontend_cpu must fit in task_cpu."
+    }
+    precondition {
+      condition     = var.app_memory + var.frontend_memory <= tonumber(var.task_memory)
+      error_message = "app_memory + frontend_memory must fit in task_memory."
+    }
+  }
 
   container_definitions = jsonencode([
     {
@@ -336,6 +413,9 @@ resource "aws_ecs_task_definition" "this" {
       dependsOn = [
         { containerName = "app", condition = "HEALTHY" }
       ]
+      # ws29: explicit per-container share of the task size (hard limit).
+      cpu    = var.frontend_cpu
+      memory = var.frontend_memory
       healthCheck = {
         command     = ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:${var.frontend_port}/ || exit 1"]
         interval    = 30
@@ -367,6 +447,11 @@ resource "aws_ecs_task_definition" "this" {
       image     = var.app_image # repo Dockerfile: USER 10001:10001
       essential = true
       user      = "10001:10001"
+      # ws29: hard memory limit = what the JVM sizes its heap from
+      # (docker-entrypoint.sh: -XX:MaxRAMPercentage=70); the rest covers
+      # metaspace, threads and the soffice/tesseract children.
+      cpu    = var.app_cpu
+      memory = var.app_memory
       portMappings = [
         { containerPort = var.app_port, protocol = "tcp" }
       ]
@@ -374,7 +459,7 @@ resource "aws_ecs_task_definition" "this" {
         capabilities = { drop = ["ALL"] }
       }
       dockerSecurityOptions = ["no-new-privileges"]
-      environment = [
+      environment = concat([
         # 8080 belongs to the frontend nginx in the shared namespace.
         { name = "SERVER_PORT", value = tostring(var.app_port) },
         { name = "MODOCUMENT_DB_URL", value = var.db_jdbc_url },
@@ -392,7 +477,8 @@ resource "aws_ecs_task_definition" "this" {
         # when a configured default lies outside its hard limits
         # (SettingsStartupCheck). Never false outside local development.
         { name = "MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS", value = "true" }
-      ]
+        # ws29: + MODOCUMENT_STORAGE_* (S3 file store) when var.file_store is set.
+      ], local.file_store_env)
       # SEC-018: secrets injected at start from Secrets Manager / SSM. Every
       # referenced secret must HAVE a value or the task does not start.
       secrets = concat([
@@ -406,11 +492,14 @@ resource "aws_ecs_task_definition" "this" {
         { name = "MODOCUMENT_FLYWAY_PASSWORD", valueFrom = "${var.db_master_secret_arn}:password::" }
       ], local.bootstrap_admin_secrets, local.platform_admin_secrets)
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -fsS http://localhost:${var.app_port}/actuator/health || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 90
+        command  = ["CMD-SHELL", "curl -fsS http://localhost:${var.app_port}/actuator/health || exit 1"]
+        interval = 30
+        timeout  = 5
+        retries  = 3
+        # ws29: a 1024-CPU task starts Spring on about one vCPU (was two);
+        # the AppCDS archive wins part of it back. Room for Flyway on a
+        # release with migrations, too.
+        startPeriod = 150
       }
       logConfiguration = {
         logDriver = "awslogs"
@@ -532,7 +621,9 @@ resource "aws_ecs_service" "this" {
     }
   }
 
-  health_check_grace_period_seconds = 120
+  # ws29: covers the app container's 150 s start period plus the frontend
+  # (which waits for the app to be HEALTHY).
+  health_check_grace_period_seconds = 180
 
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
@@ -562,6 +653,19 @@ resource "aws_appautoscaling_target" "service" {
   scalable_dimension = "ecs:service:DesiredCount"
   min_capacity       = var.min_tasks
   max_capacity       = var.max_tasks # SEC-002/003: hard cap
+
+  lifecycle {
+    # ws29: the old 6-task cap was unreachable (one 2048/6144 task per
+    # m6i.large x 4 instances). The cap must be placeable on the ASG cap.
+    precondition {
+      condition     = local.tasks_per_node >= 1
+      error_message = "task_cpu/task_memory do not fit on one ${var.instance_type} node."
+    }
+    precondition {
+      condition     = var.max_tasks <= var.max_instances * local.tasks_per_node
+      error_message = "max_tasks exceeds what max_instances x tasks-per-node (${local.tasks_per_node} on ${var.instance_type}) can place."
+    }
+  }
 }
 
 resource "aws_appautoscaling_policy" "cpu" {

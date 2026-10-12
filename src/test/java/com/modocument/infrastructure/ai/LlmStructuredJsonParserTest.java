@@ -239,4 +239,45 @@ class LlmStructuredJsonParserTest {
         assertThat(LlmStructuredJsonParser.parseRows(raw, List.of("Emp ID", "Full Name", "Email"))
                 .getRows()).hasSize(2);
     }
+
+    // ---- ws28: prompt v2 row batches {"columns":[...],"rows":[[...]]} --------------
+
+    @Test
+    void parsesTheCompactArrayRowShapeAgainstTheFixedColumns() {
+        String raw = "{\"columns\":[\"Name\",\"City\"],\"rows\":[[\"Ada\",\"London\"],[\"Bob\",\"\"]]}";
+        List<Map<String, String>> rows = LlmStructuredJsonParser.parseRows(raw, List.of("Name", "City")).getRows();
+
+        assertThat(rows).containsExactly(
+                Map.of("Name", "Ada", "City", "London"),
+                Map.of("Name", "Bob", "City", ""));
+    }
+
+    @Test
+    void compactRowsFollowTheReplyColumnOrderWhenItNamesTheFixedSchema() {
+        String raw = "```json\n{\"columns\":[\"City\",\"Name\"],\"rows\":[[\"London\",\"Ada\"]]}\n```";
+        List<Map<String, String>> rows = LlmStructuredJsonParser.parseRows(raw, List.of("Name", "City")).getRows();
+
+        assertThat(rows).containsExactly(Map.of("Name", "Ada", "City", "London"));
+    }
+
+    @Test
+    void compactRowsWithUnknownReplyColumnsUseTheFixedSchemaAndPadShortRows() {
+        String raw = "{\"columns\":[\"A\",\"B\"],\"rows\":[[\"Ada\"],[\"Bob\",\"Paris\",\"extra\"]]}";
+        List<Map<String, String>> rows = LlmStructuredJsonParser.parseRows(raw, List.of("Name", "City")).getRows();
+
+        assertThat(rows).containsExactly(
+                Map.of("Name", "Ada", "City", ""),
+                Map.of("Name", "Bob", "City", "Paris"));
+    }
+
+    @Test
+    void compactRowsParseWithoutAFixedSchemaAndTheOldObjectShapeStillParses() {
+        assertThat(LlmStructuredJsonParser.parseRows(
+                "{\"columns\":[\"Name\"],\"rows\":[[\"Ada\"]]}", null).getRows())
+                .containsExactly(Map.of("Name", "Ada"));
+        // Prompt v1 replies (cached or from an older prompt) keep working.
+        assertThat(LlmStructuredJsonParser.parseRows(
+                "{\"rows\":[{\"Name\":\"Ada\",\"City\":\"London\"}]}", List.of("Name", "City")).getRows())
+                .containsExactly(Map.of("Name", "Ada", "City", "London"));
+    }
 }

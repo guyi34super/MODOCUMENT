@@ -3,7 +3,6 @@ package com.modocument.domain.document;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.modocument.domain.model.SourceType;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
@@ -12,7 +11,6 @@ import java.time.Instant;
  * termsAcknowledged=true — the caller confirms they are permitted to access
  * this source under its terms of service and applicable data-protection law.
  */
-@Document(collection = "extractionSources")
 public class ExtractionSource {
 
     @Id

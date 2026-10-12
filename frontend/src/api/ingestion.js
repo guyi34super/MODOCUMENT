@@ -1,9 +1,36 @@
 import { api } from './client';
+import { DEFAULT_PAGE_SIZE, pagedPath } from './paging';
 
+/** The full job list (legacy shape; the server caps it at the 200 newest). */
 export const listJobs = () => api.get('/api/ingestion/jobs');
 
-/** What this build can parse — drives the file picker's accept list. */
-export const getSupportedTypes = () => api.get('/api/ingestion/supported-types');
+/**
+ * v1.2.0 (contracts §5): one page of job summaries, no JSON blobs →
+ * `{items:[IngestionJobSummary], page, size, total}`; IngestionJobSummary =
+ * {ingestionJobId, fileName, templateId, templateName, status, currentStep,
+ * parsedBy, parseFallbackReason, validationErrorCount, unmappedFieldCount,
+ * createdDate, updatedDate}. The full job stays on GET /jobs/{id}. Read the
+ * answer through toPage() (api/paging.js): an older server answers an array.
+ */
+export const listJobSummaries = ({ page = 0, size = DEFAULT_PAGE_SIZE } = {}) =>
+  api.get(pagedPath('/api/ingestion/jobs', { view: 'summary', page, size }));
+
+/**
+ * What this build can parse — drives the file picker's accept list. Fixed
+ * for the life of the server process, so asked once per session (v1.2.0);
+ * a failure is not memoized.
+ */
+let supportedTypesPromise = null;
+
+export function getSupportedTypes() {
+  if (!supportedTypesPromise) {
+    supportedTypesPromise = api.get('/api/ingestion/supported-types').catch((err) => {
+      supportedTypesPromise = null;
+      throw err;
+    });
+  }
+  return supportedTypesPromise;
+}
 
 export const getJob = (id) => api.get(`/api/ingestion/jobs/${id}`);
 
@@ -84,3 +111,33 @@ export const exportFileWithReason = (id, format, reason) => ({
 
 export const exportToDatabase = (id, payload) =>
   api.post(`/api/ingestion/jobs/${id}/export/database`, payload);
+
+/**
+ * v1.2.0: the database export names its target the way an integration
+ * connection does — vendor, host, port, database, schema, sslmode — and the
+ * server builds the JDBC URL itself (DbDialect, with timeouts); a raw JDBC
+ * URL is no longer accepted. The body:
+ *   {vendor, host, port, database, schema, sslmode, username, password,
+ *    table, tableName, createTableIfMissing, reason?}
+ * `tableName` repeats `table` for a server still reading the pre-v1.2.0
+ * field name (unknown JSON properties are ignored). Credentials are used for
+ * the one export, never stored. Empty optional values are left out.
+ */
+export function databaseExportRequest(form, reason) {
+  const port = Number.parseInt(String(form.port ?? '').trim(), 10);
+  const body = {
+    vendor: form.vendor,
+    host: (form.host || '').trim(),
+    port: Number.isFinite(port) ? port : undefined,
+    database: (form.database || '').trim(),
+    schema: (form.schema || '').trim() || undefined,
+    sslmode: form.sslmode || undefined,
+    username: form.username || undefined,
+    password: form.password || undefined,
+    table: (form.table || '').trim(),
+    tableName: (form.table || '').trim(),
+    createTableIfMissing: Boolean(form.createTableIfMissing),
+  };
+  if (reason) body.reason = reason;
+  return Object.fromEntries(Object.entries(body).filter(([, value]) => value !== undefined));
+}

@@ -6,7 +6,7 @@ import { ToastProvider } from '../context/ToastContext';
 import IngestionListPage from './IngestionListPage';
 
 import { getTemplates } from '../api/cache';
-import { getSupportedTypes, listJobs } from '../api/ingestion';
+import { getSupportedTypes, listJobSummaries } from '../api/ingestion';
 
 vi.mock('../api/cache', () => ({
   getTemplates: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock('../api/ingestion', () => ({
   createJobFromFile: vi.fn(),
   waitForJob: vi.fn(),
   getSupportedTypes: vi.fn(),
-  listJobs: vi.fn(),
+  listJobSummaries: vi.fn(),
 }));
 
 function renderPage() {
@@ -32,10 +32,10 @@ function renderPage() {
 describe('IngestionListPage', () => {
   beforeEach(() => {
     getTemplates.mockReset();
-    listJobs.mockReset();
+    listJobSummaries.mockReset();
     getSupportedTypes.mockReset();
     getTemplates.mockResolvedValue([{ templateId: 1, name: 'People' }]);
-    listJobs.mockResolvedValue([]);
+    listJobSummaries.mockResolvedValue([]);
     getSupportedTypes.mockResolvedValue({
       extensions: ['.csv', '.pdf'],
       accept: '.csv,.pdf',
@@ -61,12 +61,12 @@ describe('IngestionListPage', () => {
   });
 
   it('clears a stale error banner once a refresh succeeds', async () => {
-    listJobs.mockRejectedValueOnce(new Error('jobs endpoint down'));
+    listJobSummaries.mockRejectedValueOnce(new Error('jobs endpoint down'));
     renderPage();
 
     expect(await screen.findByText('jobs endpoint down')).toBeInTheDocument();
 
-    listJobs.mockResolvedValue([]);
+    listJobSummaries.mockResolvedValue([]);
     await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
     expect(screen.queryByText('jobs endpoint down')).not.toBeInTheDocument();
@@ -81,7 +81,7 @@ describe('IngestionListPage', () => {
 
   it('tags jobs that code read, and leaves AI-read jobs unmarked (ws23)', async () => {
     const base = { templateId: 1, currentStep: 'VALIDATED', status: 'COMPLETED', validationErrorCount: 0 };
-    listJobs.mockResolvedValue([
+    listJobSummaries.mockResolvedValue([
       { ...base, ingestionJobId: 1, fileName: 'ai.pdf', parsedBy: 'AI' },
       {
         ...base,
@@ -108,5 +108,40 @@ describe('IngestionListPage', () => {
     expect(tags.map((tag) => tag.textContent).sort()).toEqual(['Code', 'Code · low confidence']);
     // The full provenance is available to screen readers and on hover.
     expect(screen.getByText(': Extracted by code — AI unavailable (quota)')).toBeInTheDocument();
+  });
+
+  it('pages through job summaries (v1.2.0) and names templates from the summary', async () => {
+    const summary = (id) => ({
+      ingestionJobId: id,
+      fileName: `file-${id}.csv`,
+      templateId: 1,
+      templateName: 'Payroll',
+      status: 'COMPLETED',
+      currentStep: 'MAPPED',
+      validationErrorCount: 2,
+      unmappedFieldCount: 0,
+    });
+    listJobSummaries.mockImplementation(({ page }) =>
+      Promise.resolve({
+        items: page === 0 ? [summary(120), summary(119)] : [summary(70)],
+        page,
+        size: 50,
+        total: 51,
+      })
+    );
+    renderPage();
+
+    expect(await screen.findByText('file-120.csv')).toBeInTheDocument();
+    expect(listJobSummaries).toHaveBeenCalledWith({ page: 0, size: 50 });
+    expect(screen.getAllByText('Payroll').length).toBeGreaterThan(0);
+    // 51 jobs: the upload panel stays closed even though this page is short.
+    expect(screen.queryByText('Upload a document', { selector: 'h2' })).not.toBeInTheDocument();
+    const pager = screen.getByRole('navigation', { name: 'Jobs pages' });
+    expect(pager).toHaveTextContent('1–50 of 51 · page 1 of 2');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('file-70.csv')).toBeInTheDocument();
+    expect(listJobSummaries).toHaveBeenLastCalledWith({ page: 1, size: 50 });
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
   });
 });

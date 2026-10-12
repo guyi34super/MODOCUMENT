@@ -37,4 +37,9 @@ public interface TemplateRepository {
     Template update(Template entity);
 
     void delete(int id);
+
+    /** ws28 (dashboard): how many templates {@link #listAccessible} would return. */
+    default long countAccessible(int userId, int bankId) {
+        return listAccessible(userId, bankId).size();
+    }
 }

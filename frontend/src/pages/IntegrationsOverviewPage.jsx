@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getDashboard } from '../api/dashboard';
 import { listAgents, listConnections, listFlows, listRuns } from '../api/integrations';
+import { toPage } from '../api/paging';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Button, ErrorBanner, KpiTile, Spinner } from '../components/ui';
@@ -55,7 +56,8 @@ function Overview() {
     setData({
       connections: connections.value || [],
       flows: flows.value || [],
-      runs: runs.value || [],
+      // An array today; the v1.2.0 paged envelope is read the same way.
+      runs: toPage(runs.value || []).items,
       agents: agents.value || [],
       integrations: dashboard.value?.integrations || null,
     });

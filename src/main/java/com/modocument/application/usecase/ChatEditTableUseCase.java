@@ -1,6 +1,7 @@
 package com.modocument.application.usecase;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.modocument.application.audit.AuditActions;
 import com.modocument.application.dto.ChatEditPatchPromptInput;
 import com.modocument.application.dto.ChatEditPatchResponse;
 import com.modocument.application.dto.ChatEditPromptInput;
@@ -9,10 +10,12 @@ import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
 import com.modocument.application.port.AiFilesService;
 import com.modocument.application.port.AiPurpose;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.PromptEnvelope;
 import com.modocument.application.privacy.PiiTokenizer;
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.application.port.PromptStrategy;
+import com.modocument.infrastructure.prompt.PromptFactory;
 import com.modocument.application.port.SettingsReader;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.model.JobStatus;
@@ -54,6 +57,8 @@ public class ChatEditTableUseCase {
     private final ChatEditProperties properties;
     /** Null = the yml ratio only (unit-test wiring). */
     private final SettingsReader settings;
+    /** Null = no audit (unit-test wiring). */
+    private final AuditRecorder audit;
 
     public ChatEditTableUseCase(IngestionJobRepository jobs,
                                 List<PromptStrategy> promptStrategies,
@@ -64,7 +69,6 @@ public class ChatEditTableUseCase {
         this(jobs, promptStrategies, aiFilesService, tokenizer, currentUser, properties, null);
     }
 
-    @Autowired
     public ChatEditTableUseCase(IngestionJobRepository jobs,
                                 List<PromptStrategy> promptStrategies,
                                 AiFilesService aiFilesService,
@@ -72,6 +76,19 @@ public class ChatEditTableUseCase {
                                 com.modocument.application.port.CurrentUserProvider currentUser,
                                 ChatEditProperties properties,
                                 SettingsReader settings) {
+        this(jobs, promptStrategies, aiFilesService, tokenizer, currentUser, properties, settings, null);
+    }
+
+    @Autowired
+    public ChatEditTableUseCase(IngestionJobRepository jobs,
+                                List<PromptStrategy> promptStrategies,
+                                AiFilesService aiFilesService,
+                                PiiTokenizer tokenizer,
+                                com.modocument.application.port.CurrentUserProvider currentUser,
+                                ChatEditProperties properties,
+                                SettingsReader settings,
+                                AuditRecorder audit) {
+        this.audit = audit;
         this.jobs = jobs;
         this.promptStrategies = promptStrategies;
         this.aiFilesService = aiFilesService;
@@ -126,7 +143,15 @@ public class ChatEditTableUseCase {
         IngestionJobUseCase.clampWizardStep(job);
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
-        return jobs.save(job);
+        IngestionJob edited = jobs.save(job);
+        if (audit != null) { // BUG-11: same row as PUT .../rows — counts only, never cell values
+            List<Map<String, String>> after = modified.getRows() == null ? List.of() : modified.getRows();
+            List<Map<String, String>> before = current.getRows() == null ? List.of() : current.getRows();
+            audit.success(AuditActions.INGESTION_ROWS_EDITED, "IngestionJob", String.valueOf(jobId),
+                    null, Map.of("source", "CHAT_EDIT", "rows", after.size(),
+                            "changedRows", IngestionJobUseCase.changedRows(before, after)));
+        }
+        return edited;
     }
 
     private TableData editFullTable(String instruction, TableData current,
@@ -504,10 +529,7 @@ public class ChatEditTableUseCase {
     }
 
     private PromptStrategy strategy(String type) {
-        return promptStrategies.stream()
-                .filter(s -> s.getType().equals(type))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(type + " prompt not registered."));
+        return PromptFactory.lookup(promptStrategies, type);
     }
 
     /**

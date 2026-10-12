@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.config.DeprecatedEndpoint;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.port.CurrentUserProvider;
@@ -21,13 +23,12 @@ import java.net.URI;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * ImportDetails are children of an ImportHistory, so access is scoped through
  * the parent's owner — there is no per-detail owner column.
  */
+@DeprecatedEndpoint(replacement = "the ingestion job API (/api/ingestion/jobs)")
 @RestController
 @Tag(name = "Import Details")
 public class ImportDetailsController {
@@ -53,13 +54,10 @@ public class ImportDetailsController {
     @RequiresPermission(Permission.IMPORT_READ)
     @GetMapping("/ImportDetails/GetAll")
     public ResponseEntity<?> getAll() {
-        // Only details whose parent import the caller owns.
-        Set<Integer> owned = imports.listByOwner(currentUser.requireUserId()).stream()
-                .map(com.modocument.domain.entity.ImportHistory::getImportHistoryId)
-                .collect(Collectors.toSet());
-        return ResponseEntity.ok(repo.list().stream()
-                .filter(d -> owned.contains(d.getImportHistoryId()))
-                .collect(Collectors.toList()));
+        // Only details whose parent import the caller owns — one bank- and
+        // owner-filtered query (ws28), not the whole bank filtered in memory.
+        return ResponseEntity.ok(repo.listByBankAndImportOwner(
+                currentUser.requireBankId(), currentUser.requireUserId()));
     }
 
     @RequiresPermission(Permission.IMPORT_READ)

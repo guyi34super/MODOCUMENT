@@ -94,7 +94,10 @@ module "network" {
   app_port = local.frontend_port
   # ws26 DIRECT-mode bank connections (empty = none).
   bank_egress_cidrs = var.bank_egress_cidrs
-  tags              = local.tags
+  # ws29: one shared NAT gateway (staging tolerates an AZ-wide egress loss).
+  nat_gateway_count       = var.nat_gateway_count
+  flow_log_retention_days = 30
+  tags                    = local.tags
 }
 
 # Staging has no CloudFront in front: the ALB accepts HTTPS from the test
@@ -116,8 +119,19 @@ module "rds" {
   db_subnet_ids        = module.network.private_db_subnet_ids
   db_security_group_id = module.network.db_security_group_id
   instance_class       = var.db_instance_class
-  deletion_protection  = false
-  tags                 = local.tags
+  # ws29: single-AZ in staging (flip for a failover rehearsal).
+  multi_az            = var.db_multi_az
+  deletion_protection = false
+  tags                = local.tags
+}
+
+# ws29: same S3 file store as production (staging's own bucket and key).
+module "file_store" {
+  source = "../../modules/file-store"
+
+  name           = local.name
+  account_suffix = data.aws_caller_identity.current.account_id
+  tags           = local.tags
 }
 
 module "backups" {
@@ -187,8 +201,18 @@ module "ecs_app" {
   instance_type = var.instance_type
   min_instances = 1
   max_instances = 2
-  min_tasks     = 1
-  max_tasks     = 2
+  # ws29: two 1024/3072 tasks per m6i.large — min 1 node runs both the
+  # steady task and a rolling deploy's replacement.
+  min_tasks = 1
+  max_tasks = 2
+
+  log_retention_days = 90
+
+  file_store = {
+    bucket_name = module.file_store.bucket_name
+    bucket_arn  = module.file_store.bucket_arn
+    kms_key_arn = module.file_store.kms_key_arn
+  }
 
   tags = local.tags
 }

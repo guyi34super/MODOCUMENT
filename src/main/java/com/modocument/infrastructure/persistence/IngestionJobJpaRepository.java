@@ -70,4 +70,37 @@ public interface IngestionJobJpaRepository extends JpaRepository<IngestionJob, I
             + " and j.parsedBy is not null group by j.parsedBy")
     List<Object[]> countByParsedBySince(@Param("bankId") int bankId,
                                         @Param("since") java.time.LocalDateTime since);
+
+    // ---- ws28: the job list summary (docs/optimization/contracts.md §5) ----
+
+    /**
+     * One page of the owner's jobs as summary rows, newest first. A
+     * projection on purpose: ParsedTableJson, MappedRowsJson and
+     * ValidationResultJson are never read — only whether mapped rows exist
+     * (a null test, which PostgreSQL answers from the row header without
+     * de-TOASTing the value) and the small MappingJson.
+     */
+    @Query("select new com.modocument.application.dto.IngestionJobSummaryRow("
+            + "j.ingestionJobId, j.fileName, j.templateId, t.name, j.status, j.currentStep,"
+            + " j.parsedBy, j.parseFallbackReason, j.parseConfidence, j.validationErrorCount,"
+            + " j.mappingJson,"
+            + " case when j.mappedRowsJson is not null then true else false end,"
+            + " j.createdDate, j.updatedDate)"
+            + " from IngestionJob j left join Template t on t.templateId = j.templateId"
+            + " where j.ownerUserId = :ownerUserId"
+            + " order by j.createdDate desc, j.ingestionJobId desc")
+    List<com.modocument.application.dto.IngestionJobSummaryRow> findSummariesByOwner(
+            @Param("ownerUserId") int ownerUserId, Pageable pageable);
+
+    long countByOwnerUserId(int ownerUserId);
+
+    /** The owner's newest jobs (full rows) — the capped legacy list. */
+    @Query("select j from IngestionJob j where j.ownerUserId = :ownerUserId"
+            + " order by j.createdDate desc, j.ingestionJobId desc")
+    List<IngestionJob> findNewestByOwner(@Param("ownerUserId") int ownerUserId, Pageable pageable);
+
+    /** Rows of [JobStatus, count (Long)] of one owner's jobs — the dashboard counts. */
+    @Query("select j.status, count(j) from IngestionJob j where j.ownerUserId = :ownerUserId"
+            + " group by j.status")
+    List<Object[]> countByOwnerGroupedByStatus(@Param("ownerUserId") int ownerUserId);
 }

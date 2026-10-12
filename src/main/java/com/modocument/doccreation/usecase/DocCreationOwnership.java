@@ -1,12 +1,15 @@
 package com.modocument.doccreation.usecase;
 
 import com.modocument.api.security.PermissionChecker;
+import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.doccreation.entity.DocBlueprint;
 import com.modocument.doccreation.entity.DocInstance;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
 import com.modocument.doccreation.repo.DocInstanceRepository;
 import com.modocument.domain.model.Permission;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.NoSuchElementException;
@@ -29,15 +32,35 @@ public class DocCreationOwnership {
     private final DocInstanceRepository instances;
     private final CurrentUserProvider currentUser;
     private final PermissionChecker perm;
+    /** Null = no probe audit (unit-test wiring). */
+    private final AuditRecorder audit;
 
     public DocCreationOwnership(DocBlueprintRepository blueprints,
                                 DocInstanceRepository instances,
                                 CurrentUserProvider currentUser,
                                 PermissionChecker perm) {
+        this(blueprints, instances, currentUser, perm, null);
+    }
+
+    @Autowired
+    public DocCreationOwnership(DocBlueprintRepository blueprints,
+                                DocInstanceRepository instances,
+                                CurrentUserProvider currentUser,
+                                PermissionChecker perm,
+                                AuditRecorder audit) {
         this.blueprints = blueprints;
         this.instances = instances;
         this.currentUser = currentUser;
         this.perm = perm;
+        this.audit = audit;
+    }
+
+    /** ws28: an owner-scoped 404 is audited ACCESS_DENIED (aggregated by the recorder). */
+    private NoSuchElementException probe(String entityType, int id, String message) {
+        if (audit != null) {
+            audit.record(AuditActions.notFoundProbe(entityType, id));
+        }
+        return new NoSuchElementException(message);
     }
 
     /**
@@ -47,13 +70,13 @@ public class DocCreationOwnership {
      */
     public DocBlueprint requireBlueprint(int blueprintId) {
         return blueprints.getByIdAndOwner(blueprintId, currentUser.requireUserId()).orElseThrow(
-                () -> new NoSuchElementException("Blueprint " + blueprintId + " not found."));
+                () -> probe("DocBlueprint", blueprintId, "Blueprint " + blueprintId + " not found."));
     }
 
     /** Same contract as {@link #requireBlueprint(int)}, for document instances. */
     public DocInstance requireInstance(int instanceId) {
         return instances.getByIdAndOwner(instanceId, currentUser.requireUserId()).orElseThrow(
-                () -> new NoSuchElementException("Document " + instanceId + " not found."));
+                () -> probe("DocInstance", instanceId, "Document " + instanceId + " not found."));
     }
 
     /**

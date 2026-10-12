@@ -1,8 +1,6 @@
 package com.modocument.domain.document;
 
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
@@ -11,20 +9,16 @@ import java.time.Instant;
  * manifest). Deduplicated per source by SHA-256 content hash; bodies are
  * size-capped so a single document never exceeds the store's limits.
  */
-@Document(collection = "rawRecords")
 public class RawRecord {
 
     @Id
     private String id;
-    @Indexed
     private String jobId;
-    @Indexed
     private String sourceId;
     private String uri;
     private String contentType;
     private String body;
     private boolean truncated;
-    @Indexed
     private String contentHash;
     private Integer httpStatus;
     private String etag;

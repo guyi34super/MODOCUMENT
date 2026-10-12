@@ -94,7 +94,7 @@ count-only.
 | 17 | `ValidationRuleController.upsert` | `PUT /ValidationRules/Upsert` | `require` (owner) | W | `requireWritable` | 404 / 403 |
 | 18 | `ValidationRuleController.delete` / `deleteByPath` | `DELETE /ValidationRules?…`, `DELETE /ValidationRules/{t}/{f}/{r}` | `require` (owner) | W | `requireWritable` | 404 / 403 |
 | 19 | `ValidationController.validate` | `POST /Validation/validate` | `require` (owner) | U | `requireReadable` | 404 |
-| 20 | `TransformController.transformFile` | `POST /api/transform/transform` | `require` (owner) | U | `requireReadable` (after upload ownership and the AI template classification) | 404 |
+| 20 | ~~`TransformController.transformFile`~~ (removed in 1.2.0) | `POST /api/transform/transform` | `require` (owner) | U | `requireReadable` (after upload ownership and the AI template classification) | 404 |
 | 21 | `IngestionJobUseCase.create` | `POST /api/ingestion/jobs` (multipart and JSON) | `getByIdAndOwner` | U | `getAccessible(user, bank)` | 404 |
 | 22 | Ingestion pipeline: parse/map/validate, `AutoMapUseCase` (mapping history stays per owner), `ValidateRowsUseCase(job.templateId)`, chat edit, unmapped fields, job view, `PiiMaskingService.maskForExport(job.templateId)` on export | job routes `/api/ingestion/jobs/{id}/…` | `templateFields.listByTemplateId(job.templateId)` | I | the job is owner-scoped (`IngestionJobUseCase.get`); the template was usable when the job was created; unsharing/deleting while it runs is refused (#9, #10) | 404 (job) |
 | 23 | `ExtractionSourceUseCase.validate` (create/update source) | `POST`/`PUT /api/extraction/sources` | `getByIdAndOwner` | U | `getAccessible(user, bank)` | 404 |

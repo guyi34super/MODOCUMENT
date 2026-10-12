@@ -2,6 +2,8 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as adminApi from '../api/admin';
 import { isPendingChange } from '../api/changes';
+import { DEFAULT_PAGE_SIZE, toPage } from '../api/paging';
+import Pager from '../components/Pager';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import PageHeader from '../components/PageHeader';
@@ -58,12 +60,20 @@ export default function AdminUsersPage() {
   const [mfaReason, setMfaReason] = useState('');
   const [displayName, setDisplayName] = useState('');
 
+  // v1.2.0: the list is paged server-side.
+  const [page, setPage] = useState(0);
+  const [pageInfo, setPageInfo] = useState(null);
+
   const load = useCallback(() => {
     adminApi
-      .listUsers()
-      .then(setUsers)
+      .listUsers({ page, size: DEFAULT_PAGE_SIZE })
+      .then((answer) => {
+        const loaded = toPage(answer, { page, size: DEFAULT_PAGE_SIZE });
+        setUsers(loaded.items);
+        setPageInfo(loaded);
+      })
       .catch((err) => setError(err.message));
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
@@ -387,6 +397,15 @@ export default function AdminUsersPage() {
                 })}
               </tbody>
             </table>
+          )}
+          {users && pageInfo && (
+            <Pager
+              label="Users"
+              page={pageInfo.page}
+              size={pageInfo.size}
+              total={pageInfo.total}
+              onPage={setPage}
+            />
           )}
         </Card>
       )}

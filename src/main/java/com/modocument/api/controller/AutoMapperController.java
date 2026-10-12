@@ -1,5 +1,7 @@
 package com.modocument.api.controller;
 
+import com.modocument.api.config.DeprecatedEndpoint;
+
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.dto.AutoMappingPromptInput;
@@ -47,6 +49,7 @@ public class AutoMapperController {
         this.currentUser = currentUser;
     }
 
+    @DeprecatedEndpoint(replacement = "the ingestion pipeline mapping (POST /api/ingestion/jobs/{id}/remap)")
     @PostMapping("/api/automapper/generate")
     public ResponseEntity<?> autoMap(@RequestParam(value = "extractedFields", required = false) String extractedFields,
                                      @RequestParam(value = "filename", required = false) String filename) {

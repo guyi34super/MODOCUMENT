@@ -1,0 +1,68 @@
+{
+  "machine": {
+    "at": "2026-10-11T05:27:10.395Z",
+    "commit": null,
+    "dirtyTree": null,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      1.69,
+      2.2,
+      1.72
+    ]
+  },
+  "jar": "target/modocument-1.1.0.jar",
+  "jarBytes": 369187293,
+  "jarMiB": 352.1,
+  "nestedJars": 177,
+  "nestedJarsMiB": 349.4,
+  "appClassesMiB": 5,
+  "top10": [
+    {
+      "jar": "driver-bundle-1.49.0.jar",
+      "MiB": 189.2
+    },
+    {
+      "jar": "hibernate-core-6.6.18.Final.jar",
+      "MiB": 11.5
+    },
+    {
+      "jar": "kafka-clients-3.9.1.jar",
+      "MiB": 8.8
+    },
+    {
+      "jar": "tess4j-5.13.0.jar",
+      "MiB": 8.7
+    },
+    {
+      "jar": "byte-buddy-1.17.6.jar",
+      "MiB": 8.6
+    },
+    {
+      "jar": "bcprov-jdk18on-1.78.1.jar",
+      "MiB": 7.9
+    },
+    {
+      "jar": "ojdbc11-23.7.0.25.01.jar",
+      "MiB": 7
+    },
+    {
+      "jar": "zstd-jni-1.5.6-4.jar",
+      "MiB": 6.4
+    },
+    {
+      "jar": "poi-ooxml-lite-5.3.0.jar",
+      "MiB": 5.7
+    },
+    {
+      "jar": "lept4j-1.19.1.jar",
+      "MiB": 3.6
+    }
+  ],
+  "startup": {
+    "app": "MoDocumentApplication",
+    "startedInSeconds": 17.94,
+    "processRunningSeconds": 18.956
+  }
+}

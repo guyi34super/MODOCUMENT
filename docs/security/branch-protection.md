@@ -43,7 +43,7 @@ Notes:
 
 | Workflow | Trigger | Jobs / purpose |
 | --- | --- | --- |
-| `.github/workflows/ci.yml` | push/PR to main | build + tests (H2), real-PostgreSQL suite, frontend; JaCoCo coverage summary |
+| `.github/workflows/ci.yml` | push/PR to main | build + tests (H2, `-Pcoverage`), `-Pscale` compile check, real-PostgreSQL suite and S3/MinIO file-store suite (failsafe only), frontend; JaCoCo coverage summary |
 | `.github/workflows/security.yml` | push/PR to main + weekly | `gitleaks` (full history, A7), `semgrep` (p/java, p/owasp-top-ten, `.semgrep/modocument.yml`), `dependency-review` (PRs), `npm-audit` (fail on high) |
 | `.github/workflows/sbom.yml` | main pushes + releases | CycloneDX SBOMs (backend maven plugin via `-Psbom`, frontend `npm sbom`) uploaded as artifacts — **E8** |
 | `.github/workflows/image-rebuild.yml` | weekly + manual | rebuild images from current base tags (`--pull`), Trivy fails on CRITICAL — **SEC-026 / E3** |
@@ -83,8 +83,9 @@ Upstream bumps taken instead of overrides (no `overrides` entry needed):
 
 ### Coverage gate
 
-JaCoCo now reports on every `mvn verify` and CI prints the instruction
-coverage. There is deliberately **no threshold `<check>` yet**: the first
+JaCoCo reports on every `mvn verify -Pcoverage` — the CI build job's run;
+since v1.2.0 (ws29) it is a profile, so local runs and the IT jobs skip the
+agent — and CI prints the instruction coverage. There is deliberately **no threshold `<check>` yet**: the first
 step is to establish and agree the baseline from a few weeks of runs, then
 add a ratchet (fail under baseline-minus-tolerance) so the gate never blocks
 on day one with an arbitrary number.

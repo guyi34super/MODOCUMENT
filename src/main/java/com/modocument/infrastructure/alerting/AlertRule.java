@@ -54,7 +54,13 @@ public record AlertRule(
         /** The audited entity (EntityType:EntityId). */
         ENTITY,
         /** The whole bank. */
-        BANK
+        BANK,
+        /**
+         * ws28: the acting user when there is one, else the client ip — for
+         * refusals that arrive both authenticated (a use-case denial, an
+         * owner-scoped 404 probe) and anonymous (an invalid bearer token).
+         */
+        ACTOR_OR_IP
     }
 
     public boolean matchesAnyAction() {
@@ -87,6 +93,9 @@ public record AlertRule(
             case IP -> facts.ip() == null || facts.ip().isBlank() ? "unknown-ip" : facts.ip();
             case ENTITY -> facts.entityType() + ":" + facts.entityId();
             case BANK -> "bank";
+            case ACTOR_OR_IP -> facts.actorUserId() != null
+                    ? "user:" + facts.actorUserId()
+                    : "ip:" + (facts.ip() == null || facts.ip().isBlank() ? "unknown" : facts.ip());
         };
     }
 
@@ -102,6 +111,8 @@ public record AlertRule(
             case IP -> "ip " + (facts.ip() == null || facts.ip().isBlank() ? "unknown" : facts.ip());
             case ENTITY -> PiiPatterns.scrub(facts.entityType() + ":" + facts.entityId());
             case BANK -> "bank " + facts.bankId();
+            case ACTOR_OR_IP -> facts.actorUserId() != null ? actorLabel(facts)
+                    : "ip " + (facts.ip() == null || facts.ip().isBlank() ? "unknown" : facts.ip());
         };
     }
 

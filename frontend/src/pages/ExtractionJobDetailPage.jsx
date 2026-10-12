@@ -15,6 +15,7 @@ import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
 import { useToast } from '../context/ToastContext';
+import usePolling from '../hooks/usePolling';
 
 const ACTION_MESSAGES = {
   start: { loading: 'Starting job…', success: 'Job started' },
@@ -26,6 +27,18 @@ const ACTION_MESSAGES = {
 const TERMINAL_STATUSES = ['COMPLETED', 'COMPLETED_WITH_ERRORS', 'FAILED', 'CANCELLED'];
 const BLOCKED_ACTIONS = ['ROBOTS_BLOCKED', 'DOMAIN_BLOCKED', 'RATE_LIMITED'];
 const POLL_MS = 2500;
+
+/** Whether a polled job differs from the shown one in what the page shows live. */
+export function jobChanged(previous, next) {
+  if (!previous || !next) return previous !== next;
+  if (previous.status !== next.status) return true;
+  const a = previous.counters || {};
+  const b = next.counters || {};
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if (a[key] !== b[key]) return true;
+  }
+  return false;
+}
 
 const isBlockedEvent = (event) =>
   BLOCKED_ACTIONS.includes(event.action) || event.outcome === 'blocked';
@@ -55,36 +68,61 @@ export default function ExtractionJobDetailPage() {
 
   // Load immediately, then keep polling while the job is still moving so the
   // progress counters tick live and status changes surface as toasts.
+  // v1.2.0: the poll is usePolling's setTimeout chain — never two requests
+  // at once, nothing while the tab is hidden, an immediate refresh when it
+  // is shown again — and a poll that brings no visible change (same status,
+  // same counters) does not re-render the page.
+  const jobRef = useRef(null);
+  const [pollFailed, setPollFailed] = useState(false);
+
   useEffect(() => {
     let active = true;
-    let timer = null;
     prevStatus.current = null;
     autoLoaded.current = false;
+    jobRef.current = null;
     setJob(null);
+    setPollFailed(false);
     setRecords([]);
     setRecordsLoaded(false);
     setAuditEvents([]);
     setAuditLoaded(false);
-    const tick = async () => {
-      try {
-        const loaded = await getJob(id);
+    getJob(id)
+      .then((loaded) => {
         if (!active) return;
+        jobRef.current = loaded;
         setJob(loaded);
         setError('');
-        if (!TERMINAL_STATUSES.includes(loaded.status)) {
-          timer = setTimeout(tick, POLL_MS);
-        }
-      } catch (err) {
+      })
+      .catch((err) => {
         if (active) setError(err.message);
-      }
-    };
-    tick();
+      });
     getTemplates().then(setTemplates).catch(() => {});
     return () => {
       active = false;
-      if (timer) clearTimeout(timer);
     };
   }, [id]);
+
+  const poll = useCallback(async () => {
+    try {
+      const loaded = await getJob(id);
+      // An answer for a job this page no longer shows is dropped.
+      if (!jobRef.current || jobRef.current.id !== loaded?.id) return;
+      if (!jobChanged(jobRef.current, loaded)) return;
+      jobRef.current = loaded;
+      setJob(loaded);
+      setError('');
+    } catch (err) {
+      // As before: a failing poll stops the live updates and says why.
+      setError(err.message);
+      setPollFailed(true);
+    }
+  }, [id]);
+
+  usePolling(
+    poll,
+    POLL_MS,
+    Boolean(job) && !TERMINAL_STATUSES.includes(job.status) && !pollFailed
+  );
 
   // Lifecycle toasts: a persistent "running" toast that morphs into the
   // completion outcome. Jobs already terminal on arrival stay silent.
@@ -180,7 +218,10 @@ export default function ExtractionJobDetailPage() {
   const runAction = async (name, fn) => {
     setBusyAction(name);
     try {
-      setJob(await toast.promise(fn, ACTION_MESSAGES[name] || { loading: 'Working…' }));
+      const updated = await toast.promise(fn, ACTION_MESSAGES[name] || { loading: 'Working…' });
+      jobRef.current = updated;
+      setJob(updated);
+      setPollFailed(false);
     } catch {
       // The error toast is already shown.
     } finally {

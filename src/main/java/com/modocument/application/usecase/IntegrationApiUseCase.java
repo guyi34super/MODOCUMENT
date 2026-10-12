@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.dto.RowValidationResult;
 import com.modocument.application.dto.TableData;
+import com.modocument.application.port.FileStore;
 import com.modocument.application.port.TemplateDataTypeRepository;
 import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.port.TemplateRepository;
@@ -21,13 +22,11 @@ import com.modocument.domain.model.JobStep;
 import com.modocument.domain.model.TemplateVisibility;
 import com.modocument.infrastructure.export.ExportGuard;
 import com.modocument.infrastructure.export.FileExportService;
-import com.modocument.infrastructure.file.StorageProperties;
+import com.modocument.infrastructure.file.store.FileStoreKeys;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -61,7 +60,7 @@ public class IntegrationApiUseCase {
     private final ExportGuard exportGuard;
     private final FileExportService fileExport;
     private final DocInstanceRepository documents;
-    private final StorageProperties storage;
+    private final FileStore storage;
 
     public IntegrationApiUseCase(TemplateRepository templates,
                                  TemplateFieldsRepository templateFields,
@@ -73,7 +72,7 @@ public class IntegrationApiUseCase {
                                  ExportGuard exportGuard,
                                  FileExportService fileExport,
                                  DocInstanceRepository documents,
-                                 StorageProperties storage) {
+                                 FileStore storage) {
         this.templates = templates;
         this.templateFields = templateFields;
         this.dataTypes = dataTypes;
@@ -95,13 +94,16 @@ public class IntegrationApiUseCase {
         for (TemplateDataType type : dataTypes.list()) {
             typeNames.put(type.getTemplateDataTypeId(), type.getDataType());
         }
+        List<Template> shared = templates.listAccessible(requireOwner(client), client.bankId()).stream()
+                .filter(template -> isShared(template, client))
+                .toList();
+        // ws28: one fields query for every template, not one per template.
+        Map<Integer, List<TemplateFields>> fieldsByTemplate = shared.isEmpty() ? Map.of()
+                : templateFields.listByTemplateIds(shared.stream().map(Template::getTemplateId).toList());
         List<Map<String, Object>> out = new ArrayList<>();
-        for (Template template : templates.listAccessible(requireOwner(client), client.bankId())) {
-            if (!isShared(template, client)) {
-                continue;
-            }
+        for (Template template : shared) {
             List<Map<String, Object>> fields = new ArrayList<>();
-            for (TemplateFields field : templateFields.listByTemplateId(template.getTemplateId())) {
+            for (TemplateFields field : fieldsByTemplate.getOrDefault(template.getTemplateId(), List.of())) {
                 Map<String, Object> view = new LinkedHashMap<>();
                 view.put("name", field.getFieldName());
                 view.put("dataType", typeNames.get(field.getTemplateDataTypeId()));
@@ -262,16 +264,15 @@ public class IntegrationApiUseCase {
             throw IntegrationApiException.notFound("A " + format.toLowerCase() + " file of document "
                     + documentId);
         }
-        Path exports = storage.exportsDir().toAbsolutePath().normalize();
-        Path path = exports.resolve(fileName).normalize();
-        if (!path.startsWith(exports) || !Files.isRegularFile(path)) {
-            throw IntegrationApiException.notFound("The file of document " + documentId);
-        }
-        try {
-            return new Results(null, Files.readAllBytes(path),
+        String key = FileStoreKeys.tryExport(fileName).orElseThrow(
+                () -> IntegrationApiException.notFound("The file of document " + documentId));
+        try (java.io.InputStream in = storage.open(key)) {
+            return new Results(null, in.readAllBytes(),
                     pdf ? "application/pdf"
                             : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     "document" + documentId + (pdf ? ".pdf" : ".docx"));
+        } catch (java.nio.file.NoSuchFileException e) {
+            throw IntegrationApiException.notFound("The file of document " + documentId);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not read the document file.", e);
         }

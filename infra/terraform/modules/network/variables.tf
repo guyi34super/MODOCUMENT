@@ -59,6 +59,28 @@ variable "bank_egress_cidrs" {
   }
 }
 
+variable "nat_gateway_count" {
+  description = "ws29: NAT gateways — 2 (one per AZ, production: AZ-independent egress) or 1 (shared, staging: about half the NAT cost, egress depends on one AZ)."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = contains([1, 2], var.nat_gateway_count)
+    error_message = "nat_gateway_count must be 1 or 2 (the VPC spans 2 AZs)."
+  }
+}
+
+variable "flow_log_retention_days" {
+  description = "ws29: CloudWatch retention of the VPC flow logs (days)."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653], var.flow_log_retention_days)
+    error_message = "flow_log_retention_days must be a CloudWatch Logs retention value (1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, ...)."
+  }
+}
+
 variable "tags" {
   description = "Common resource tags."
   type        = map(string)

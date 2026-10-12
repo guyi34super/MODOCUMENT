@@ -1,0 +1,10 @@
+label=baseline
+commit=bb845a589e80ec09d7ec518395e4cbee81e629f2
+start=2026-10-11T03:41:24Z
+uptime_start= 03:41:24 up 30 min,  0 user,  load average: 5.46, 5.45, 3.32
+backend_package_seconds=9
+end=2026-10-11T03:43:28Z
+uptime_end= 03:43:28 up 32 min,  0 user,  load average: 7.28, 6.09, 3.82
+vitest_wall_seconds=118
+vitest_note=456 tests in 54 files; 2 runs 117 s / 118 s; run 1 had 1 unhandled error (ToastContext timer after jsdom teardown, IngestionJobPage.test.jsx), run 2 clean
+backend_verify_wall_seconds=316

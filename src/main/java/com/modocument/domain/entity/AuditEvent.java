@@ -42,7 +42,11 @@ import java.util.UUID;
         @Index(name = "ix_auditevent_entitytype_entityid", columnList = "EntityType, EntityId"),
         // SCHEMA PARITY with V161 (ws18): SIEM feed keyset paging + windowed alert sweep.
         @Index(name = "ix_auditevent_bankid_auditeventid", columnList = "BankId, AuditEventId"),
-        @Index(name = "ix_auditevent_action_occurredat", columnList = "Action, OccurredAt")})
+        @Index(name = "ix_auditevent_action_occurredat", columnList = "Action, OccurredAt"),
+        // SCHEMA PARITY with V270 (ws27): cross-bank alert window + bank-scoped audit reads.
+        @Index(name = "ix_auditevent_occurredat", columnList = "OccurredAt"),
+        @Index(name = "ix_auditevent_bankid_action_occurredat",
+                columnList = "BankId, Action, OccurredAt")})
 // SCHEMA PARITY with V30 (ck_auditevent_outcome) on the H2 test schema.
 @Check(name = "ck_auditevent_outcome",
         constraints = "Outcome in ('SUCCESS', 'DENIED', 'FAILED')")

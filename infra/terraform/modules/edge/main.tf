@@ -231,6 +231,39 @@ resource "aws_cloudfront_origin_request_policy" "this" {
   }
 }
 
+# ws29: the SPA's hashed build output (/assets/*, Vite) is immutable —
+# frontend/nginx.conf serves it with a one-year `immutable` Cache-Control —
+# so the edge caches it (managed CachingOptimized: honours the origin's
+# Cache-Control, gzip + brotli in the cache key) instead of fetching every
+# chunk from the ALB per user. Only the Host header travels to the origin:
+# CloudFront then verifies the ALB certificate against the app domain (see
+# the default behaviour's policy above); cookies, query strings and the
+# other viewer headers are irrelevant to static files and stay out.
+data "aws_cloudfront_cache_policy" "caching_optimized" {
+  name = "Managed-CachingOptimized"
+}
+
+resource "aws_cloudfront_origin_request_policy" "static_assets" {
+  name    = "${var.name}-static-assets"
+  comment = "Host only (origin TLS name check) for cached static assets"
+
+  cookies_config {
+    cookie_behavior = "none"
+  }
+
+  headers_config {
+    header_behavior = "whitelist"
+
+    headers {
+      items = ["Host"]
+    }
+  }
+
+  query_strings_config {
+    query_string_behavior = "none"
+  }
+}
+
 resource "aws_cloudfront_distribution" "this" {
   enabled         = true
   comment         = "${var.name} edge"
@@ -266,6 +299,19 @@ resource "aws_cloudfront_distribution" "this" {
     # default (managed CachingDisabled + the origin request policy above).
     cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
     origin_request_policy_id = aws_cloudfront_origin_request_policy.this.id
+  }
+
+  # ws29: hashed, immutable SPA assets — cached at the edge, compressed.
+  ordered_cache_behavior {
+    path_pattern           = "/assets/*"
+    target_origin_id       = "alb"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_optimized.id
+    origin_request_policy_id = aws_cloudfront_origin_request_policy.static_assets.id
   }
 
   restrictions {
