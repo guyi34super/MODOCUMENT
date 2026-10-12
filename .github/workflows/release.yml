@@ -59,7 +59,7 @@ jobs:
       sha7: ${{ steps.meta.outputs.sha7 }}
       build_time: ${{ steps.meta.outputs.build_time }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Tag matches pom.xml, package.json and CHANGELOG.md
@@ -107,7 +107,7 @@ jobs:
       IMAGE_VERSION: ${{ needs.version.outputs.image_version }}
       BUILD_TIME: ${{ needs.version.outputs.build_time }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up BuildKit (pinned)
@@ -313,7 +313,7 @@ jobs:
       ECS_TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY }}
       PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Environment configuration is complete
@@ -362,7 +362,7 @@ jobs:
       PRERELEASE: ${{ needs.version.outputs.prerelease }}
       AGENT_DIGEST: ${{ needs.build.outputs.agent_digest }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -445,7 +445,7 @@ jobs:
       ECS_TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY }}
       PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Environment configuration is complete
