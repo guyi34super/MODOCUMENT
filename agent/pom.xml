@@ -28,7 +28,7 @@
 
     <properties>
         <java.version>21</java.version>
-        <sshd.version>2.15.0</sshd.version>
+        <sshd.version>2.20.0</sshd.version>
     </properties>
 
     <dependencies>
