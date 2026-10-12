@@ -12,15 +12,15 @@
   },
   "dependencies": {
     "qrcode": "^1.5.4",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "react-router-dom": "^7.6.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
     "@testing-library/jest-dom": "^6.6.0",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^14.6.0",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@vitejs/plugin-react": "^4.5.0",
     "jsdom": "^26.1.0",
     "tailwindcss": "^4.1.0",
