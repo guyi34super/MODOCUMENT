@@ -198,7 +198,7 @@ jobs:
       # Gate (E3): fixable HIGH/CRITICAL findings stop the release. Accepted
       # risks go into a reviewed .trivyignore entry with an expiry, never here.
       - name: Trivy scan (API image)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           input: dist/app-oci
           scanners: vuln
@@ -207,7 +207,7 @@ jobs:
           format: table
           exit-code: '1'
       - name: Trivy scan (frontend image)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           input: dist/frontend-oci
           scanners: vuln
@@ -216,7 +216,7 @@ jobs:
           format: table
           exit-code: '1'
       - name: Trivy scan (agent image)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           input: dist/agent-oci
           scanners: vuln
@@ -227,21 +227,21 @@ jobs:
       # CycloneDX SBOMs of the exact images (OS packages + application
       # dependencies), attached to the GitHub Release.
       - name: SBOM (API image)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           input: dist/app-oci
           format: cyclonedx
           output: dist/sbom-app.cdx.json
           exit-code: '0'
       - name: SBOM (frontend image)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           input: dist/frontend-oci
           format: cyclonedx
           output: dist/sbom-frontend.cdx.json
           exit-code: '0'
       - name: SBOM (agent image)
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
           input: dist/agent-oci
           format: cyclonedx
