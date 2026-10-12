@@ -20,7 +20,7 @@
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>1.0.1</spring-ai.version>
-        <aws-sdk.version>2.55.5</aws-sdk.version>
+        <aws-sdk.version>2.55.11</aws-sdk.version>
         <!-- see maven-surefire-plugin below -->
         <skipUTs>false</skipUTs>
     </properties>
@@ -103,7 +103,7 @@
         <dependency>
             <groupId>com.oracle.database.jdbc</groupId>
             <artifactId>ojdbc11</artifactId>
-            <version>23.7.0.25.01</version>
+            <version>23.26.3.0.0</version>
             <scope>runtime</scope>
         </dependency>
         <dependency>
@@ -115,7 +115,7 @@
         <dependency>
             <groupId>org.mariadb.jdbc</groupId>
             <artifactId>mariadb-java-client</artifactId>
-            <version>3.5.3</version>
+            <version>3.5.10</version>
             <scope>runtime</scope>
         </dependency>
         <!-- Connector core (docs/integration/connector-sharing.md): the ONE
@@ -135,7 +135,7 @@
         <dependency>
             <groupId>org.apache.sshd</groupId>
             <artifactId>sshd-sftp</artifactId>
-            <version>2.15.0</version>
+            <version>2.20.0</version>
             <exclusions>
                 <!-- commons-logging is already bridged by spring-jcl; a second
                      org.apache.commons.logging copy would shadow it. -->
