@@ -25,6 +25,14 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # tess4j after 5.13 loads the native library as "leptonica"
+      # (libleptonica.so, Leptonica >= 1.83). The runtime image's Ubuntu
+      # packages ship Leptonica 1.82 as liblept.so.5, so a newer tess4j
+      # silently turns OCR off (OcrServiceTest.theDebianPackagesMakeOcrAvailable).
+      # Lift this once the image carries Leptonica >= 1.83.
+      - dependency-name: "net.sourceforge.tess4j:tess4j"
+        versions: [">5.13.0"]
 
   - package-ecosystem: npm
     directory: /frontend
