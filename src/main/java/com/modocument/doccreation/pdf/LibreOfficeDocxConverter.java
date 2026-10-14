@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 /**
- * PDF blueprint import: headless LibreOffice ({@code soffice --convert-to docx}).
+ * PDF blueprint import: headless LibreOffice ({@code soffice --infilter=writer_pdf_import --convert-to docx}).
  * Installed in the Docker image; optional in local dev — PDF blueprints are
  * rejected with a clear message when soffice is missing. Uses an isolated user
  * profile per conversion (same concurrency model as {@link LibreOfficePdfConverter}).
@@ -80,9 +80,12 @@ public class LibreOfficeDocxConverter {
             Files.copy(pdfFile, input);
 
             Path outputLog = workDir.resolve("soffice.log");
+            // PDF input requires writer_pdf_import; without it soffice often logs
+            // "source file could not be loaded" even for valid text PDFs.
             Process process = new ProcessBuilder(
                     sofficePath, "--headless", "--norestore",
                     "-env:UserInstallation=" + profileDir.toUri(),
+                    "--infilter=writer_pdf_import",
                     "--convert-to", "docx", "--outdir", workDir.toString(),
                     input.toString())
                     .redirectErrorStream(true)
