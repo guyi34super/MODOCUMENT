@@ -291,10 +291,14 @@ class DocCreationEndToEndTest {
 
     @Test
     void rejections_theSharpEdgesAnswerCleanlyInsteadOfCorruptingState() throws IOException {
-        // Non-docx and corrupt docx are rejected without leaving stored files.
+        // Invalid pdf/docx and unsupported types are rejected without leaving stored files.
         assertThatThrownBy(() -> blueprints.create(
                 new MockMultipartFile("file", "report.pdf", "application/pdf", new byte[]{1}), null, null))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> blueprints.create(
+                new MockMultipartFile("file", "notes.txt", "text/plain", "hello".getBytes()), null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(".docx and .pdf");
         assertThatThrownBy(() -> blueprints.create(
                 new MockMultipartFile("file", "fake.docx", null, "not a zip".getBytes()), null, null))
                 .isInstanceOf(IllegalArgumentException.class);

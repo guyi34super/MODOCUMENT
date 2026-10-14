@@ -663,7 +663,7 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/doccreation/blueprints` | Upload a .docx blueprint (multipart `file` + optional `name`, `companyId`); parsed into sections |
+| `POST /api/doccreation/blueprints` | Upload a .docx or .pdf blueprint (PDF converted to .docx server-side; multipart `file` + optional `name`, `companyId`); parsed into sections |
 | `GET /api/doccreation/blueprints[/{id}]` | List / get blueprints with their sections |
 | `GET /api/doccreation/blueprints/{id}/file` | Download the original blueprint |
 | `PUT .../blueprints/{id}/sections/{sectionId}/keywords` | Tune a section's image auto-assignment keywords |
