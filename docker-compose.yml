@@ -86,6 +86,8 @@ services:
       # from the JWT key (`openssl rand -base64 48`). Production mode refuses
       # to boot without it.
       MODOCUMENT_MFA_KEY: ${MODOCUMENT_MFA_KEY:?Set MODOCUMENT_MFA_KEY (openssl rand -base64 48)}
+      # ADMIN TOTP enrolment at login (gate B3). Default off for compose; set true in production.
+      MODOCUMENT_MFA_REQUIRE_FOR_ADMIN: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:-false}
       # ws25 Bank Integration Hub: seals DIRECT-mode connection secrets —
       # base64 of exactly 32 bytes (`openssl rand -base64 32`), distinct from
       # the MFA key. REQUIRED when MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS=true
