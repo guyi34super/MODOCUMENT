@@ -35,11 +35,11 @@ describe('BlueprintListPage', () => {
     listBlueprints.mockResolvedValue([]);
   });
 
-  it('auto-opens the upload panel for a first-time user and only accepts .docx', async () => {
+  it('auto-opens the upload panel for a first-time user and accepts docx and pdf', async () => {
     renderPage();
 
     expect(await screen.findByText('Upload a blueprint', { selector: 'h2' })).toBeInTheDocument();
-    expect(screen.getByLabelText('File')).toHaveAttribute('accept', '.docx');
+    expect(screen.getByLabelText('File')).toHaveAttribute('accept', '.docx,.pdf');
   });
 
   it('lists blueprints with their section and document counts', async () => {
@@ -78,14 +78,14 @@ describe('BlueprintListPage', () => {
   });
 
   it('shows the backend error when the upload is rejected', async () => {
-    uploadBlueprint.mockRejectedValue(new Error('Only .docx blueprints are supported.'));
+    uploadBlueprint.mockRejectedValue(new Error('Only .docx and .pdf blueprints are supported.'));
     renderPage();
 
     const file = new File(['x'], 'report.docx');
     await userEvent.upload(await screen.findByLabelText('File'), file);
     fireEvent.submit(screen.getByRole('button', { name: 'Upload & break into sections' }).closest('form'));
 
-    expect(await screen.findByText('Only .docx blueprints are supported.')).toBeInTheDocument();
+    expect(await screen.findByText('Only .docx and .pdf blueprints are supported.')).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

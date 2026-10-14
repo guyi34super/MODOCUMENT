@@ -30,7 +30,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
- * Document-creation blueprints: upload the company's source .docx, see the
+ * Document-creation blueprints: upload the company's source .docx or .pdf, see the
  * sections the engine broke it into, tune each section's auto-assignment
  * keywords, download the original, and delete when nothing builds on it.
  */

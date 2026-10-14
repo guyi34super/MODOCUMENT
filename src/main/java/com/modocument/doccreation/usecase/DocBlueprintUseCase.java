@@ -9,6 +9,7 @@ import com.modocument.doccreation.flow.DocumentCreationFlow;
 import com.modocument.doccreation.flow.DocumentCreationFlowRegistry;
 import com.modocument.doccreation.parse.BlueprintSectionExtractor;
 import com.modocument.doccreation.parse.ParsedSection;
+import com.modocument.doccreation.pdf.LibreOfficeDocxConverter;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
 import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
 import com.modocument.doccreation.repo.DocInstanceRepository;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -46,6 +48,7 @@ public class DocBlueprintUseCase {
     private final DocumentCreationFlowRegistry flows;
     private final UploadStorage uploadStorage;
     private final FileStore files;
+    private final LibreOfficeDocxConverter pdfToDocx;
 
     public DocBlueprintUseCase(DocBlueprintRepository blueprints,
                                DocBlueprintSectionRepository sections,
@@ -54,7 +57,8 @@ public class DocBlueprintUseCase {
                                BlueprintSectionExtractor sectionExtractor,
                                DocumentCreationFlowRegistry flows,
                                UploadStorage uploadStorage,
-                               FileStore files) {
+                               FileStore files,
+                               LibreOfficeDocxConverter pdfToDocx) {
         this.blueprints = blueprints;
         this.sections = sections;
         this.instances = instances;
@@ -63,6 +67,7 @@ public class DocBlueprintUseCase {
         this.flows = flows;
         this.uploadStorage = uploadStorage;
         this.files = files;
+        this.pdfToDocx = pdfToDocx;
     }
 
     @Transactional
@@ -71,13 +76,37 @@ public class DocBlueprintUseCase {
             throw new IllegalArgumentException("No file uploaded.");
         }
         String originalName = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
-        if (!originalName.toLowerCase(Locale.ROOT).endsWith(".docx")) {
-            throw new IllegalArgumentException("Only .docx blueprints are supported.");
+        String lowerName = originalName.toLowerCase(Locale.ROOT);
+        boolean pdfUpload = lowerName.endsWith(".pdf");
+        boolean docxUpload = lowerName.endsWith(".docx");
+        if (!pdfUpload && !docxUpload) {
+            throw new IllegalArgumentException("Only .docx and .pdf blueprints are supported.");
         }
-        String storedName = uploadStorage.store(file);
-        String storedKey = uploadStorage.key(storedName);
-        // A DB rollback after this point must not orphan the stored file.
-        StoredFileCleanup.deleteOnRollback(files, storedKey);
+
+        String storedName;
+        String storedKey;
+        if (docxUpload) {
+            storedName = uploadStorage.store(file);
+            storedKey = uploadStorage.key(storedName);
+            StoredFileCleanup.deleteOnRollback(files, storedKey);
+        } else {
+            String pdfStoredName = uploadStorage.store(file);
+            String pdfKey = uploadStorage.key(pdfStoredName);
+            try {
+                byte[] docxBytes = pdfToDocx.convertPdfToDocx(uploadStorage.localCopy(pdfStoredName));
+                String docxOriginalName = baseName(originalName) + ".docx";
+                storedName = uploadStorage.store(docxOriginalName, docxBytes);
+                storedKey = uploadStorage.key(storedName);
+                StoredFileCleanup.deleteOnRollback(files, storedKey);
+            } catch (IOException e) {
+                StoredFileCleanup.deleteQuietly(files, pdfKey);
+                throw new UncheckedIOException("Could not read the uploaded PDF.", e);
+            } catch (RuntimeException e) {
+                StoredFileCleanup.deleteQuietly(files, pdfKey);
+                throw e;
+            }
+            StoredFileCleanup.deleteQuietly(files, pdfKey);
+        }
 
         String blueprintName = name == null || name.isBlank() ? baseName(originalName) : name.strip();
         if (blueprintName.length() > 255) {
@@ -164,7 +193,7 @@ public class DocBlueprintUseCase {
         String safeName = DocInstanceUseCase.sanitizeFileName(rawName);
         try {
             return new StoredFile(uploadStorage.localCopy(blueprint.getFileName()),
-                    safeName.endsWith(".docx") ? safeName : safeName + ".docx");
+                    blueprintDownloadName(safeName));
         } catch (IOException e) {
             throw new java.io.UncheckedIOException("Could not read the blueprint file.", e);
         }
@@ -210,6 +239,18 @@ public class DocBlueprintUseCase {
         int dot = fileName.lastIndexOf('.');
         String base = dot > 0 ? fileName.substring(0, dot) : fileName;
         return base.isBlank() ? "Blueprint" : base;
+    }
+
+    /** Stored blueprints are always .docx; PDF uploads keep the PDF name in metadata. */
+    static String blueprintDownloadName(String sanitizedOriginalName) {
+        String lower = sanitizedOriginalName.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".docx")) {
+            return sanitizedOriginalName;
+        }
+        if (lower.endsWith(".pdf")) {
+            return sanitizedOriginalName.substring(0, sanitizedOriginalName.length() - 4) + ".docx";
+        }
+        return sanitizedOriginalName + ".docx";
     }
 
     public record StoredFile(Path path, String downloadName) {
