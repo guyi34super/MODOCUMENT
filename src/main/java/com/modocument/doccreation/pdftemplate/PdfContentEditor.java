@@ -289,7 +289,8 @@ final class PdfContentEditor {
             List<Object> out = new ArrayList<>(tokens.size());
             List<COSBase> operands = new ArrayList<>();
             int opIndex = -1;
-            for (Object token : tokens) {
+            for (int t = 0; t < tokens.size(); t++) {
+                Object token = tokens.get(t);
                 if (!(token instanceof Operator op)) {
                     operands.add((COSBase) token);
                     continue;
@@ -305,7 +306,7 @@ final class PdfContentEditor {
                 }
                 OpPlan textPlan = plan.ops.get(opIndex);
                 List<Object> replaced = textPlan == null || !TEXT_SHOW.contains(op.getName())
-                        ? null : rewriteText(op, operands, textPlan);
+                        ? null : rewriteText(op, operands, textPlan, advanceUnused(tokens, t + 1));
                 if (replaced != null) {
                     out.addAll(replaced);
                 } else {
@@ -319,8 +320,38 @@ final class PdfContentEditor {
         }
     }
 
-    /** The replacement tokens for one text-showing operator, or null to keep it as it is. */
-    static List<Object> rewriteText(Operator op, List<COSBase> operands, OpPlan plan) throws IOException {
+    /** Operators after which no text-showing operator depends on where the previous one ended. */
+    private static final Set<String> TEXT_POSITION_RESET = Set.of("Td", "TD", "Tm", "T*", "'", "\"", "ET", "BT");
+
+    /**
+     * True when the text position left by a text-showing operator is never used: the next text operator
+     * from {@code from} on re-positions (Td, TD, Tm, T*, ' and " move from the line matrix) or ends the
+     * text object before any Tj/TJ draws from it.
+     */
+    static boolean advanceUnused(List<Object> tokens, int from) {
+        for (int i = from; i < tokens.size(); i++) {
+            if (tokens.get(i) instanceof Operator next) {
+                String name = next.getName();
+                if ("Tj".equals(name) || "TJ".equals(name)) {
+                    return false;
+                }
+                if (TEXT_POSITION_RESET.contains(name)) {
+                    return true;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The replacement tokens for one text-showing operator, or null to keep it as it is. Removed glyphs
+     * become displacements so the kept glyphs after them stay exactly in place; displacements at the end
+     * are dropped when {@code advanceUnused} (nothing draws from where the operator ends), so a removed
+     * value leaves nothing behind, not even its glyph widths (BUG-PDF-02). A fully removed operator
+     * disappears (keeping the line move of ' and ").
+     */
+    static List<Object> rewriteText(Operator op, List<COSBase> operands, OpPlan plan, boolean advanceUnused)
+            throws IOException {
         List<Object> out = new ArrayList<>();
         COSArray result = new COSArray();
         switch (op.getName()) {
@@ -367,6 +398,14 @@ final class PdfContentEditor {
             }
             default -> {
                 return null;
+            }
+        }
+        if (advanceUnused) {
+            while (result.size() > 0 && result.getObject(result.size() - 1) instanceof COSNumber) {
+                result.remove(result.size() - 1);
+            }
+            if (result.size() == 0) {
+                return out;
             }
         }
         out.add(result);

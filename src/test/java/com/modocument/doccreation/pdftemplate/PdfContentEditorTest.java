@@ -1,7 +1,10 @@
 package com.modocument.doccreation.pdftemplate;
 
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.cos.COSNumber;
+import org.apache.pdfbox.pdfparser.PDFStreamParser;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
@@ -93,6 +96,59 @@ class PdfContentEditorTest {
         assertThat(r.exact()).as("%d pixels", r.differingPixels()).isTrue();
         // and the cut is real: without the mask, the filled page differs from the blank twin
         assertThat(engine.verify(blank, filled, List.of(), 150).exact()).isFalse();
+    }
+
+    /** The page's content tokens (operands and operators) as PDFBox parses them. */
+    private static List<Object> contentTokens(byte[] pdf) throws IOException {
+        try (PDDocument d = Loader.loadPDF(pdf)) {
+            return new PDFStreamParser(d.getPage(0)).parse();
+        }
+    }
+
+    private static boolean hasNumbers(Object token) {
+        if (!(token instanceof COSArray array)) {
+            return false;
+        }
+        for (int i = 0; i < array.size(); i++) {
+            if (array.getObject(i) instanceof COSNumber) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Test
+    void removedValuesLeaveNoPerGlyphWidthsBehind() throws IOException {
+        // BUG-PDF-02: a removed value used to stay in the template as a TJ of its glyph advances
+        // ([-500 -556 -556 -556 -278 -667 ...] for "John Smith"): its length, word breaks, '@' and
+        // digit groups survive the removal. A value drawn on its own, or at the end of a label run,
+        // has no glyph after it that needs the advance, so nothing of it may be left.
+        byte[] filled = raw("BT /F1 10 Tf 72 700 Td (John Smith) Tj ET "
+                + "BT /F1 10 Tf 72 680 Td (Email: jane@example.com) Tj ET", PdfContentEditorTest::helv);
+        byte[] blank = raw("BT /F1 10 Tf 72 680 Td (Email:) Tj ET", PdfContentEditorTest::helv);
+        float label = PdfCorpus.helv().getStringWidth("Email: ") / 1000f * 10;
+        TemplateEdit name = remove(0, 70, 696, 80, 14);
+        TemplateEdit mail = remove(0, 72 + label - 1, 676, 120, 14);
+        byte[] out = engine.applyEdits(filled, List.of(name, mail), Map.of(), false);
+
+        assertThat(text(out, 0)).isEqualTo("Email:");
+        ExactnessReport r = engine.verify(blank, out, List.of(), 150);
+        assertThat(r.exact()).as("%d pixels", r.differingPixels()).isTrue();
+        assertThat(contentTokens(out)).as("TJ arrays carrying advances of removed glyphs")
+                .noneMatch(PdfContentEditorTest::hasNumbers);
+    }
+
+    @Test
+    void anAdvanceAFollowingStringDependsOnIsKept() throws IOException {
+        // "(John) Tj ( Smith) Tj": the second string starts where the first one ended, so the removed
+        // first string's advance must stay (as a displacement), or " Smith" would move.
+        byte[] filled = raw("BT /F1 10 Tf 72 700 Td (John) Tj ( Smith) Tj ET", PdfContentEditorTest::helv);
+        float john = PdfCorpus.helv().getStringWidth("John") / 1000f * 10;
+        TemplateEdit cut = remove(0, 71, 696, john + 0.5f, 14);
+        byte[] out = engine.applyEdits(filled, List.of(cut), Map.of(), false);
+        assertThat(text(out, 0)).isEqualTo("Smith");
+        ExactnessReport r = engine.verify(filled, out, List.of(cut.box()), 150);
+        assertThat(r.exact()).as("%d pixels", r.differingPixels()).isTrue();
     }
 
     @Test
