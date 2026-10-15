@@ -228,3 +228,27 @@ export function employeeForm({ filled = false } = {}) {
     }
   });
 }
+
+/**
+ * The flow-records spec's "Customer account" form, A4, one page: a title,
+ * Full name / NIC / Date of birth on underscore leaders, Account number and
+ * Branch boxes, a Photo box, and an empty band under them (y 560..260 pt)
+ * where the spec moves a field and draws a new one.
+ */
+export function customerForm() {
+  return buildPdf((addPage) => {
+    const p = addPage();
+    p.text(72, 784, 'Customer Account Form', { size: 16, font: 'F2' });
+    p.text(72, 750, 'Customer details', { size: 12, font: 'F2' });
+    p.text(460, 796, 'Photo:');
+    p.rect(460, 690, 90, 100);
+    p.text(72, 715, 'Full name: ______________________________');
+    p.text(72, 690, 'NIC: ____________________');
+    p.text(72, 665, 'Date of birth: ____________');
+    p.text(72, 640, 'Account number:');
+    p.rect(170, 635, 150, 18);
+    p.text(72, 610, 'Branch:');
+    p.rect(170, 605, 150, 18);
+    p.text(72, 200, 'Please check every detail before signing.');
+  });
+}

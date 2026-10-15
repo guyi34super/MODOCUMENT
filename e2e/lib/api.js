@@ -163,10 +163,12 @@ export async function approveChange(checker, pendingChangeId, comment = 'e2e app
   return checker.post(`/api/admin/changes/${pendingChangeId}/approve`, { comment });
 }
 
-export async function createTemplate(api, { name, description = '', fields }) {
+/** POST /Templates/CreateWithFields; `visibility: 'BANK'` (bank admins only) shares it with the bank. */
+export async function createTemplate(api, { name, description = '', fields, visibility }) {
   return api.post('/Templates/CreateWithFields', {
     name,
     description,
+    ...(visibility ? { visibility } : {}),
     fields: fields.map((field) =>
       typeof field === 'string'
         ? { fieldName: field, dataType: 'Text', rules: [], piiKind: null }
