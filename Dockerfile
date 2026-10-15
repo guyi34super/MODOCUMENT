@@ -133,10 +133,10 @@ RUN --mount=type=cache,target=/root/.m2,id=modocument-m2,sharing=locked \
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-# curl is only needed for the container healthcheck. LibreOffice Writer powers
-# the document-creation PDF export (headless soffice); fonts-liberation keeps
-# Arial/Times-based templates metric-compatible. Without them the app still
-# runs — PDF download just answers 409 and .docx keeps working.
+# curl is only needed for the container healthcheck. fonts-liberation gives
+# the document-creation PDF engine metric-compatible fallback fonts (the app
+# also bundles a copy under resources/fonts). Document creation works on the
+# original PDF directly, so no office suite is installed.
 #
 # OCR (ws29): tesseract-ocr + tesseract-ocr-eng give tess4j its native
 # library (libtesseract.so.5 — JNA finds the versioned soname in the
@@ -149,10 +149,9 @@ WORKDIR /app
 # uid/gid 10001 — numeric so orchestrators can verify it (Kubernetes
 # runAsNonRoot refuses a named USER it cannot resolve), fixed so volume
 # ownership stays stable across rebuilds. Its home (/home/modocument) is the
-# only writable place besides /tmp and the storage root; soffice gets a
-# per-conversion profile under /tmp (LibreOfficePdfConverter).
+# only writable place besides /tmp and the storage root.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl libreoffice-writer fonts-liberation \
+    && apt-get install -y --no-install-recommends curl fonts-liberation \
          tesseract-ocr tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/* \
     && eng="$(find /usr/share/tesseract-ocr -name eng.traineddata | head -n 1)" \
@@ -210,7 +209,7 @@ RUN java -XX:ArchiveClassesAtExit=/app/app.jsa -XX:+UseG1GC \
     && chmod 0444 /app/app.jsa \
     && rm -rf /tmp/* /root/.cache
 
-# From here on nothing runs as root: the entrypoint, the JVM, soffice
+# From here on nothing runs as root: the entrypoint, the JVM, OCR
 # children and the HEALTHCHECK curl all run as uid 10001.
 USER 10001:10001
 

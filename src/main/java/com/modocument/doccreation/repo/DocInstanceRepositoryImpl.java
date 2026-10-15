@@ -51,6 +51,11 @@ public class DocInstanceRepositoryImpl implements DocInstanceRepository {
     }
 
     @Override
+    public List<DocInstance> listByBankAndBlueprint(int bankId, int blueprintId) {
+        return jpa.findByBankIdAndBlueprintIdOrderByDocInstanceIdAsc(bankId, blueprintId);
+    }
+
+    @Override
     public DocInstance save(DocInstance entity) {
         return jpa.save(entity);
     }

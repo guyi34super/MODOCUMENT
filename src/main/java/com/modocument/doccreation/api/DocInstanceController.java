@@ -1,21 +1,19 @@
 package com.modocument.doccreation.api;
 
-import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
-import com.modocument.domain.model.Permission;
-import com.modocument.doccreation.dto.AddBlockRequest;
-import com.modocument.doccreation.dto.AssignAssetRequest;
-import com.modocument.doccreation.dto.CreateDocInstanceRequest;
-import com.modocument.doccreation.dto.InstanceSummaryDto;
-import com.modocument.doccreation.dto.ReorderBlocksRequest;
-import com.modocument.doccreation.dto.UpdateBlockRequest;
-import com.modocument.doccreation.dto.UpdateDocInstanceRequest;
-import com.modocument.doccreation.dto.UpdateInstanceFieldsRequest;
-import com.modocument.doccreation.usecase.DocInstanceUseCase;
-import com.modocument.doccreation.dto.GenerationResultDto;
 import com.modocument.application.audit.AuditActions;
 import com.modocument.application.port.AuditRecorder;
+import com.modocument.doccreation.dto.CreateDocInstanceRequest;
+import com.modocument.doccreation.dto.CreatedInstanceDto;
+import com.modocument.doccreation.dto.GenerationResultDto;
+import com.modocument.doccreation.dto.PlaceImageRequest;
+import com.modocument.doccreation.dto.UpdateDocInstanceRequest;
+import com.modocument.doccreation.dto.UpdateValuesRequest;
+import com.modocument.doccreation.usecase.DocCreationException;
+import com.modocument.doccreation.usecase.DocInstanceUseCase;
+import com.modocument.domain.model.Permission;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -32,26 +30,20 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URI;
-import java.nio.file.Files;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
- * Document instances built on a blueprint: the section-fill builder (paragraph
- * and image blocks), bulk image upload with auto-assignment, authenticated
- * image previews, and generation/download of the reproduced document.
+ * Documents built on a PDF template (docs/doccreation/pdf-templates-contract.md
+ * §5): values (merged), photos (tray, auto-fill, drag and drop with swap),
+ * live page previews, and generation/download of the PDF.
  */
 @RestController
-@Tag(name = "Doc Creation: Instances", description = "Document authoring, assets and generation")
+@Tag(name = "Doc Creation: Instances", description = "Document values, photos, previews and PDF generation")
 public class DocInstanceController {
-
-    private static final String DOCX_CONTENT_TYPE =
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     private final DocInstanceUseCase useCase;
     private final AuditRecorder audit;
@@ -68,13 +60,12 @@ public class DocInstanceController {
 
     // ------------------------------------------------------------- instances
 
+    /** 201 {@code {id, instanceId}}; a DRAFT template is a 409. */
     @RequiresPermission(Permission.DOC_WRITE)
     @PostMapping("/api/doccreation/instances")
     public ResponseEntity<?> create(@Valid @RequestBody CreateDocInstanceRequest request) {
-        InstanceSummaryDto created = useCase.create(request.getBlueprintId(), request.getTitle());
-        return ResponseEntity
-                .created(URI.create("/api/doccreation/instances/" + created.instanceId()))
-                .body(created);
+        CreatedInstanceDto created = useCase.create(request.getBlueprintId(), request.getTitle());
+        return ResponseEntity.created(URI.create("/api/doccreation/instances/" + created.id())).body(created);
     }
 
     @RequiresPermission(Permission.DOC_READ)
@@ -86,7 +77,7 @@ public class DocInstanceController {
     @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/instances/{id}")
     public ResponseEntity<?> get(@PathVariable int id) {
-        return ResponseEntity.ok(useCase.getBuilder(id));
+        return ResponseEntity.ok(useCase.get(id));
     }
 
     @RequiresPermission(Permission.DOC_WRITE)
@@ -96,91 +87,71 @@ public class DocInstanceController {
     }
 
     @RequiresPermission(Permission.DOC_WRITE)
-    @PutMapping("/api/doccreation/instances/{id}/fields")
-    public ResponseEntity<?> updateFields(@PathVariable int id,
-                                          @Valid @RequestBody UpdateInstanceFieldsRequest request) {
-        return ResponseEntity.ok(useCase.updateFields(id, request));
-    }
-
-    @RequiresPermission(Permission.DOC_WRITE)
     @DeleteMapping("/api/doccreation/instances/{id}")
     public ResponseEntity<?> delete(@PathVariable int id) {
         useCase.delete(id);
         return ResponseEntity.noContent().build();
     }
 
-    // ---------------------------------------------------------------- blocks
+    // ---------------------------------------------------------------- values
 
+    /** Merges the values (empty string clears a key; unknown key 400). */
     @RequiresPermission(Permission.DOC_WRITE)
-    @PostMapping("/api/doccreation/instances/{id}/sections/{sectionId}/blocks")
-    public ResponseEntity<?> addBlock(@PathVariable int id,
-                                      @PathVariable int sectionId,
-                                      @Valid @RequestBody AddBlockRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(useCase.addBlock(id, sectionId, request));
+    @PutMapping("/api/doccreation/instances/{id}/values")
+    public ResponseEntity<?> updateValues(@PathVariable int id, @Valid @RequestBody UpdateValuesRequest request) {
+        return ResponseEntity.ok(useCase.updateValues(id, request.values()));
     }
 
-    @RequiresPermission(Permission.DOC_WRITE)
-    @PutMapping("/api/doccreation/blocks/{blockId}")
-    public ResponseEntity<?> updateBlock(@PathVariable int blockId, @Valid @RequestBody UpdateBlockRequest request) {
-        return ResponseEntity.ok(useCase.updateBlock(blockId, request.getText(), request.getCaption()));
-    }
+    // ---------------------------------------------------------------- photos
 
+    /** Multipart {@code files} (repeated) and {@code autoFill} (default true). */
     @RequiresPermission(Permission.DOC_WRITE)
-    @PutMapping("/api/doccreation/instances/{id}/sections/{sectionId}/blocks/order")
-    public ResponseEntity<?> reorderBlocks(@PathVariable int id,
-                                           @PathVariable int sectionId,
-                                           @Valid @RequestBody ReorderBlocksRequest request) {
-        useCase.reorderBlocks(id, sectionId, request.getBlockIds());
-        return ResponseEntity.ok().build();
-    }
-
-    @RequiresPermission(Permission.DOC_WRITE)
-    @DeleteMapping("/api/doccreation/blocks/{blockId}")
-    public ResponseEntity<?> deleteBlock(@PathVariable int blockId) {
-        useCase.deleteBlock(blockId);
-        return ResponseEntity.noContent().build();
-    }
-
-    // ---------------------------------------------------------------- assets
-
-    @RequiresPermission(Permission.DOC_WRITE)
-    @PostMapping(value = "/api/doccreation/instances/{id}/assets", consumes = "multipart/form-data")
-    public ResponseEntity<?> uploadAssets(@PathVariable int id,
-                                          @RequestParam("files") List<MultipartFile> files,
-                                          @RequestParam(value = "autoAssign", defaultValue = "true")
-                                          boolean autoAssign) {
+    @PostMapping(value = "/api/doccreation/instances/{id}/images", consumes = "multipart/form-data")
+    public ResponseEntity<?> uploadImages(@PathVariable int id,
+                                          @RequestParam(value = "files", required = false) List<MultipartFile> files,
+                                          @RequestParam(value = "autoFill", defaultValue = "true") boolean autoFill) {
         if (files == null || files.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "No files uploaded."));
         }
-        return ResponseEntity.status(HttpStatus.CREATED).body(useCase.uploadAssets(id, files, autoAssign));
+        return ResponseEntity.status(HttpStatus.CREATED).body(useCase.uploadImages(id, files, autoFill));
+    }
+
+    /** Drag and drop: {@code {regionKey}} places the photo (swapping), null moves it back to the tray. */
+    @RequiresPermission(Permission.DOC_WRITE)
+    @PutMapping("/api/doccreation/instances/{id}/images/{imageId}")
+    public ResponseEntity<?> placeImage(@PathVariable int id, @PathVariable int imageId,
+                                        @Valid @RequestBody(required = false) PlaceImageRequest request) {
+        return ResponseEntity.ok(useCase.placeImage(id, imageId, request == null ? null : request.regionKey()));
+    }
+
+    @RequiresPermission(Permission.DOC_WRITE)
+    @DeleteMapping("/api/doccreation/instances/{id}/images/{imageId}")
+    public ResponseEntity<?> deleteImage(@PathVariable int id, @PathVariable int imageId) {
+        useCase.deleteImage(id, imageId);
+        return ResponseEntity.noContent().build();
     }
 
     @RequiresPermission(Permission.DOC_READ)
-    @GetMapping("/api/doccreation/assets/{assetId}/content")
-    public ResponseEntity<?> assetContent(@PathVariable int assetId) {
-        DocInstanceUseCase.StoredAsset asset = useCase.getAssetContent(assetId);
-        try {
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
-                    .contentType(MediaType.parseMediaType(asset.contentType()))
-                    .body(Files.readAllBytes(asset.path()));
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read the image file.", e);
-        }
+    @GetMapping("/api/doccreation/instances/{id}/images/{imageId}/content")
+    public ResponseEntity<byte[]> imageContent(@PathVariable int id, @PathVariable int imageId) {
+        DocInstanceUseCase.StoredImage image = useCase.imageContent(id, imageId);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .contentType(MediaType.parseMediaType(image.contentType()))
+                .body(image.bytes());
     }
 
-    @RequiresPermission(Permission.DOC_WRITE)
-    @PutMapping("/api/doccreation/assets/{assetId}/assignment")
-    public ResponseEntity<?> assignAsset(@PathVariable int assetId, @Valid @RequestBody AssignAssetRequest request) {
-        useCase.assignAsset(assetId, request.getSectionId());
-        return ResponseEntity.ok().build();
-    }
+    // ------------------------------------------------------------- previews
 
-    @RequiresPermission(Permission.DOC_WRITE)
-    @DeleteMapping("/api/doccreation/assets/{assetId}")
-    public ResponseEntity<?> deleteAsset(@PathVariable int assetId) {
-        useCase.deleteAsset(assetId);
-        return ResponseEntity.noContent().build();
+    /** A page as PNG with the values drawn in (not stored). */
+    @RequiresPermission(Permission.DOC_READ)
+    @GetMapping("/api/doccreation/instances/{id}/pages/{page}")
+    public ResponseEntity<byte[]> page(@PathVariable int id, @PathVariable int page,
+                                       @RequestParam(value = "dpi", required = false) Integer dpi) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .contentType(MediaType.IMAGE_PNG)
+                .body(useCase.pagePng(id, page, dpi));
     }
 
     // ------------------------------------------------------------ generation
@@ -190,46 +161,48 @@ public class DocInstanceController {
     public ResponseEntity<?> generate(@PathVariable int id) {
         GenerationResultDto result = useCase.generate(id);
         Map<String, Object> values = new LinkedHashMap<>();
-        values.put("docxFileName", result.docxFileName());
-        values.put("pdfReady", result.pdfReady());
-        values.put("composedBy", result.composedBy());
+        values.put("format", "pdf");
+        values.put("exact", result.exact());
+        values.put("addedPages", result.addedPages());
+        values.put("continuedKeys", result.continuedKeys().size());
         audit.success(AuditActions.DOC_GENERATED, "DocInstance", String.valueOf(id), null, values);
         return ResponseEntity.ok(result);
     }
 
+    /**
+     * The generated PDF, regenerated first when stale. {@code format} is
+     * accepted for older clients; the output is always PDF.
+     */
     @RequiresPermission(Permission.DOC_GENERATE)
     @GetMapping("/api/doccreation/instances/{id}/download")
-    public ResponseEntity<?> download(@PathVariable int id,
-                                      @RequestParam(value = "format", defaultValue = "docx") String format) {
-        DocInstanceUseCase.DownloadFile file = useCase.download(id, format);
-        String contentType = file.downloadName().endsWith(".pdf") ? "application/pdf" : DOCX_CONTENT_TYPE;
-        try {
-            byte[] bytes = Files.readAllBytes(file.path());
-            audit.success(AuditActions.DOC_DOWNLOADED, "DocInstance", String.valueOf(id), null,
-                    Map.of("format", contentType.equals("application/pdf") ? "pdf" : "docx",
-                            "bytes", bytes.length));
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename=\"" + file.downloadName().replace("\"", "") + "\"")
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .body(bytes);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read the generated file.", e);
-        }
+    public ResponseEntity<byte[]> download(@PathVariable int id,
+                                           @RequestParam(value = "format", required = false) String format) {
+        DocInstanceUseCase.PdfDownload file = useCase.download(id);
+        audit.success(AuditActions.DOC_DOWNLOADED, "DocInstance", String.valueOf(id), null,
+                Map.of("format", "pdf", "bytes", file.bytes().length));
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, DocCreationErrors.attachment(file.downloadName()))
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(file.bytes());
+    }
+
+    @ExceptionHandler(DocCreationException.class)
+    public ResponseEntity<?> docCreation(DocCreationException e) {
+        return DocCreationErrors.of(e);
     }
 
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<?> notFound(NoSuchElementException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        return DocCreationErrors.notFound(e);
     }
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<?> conflict(IllegalStateException e) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+        return DocCreationErrors.conflict(e);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<?> badRequest(IllegalArgumentException e) {
-        return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        return DocCreationErrors.badRequest(e);
     }
 }

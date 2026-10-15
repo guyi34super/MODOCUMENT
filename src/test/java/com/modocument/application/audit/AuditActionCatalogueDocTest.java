@@ -55,6 +55,9 @@ class AuditActionCatalogueDocTest {
                 "DOC_GENERATED", "DOC_DOWNLOADED", "EXPORT_DOWNLOADED", "TOKEN_REFRESHED",
                 "ACCESS_DENIED", "SENSITIVE_DATA_VIEWED", "AUDIT_LOG_VIEWED",
                 "AUDIT_LOG_EXPORTED");
+        // ws31: exact PDF templates and the purge of the Word path.
+        assertThat(catalogue()).contains("DOC_BLUEPRINT_CREATED", "DOC_BLUEPRINT_VERSION_SAVED",
+                "DOC_LEGACY_PURGED");
     }
 
     @Test

@@ -16,6 +16,76 @@ All notable changes to MoDocument are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Exact PDF templates for document creation: the template is the uploaded PDF itself, with an
+  overlay of fill-in regions (text, multi-line, date, number, checkbox, photo, signature).
+  Logo, fonts, layout and page geometry stay exactly as uploaded; generation draws the values
+  onto it and refuses an output that is not pixel-identical outside the regions
+  (`500 EXACTNESS_FAILED`, audited `DOC_GENERATED` FAILED).
+- Two upload flows: a blank form becomes the template as-is; a filled document has its data
+  removed first (`flow=BLANK|WITH_DATA|AUTO`). The upload is a DRAFT for review; the removed
+  sample values are shown only during the review and deleted on confirm.
+- Template editor API: `PUT /api/doccreation/blueprints/{id}/overlay` saves regions and edits
+  (remove, replace or add text, add an image) as a new version with an optimistic
+  `baseVersion` (409 when stale); page previews `GET …/blueprints/{id}/pages/{page}` (PNG,
+  cached by content hash); template images `POST …/blueprints/{id}/edit-images`.
+- WYSIWYG builder API: `PUT /api/doccreation/instances/{id}/values` merges values per field;
+  page previews with the values drawn in; text that does not fit is shrunk to the new setting
+  `doccreation.pdfMinFontSize` (default 6 pt, 4-10) and then continues on an added page, with an
+  overflow warning in the builder.
+- Photos: upload once into a tray (`POST /api/doccreation/instances/{id}/images`), auto-fill
+  by file name and then reading order, drag onto any photo box (`PUT …/images/{imageId}`, a
+  filled box swaps).
+- Database (ws31): V300 template columns on `DocBlueprint`/`DocBlueprintVersion`, V301
+  `DocTemplateRegion`, V302 `DocTemplateEdit`, `DocInstanceImage` and the document's
+  `ValuesJson`/`GeneratedPdfKey`, all bank-scoped under row level security.
+- Audit actions `DOC_BLUEPRINT_CREATED` and `DOC_LEGACY_PURGED`; `DOC_BLUEPRINT_VERSION_SAVED`
+  and `DOC_GENERATED` now carry the region/edit counts and the exactness result.
+- Data subject requests find and erase document values (`docValues` store); the retention purge
+  also clears values, photos and the generated PDF of idle documents.
+
+### Changed
+- Document creation outputs PDF only: `download` and the approver's `review-file` always return
+  `application/pdf` (`format` is ignored). The release queue lists the document's values and
+  photos per region group.
+- The setting `doccreation.sectionAiEnabled` is now labelled "Template AI assistance": it lets
+  the model improve the regions and the data found in an upload; code detection always runs.
+- Values and photos of a SUBMITTED or RELEASED document can no longer change (409), and a
+  document changed after its last generation must be generated again before it is submitted.
+
+### Removed
+- Word templates: `.docx` upload, the PDF-to-Word reflow, sections, keywords, paragraph and
+  image blocks, and the AI composer. Routes removed without the deprecation window (the feature
+  was not deployed): `/blueprints/{id}/paragraphs`, `/sections`, `/resection`,
+  `/sections/{sid}/keywords`, `/instances/{id}/fields`, `/instances/{iid}/sections/…/blocks`,
+  `/blocks/{id}` and `/assets*` (docs/api/versioning-policy.md §8). The application no longer
+  calls LibreOffice.
+- Upgrade note: existing Word templates become `DOCX_LEGACY`; they are hidden from the lists and
+  answer `410 GONE`. A bank administrator removes them, with their documents and stored files, via
+  `POST /api/admin/doccreation/purge-legacy` (audited, the caller's bank only). The
+  `doccreation.generateAiEnabled` setting has no effect any more and goes in a later release, as
+  do the `DocBlueprintSection`/`DocContentBlock` tables.
+
+### Fixed
+- Saving the form fields of one section no longer wipes the other sections' values, and
+  editing sections no longer drops form fields: both bugs belonged to the removed Word path,
+  and document values are now merged per field.
+- A filled PDF upload no longer removes low-confidence data guesses by default (BUG-PDF-01).
+  A guess below 0.6 confidence, such as a free-standing e-mail address or date that may be
+  printed form text, is now only suggested: the API returns it with `"applied":false` and its
+  field with `"suggested":true`. It stays in the draft template, and the editor lists it as
+  "Suggested — not removed", with Apply and Dismiss.
+  - Confirming applies exactly the edits the client sends; unapplied suggestions are ignored.
+  - Restoring a data removal in the editor also removes its linked field (`regionKey`), unless
+    you edited that field.
+- `detectedBy` reports `CODE+AI` only when the AI actually changed a label, group or kind, or
+  the data classification.
+
+### Security
+- Admins must set up MFA again by default (`MODOCUMENT_MFA_REQUIRE_FOR_ADMIN` defaults to
+  `true`, go-live gate B3). An earlier change had turned it off in every environment, though it
+  was meant only for docker-compose and the `local` profile. Those two still turn it off.
+
 ## [1.2.0] - 2026-10-11
 
 Optimization release: faster pages and APIs, a smaller and cheaper deployment,

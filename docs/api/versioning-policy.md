@@ -171,3 +171,24 @@ raw `jdbcUrl`; such a body gets a 400 that names the new fields. The target is n
 `database`, `schema` (optional) and `sslmode` (optional). The server builds the JDBC URL with the
 integration hub's `DbDialect`, which applies the connect, login, socket and query timeouts. See
 the CHANGELOG migration note.
+
+## 8. Document creation: the Word path removed (unreleased, workstream 31)
+
+Document creation now takes PDF templates only and produces PDF only
+(docs/doccreation/pdf-templates-contract.md). The Word-based routes below are **removed without
+the deprecation window**: the feature had not been deployed, the only caller is the SPA (changed
+in the same release), and the old shapes cannot be served by a PDF template. The removal appears
+in the release notes; Word templates already stored answer `410 GONE` (code `LEGACY_TEMPLATE`)
+until an administrator runs `POST /api/admin/doccreation/purge-legacy`.
+
+| Removed route | Replaced by |
+|---|---|
+| `GET /api/doccreation/blueprints/{id}/paragraphs`, `PUT …/{id}/sections`, `POST …/{id}/resection`, `PUT …/{bid}/sections/{sid}/keywords` | `PUT /api/doccreation/blueprints/{id}/overlay` (regions and edits, versioned) |
+| `PUT /api/doccreation/instances/{id}/fields` | `PUT /api/doccreation/instances/{id}/values` (merged per key) |
+| `POST /api/doccreation/instances/{iid}/sections/{sid}/blocks`, `PUT …/blocks/order`, `PUT/DELETE /api/doccreation/blocks/{id}` | values and photos of the document |
+| `POST /api/doccreation/instances/{id}/assets`, `GET /api/doccreation/assets/{id}/content`, `PUT /api/doccreation/assets/{id}/assignment`, `DELETE /api/doccreation/assets/{id}` | `POST /api/doccreation/instances/{id}/images`, `GET`/`PUT`/`DELETE …/images/{imageId}[/content]` |
+
+**Changed (workstream 31).** `GET /api/doccreation/instances/{id}/download` and
+`GET …/{id}/review-file` always return `application/pdf`; their `format` parameter is accepted
+for older clients and ignored. `POST /api/doccreation/blueprints` refuses anything that is not a
+PDF by its bytes (`400 NOT_A_PDF`).

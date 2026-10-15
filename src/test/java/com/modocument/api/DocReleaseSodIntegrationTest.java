@@ -8,8 +8,8 @@ import com.modocument.domain.model.Role;
 import com.modocument.infrastructure.persistence.AppUserJpaRepository;
 import com.modocument.infrastructure.persistence.BankJpaRepository;
 import com.modocument.infrastructure.security.JwtService;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
-import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.modocument.testsupport.FakePdfTemplateEngine;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,8 +20,6 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -51,8 +50,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String DOCX_CONTENT_TYPE =
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     @Autowired
     private MockMvc mvc;
@@ -91,11 +88,18 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
         for (Bank bank : List.of(bankA, bankB)) {
             jdbc.update("DELETE FROM PendingChange WHERE BankId = ?", bank.getBankId());
             jdbc.update("DELETE FROM DocContentBlock WHERE BankId = ?", bank.getBankId());
+            jdbc.update("DELETE FROM DocInstanceImage WHERE BankId = ?", bank.getBankId());
             jdbc.update("DELETE FROM DocImageAsset WHERE BankId = ?", bank.getBankId());
             jdbc.update("DELETE FROM DocInstance WHERE BankId = ?", bank.getBankId());
         }
         for (Integer userId : createdUserIds) {
             jdbc.update("DELETE FROM DocBlueprintSection WHERE BlueprintId IN "
+                    + "(SELECT DocBlueprintId FROM DocBlueprint WHERE OwnerUserId = ?)", userId);
+            jdbc.update("DELETE FROM DocTemplateRegion WHERE BlueprintId IN "
+                    + "(SELECT DocBlueprintId FROM DocBlueprint WHERE OwnerUserId = ?)", userId);
+            jdbc.update("DELETE FROM DocTemplateEdit WHERE BlueprintId IN "
+                    + "(SELECT DocBlueprintId FROM DocBlueprint WHERE OwnerUserId = ?)", userId);
+            jdbc.update("DELETE FROM DocBlueprintVersion WHERE BlueprintId IN "
                     + "(SELECT DocBlueprintId FROM DocBlueprint WHERE OwnerUserId = ?)", userId);
             jdbc.update("DELETE FROM DocBlueprint WHERE OwnerUserId = ?", userId);
             users.deleteById(userId);
@@ -125,55 +129,52 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
         return "Bearer " + jwtService.issueToken(user);
     }
 
-    private static byte[] blueprintDocx() throws IOException {
-        try (XWPFDocument doc = new XWPFDocument()) {
-            doc.createParagraph().createRun().setText("MO Intelligence — Compliance Report");
-            XWPFParagraph heading = doc.createParagraph();
-            heading.setStyle("Heading1");
-            heading.createRun().setText("Findings");
-            doc.createParagraph().createRun().setText("Standard findings notes.");
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            doc.write(out);
-            return out.toByteArray();
-        }
-    }
-
-    /** Uploads a blueprint, builds an instance with one paragraph, generates. */
-    private int generatedInstance(AppUser owner, String paragraph) throws Exception {
+    /** Uploads and confirms a PDF template; returns its id. */
+    private int readyTemplate(AppUser owner) throws Exception {
         MvcResult uploaded = mvc.perform(multipart("/api/doccreation/blueprints")
-                        .file(new MockMultipartFile("file", "report.docx", DOCX_CONTENT_TYPE,
-                                blueprintDocx()))
+                        .file(new MockMultipartFile("file", "report.pdf", "application/pdf",
+                                FakePdfTemplateEngine.blankPdf(1, 0)))
                         .param("name", "Release blueprint " + UUID.randomUUID())
+                        .param("flow", "BLANK")
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isCreated())
                 .andReturn();
-        int blueprintId = MAPPER.readTree(uploaded.getResponse().getContentAsString())
-                .get("blueprintId").asInt();
+        JsonNode draft = MAPPER.readTree(uploaded.getResponse().getContentAsString());
+        int blueprintId = draft.get("id").asInt();
+        ObjectNode overlay = MAPPER.createObjectNode();
+        overlay.put("baseVersion", 1);
+        overlay.set("regions", draft.get("regions"));
+        overlay.set("edits", draft.get("edits"));
+        overlay.put("confirm", true);
+        mvc.perform(put("/api/doccreation/blueprints/" + blueprintId + "/overlay")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(overlay.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"));
+        return blueprintId;
+    }
 
+    private int createInstance(AppUser owner, int blueprintId, String title) throws Exception {
         MvcResult created = mvc.perform(post("/api/doccreation/instances")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"blueprintId\":" + blueprintId
-                                + ",\"title\":\"Compliance report\"}"))
+                        .content("{\"blueprintId\":" + blueprintId + ",\"title\":\"" + title + "\"}"))
                 .andExpect(status().isCreated())
                 .andReturn();
-        int instanceId = MAPPER.readTree(created.getResponse().getContentAsString())
-                .get("instanceId").asInt();
+        return MAPPER.readTree(created.getResponse().getContentAsString()).get("id").asInt();
+    }
 
-        MvcResult builder = mvc.perform(get("/api/doccreation/instances/" + instanceId)
-                        .header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andReturn();
-        int sectionId = MAPPER.readTree(builder.getResponse().getContentAsString())
-                .get("sections").get(0).get("sectionId").asInt();
-
-        mvc.perform(post("/api/doccreation/instances/" + instanceId
-                        + "/sections/" + sectionId + "/blocks")
+    /** Uploads a PDF template, builds a document with one value, generates. */
+    private int generatedInstance(AppUser owner, String paragraph) throws Exception {
+        int instanceId = createInstance(owner, readyTemplate(owner), "Compliance report");
+        ObjectNode values = MAPPER.createObjectNode();
+        values.putObject("values").put("notes", paragraph);
+        mvc.perform(put("/api/doccreation/instances/" + instanceId + "/values")
                         .header("Authorization", bearer(owner))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"blockType\":\"PARAGRAPH\",\"text\":\""
-                                + paragraph + "\"}"))
-                .andExpect(status().isCreated());
+                        .content(values.toString()))
+                .andExpect(status().isOk());
 
         mvc.perform(post("/api/doccreation/instances/" + instanceId + "/generate")
                         .header("Authorization", bearer(owner)))
@@ -186,6 +187,11 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"));
+    }
+
+    private String entryValues(int instanceId) {
+        return jdbc.queryForObject("SELECT ValuesJson FROM DocInstance WHERE DocInstanceId = ?",
+                String.class, instanceId);
     }
 
     private String statusInDb(int instanceId) {
@@ -213,7 +219,7 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
                 instanceId);
 
         // C10: the approver's queue carries the aiComposed flag and the
-        // actual content blocks — the human sees what the model wrote.
+        // actual values — the human sees what was entered.
         MvcResult queue = mvc.perform(get("/api/doccreation/instances/pending-release")
                         .header("Authorization", bearer(approver)))
                 .andExpect(status().isOk())
@@ -301,6 +307,7 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
                 .andExpect(jsonPath("$.status").value("GENERATED"))
                 .andExpect(jsonPath("$.reviewComment").value("section 2 needs the Q3 figures"));
         assertThat(statusInDb(instanceId)).isEqualTo("GENERATED");
+        assertThat(entryValues(instanceId)).contains("Draft paragraph.");
         assertThat(auditCount("DOC_RELEASE_REJECTED", String.valueOf(instanceId))).isOne();
 
         // The author sees the reviewer's comment on their working copy...
@@ -308,7 +315,7 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
                         .header("Authorization", bearer(users.findById(author.getAppUserId())
                                 .orElseThrow())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.reviewComment").value("section 2 needs the Q3 figures"));
+                .andExpect(jsonPath("$.reviewerComment").value("section 2 needs the Q3 figures"));
 
         // ...and a resubmission (back as the authoring role — doc:generate)
         // starts a fresh review cycle: the old comment is spent.
@@ -335,8 +342,22 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
                         .header("Authorization", bearer(approver)))
                 .andExpect(status().isOk())
                 .andReturn();
-        assertThat(download.getResponse().getContentType()).isEqualTo(DOCX_CONTENT_TYPE);
-        assertThat(download.getResponse().getContentAsByteArray()).isNotEmpty();
+        assertThat(download.getResponse().getContentType()).isEqualTo("application/pdf");
+        assertThat(new String(download.getResponse().getContentAsByteArray(), 0, 5,
+                java.nio.charset.StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+        // Older clients still ask for format=docx: the PDF is served.
+        mvc.perform(get("/api/doccreation/instances/" + instanceId + "/review-file")
+                        .param("format", "docx")
+                        .header("Authorization", bearer(approver)))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .content().contentType("application/pdf"));
+        // A submitted document is frozen: values cannot change under review.
+        mvc.perform(put("/api/doccreation/instances/" + instanceId + "/values")
+                        .header("Authorization", bearer(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"values\":{\"notes\":\"changed\"}}"))
+                .andExpect(status().isConflict());
 
         // A third READ_WRITE user of the same bank: no doc:release → 403 on
         // the review route, and the owner-scoped download stays a 404.
@@ -373,27 +394,30 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
 
     @Test
     void anUngeneratedDraftCannotBeSubmitted() throws Exception {
-        MvcResult uploaded = mvc.perform(multipart("/api/doccreation/blueprints")
-                        .file(new MockMultipartFile("file", "report.docx", DOCX_CONTENT_TYPE,
-                                blueprintDocx()))
-                        .header("Authorization", bearer(author)))
-                .andExpect(status().isCreated())
-                .andReturn();
-        int blueprintId = MAPPER.readTree(uploaded.getResponse().getContentAsString())
-                .get("blueprintId").asInt();
-        MvcResult created = mvc.perform(post("/api/doccreation/instances")
-                        .header("Authorization", bearer(author))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"blueprintId\":" + blueprintId + ",\"title\":\"Draft\"}"))
-                .andExpect(status().isCreated())
-                .andReturn();
-        int instanceId = MAPPER.readTree(created.getResponse().getContentAsString())
-                .get("instanceId").asInt();
+        int instanceId = createInstance(author, readyTemplate(author), "Draft");
 
         mvc.perform(post("/api/doccreation/instances/" + instanceId + "/submit")
                         .header("Authorization", bearer(author)))
                 .andExpect(status().isConflict());
         assertThat(statusInDb(instanceId)).isEqualTo("DRAFT");
+    }
+
+    @Test
+    void aDocumentChangedAfterGenerationMustBeGeneratedAgainBeforeSubmitting() throws Exception {
+        int instanceId = generatedInstance(author, "First text.");
+        mvc.perform(put("/api/doccreation/instances/" + instanceId + "/values")
+                        .header("Authorization", bearer(author))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"values\":{\"notes\":\"Second text.\"}}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/api/doccreation/instances/" + instanceId + "/submit")
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isConflict());
+        mvc.perform(post("/api/doccreation/instances/" + instanceId + "/generate")
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isOk());
+        submit(author, instanceId);
     }
 
     // ------------------------------------------- SEC-024 layer 3: the scan

@@ -187,7 +187,9 @@ modocument:
       key: ${MODOCUMENT_MFA_KEY:}
       # An ADMIN without activated MFA gets enrollmentRequired at login and
       # cannot obtain an access token until a second factor verifies (B3).
-      require-for-admin: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:false}
+      # On by default (go-live gate B3); docker-compose and the `local`
+      # profile turn it off for development.
+      require-for-admin: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:true}
       # MFA challenge token lifetime (password-to-second-factor window).
       challenge-ttl-minutes: ${MODOCUMENT_MFA_CHALLENGE_TTL_MINUTES:5}
     maker-checker:
@@ -768,26 +770,19 @@ modocument:
     # empty = the default model (aifiles.openai.model-id), no floating :latest tag (ws28).
     model-id: ${MODOCUMENT_EXTRACTION_MODEL:}
   doccreation:
-    # Headless LibreOffice for the document-creation PDF export. Installed in
-    # the Docker image; when the binary is absent (e.g. local dev) the .docx
-    # download keeps working and the PDF endpoint answers 409.
-    soffice-path: ${MODOCUMENT_DOCCREATION_SOFFICE_PATH:soffice}
-    soffice-timeout-seconds: ${MODOCUMENT_DOCCREATION_SOFFICE_TIMEOUT_SECONDS:120}
-    # AI-driven blueprint breakdown: the LLM reads the document's paragraph
-    # listing and identifies every logical section (headings in any disguise).
-    # Falls back to the heuristic heading parser when disabled, when no API
-    # key is configured, or when the model's reply doesn't validate.
+    # Exact PDF templates (docs/doccreation/pdf-templates-contract.md): the
+    # template is the uploaded PDF plus a region overlay; output is PDF only.
+    # Template AI assistance (setting doccreation.sectionAiEnabled): the AI may
+    # improve the fill-in areas and the data found in an upload; code
+    # detection always runs and carries the feature on its own.
     section-ai-enabled: ${MODOCUMENT_DOCCREATION_SECTION_AI:true}
-    # Model for the breakdown; empty uses the global aifiles.openai.model-id.
+    # Model for template analysis; empty uses the global aifiles.openai.model-id.
     section-model-id: ${MODOCUMENT_DOCCREATION_SECTION_MODEL:}
-    # AI-composed generation: the LLM is given the template plus everything
-    # the user added and returns the complete final document as an assembly
-    # plan, validated to reproduce the template exactly. The deterministic
-    # engine carries generation whenever AI is disabled, unconfigured, over
-    # quota, or the plan doesn't validate.
+    # Retired with the Word path (no effect); kept for stored overrides.
     generate-ai-enabled: ${MODOCUMENT_DOCCREATION_GENERATE_AI:true}
-    # Model for composition; empty uses the global aifiles.openai.model-id.
-    generate-model-id: ${MODOCUMENT_DOCCREATION_GENERATE_MODEL:}
+    # A value that does not fit its box is shrunk down to this size (points,
+    # 4-10), then continues on an added page.
+    pdf-min-font-size: ${MODOCUMENT_DOCCREATION_PDF_MIN_FONT_SIZE:6}
 
 management:
   endpoints:

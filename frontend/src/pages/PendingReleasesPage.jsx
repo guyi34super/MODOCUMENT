@@ -66,7 +66,7 @@ export default function PendingReleasesPage() {
   const download = async (entry) => {
     try {
       await toast.promise(
-        () => downloadReviewFile(entry.instanceId, 'docx', `${entry.title}.docx`),
+        () => downloadReviewFile(entry.instanceId, 'pdf', `${entry.title}.pdf`),
         { loading: 'Preparing download…', success: 'Download started', error: (err) => err.message }
       );
     } catch {
@@ -121,7 +121,7 @@ export default function PendingReleasesPage() {
                   )}
                 </div>
                 <Button size="sm" variant="secondary" onClick={() => download(entry)}>
-                  Download .docx
+                  Download PDF
                 </Button>
               </div>
 

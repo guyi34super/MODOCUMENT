@@ -53,3 +53,35 @@ export async function schemaVersion() {
     return rows[0]?.version ?? null;
   });
 }
+
+/**
+ * A Word-based template of the retired DOCX path (Kind DOCX_LEGACY, what
+ * V300 marks every pre-existing row) owned by `ownerEmail`, with one
+ * generated document built on it. The product can no longer create one (the
+ * Word upload is gone), so the purge spec seeds the "data left from before
+ * the upgrade" it must remove. Returns {blueprintId, instanceId}.
+ */
+export async function seedLegacyWordTemplate({ ownerEmail, name }) {
+  return withDb(async (db) => {
+    const owner = await db.query('SELECT AppUserId, BankId FROM AppUsers WHERE lower(Email) = lower($1)', [
+      ownerEmail,
+    ]);
+    if (owner.rows.length === 0) throw new Error(`seedLegacyWordTemplate: unknown user ${ownerEmail}`);
+    const { appuserid: userId, bankid: bankId } = owner.rows[0];
+    const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const blueprint = await db.query(
+      `INSERT INTO DocBlueprint (OwnerUserId, BankId, Name, FileName, OriginalFileName, Kind, CreatedDate, UpdatedDate)
+       VALUES ($1, $2, $3, $4, 'legacy.docx', 'DOCX_LEGACY', now(), now())
+       RETURNING DocBlueprintId`,
+      [userId, bankId, name, `legacy-${stamp}.docx`]
+    );
+    const blueprintId = blueprint.rows[0].docblueprintid;
+    const instance = await db.query(
+      `INSERT INTO DocInstance (OwnerUserId, BankId, BlueprintId, Title, Status, LastGeneratedPdf, CreatedDate, UpdatedDate)
+       VALUES ($1, $2, $3, $4, 'GENERATED', $5, now(), now())
+       RETURNING DocInstanceId`,
+      [userId, bankId, blueprintId, `${name} document`, `legacy-${stamp}.pdf`]
+    );
+    return { blueprintId, instanceId: instance.rows[0].docinstanceid };
+  });
+}

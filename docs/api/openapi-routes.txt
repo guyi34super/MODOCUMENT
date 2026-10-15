@@ -5,7 +5,7 @@
 # docs/api/versioning-policy.md. Regenerate with:
 #   mvn -Dtest=OpenApiContractTest \
 #       -Dmodocument.contract.update=true test
-# 215 operations.
+# 213 operations.
 POST /ImportDetails/Create
 GET /ImportDetails/GetAll
 GET /ImportDetails/GetById/{id}
@@ -53,6 +53,7 @@ POST /api/admin/changes/{id}/approve
 POST /api/admin/changes/{id}/cancel
 POST /api/admin/changes/{id}/reject
 GET /api/admin/dashboard
+POST /api/admin/doccreation/purge-legacy
 POST /api/admin/dsr/erase
 POST /api/admin/dsr/export
 POST /api/admin/dsr/search
@@ -124,20 +125,14 @@ GET /api/auth/providers
 POST /api/auth/refresh
 POST /api/automapper/generate
 GET /api/dashboard/summary
-DELETE /api/doccreation/assets/{assetId}
-PUT /api/doccreation/assets/{assetId}/assignment
-GET /api/doccreation/assets/{assetId}/content
-DELETE /api/doccreation/blocks/{blockId}
-PUT /api/doccreation/blocks/{blockId}
 GET /api/doccreation/blueprints
 POST /api/doccreation/blueprints
 DELETE /api/doccreation/blueprints/{id}
 GET /api/doccreation/blueprints/{id}
+POST /api/doccreation/blueprints/{id}/edit-images
 GET /api/doccreation/blueprints/{id}/file
-GET /api/doccreation/blueprints/{id}/paragraphs
-POST /api/doccreation/blueprints/{id}/resection
-PUT /api/doccreation/blueprints/{id}/sections
-PUT /api/doccreation/blueprints/{id}/sections/{sectionId}/keywords
+PUT /api/doccreation/blueprints/{id}/overlay
+GET /api/doccreation/blueprints/{id}/pages/{page}
 GET /api/doccreation/blueprints/{id}/versions
 GET /api/doccreation/instances
 POST /api/doccreation/instances
@@ -145,16 +140,18 @@ GET /api/doccreation/instances/pending-release
 DELETE /api/doccreation/instances/{id}
 GET /api/doccreation/instances/{id}
 PUT /api/doccreation/instances/{id}
-PUT /api/doccreation/instances/{id}/fields
-POST /api/doccreation/instances/{id}/assets
 GET /api/doccreation/instances/{id}/download
 POST /api/doccreation/instances/{id}/generate
+POST /api/doccreation/instances/{id}/images
+DELETE /api/doccreation/instances/{id}/images/{imageId}
+PUT /api/doccreation/instances/{id}/images/{imageId}
+GET /api/doccreation/instances/{id}/images/{imageId}/content
+GET /api/doccreation/instances/{id}/pages/{page}
 POST /api/doccreation/instances/{id}/reject
 POST /api/doccreation/instances/{id}/release
 GET /api/doccreation/instances/{id}/review-file
-POST /api/doccreation/instances/{id}/sections/{sectionId}/blocks
-PUT /api/doccreation/instances/{id}/sections/{sectionId}/blocks/order
 POST /api/doccreation/instances/{id}/submit
+PUT /api/doccreation/instances/{id}/values
 GET /api/extraction/jobs
 POST /api/extraction/jobs
 GET /api/extraction/jobs/{id}

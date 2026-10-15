@@ -1,116 +1,83 @@
 package com.modocument.doccreation.api;
 
-import com.modocument.doccreation.dto.BulkUploadResultDto;
 import com.modocument.doccreation.dto.CreateDocInstanceRequest;
-import com.modocument.doccreation.dto.InstanceSummaryDto;
+import com.modocument.doccreation.dto.CreatedInstanceDto;
+import com.modocument.doccreation.dto.ImageUploadResultDto;
+import com.modocument.doccreation.usecase.DocCreationException;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class DocInstanceControllerTest {
 
-    @TempDir
-    Path tempDir;
-
     private final DocInstanceUseCase useCase = mock(DocInstanceUseCase.class);
     private final DocInstanceController controller = new DocInstanceController(useCase);
 
     @Test
-    void createReturns201WithLocation() {
+    void createReturns201WithLocationAndBothIds() {
         CreateDocInstanceRequest request = new CreateDocInstanceRequest();
         request.setBlueprintId(1);
         request.setTitle("Survey");
-        when(useCase.create(1, "Survey"))
-                .thenReturn(new InstanceSummaryDto(8, "Survey", 1, "PV", "DRAFT", null, null,
-                        false, null, null, null));
+        when(useCase.create(1, "Survey")).thenReturn(new CreatedInstanceDto(8, 8));
 
         ResponseEntity<?> result = controller.create(request);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(result.getHeaders().getLocation()).hasToString("/api/doccreation/instances/8");
+        assertThat(result.getBody()).isEqualTo(new CreatedInstanceDto(8, 8));
     }
 
     @Test
-    void emptyBulkUploadAnswers400() {
-        ResponseEntity<?> result = controller.uploadAssets(1, List.of(), true);
-
-        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    void emptyImageUploadAnswers400() {
+        assertThat(controller.uploadImages(1, List.of(), true).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.uploadImages(1, null, true).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test
-    void bulkUploadReturnsTheSplitResult() {
-        BulkUploadResultDto split = new BulkUploadResultDto(
-                List.of(new BulkUploadResultDto.AssignedDto(1, "roof.png", 10, 100)),
-                List.of(new BulkUploadResultDto.UnsortedDto(2, "img.png")),
-                List.of(new BulkUploadResultDto.RejectedDto("x.webp", "Unsupported image type.")));
-        when(useCase.uploadAssets(anyInt(), anyList(), anyBoolean())).thenReturn(split);
+    void imageUploadReturnsTheSplitResultAs201() {
+        ImageUploadResultDto split = new ImageUploadResultDto(
+                List.of(new ImageUploadResultDto.AssignedDto(1, "photo_1")), List.of(2),
+                List.of(new ImageUploadResultDto.RejectedDto("a.txt", "Not a readable PNG or JPEG image.")));
+        when(useCase.uploadImages(org.mockito.ArgumentMatchers.eq(4), anyList(),
+                org.mockito.ArgumentMatchers.eq(true))).thenReturn(split);
+        List<MultipartFile> files = List.of(new MockMultipartFile("files", "a.png", "image/png", new byte[]{1}));
 
-        ResponseEntity<?> result = controller.uploadAssets(1,
-                List.of(new MockMultipartFile("files", "roof.png", null, new byte[]{1})), true);
+        ResponseEntity<?> result = controller.uploadImages(4, files, true);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(result.getBody()).isEqualTo(split);
     }
 
     @Test
-    void downloadSetsAttachmentDispositionAndContentType() throws IOException {
-        Path file = tempDir.resolve("doccreation-instance1.docx");
-        Files.write(file, new byte[]{1, 2, 3});
-        when(useCase.download(1, "docx"))
-                .thenReturn(new DocInstanceUseCase.DownloadFile(file, "Survey 42.docx"));
+    void downloadAndImageContentCarryTheirTypes() {
+        when(useCase.download(5)).thenReturn(new DocInstanceUseCase.PdfDownload(new byte[]{1}, "Survey.pdf"));
+        when(useCase.imageContent(5, 9)).thenReturn(
+                new DocInstanceUseCase.StoredImage(new byte[]{2}, "image/jpeg", "a.jpg"));
 
-        ResponseEntity<?> result = controller.download(1, "docx");
-
-        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
-                .isEqualTo("attachment; filename=\"Survey 42.docx\"");
-        assertThat(result.getHeaders().getContentType().toString())
-                .contains("officedocument.wordprocessingml.document");
+        ResponseEntity<byte[]> pdf = controller.download(5, "docx");
+        assertThat(pdf.getHeaders().getContentType()).isEqualTo(MediaType.APPLICATION_PDF);
+        assertThat(pdf.getHeaders().getFirst("Content-Disposition")).contains("Survey.pdf");
+        assertThat(controller.imageContent(5, 9).getHeaders().getContentType()).isEqualTo(MediaType.IMAGE_JPEG);
     }
 
     @Test
-    void pdfDownloadWithoutConverterAnswers409() {
-        when(useCase.download(1, "pdf"))
-                .thenThrow(new IllegalStateException("PDF conversion is not available on this server."));
+    void exactnessFailureAnswers500WithItsCode() {
+        ResponseEntity<?> result = controller.docCreation(new DocCreationException(500,
+                DocCreationException.EXACTNESS_FAILED, "refused"));
 
-        IllegalStateException e;
-        try {
-            controller.download(1, "pdf");
-            throw new AssertionError("expected IllegalStateException");
-        } catch (IllegalStateException caught) {
-            e = caught;
-        }
-
-        assertThat(controller.conflict(e).getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-    }
-
-    @Test
-    void assetContentServesInlineWithTheStoredContentType() throws IOException {
-        Path image = tempDir.resolve("roof.png");
-        Files.write(image, new byte[]{9});
-        when(useCase.getAssetContent(4))
-                .thenReturn(new DocInstanceUseCase.StoredAsset(image, "image/png", "roof.png"));
-
-        ResponseEntity<?> result = controller.assetContent(4);
-
-        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(result.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION)).isEqualTo("inline");
-        assertThat(result.getHeaders().getContentType()).hasToString("image/png");
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(((Map<?, ?>) result.getBody()).get("code")).isEqualTo("EXACTNESS_FAILED");
     }
 }

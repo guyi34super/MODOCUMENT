@@ -10,9 +10,9 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * One version of a blueprint's section structure (V291). The section rows of
- * a version carry the same {@code Version} number; documents pin the version
- * they were started from.
+ * One version of a blueprint (V291): since ws31 a version is a template PDF
+ * ({@link #templatePdfKey}) plus the region and edit rows carrying the same
+ * {@code Version} number; documents pin the version they were started from.
  */
 @Entity
 @Table(name = "DocBlueprintVersion")
@@ -35,7 +35,10 @@ public class DocBlueprintVersion {
     @Column(name = "Version", nullable = false)
     private int version;
 
-    /** AI, HEURISTIC or MANUAL; null for versions created before versioning existed. */
+    /**
+     * How the version's regions were found: CODE or CODE+AI for the uploaded
+     * version 1, MANUAL for an edited version (legacy rows: AI, HEURISTIC).
+     */
     @Column(name = "SectionSource", length = 16)
     private String sectionSource;
 
@@ -48,7 +51,19 @@ public class DocBlueprintVersion {
     @Column(name = "CreatedDate", nullable = false)
     private LocalDateTime createdDate;
 
+    /** FileStore key of this version's template PDF (V300). */
+    @Column(name = "TemplatePdfKey", length = 512)
+    private String templatePdfKey;
+
     public DocBlueprintVersion() {
+    }
+
+    public String getTemplatePdfKey() {
+        return templatePdfKey;
+    }
+
+    public void setTemplatePdfKey(String templatePdfKey) {
+        this.templatePdfKey = templatePdfKey;
     }
 
     public int getDocBlueprintVersionId() {

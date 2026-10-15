@@ -24,7 +24,7 @@ fi
 # counts); JAVA_OPTS lands on the command line and beats both.
 #   MaxRAMPercentage=70  heap sized from the container memory limit, leaving
 #                        ~30% for metaspace, threads, direct buffers and the
-#                        soffice/tesseract children
+#                        tesseract children
 #   UseG1GC              explicit: below 2 CPUs / 1792 MiB the JVM would
 #                        otherwise pick SerialGC
 #   ExitOnOutOfMemoryError  die and let ECS replace the task instead of

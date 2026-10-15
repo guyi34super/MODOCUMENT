@@ -4,7 +4,9 @@ import com.modocument.doccreation.entity.DocInstance;
 
 import java.time.LocalDateTime;
 
-public record InstanceSummaryDto(int instanceId,
+/** One entry of {@code GET /api/doccreation/instances}; {@code id} repeats {@code instanceId}. */
+public record InstanceSummaryDto(int id,
+                                 int instanceId,
                                  String title,
                                  int blueprintId,
                                  String blueprintName,
@@ -14,13 +16,14 @@ public record InstanceSummaryDto(int instanceId,
                                  boolean aiComposed,
                                  LocalDateTime submittedAt,
                                  LocalDateTime releasedAt,
-                                 String reviewComment) {
+                                 String reviewComment,
+                                 int pageCount) {
 
-    public static InstanceSummaryDto from(DocInstance instance, String blueprintName) {
-        return new InstanceSummaryDto(instance.getDocInstanceId(), instance.getTitle(),
+    public static InstanceSummaryDto from(DocInstance instance, String blueprintName, int pageCount) {
+        return new InstanceSummaryDto(instance.getDocInstanceId(), instance.getDocInstanceId(), instance.getTitle(),
                 instance.getBlueprintId(), blueprintName, instance.getStatus(),
                 instance.getLastGeneratedDate(), instance.getCreatedDate(),
                 instance.isAiComposed(), instance.getSubmittedAt(),
-                instance.getReleasedAt(), instance.getReviewComment());
+                instance.getReleasedAt(), instance.getReviewComment(), pageCount);
     }
 }

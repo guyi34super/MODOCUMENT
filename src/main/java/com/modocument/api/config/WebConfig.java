@@ -38,9 +38,10 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(new MappedInterceptor(
                 LlmQuotaInterceptor.PATHS.toArray(String[]::new), null, llmQuota,
                 caseInsensitiveParser()));
-        // Blueprint upload's AI section breakdown meters the same per-user
-        // quota inside AiSectionSplitter (an interceptor on the path would
-        // also meter GET list requests, which spend nothing).
+        // A PDF template upload's optional AI analysis meters the same
+        // per-user quota inside the template engine's AiGateway calls (an
+        // interceptor on the path would also meter GET list requests, which
+        // spend nothing).
 
         // Per-user fixed-window limits on every other expensive endpoint
         // (ws17, SEC-007/E2): one interceptor on every request, which picks

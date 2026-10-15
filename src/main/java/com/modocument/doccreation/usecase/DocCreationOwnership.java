@@ -73,6 +73,18 @@ public class DocCreationOwnership {
                 () -> probe("DocBlueprint", blueprintId, "Blueprint " + blueprintId + " not found."));
     }
 
+    /**
+     * {@link #requireBlueprint(int)} for the PDF template paths: a template
+     * of the retired Word path answers 410 (DocCreationException.legacy).
+     */
+    public DocBlueprint requireTemplate(int blueprintId) {
+        DocBlueprint blueprint = requireBlueprint(blueprintId);
+        if (blueprint.isLegacy()) {
+            throw DocCreationException.legacy();
+        }
+        return blueprint;
+    }
+
     /** Same contract as {@link #requireBlueprint(int)}, for document instances. */
     public DocInstance requireInstance(int instanceId) {
         return instances.getByIdAndOwner(instanceId, currentUser.requireUserId()).orElseThrow(

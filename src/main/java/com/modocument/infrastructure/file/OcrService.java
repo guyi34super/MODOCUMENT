@@ -6,9 +6,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * OCR fallback for image-only PDF pages. Tesseract needs its native library
@@ -55,6 +58,40 @@ public class OcrService {
             unavailable = true;
             log.warn("OCR unavailable, continuing without it: {}", t.getMessage());
             return "";
+        }
+    }
+
+    /** One recognised word: its text, Tesseract's confidence (0-100) and its box in image pixels. */
+    public record OcrWord(String text, float confidence, Rectangle box) {
+    }
+
+    /**
+     * Word-level OCR with positions (the PDF template engine needs where each word is, not just the
+     * text). Degrades to an empty list exactly like {@link #extractText}.
+     */
+    public List<OcrWord> words(BufferedImage image) {
+        if (unavailable || image == null) {
+            return List.of();
+        }
+        if (!traineddataPresent()) {
+            unavailable = true;
+            log.warn("OCR unavailable, continuing without it: no {} in {}", TRAINEDDATA, datapath);
+            return List.of();
+        }
+        try {
+            List<OcrWord> out = new ArrayList<>();
+            for (net.sourceforge.tess4j.Word w : tesseract().getWords(image,
+                    net.sourceforge.tess4j.ITessAPI.TessPageIteratorLevel.RIL_WORD)) {
+                String text = w.getText() == null ? "" : w.getText().strip();
+                if (!text.isEmpty() && w.getBoundingBox() != null) {
+                    out.add(new OcrWord(text, w.getConfidence(), w.getBoundingBox()));
+                }
+            }
+            return out;
+        } catch (Throwable t) {
+            unavailable = true;
+            log.warn("OCR unavailable, continuing without it: {}", t.getMessage());
+            return List.of();
         }
     }
 

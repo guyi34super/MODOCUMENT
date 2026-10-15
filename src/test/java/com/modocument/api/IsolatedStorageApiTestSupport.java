@@ -1,5 +1,6 @@
 package com.modocument.api;
 
+import com.modocument.testsupport.FakePdfEngineConfig;
 import com.modocument.testsupport.H2ExportTargets;
 import com.modocument.testsupport.SharedTestStorage;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -15,8 +16,8 @@ import java.nio.file.Path;
  * One Spring context for the API suites that inspect files on disk
  * (uploads, export copies, generated documents): its own storage root,
  * shared by every subclass for the life of the test JVM, and the
- * doc-creation AI steps off, so section splitting and document generation
- * are the deterministic code paths (no model call can happen).
+ * doc-creation template AI off (no model call can happen), and the
+ * FakePdfTemplateEngine as the PDF template engine.
  *
  * <p>Each suite used to declare its own storage root (and so got its own
  * context). They only ever look at files they created themselves, by name,
@@ -30,8 +31,9 @@ import java.nio.file.Path;
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-// ws28: structured DB-export targets land in in-memory H2 (MaskingGateC2Test).
-@Import(H2ExportTargets.class)
+// ws28: structured DB-export targets land in in-memory H2 (MaskingGateC2Test);
+// ws31: the doc-creation suites run on the steerable FakePdfTemplateEngine.
+@Import({H2ExportTargets.class, FakePdfEngineConfig.class})
 public abstract class IsolatedStorageApiTestSupport {
 
     /** {@code modocument.storage.root} of the shared context. */

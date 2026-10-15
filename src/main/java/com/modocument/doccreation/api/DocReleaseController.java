@@ -19,9 +19,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -44,9 +41,6 @@ import java.util.NoSuchElementException;
 @Tag(name = "Doc Creation: Release", description = "Review / release workflow (SoD enforced)")
 public class DocReleaseController {
 
-    private static final String DOCX_CONTENT_TYPE =
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-
     private final DocReleaseUseCase useCase;
 
     public DocReleaseController(DocReleaseUseCase useCase) {
@@ -60,7 +54,7 @@ public class DocReleaseController {
         return ResponseEntity.ok(useCase.submit(id));
     }
 
-    /** Approver: the bank's release queue, content blocks included (C10). */
+    /** Approver: the bank's release queue, values and photos included (C10). */
     @RequiresPermission(Permission.DOC_RELEASE)
     @GetMapping("/api/doccreation/instances/pending-release")
     public ResponseEntity<?> pendingReleases() {
@@ -87,25 +81,18 @@ public class DocReleaseController {
 
     /**
      * Approver: downloads a SUBMITTED document of their bank exactly as last
-     * generated — never regenerating someone else's instance.
+     * generated — never regenerating someone else's instance. Output is PDF
+     * only; {@code format} is accepted for older clients and ignored.
      */
     @RequiresPermission(Permission.DOC_RELEASE)
     @GetMapping("/api/doccreation/instances/{id}/review-file")
-    public ResponseEntity<?> reviewFile(@PathVariable int id,
-                                        @RequestParam(value = "format", defaultValue = "docx")
-                                        String format) {
-        DocInstanceUseCase.DownloadFile file = useCase.downloadForReview(id, format);
-        String contentType = file.downloadName().endsWith(".pdf")
-                ? "application/pdf" : DOCX_CONTENT_TYPE;
-        try {
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename=\"" + file.downloadName().replace("\"", "") + "\"")
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .body(Files.readAllBytes(file.path()));
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read the generated file.", e);
-        }
+    public ResponseEntity<byte[]> reviewFile(@PathVariable int id,
+                                             @RequestParam(value = "format", required = false) String format) {
+        DocInstanceUseCase.PdfDownload file = useCase.downloadForReview(id);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, DocCreationErrors.attachment(file.downloadName()))
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(file.bytes());
     }
 
     private static String commentOf(ReleaseDecisionRequest request) {

@@ -35,6 +35,9 @@ public interface DocInstanceRepository {
 
     int countByBlueprint(int blueprintId);
 
+    /** ws31 legacy purge: every instance (any owner) of one blueprint in the given bank. */
+    List<DocInstance> listByBankAndBlueprint(int bankId, int blueprintId);
+
     DocInstance save(DocInstance entity);
 
     void delete(int id);

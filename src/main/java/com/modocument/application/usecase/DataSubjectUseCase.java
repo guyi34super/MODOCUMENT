@@ -12,6 +12,8 @@ import com.modocument.application.port.FileStore;
 import com.modocument.doccreation.entity.DocContentBlock;
 import com.modocument.doccreation.repo.DocContentBlockJpaRepository;
 import com.modocument.doccreation.repo.DocImageAssetJpaRepository;
+import com.modocument.doccreation.entity.DocInstance;
+import com.modocument.doccreation.repo.DocInstanceJpaRepository;
 import com.modocument.domain.entity.ImportDetails;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.entity.UploadedFile;
@@ -89,6 +91,8 @@ public class DataSubjectUseCase {
     private final UploadedFileJpaRepository uploads;
     private final DocContentBlockJpaRepository docBlocks;
     private final DocImageAssetJpaRepository docAssets;
+    /** ws31: the values of PDF-template documents (region key to value). */
+    private final DocInstanceJpaRepository docInstances;
     private final FileStore storage;
     private final AuditRecorder audit;
     private final ObjectMapper objectMapper;
@@ -105,6 +109,7 @@ public class DataSubjectUseCase {
                               UploadedFileJpaRepository uploads,
                               DocContentBlockJpaRepository docBlocks,
                               DocImageAssetJpaRepository docAssets,
+                              DocInstanceJpaRepository docInstances,
                               FileStore storage,
                               AuditRecorder audit,
                               ObjectMapper objectMapper,
@@ -118,6 +123,7 @@ public class DataSubjectUseCase {
         this.uploads = uploads;
         this.docBlocks = docBlocks;
         this.docAssets = docAssets;
+        this.docInstances = docInstances;
         this.storage = storage;
         this.audit = audit;
         this.objectMapper = objectMapper;
@@ -277,6 +283,25 @@ public class DataSubjectUseCase {
         }
         counts.put("docContentBlocks", scan.docBlockMatches.size());
 
+        // Document values (ws31): the matching values go; the generated PDF
+        // carries them too, so it goes and the next download regenerates.
+        int valueCount = 0;
+        for (DocValueMatch match : scan.docValueMatches) {
+            DocInstance instance = match.instance();
+            Map<String, String> kept = new LinkedHashMap<>(readValues(instance.getValuesJson()));
+            match.keys().forEach(kept::remove);
+            instance.setValuesJson(kept.isEmpty() ? null : writeValues(kept));
+            if (instance.getGeneratedPdfKey() != null) {
+                filesToDelete.add(instance.getGeneratedPdfKey());
+                instance.setGeneratedPdfKey(null);
+                instance.setLastGeneratedPdf(null);
+            }
+            instance.setUpdatedDate(LocalDateTime.now());
+            docInstances.save(instance);
+            valueCount += match.keys().size();
+        }
+        counts.put("docValues", valueCount);
+
         // The AI result cache holds copies of extracted rows under a text
         // hash, so the subject's values cannot be found in it reliably: the
         // bank's whole cache goes (it only saves model calls). Not counted in
@@ -331,6 +356,7 @@ public class DataSubjectUseCase {
         final List<UploadedFile> nameMatchedUploads = new ArrayList<>();
         final Set<String> jobMatchedStoredNames = new LinkedHashSet<>();
         final List<DocContentBlock> docBlockMatches = new ArrayList<>();
+        final List<DocValueMatch> docValueMatches = new ArrayList<>();
 
         Scan(String subject) {
             this.subjectRef = Hashing.sha256(subject.toLowerCase(Locale.ROOT)).substring(0, 16);
@@ -340,7 +366,8 @@ public class DataSubjectUseCase {
             return jobMatches.stream().mapToInt(JobMatch::rowCount).sum()
                     + importDetailMatches.size() + rawMatches.size() + processedMatches.size()
                     + nameMatchedUploads.size() + jobMatchedStoredNames.size()
-                    + docBlockMatches.size();
+                    + docBlockMatches.size()
+                    + docValueMatches.stream().mapToInt(m -> m.keys().size()).sum();
         }
 
         List<StoreHits> storeHits() {
@@ -370,6 +397,11 @@ public class DataSubjectUseCase {
                     docBlockMatches.stream().map(b -> new HitRef(
                             String.valueOf(b.getDocContentBlockId()),
                             "document " + b.getInstanceId(), 1)).toList()));
+            stores.add(new StoreHits("docValues",
+                    docValueMatches.stream().mapToInt(m -> m.keys().size()).sum(),
+                    docValueMatches.stream().map(m -> new HitRef(
+                            String.valueOf(m.instance().getDocInstanceId()),
+                            "document " + m.instance().getDocInstanceId(), m.keys().size())).toList()));
             return stores;
         }
 
@@ -431,6 +463,18 @@ public class DataSubjectUseCase {
                 scan.docBlockMatches.add(block);
             }
         }
+
+        for (DocInstance instance : docInstances.findByBankIdAndValuesJsonIsNotNull(bankId)) {
+            List<String> keys = new ArrayList<>();
+            readValues(instance.getValuesJson()).forEach((key, value) -> {
+                if (containsIgnoreCase(value, subject)) {
+                    keys.add(key);
+                }
+            });
+            if (!keys.isEmpty()) {
+                scan.docValueMatches.add(new DocValueMatch(instance, keys));
+            }
+        }
         return scan;
     }
 
@@ -443,6 +487,32 @@ public class DataSubjectUseCase {
                     + MIN_IDENTIFIER_LENGTH + " characters.");
         }
         return trimmed;
+    }
+
+    /** A PDF-template document whose values (by key) name the subject. */
+    private record DocValueMatch(DocInstance instance, List<String> keys) {
+    }
+
+    private Map<String, String> readValues(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Map<String, String> values = new LinkedHashMap<>();
+            objectMapper.readTree(json).fields().forEachRemaining(field ->
+                    values.put(field.getKey(), field.getValue().isNull() ? null : field.getValue().asText()));
+            return values;
+        } catch (IOException e) {
+            return Map.of();
+        }
+    }
+
+    private String writeValues(Map<String, String> values) {
+        try {
+            return objectMapper.writeValueAsString(values);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not write the document values.", e);
+        }
     }
 
     private static boolean valueMatches(String value, String subject) {
@@ -611,6 +681,15 @@ public class DataSubjectUseCase {
             node.put("caption", block.getCaption());
         }
 
+        ArrayNode valuesNode = stores.putArray("docValues");
+        for (DocValueMatch match : scan.docValueMatches) {
+            ObjectNode node = valuesNode.addObject();
+            node.put("instanceId", match.instance().getDocInstanceId());
+            ObjectNode fields = node.putObject("values");
+            Map<String, String> values = readValues(match.instance().getValuesJson());
+            match.keys().forEach(key -> fields.put(key, values.get(key)));
+        }
+
         try {
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(root);
         } catch (IOException e) {
@@ -730,6 +809,13 @@ public class DataSubjectUseCase {
                     .append(block.getTextContent() == null
                             ? block.getCaption() : block.getTextContent())
                     .append('\n');
+        }
+        for (DocValueMatch match : scan.docValueMatches) {
+            Map<String, String> values = readValues(match.instance().getValuesJson());
+            for (String key : match.keys()) {
+                text.append("Document ").append(match.instance().getDocInstanceId())
+                        .append(", field ").append(key).append(": ").append(values.get(key)).append('\n');
+            }
         }
         return text.toString().getBytes(StandardCharsets.UTF_8);
     }

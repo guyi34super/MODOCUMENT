@@ -1,349 +1,195 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  addBlock,
-  assetContentPath,
-  assignAsset,
-  deleteAsset,
-  deleteBlock,
+  blueprintPagePath,
+  deleteImage,
   downloadInstance,
   generateInstance,
   getInstance,
-  reorderBlocks,
+  imageContentPath,
+  instancePagePath,
+  placeImage,
+  saveValues,
   submitInstance,
-  updateBlock,
-  updateInstanceFields,
-  uploadAssets,
+  uploadImages,
 } from '../api/doccreation';
 import PageHeader from '../components/PageHeader';
 import AuthedImage from '../components/AuthedImage';
-import { Badge, Button, Callout, Card, ErrorBanner, Spinner, inputClass } from '../components/ui';
+import Modal from '../components/Modal';
+import { Badge, Button, Callout, Card, ErrorBanner, Spinner, Tag, inputClass } from '../components/ui';
 import { useToast } from '../context/ToastContext';
+import PageView from '../components/pdf/PageView';
+import ThumbnailStrip from '../components/pdf/ThumbnailStrip';
+import { boxStyle } from '../components/pdf/RegionBox';
+import { KIND_COLORS, displaySize, estimateOverflow } from '../components/pdf/geometry';
 
-/** A paragraph block: click to edit in place, save/cancel while dirty. */
-function ParagraphBlock({ block, onChanged }) {
-  const toast = useToast();
-  const [text, setText] = useState(block.text || '');
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
+/** How long typing pauses before the values are saved. */
+export const AUTOSAVE_MS = 600;
+const PHOTO_MIME = 'application/x-modoc-image';
+const PHOTO_EXT = /\.(png|jpe?g|gif|bmp)$/i;
+const PHOTO_KINDS = new Set(['IMAGE', 'SIGNATURE']);
+const OVERFLOW_TEXT = 'Will continue on an added page';
 
-  // Follow server refreshes while not editing (another tab may have saved).
-  useEffect(() => {
-    if (!editing) setText(block.text || '');
-  }, [block.text, editing]);
+const fieldLabel = (region) => region.label?.trim() || region.key;
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      await toast.promise(() => updateBlock(block.blockId, { text }), {
-        loading: 'Saving…',
-        success: 'Paragraph saved',
-        error: (err) => err.message,
-      });
-      setEditing(false);
-      onChanged();
-    } catch {
-      // The error toast is already shown.
-    } finally {
-      setSaving(false);
-    }
+/** CSS px for a region's text: its own size, or a fit to the box ("auto"), scaled to the page. */
+function fontPx(region, page, scale) {
+  const heightPt = region.fh * displaySize(page).height;
+  const auto = region.kind === 'MULTILINE' ? 10 : Math.min(12, Math.max(6, heightPt * 0.65));
+  return Math.max(7, (region.fontSize > 0 ? region.fontSize : auto) * scale);
+}
+
+function photoIdFrom(event) {
+  const data = event.dataTransfer;
+  if (!data) return null;
+  const raw = data.getData(PHOTO_MIME) || data.getData('text/plain');
+  const idValue = Number(raw);
+  return Number.isFinite(idValue) && raw !== '' ? idValue : null;
+}
+
+function startPhotoDrag(event, image) {
+  event.dataTransfer.setData(PHOTO_MIME, String(image.id));
+  event.dataTransfer.setData('text/plain', String(image.id));
+  event.dataTransfer.effectAllowed = 'move';
+}
+
+/** A drop target for a photo: the photo placed in the box, or a hint. */
+function PhotoBox({ instanceId, region, image, locked, onPlace, onFocus, active }) {
+  const [over, setOver] = useState(false);
+  const label = fieldLabel(region);
+  return (
+    <div
+      role="group"
+      aria-label={`${label} — photo box`}
+      data-testid={`photo-box-${region.key}`}
+      className={`flex h-full w-full items-center justify-center overflow-hidden border-2 border-dashed text-center ${
+        over ? 'border-accent bg-pill/70' : 'border-orange-500/70 bg-orange-50/40'
+      } ${active ? 'ring-2 ring-accent' : ''}`}
+      onDragOver={(event) => {
+        if (locked) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setOver(false);
+        if (locked) return;
+        const imageId = photoIdFrom(event);
+        if (imageId != null && imageId !== image?.id) onPlace(imageId, region.key);
+      }}
+      onFocus={onFocus}
+    >
+      {image ? (
+        <div
+          draggable={!locked}
+          onDragStart={(event) => startPhotoDrag(event, image)}
+          className="h-full w-full"
+          title={`${image.originalName} — drag onto another photo box to swap`}
+        >
+          <AuthedImage
+            path={imageContentPath(instanceId, image.id)}
+            alt={`${label}: ${image.originalName}`}
+            className="h-full w-full object-contain"
+          />
+        </div>
+      ) : (
+        <span className="px-1 text-[10px] leading-tight text-orange-900">Drop a photo here</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The input for one region — used on the page (positioned, sized to the
+ * box) and in the Fields panel (labelled, full width). Both edit the same
+ * value, so they always agree.
+ */
+function RegionInput({ region, value, onChange, locked, onPage, style, onFocus, describedBy }) {
+  const label = fieldLabel(region);
+  const common = {
+    disabled: locked,
+    onFocus,
+    'aria-describedby': describedBy,
+    'aria-required': region.required || undefined,
   };
-
-  if (!editing) {
+  const pageClass = onPage
+    ? 'h-full w-full border border-sky-500/50 bg-sky-50/50 px-0.5 py-0 leading-none text-black outline-none focus:border-accent focus:bg-white/90 focus:ring-2 focus:ring-accent'
+    : inputClass;
+  const ariaLabel = onPage ? label : undefined;
+  if (region.kind === 'CHECKBOX') {
     return (
-      <button
-        type="button"
-        className="block w-full whitespace-pre-wrap rounded border border-transparent px-2 py-1 text-left text-sm hover:border-line hover:bg-sidebar/60"
-        title="Click to edit"
-        onClick={() => setEditing(true)}
-      >
-        {block.text?.trim() ? block.text : <span className="text-muted">Empty paragraph — click to write…</span>}
-      </button>
+      <input
+        type="checkbox"
+        aria-label={ariaLabel}
+        checked={value === 'true' || value === 'x' || value === true}
+        onChange={(e) => onChange(e.target.checked ? 'true' : '')}
+        className={onPage ? 'h-full w-full cursor-pointer accent-accent' : 'size-4'}
+        {...common}
+      />
     );
   }
-  return (
-    <div>
+  if (region.kind === 'MULTILINE') {
+    return (
       <textarea
-        autoFocus
-        rows={Math.min(10, Math.max(3, text.split('\n').length + 1))}
-        className={`${inputClass} font-normal`}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
+        aria-label={ariaLabel}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${pageClass} resize-none`}
+        rows={onPage ? undefined : Math.min(8, Math.max(2, region.maxLines || 3))}
+        style={style}
+        {...common}
       />
-      <div className="mt-1 flex gap-2">
-        <Button size="sm" onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : 'Save'}
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            setText(block.text || '');
-            setEditing(false);
-          }}
-        >
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** An image block: thumbnail, caption editor, and "move to Unsorted". */
-function ImageBlock({ block, onChanged }) {
-  const toast = useToast();
-  const [caption, setCaption] = useState(block.caption || '');
-  const dirty = caption !== (block.caption || '');
-  const [serverCaption, setServerCaption] = useState(block.caption || '');
-  // Follow server refreshes while the field isn't dirty.
-  if (serverCaption !== (block.caption || '')) {
-    setServerCaption(block.caption || '');
-    if (!dirty) setCaption(block.caption || '');
+    );
   }
-
-  const saveCaption = async () => {
-    try {
-      await toast.promise(() => updateBlock(block.blockId, { caption }), {
-        loading: 'Saving caption…',
-        success: 'Caption saved',
-        error: (err) => err.message,
-      });
-      onChanged();
-    } catch {
-      // The error toast is already shown.
-    }
-  };
-
-  const unplace = async () => {
-    try {
-      await toast.promise(() => deleteBlock(block.blockId), {
-        loading: 'Moving to Unsorted…',
-        success: 'Image moved to Unsorted',
-        error: (err) => err.message,
-      });
-      onChanged();
-    } catch {
-      // The error toast is already shown.
-    }
-  };
-
+  const type = region.kind === 'DATE' ? 'date' : region.kind === 'NUMBER' ? 'number' : 'text';
   return (
-    <div className="flex flex-wrap items-start gap-3">
-      <AuthedImage
-        path={assetContentPath(block.assetId)}
-        alt={block.assetFileName || 'image'}
-        className="h-24 w-32 rounded border border-line object-cover"
-      />
-      <div className="min-w-52 flex-1">
-        <p className="mb-1 truncate text-xs text-muted">{block.assetFileName}</p>
-        <input
-          className={`${inputClass} text-sm`}
-          placeholder="Caption (optional)"
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-        />
-        <div className="mt-1 flex gap-2">
-          {dirty && (
-            <Button size="sm" onClick={saveCaption}>
-              Save caption
-            </Button>
-          )}
-          <Button size="sm" variant="secondary" onClick={unplace}>
-            Move to Unsorted
-          </Button>
-        </div>
-      </div>
-    </div>
+    <input
+      type={type}
+      aria-label={ariaLabel}
+      inputMode={region.kind === 'NUMBER' ? 'decimal' : undefined}
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      className={pageClass}
+      style={style}
+      {...common}
+    />
   );
 }
 
-/** Labeled inputs for FORM template sections (V292). */
-function FormFields({ instanceId, section, onChanged }) {
-  const toast = useToast();
-  const [drafts, setDrafts] = useState(() =>
-    (section.fields || []).map((f) => ({ ...f, value: f.value ?? '' }))
-  );
-  const [saving, setSaving] = useState(false);
-
+/** The preview: the server's rendering of each page with the values in place. */
+function PreviewDialog({ open, onClose, instanceId, pages }) {
+  const [index, setIndex] = useState(0);
   useEffect(() => {
-    setDrafts((section.fields || []).map((f) => ({ ...f, value: f.value ?? '' })));
-  }, [section.fields]);
-
-  if (!drafts.length) return null;
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await toast.promise(
-        () =>
-          updateInstanceFields(
-            instanceId,
-            drafts.map((f) => ({
-              sectionId: section.sectionId,
-              fieldKey: f.fieldKey,
-              value: f.value,
-            }))
-          ),
-        { loading: 'Saving fields…', success: 'Fields saved', error: (err) => err.message }
-      );
-      onChanged();
-    } catch {
-      // The error toast is already shown.
-    } finally {
-      setSaving(false);
-    }
-  };
-
+    if (open) setIndex(0);
+  }, [open]);
+  const count = pages.length;
   return (
-    <div className="mb-4 space-y-3 rounded border border-line bg-sidebar/40 p-3">
-      <p className="text-xs font-medium text-muted">Form fields</p>
-      {drafts.map((field) => (
-        <label key={field.fieldKey} className="block text-sm">
-          <span className="mb-1 block text-muted">{field.label || field.fieldKey}</span>
-          <input
-            className={inputClass}
-            value={field.value}
-            onChange={(e) =>
-              setDrafts((prev) =>
-                prev.map((f) => (f.fieldKey === field.fieldKey ? { ...f, value: e.target.value } : f))
-              )
-            }
+    <Modal open={open} onClose={onClose} title="Preview" size="lg" description="The pages exactly as they will be generated.">
+      {open && count > 0 && (
+        <div>
+          <div className="mb-2 flex items-center justify-center gap-3">
+            <Button size="sm" variant="secondary" onClick={() => setIndex(index - 1)} disabled={index === 0}>
+              Previous page
+            </Button>
+            <span aria-live="polite">
+              Page {index + 1} of {count}
+            </span>
+            <Button size="sm" variant="secondary" onClick={() => setIndex(index + 1)} disabled={index >= count - 1}>
+              Next page
+            </Button>
+          </div>
+          <AuthedImage
+            key={index}
+            path={instancePagePath(instanceId, index, 110)}
+            alt={`Preview of page ${index + 1}`}
+            className="mx-auto max-h-[70vh] w-auto border border-line"
           />
-        </label>
-      ))}
-      <Button size="sm" onClick={save} disabled={saving}>
-        {saving ? 'Saving…' : 'Save fields'}
-      </Button>
-    </div>
-  );
-}
-
-/** One blueprint section with its ordered blocks and an "add paragraph" action. */
-function SectionCard({ instanceId, section, onChanged }) {
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  const [reordering, setReordering] = useState(false);
-
-  const addParagraph = async () => {
-    setBusy(true);
-    try {
-      await toast.promise(
-        () => addBlock(instanceId, section.sectionId, { blockType: 'PARAGRAPH', text: '' }),
-        { loading: 'Adding paragraph…', success: 'Paragraph added', error: (err) => err.message }
-      );
-      onChanged();
-    } catch {
-      // The error toast is already shown.
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const move = async (index, delta) => {
-    if (reordering) return; // a second click would race on stale order
-    const ids = section.blocks.map((b) => b.blockId);
-    const target = index + delta;
-    if (target < 0 || target >= ids.length) return;
-    [ids[index], ids[target]] = [ids[target], ids[index]];
-    setReordering(true);
-    try {
-      await reorderBlocks(instanceId, section.sectionId, ids);
-      onChanged();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setReordering(false);
-    }
-  };
-
-  return (
-    <Card className="mb-4">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="rounded bg-pill px-2 py-0.5 text-xs text-muted">{section.orderIndex + 1}</span>
-        <h3 className="text-base font-medium">{section.title}</h3>
-        {section.keywords.length > 0 && (
-          <span className="text-xs text-muted">keywords: {section.keywords.join(', ')}</span>
-        )}
-        {section.sectionKind && section.sectionKind !== 'NARRATIVE' && (
-          <span className="text-xs text-muted">{section.sectionKind}</span>
-        )}
-      </div>
-      <FormFields instanceId={instanceId} section={section} onChanged={onChanged} />
-      {section.blocks.length === 0 && !(section.fields?.length > 0) && (
-        <p className="mb-2 text-sm text-muted">Nothing added to this section yet.</p>
+        </div>
       )}
-      <ul className="space-y-3">
-        {section.blocks.map((block, index) => (
-          <li key={block.blockId} className="flex items-start gap-2">
-            <div className="flex flex-col gap-0.5 pt-1">
-              <button
-                type="button"
-                aria-label="Move up"
-                className="rounded px-1 text-xs text-muted hover:bg-pill disabled:opacity-30"
-                disabled={index === 0 || reordering}
-                onClick={() => move(index, -1)}
-              >
-                ▲
-              </button>
-              <button
-                type="button"
-                aria-label="Move down"
-                className="rounded px-1 text-xs text-muted hover:bg-pill disabled:opacity-30"
-                disabled={index === section.blocks.length - 1 || reordering}
-                onClick={() => move(index, 1)}
-              >
-                ▼
-              </button>
-            </div>
-            <div className="min-w-0 flex-1">
-              {block.blockType === 'PARAGRAPH' ? (
-                <ParagraphBlock block={block} onChanged={onChanged} />
-              ) : (
-                <ImageBlock block={block} onChanged={onChanged} />
-              )}
-            </div>
-            {block.blockType === 'PARAGRAPH' && (
-              <button
-                type="button"
-                aria-label="Delete block"
-                className="pt-1 text-sm text-muted hover:text-danger-600"
-                onClick={async () => {
-                  try {
-                    await deleteBlock(block.blockId);
-                    onChanged();
-                  } catch (err) {
-                    toast.error(err.message);
-                  }
-                }}
-              >
-                ✕
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      <div className="mt-3">
-        <Button size="sm" variant="secondary" onClick={addParagraph} disabled={busy}>
-          + Add paragraph
-        </Button>
-      </div>
-    </Card>
+    </Modal>
   );
-}
-
-/** "Blueprint: X · built on template version N" (+ a note when the template has moved on). */
-function builderSubtitle(doc) {
-  const version = doc.blueprintVersion ?? 1;
-  const current = doc.blueprintCurrentVersion ?? version;
-  const newer =
-    current > version
-      ? ` (template is now at version ${current}; this document keeps version ${version})`
-      : '';
-  const coverage =
-    typeof doc.blueprintCoveragePercent === 'number'
-      ? ` · template coverage ${doc.blueprintCoveragePercent}%`
-      : '';
-  return `Blueprint: ${doc.blueprintName} · built on template version ${version}${newer}${coverage}`;
 }
 
 export default function DocBuilderPage() {
@@ -351,57 +197,203 @@ export default function DocBuilderPage() {
   const toast = useToast();
   const fileInputRef = useRef(null);
   const [doc, setDoc] = useState(null);
+  const [values, setValues] = useState({});
+  const [saveState, setSaveState] = useState('idle');
   const [error, setError] = useState('');
+  const [pageIndex, setPageIndex] = useState(0);
+  const [activeKey, setActiveKey] = useState(null);
+  const [photos, setPhotos] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Autosave: changed keys wait here until typing pauses, then go out as
+  // one merge (PUT values merges server-side). One request at a time.
+  const pending = useRef({});
+  const timer = useRef(null);
+  const inflight = useRef(null);
+
+  const adopt = useCallback((dto) => {
+    if (!dto) return;
+    setDoc(dto);
+    setValues({ ...(dto.values || {}), ...pending.current });
+  }, []);
 
   const load = useCallback(async () => {
     try {
-      setDoc(await getInstance(id));
+      adopt(await getInstance(id));
       setError('');
     } catch (err) {
       setError(err.message);
     }
-  }, [id]);
+  }, [id, adopt]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const bulkUpload = async (files) => {
-    if (!files || files.length === 0) return;
+  const flush = useCallback(async () => {
+    clearTimeout(timer.current);
+    timer.current = null;
+    if (inflight.current) await inflight.current;
+    const batch = pending.current;
+    if (Object.keys(batch).length === 0) return;
+    pending.current = {};
+    setSaveState('saving');
+    const request = saveValues(id, batch)
+      .then((dto) => {
+        adopt(dto);
+        setSaveState(Object.keys(pending.current).length ? 'pending' : 'saved');
+      })
+      .catch((err) => {
+        pending.current = { ...batch, ...pending.current };
+        setSaveState('error');
+        setError(err.message);
+      })
+      .finally(() => {
+        inflight.current = null;
+      });
+    inflight.current = request;
+    await request;
+  }, [id, adopt]);
+
+  // Leaving the page: send whatever is still waiting.
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      const batch = pending.current;
+      if (Object.keys(batch).length) saveValues(id, batch).catch(() => {});
+      pending.current = {};
+    },
+    [id]
+  );
+
+  const setValue = (key, value) => {
+    setValues((current) => ({ ...current, [key]: value }));
+    pending.current = { ...pending.current, [key]: value };
+    setSaveState('pending');
+    clearTimeout(timer.current);
+    timer.current = setTimeout(flush, AUTOSAVE_MS);
+  };
+
+  const pages = doc?.pages || [];
+  const regions = useMemo(
+    () =>
+      [...(doc?.regions || [])].sort(
+        (a, b) => a.page - b.page || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.fy - b.fy || a.fx - b.fx
+      ),
+    [doc]
+  );
+  const images = doc?.images || [];
+  const tray = images.filter((image) => !image.regionKey);
+  const imageByRegion = new Map(images.filter((i) => i.regionKey).map((i) => [i.regionKey, i]));
+  const photoRegions = regions.filter((r) => PHOTO_KINDS.has(r.kind));
+  const locked = doc?.status === 'SUBMITTED' || doc?.status === 'RELEASED';
+  const serverOverflow = new Set(doc?.overflow || []);
+  const overflows = (region) =>
+    serverOverflow.has(region.key) || estimateOverflow(region, values[region.key], pages[region.page]);
+
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const region of regions) {
+      const name = region.group?.trim() || 'Other fields';
+      if (!map.has(name)) map.set(name, []);
+      map.get(name).push(region);
+    }
+    return [...map.entries()];
+  }, [regions]);
+
+  const focusField = (region) => {
+    setActiveKey(region.key);
+    if (region.page !== pageIndex) setPageIndex(region.page);
+  };
+
+  // ------------------------------------------------------------ photos
+
+  const upload = async (autoFill) => {
+    const chosen = photos.filter((file) => PHOTO_EXT.test(file.name));
+    const skipped = photos.filter((file) => !PHOTO_EXT.test(file.name));
+    if (skipped.length) {
+      toast.error(`Not a photo (png, jpg, gif or bmp): ${skipped.map((f) => f.name).join(', ')}`);
+    }
+    if (!chosen.length) return;
     setUploading(true);
     try {
-      await toast.promise(() => uploadAssets(id, Array.from(files), true), {
-        loading: `Uploading ${files.length} image${files.length === 1 ? '' : 's'}…`,
+      await toast.promise(() => uploadImages(id, chosen, autoFill), {
+        loading: `Uploading ${chosen.length} photo${chosen.length === 1 ? '' : 's'}…`,
         success: (result) => {
           const parts = [];
-          if (result.assigned.length) parts.push(`${result.assigned.length} auto-assigned`);
-          if (result.unsorted.length) parts.push(`${result.unsorted.length} in Unsorted`);
-          if (result.rejected.length) parts.push(`${result.rejected.length} rejected`);
+          const assigned = result?.assigned?.length || 0;
+          const unassigned = result?.unassigned?.length || 0;
+          const rejected = result?.rejected || [];
+          if (assigned) parts.push(`${assigned} placed in photo boxes`);
+          if (unassigned) parts.push(`${unassigned} in the tray`);
+          if (rejected.length) {
+            parts.push(`${rejected.length} rejected (${rejected.map((r) => `${r.name}: ${r.reason}`).join('; ')})`);
+          }
           return parts.join(', ') || 'Nothing uploaded';
         },
         error: (err) => err.message,
       });
+      setPhotos([]);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       load();
     } catch {
       // The error toast is already shown.
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const place = async (imageId, regionKey) => {
+    const target = regionKey ? photoRegions.find((r) => r.key === regionKey) : null;
+    try {
+      await toast.promise(() => placeImage(id, imageId, regionKey || null), {
+        loading: regionKey ? 'Placing the photo…' : 'Moving the photo to the tray…',
+        success: regionKey
+          ? `Photo placed in “${target ? fieldLabel(target) : regionKey}”${
+              imageByRegion.has(regionKey) ? ' (swapped)' : ''
+            }`
+          : 'Photo moved to the tray',
+        error: (err) => err.message,
+      });
+      load();
+    } catch {
+      // The error toast is already shown.
+    }
+  };
+
+  const removePhoto = async (image) => {
+    try {
+      await toast.promise(() => deleteImage(id, image.id), {
+        loading: 'Removing the photo…',
+        success: `Removed ${image.originalName}`,
+        error: (err) => err.message,
+      });
+      load();
+    } catch {
+      // The error toast is already shown.
+    }
+  };
+
+  // ------------------------------------------------------- generation
 
   const generate = async () => {
     setGenerating(true);
     try {
+      await flush();
       await toast.promise(() => generateInstance(id), {
-        loading: 'Generating the document…',
-        success: (r) =>
-          `Document generated (${r.pdfReady ? '.docx + PDF' : '.docx only'})${
-            r.composedBy === 'AI' ? ' · composed by AI' : ''
-          }`,
+        loading: 'Generating the PDF…',
+        success: (r) => {
+          const added = r?.addedPages || 0;
+          const continued = (r?.continuedKeys || [])
+            .map((key) => fieldLabel(regions.find((reg) => reg.key === key) || { key }))
+            .join(', ');
+          return `PDF generated${
+            added ? ` — ${added} page${added === 1 ? '' : 's'} added for text that did not fit${continued ? ` (${continued})` : ''}` : ''
+          }${r?.exact === false ? ' · the exactness check did not pass' : ' · layout verified exact'}`;
+        },
         error: (err) => err.message,
       });
       load();
@@ -430,43 +422,36 @@ export default function DocBuilderPage() {
     }
   };
 
-  const download = async (format) => {
+  const download = async () => {
     try {
-      await toast.promise(
-        () => downloadInstance(id, format, `${doc?.title || 'document'}.${format}`),
-        { loading: 'Preparing download…', success: 'Download started', error: (err) => err.message }
-      );
+      await flush();
+      await toast.promise(() => downloadInstance(id, `${doc?.title || 'document'}.pdf`), {
+        loading: 'Preparing the PDF…',
+        success: 'Download started',
+        error: (err) => err.message,
+      });
     } catch {
       // The error toast is already shown.
     }
   };
 
-  const reassign = async (assetId, sectionId) => {
-    try {
-      await toast.promise(() => assignAsset(assetId, sectionId ? Number(sectionId) : null), {
-        loading: 'Placing image…',
-        success: 'Image placed',
-        error: (err) => err.message,
-      });
-      load();
-    } catch {
-      // The error toast is already shown.
-    }
+  const openPreview = async () => {
+    await flush();
+    setPreviewOpen(true);
   };
 
-  const removeAsset = async (asset) => {
-    if (!window.confirm(`Delete image "${asset.originalFileName}"?`)) return;
-    try {
-      await toast.promise(() => deleteAsset(asset.assetId), {
-        loading: 'Deleting image…',
-        success: 'Image deleted',
-        error: (err) => err.message,
-      });
-      load();
-    } catch {
-      // The error toast is already shown.
-    }
-  };
+  const saveText = {
+    idle: '',
+    pending: 'Unsaved changes…',
+    saving: 'Saving…',
+    saved: 'Saved',
+    error: 'Not saved — will retry on your next change',
+  }[saveState];
+
+  const page = pages[pageIndex];
+  const version = doc?.blueprintVersion ?? 1;
+  const currentVersion = doc?.blueprintCurrentVersion ?? version;
+  const reviewerComment = doc?.reviewerComment ?? doc?.reviewComment;
 
   return (
     <div>
@@ -474,11 +459,17 @@ export default function DocBuilderPage() {
         sticky
         crumbs={[{ label: 'My Documents', to: '/creation/documents' }, { label: doc?.title || `#${id}` }]}
         title={doc?.title || 'Document'}
-        subtitle={doc ? builderSubtitle(doc) : undefined}
+        subtitle={doc ? `Template: ${doc.blueprintName}` : undefined}
         actions={
           doc && (
             <>
-              <Button onClick={generate} disabled={generating}>
+              <span role="status" aria-live="polite" className="min-w-16 text-xs text-muted" data-testid="save-state">
+                {saveText}
+              </span>
+              <Button variant="secondary" onClick={openPreview}>
+                Preview
+              </Button>
+              <Button onClick={generate} disabled={generating || locked}>
                 {generating ? 'Generating…' : 'Generate'}
               </Button>
               {doc.status === 'GENERATED' && (
@@ -486,15 +477,7 @@ export default function DocBuilderPage() {
                   {submitting ? 'Submitting…' : 'Submit for release'}
                 </Button>
               )}
-              <Button variant="secondary" onClick={() => download('docx')}>
-                Download .docx
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => download('pdf')}
-                disabled={!doc.pdfAvailable}
-                title={doc.pdfAvailable ? undefined : 'PDF conversion is not available on this server'}
-              >
+              <Button variant="secondary" onClick={download}>
                 Download PDF
               </Button>
             </>
@@ -507,104 +490,299 @@ export default function DocBuilderPage() {
         <Spinner />
       ) : (
         <>
-          {/* ws11 release state: status chip, AI-composed marker (C10 — the
-              approver reviews what the model wrote) and reviewer feedback. */}
           <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
             <Badge status={doc.status} />
-            {doc.aiComposed && (
-              <span className="inline-block rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-800">
-                AI-composed
-              </span>
-            )}
-            {doc.status === 'SUBMITTED' && doc.submittedAt && (
-              <span>Submitted {new Date(doc.submittedAt).toLocaleString()} — awaiting release by an approver</span>
-            )}
-            {doc.status === 'RELEASED' && doc.releasedAt && (
-              <span>Released {new Date(doc.releasedAt).toLocaleString()}</span>
-            )}
+            <span>
+              Built on template version {version}
+              {currentVersion > version && ` (newer available: version ${currentVersion})`}
+            </span>
+            {doc.lastGeneratedDate && <span>· last generated {new Date(doc.lastGeneratedDate).toLocaleString()}</span>}
+            {doc.status === 'SUBMITTED' && <span>· awaiting release by an approver</span>}
           </div>
-          {doc.reviewComment && doc.status !== 'SUBMITTED' && (
+          {reviewerComment && doc.status !== 'SUBMITTED' && (
             <div className="mb-4">
               <Callout
                 variant={doc.status === 'RELEASED' ? 'info' : 'error'}
                 title={doc.status === 'RELEASED' ? 'Reviewer comment' : 'Returned for rework'}
               >
-                <p className="mt-1 text-sm">{doc.reviewComment}</p>
+                <p className="mt-1 text-sm">{reviewerComment}</p>
               </Callout>
             </div>
           )}
-          <Card className="mb-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept=".png,.jpg,.jpeg,.gif,.bmp"
-                className="block text-sm text-muted file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-pill file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-accent"
-                onChange={(e) => bulkUpload(e.target.files)}
-                disabled={uploading}
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className="min-w-0">
+              <ThumbnailStrip
+                pages={pages}
+                current={pageIndex}
+                onSelect={(index) => setPageIndex(Math.min(Math.max(0, index), pages.length - 1))}
+                pathFor={(index) =>
+                  blueprintPagePath(doc.blueprintId, index, { variant: 'template', version, dpi: 30 })
+                }
               />
-              <p className="text-xs text-muted">
-                Drop all your photos at once — file names matching a section's keywords are placed
-                automatically; the rest wait in Unsorted.
-              </p>
+              {page && (
+                <PageView
+                  path={blueprintPagePath(doc.blueprintId, pageIndex, { variant: 'template', version })}
+                  page={page}
+                  alt={`Page ${pageIndex + 1} of ${pages.length}`}
+                >
+                  {({ scale }) =>
+                    regions
+                      .filter((region) => region.page === pageIndex)
+                      .map((region) => {
+                        const overflow = overflows(region);
+                        return (
+                          <div
+                            key={region.key}
+                            className="absolute"
+                            style={boxStyle(region)}
+                            data-testid={`field-${region.key}`}
+                            data-kind={region.kind}
+                          >
+                            {PHOTO_KINDS.has(region.kind) ? (
+                              <PhotoBox
+                                instanceId={id}
+                                region={region}
+                                image={imageByRegion.get(region.key)}
+                                locked={locked}
+                                onPlace={place}
+                                active={activeKey === region.key}
+                                onFocus={() => setActiveKey(region.key)}
+                              />
+                            ) : (
+                              <RegionInput
+                                region={region}
+                                value={values[region.key]}
+                                onChange={(value) => setValue(region.key, value)}
+                                locked={locked}
+                                onPage
+                                onFocus={() => setActiveKey(region.key)}
+                                style={{
+                                  fontSize: `${fontPx(region, page, scale)}px`,
+                                  textAlign: (region.align || 'LEFT').toLowerCase(),
+                                  outline: activeKey === region.key ? `2px solid ${KIND_COLORS.TEXT}` : undefined,
+                                }}
+                              />
+                            )}
+                            {overflow && (
+                              <span
+                                className="pointer-events-none absolute left-0 top-full z-10 whitespace-nowrap rounded bg-amber-100 px-1 text-[10px] text-amber-900 shadow"
+                                data-testid={`overflow-${region.key}`}
+                              >
+                                {OVERFLOW_TEXT}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })
+                  }
+                </PageView>
+              )}
             </div>
-          </Card>
 
-          {doc.unsortedAssets.length > 0 && (
-            <div className="mb-4">
-              <Callout variant="info" title={`Unsorted images (${doc.unsortedAssets.length})`}>
-                <ul className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {doc.unsortedAssets.map((asset) => (
-                    <li key={asset.assetId} className="rounded border border-line bg-white p-2">
-                      <AuthedImage
-                        path={assetContentPath(asset.assetId)}
-                        alt={asset.originalFileName}
-                        className="mb-1 h-24 w-full rounded object-cover"
+            <div className="space-y-4">
+              <Card padding="compact">
+                <h2 className="mb-2 text-sm font-medium">Photos</h2>
+                {!locked && (
+                  <>
+                    <label className="block text-sm">
+                      <span className="mb-1 block text-xs text-muted">
+                        Choose all your photos at once (png, jpg, gif, bmp)
+                      </span>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept=".png,.jpg,.jpeg,.gif,.bmp"
+                        aria-label="Choose photos"
+                        className="block w-full text-xs text-muted file:mr-2 file:cursor-pointer file:rounded file:border-0 file:bg-pill file:px-2 file:py-1 file:text-xs file:font-medium file:text-accent"
+                        onChange={(e) => setPhotos(Array.from(e.target.files || []))}
+                        disabled={uploading}
                       />
-                      <p className="mb-1 truncate text-xs text-muted" title={asset.originalFileName}>
-                        {asset.originalFileName}
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <select
-                          aria-label={`Assign ${asset.originalFileName} to a section`}
-                          className={`${inputClass} !py-1 text-xs`}
-                          defaultValue=""
-                          onChange={(e) => e.target.value && reassign(asset.assetId, e.target.value)}
-                        >
-                          <option value="">Place in section…</option>
-                          {doc.sections.map((s) => (
-                            <option key={s.sectionId} value={s.sectionId}>
-                              {s.title}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          aria-label={`Delete ${asset.originalFileName}`}
-                          className="text-sm text-muted hover:text-danger-600"
-                          onClick={() => removeAsset(asset)}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </Callout>
-            </div>
-          )}
+                    </label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => upload(true)} disabled={uploading || photos.length === 0}>
+                        Auto-fill photos
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => upload(false)}
+                        disabled={uploading || photos.length === 0}
+                      >
+                        Upload to tray
+                      </Button>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">
+                      Auto-fill matches file names to the photo boxes, then fills the rest in reading
+                      order. Drag a photo onto any photo box, or use “Place in…”.
+                    </p>
+                  </>
+                )}
+                <h3 className="mb-1 mt-3 text-xs font-medium text-muted">Tray ({tray.length})</h3>
+                {tray.length === 0 ? (
+                  <p className="text-xs text-muted">No photos waiting.</p>
+                ) : (
+                  <ul className="space-y-2" data-testid="photo-tray">
+                    {tray.map((image) => (
+                      <li
+                        key={image.id}
+                        draggable={!locked}
+                        onDragStart={(event) => startPhotoDrag(event, image)}
+                        data-testid={`tray-photo-${image.id}`}
+                        className="flex items-center gap-2 rounded border border-line p-1"
+                      >
+                        <AuthedImage
+                          path={imageContentPath(id, image.id)}
+                          alt={image.originalName}
+                          className="h-12 w-12 shrink-0 rounded object-cover"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs" title={image.originalName}>
+                            {image.originalName}
+                          </p>
+                          {!locked && (
+                            <select
+                              aria-label={`Place ${image.originalName} in…`}
+                              className={`${inputClass} !py-0.5 text-xs`}
+                              value=""
+                              onChange={(e) => e.target.value && place(image.id, e.target.value)}
+                              disabled={photoRegions.length === 0}
+                            >
+                              <option value="">Place in…</option>
+                              {photoRegions.map((region) => (
+                                <option key={region.key} value={region.key}>
+                                  {fieldLabel(region)} (page {region.page + 1})
+                                  {imageByRegion.has(region.key) ? ' — swap' : ''}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        {!locked && (
+                          <button
+                            type="button"
+                            aria-label={`Remove ${image.originalName}`}
+                            className="px-1 text-sm text-muted hover:text-danger-ink"
+                            onClick={() => removePhoto(image)}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
 
-          {doc.sections.map((section) => (
-            <SectionCard
-              key={section.sectionId}
-              instanceId={Number(id)}
-              section={section}
-              onChanged={load}
-            />
-          ))}
+              <section aria-labelledby="fields-heading" className="rounded-lg border border-line bg-white p-3">
+                <h2 id="fields-heading" className="mb-2 text-sm font-medium">
+                  Fields
+                </h2>
+                {regions.length === 0 && <p className="text-xs text-muted">This template has no fields.</p>}
+                <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
+                  {groups.map(([groupName, list]) => (
+                    <fieldset key={groupName} className="space-y-2">
+                      <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">{groupName}</legend>
+                      {list.map((region) => {
+                        const overflow = overflows(region);
+                        const noteId = `overflow-note-${region.key}`;
+                        const label = fieldLabel(region);
+                        if (PHOTO_KINDS.has(region.kind)) {
+                          const image = imageByRegion.get(region.key);
+                          return (
+                            <div
+                              key={region.key}
+                              className={`rounded p-1 text-sm ${activeKey === region.key ? 'bg-pill' : ''}`}
+                            >
+                              <p className="font-medium">
+                                {label}
+                                <span className="ml-1 text-xs font-normal text-muted">page {region.page + 1}</span>
+                              </p>
+                              {image ? (
+                                <div className="mt-1 flex items-center gap-2">
+                                  <span className="min-w-0 flex-1 truncate text-xs">{image.originalName}</span>
+                                  {!locked && (
+                                    <select
+                                      aria-label={`Move ${image.originalName} to…`}
+                                      className={`${inputClass} !w-36 !py-0.5 text-xs`}
+                                      value=""
+                                      onFocus={() => focusField(region)}
+                                      onChange={(e) =>
+                                        e.target.value &&
+                                        place(image.id, e.target.value === '__tray' ? null : e.target.value)
+                                      }
+                                    >
+                                      <option value="">Move to…</option>
+                                      <option value="__tray">Back to the tray</option>
+                                      {photoRegions
+                                        .filter((r) => r.key !== region.key)
+                                        .map((r) => (
+                                          <option key={r.key} value={r.key}>
+                                            {fieldLabel(r)}
+                                            {imageByRegion.has(r.key) ? ' — swap' : ''}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted">No photo yet.</p>
+                              )}
+                            </div>
+                          );
+                        }
+                        const input = (
+                          <RegionInput
+                            region={region}
+                            value={values[region.key]}
+                            onChange={(value) => setValue(region.key, value)}
+                            locked={locked}
+                            onFocus={() => focusField(region)}
+                            describedBy={overflow ? noteId : undefined}
+                          />
+                        );
+                        return (
+                          <div
+                            key={region.key}
+                            className={`rounded p-1 ${activeKey === region.key ? 'bg-pill' : ''}`}
+                          >
+                            {region.kind === 'CHECKBOX' ? (
+                              <label className="flex items-center gap-2 text-sm">
+                                {input}
+                                {label}
+                                {region.required && <span className="text-danger-ink">*</span>}
+                              </label>
+                            ) : (
+                              <label className="block text-sm">
+                                <span className="mb-0.5 block">
+                                  {label}
+                                  {region.required && <span className="ml-0.5 text-danger-ink">*</span>}
+                                  {/* A real space: inline spans alone make one word of the name ("Full namepage 1"). */}
+                                  {' '}
+                                  <span className="text-xs text-muted">page {region.page + 1}</span>
+                                </span>
+                                {input}
+                              </label>
+                            )}
+                            {overflow && (
+                              <p id={noteId} className="mt-0.5">
+                                <Tag tone="warning">{OVERFLOW_TEXT}</Tag>
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </fieldset>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
         </>
       )}
+
+      <PreviewDialog open={previewOpen} onClose={() => setPreviewOpen(false)} instanceId={id} pages={pages} />
     </div>
   );
 }

@@ -11,4 +11,8 @@ public interface DocBlueprintJpaRepository extends JpaRepository<DocBlueprint, I
     Optional<DocBlueprint> findByDocBlueprintIdAndOwnerUserId(int id, int ownerUserId);
 
     List<DocBlueprint> findByOwnerUserIdOrderByDocBlueprintIdDesc(int ownerUserId);
+
+    List<DocBlueprint> findByOwnerUserIdAndKindOrderByDocBlueprintIdDesc(int ownerUserId, String kind);
+
+    List<DocBlueprint> findByBankIdAndKindOrderByDocBlueprintIdAsc(int bankId, String kind);
 }

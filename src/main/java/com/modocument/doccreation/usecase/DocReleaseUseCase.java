@@ -8,31 +8,27 @@ import com.modocument.doccreation.dto.BlockDto;
 import com.modocument.doccreation.dto.InstanceSummaryDto;
 import com.modocument.doccreation.dto.PendingReleaseDto;
 import com.modocument.doccreation.entity.DocBlueprint;
-import com.modocument.doccreation.entity.DocBlueprintSection;
-import com.modocument.doccreation.entity.DocContentBlock;
-import com.modocument.doccreation.entity.DocImageAsset;
 import com.modocument.doccreation.entity.DocInstance;
+import com.modocument.doccreation.entity.DocInstanceImage;
+import com.modocument.doccreation.entity.DocTemplateRegion;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
-import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
-import com.modocument.doccreation.repo.DocContentBlockRepository;
-import com.modocument.doccreation.repo.DocImageAssetRepository;
+import com.modocument.doccreation.repo.DocInstanceImageRepository;
 import com.modocument.doccreation.repo.DocInstanceRepository;
+import com.modocument.doccreation.repo.DocTemplateRegionRepository;
 import com.modocument.domain.model.AuditOutcome;
 import com.modocument.application.port.FileStore;
 import com.modocument.infrastructure.file.store.FileStoreKeys;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * The ws11 release workflow on a document instance (gate B8, SEC-012,
@@ -48,9 +44,9 @@ import java.util.stream.Collectors;
  * audit row written in its own transaction, so the evidence survives the
  * refusal — even when the author also holds the Approver role.
  *
- * <p>C10: the pending-release queue hands the approver the full content
- * blocks plus the {@code aiComposed} flag, so releasing an AI-composed
- * document is a documented human check of the model's text and figures; the
+ * <p>C10: the pending-release queue hands the approver the document's
+ * values and photos plus the {@code aiComposed} flag (always false since the
+ * PDF templates: generation draws exactly the entered values); the
  * approver's comment is recorded on the row and the DOC_RELEASED audit
  * event carries the flag and the comment.
  *
@@ -63,9 +59,8 @@ public class DocReleaseUseCase {
 
     private final DocInstanceRepository instances;
     private final DocBlueprintRepository blueprints;
-    private final DocBlueprintSectionRepository sections;
-    private final DocContentBlockRepository blocks;
-    private final DocImageAssetRepository assets;
+    private final DocTemplateRegionRepository regions;
+    private final DocInstanceImageRepository images;
     private final DocCreationOwnership ownership;
     private final AppUserRepository users;
     private final AuditRecorder audit;
@@ -76,9 +71,8 @@ public class DocReleaseUseCase {
 
     public DocReleaseUseCase(DocInstanceRepository instances,
                              DocBlueprintRepository blueprints,
-                             DocBlueprintSectionRepository sections,
-                             DocContentBlockRepository blocks,
-                             DocImageAssetRepository assets,
+                             DocTemplateRegionRepository regions,
+                             DocInstanceImageRepository images,
                              DocCreationOwnership ownership,
                              AppUserRepository users,
                              AuditRecorder audit,
@@ -88,9 +82,8 @@ public class DocReleaseUseCase {
         this.eventLog = eventLog;
         this.instances = instances;
         this.blueprints = blueprints;
-        this.sections = sections;
-        this.blocks = blocks;
-        this.assets = assets;
+        this.regions = regions;
+        this.images = images;
         this.ownership = ownership;
         this.users = users;
         this.audit = audit;
@@ -118,6 +111,12 @@ public class DocReleaseUseCase {
             default -> throw new IllegalStateException(
                     "This document is already released.");
         }
+        // The approver reviews the generated PDF: it must show the current values.
+        if (instance.getUpdatedDate() != null && instance.getLastGeneratedDate() != null
+                && instance.getUpdatedDate().isAfter(instance.getLastGeneratedDate())) {
+            throw new IllegalStateException(
+                    "The document changed since it was generated; generate it again before submitting.");
+        }
         instance.setStatus(DocInstance.STATUS_SUBMITTED);
         instance.setSubmittedByUserId(ownership.requireUserId());
         instance.setSubmittedAt(LocalDateTime.now());
@@ -130,15 +129,15 @@ public class DocReleaseUseCase {
                 .newValues(summary(saved))
                 .build());
         DocBlueprint blueprint = ownership.requireBlueprint(saved.getBlueprintId());
-        return InstanceSummaryDto.from(saved, blueprint.getName());
+        return InstanceSummaryDto.from(saved, blueprint.getName(), pageCount(blueprint));
     }
 
     // ---------------------------------------------------------- approver side
 
     /**
      * The bank's release queue (SUBMITTED instances, newest first) with the
-     * full content per section — the approver reviews the actual text and
-     * figures (C10), not just a title.
+     * full content — the approver reviews the actual values and photos (C10),
+     * not just a title. Documents of retired Word templates are not listed.
      */
     @Transactional(readOnly = true)
     public List<PendingReleaseDto> pendingReleases() {
@@ -147,8 +146,8 @@ public class DocReleaseUseCase {
         if (queue.isEmpty()) {
             return List.of();
         }
-        // ws28: the queue's blueprints, sections, blocks, assets and users are
-        // loaded in one statement each, not once per queued document.
+        // ws28: the queue's blueprints, regions, photos and users are loaded
+        // in one statement each, not once per queued document.
         Set<Integer> instanceIds = new LinkedHashSet<>();
         Set<Integer> blueprintIds = new LinkedHashSet<>();
         Set<Integer> userIds = new LinkedHashSet<>();
@@ -160,22 +159,25 @@ public class DocReleaseUseCase {
                 userIds.add(instance.getSubmittedByUserId());
             }
         }
+        Map<Integer, DocBlueprint> blueprintsById = blueprints.getByIds(blueprintIds);
         ReleaseQueueContext context = new ReleaseQueueContext(
-                blueprints.getByIds(blueprintIds),
-                sections.listByBlueprints(blueprintIds),
-                blocks.listByInstances(instanceIds),
-                assets.listByInstances(instanceIds),
+                blueprintsById,
+                regions.listByBlueprints(bankId, blueprintIds),
+                images.listByInstances(bankId, instanceIds),
                 emails(userIds));
         return queue.stream()
+                .filter(instance -> {
+                    DocBlueprint blueprint = blueprintsById.get(instance.getBlueprintId());
+                    return blueprint == null || !blueprint.isLegacy();
+                })
                 .map(instance -> toPendingRelease(instance, context))
                 .toList();
     }
 
     /** Everything the release queue needs, batch-loaded once for the whole queue. */
     private record ReleaseQueueContext(Map<Integer, DocBlueprint> blueprints,
-                                       Map<Integer, List<DocBlueprintSection>> sections,
-                                       Map<Integer, List<DocContentBlock>> blocks,
-                                       Map<Integer, List<DocImageAsset>> assets,
+                                       Map<Integer, List<DocTemplateRegion>> regions,
+                                       Map<Integer, List<DocInstanceImage>> images,
                                        Map<Integer, String> emails) {
     }
 
@@ -254,32 +256,28 @@ public class DocReleaseUseCase {
      * Review download for {@code doc:release} holders: the SUBMITTED
      * document of the caller's bank, served EXACTLY as last generated —
      * deliberately no regeneration here (the owner's download regenerates
-     * stale content; a reviewer must see what exists, not trigger new
-     * LLM/conversion work on someone else's instance).
+     * stale content; a reviewer must see what exists, not trigger new work on
+     * someone else's instance). Output is PDF only.
      */
-    public DocInstanceUseCase.DownloadFile downloadForReview(int instanceId, String format) {
-        boolean pdf = "pdf".equalsIgnoreCase(format);
-        if (!pdf && !"docx".equalsIgnoreCase(format)) {
-            throw new IllegalArgumentException("format must be docx or pdf.");
-        }
+    public DocInstanceUseCase.PdfDownload downloadForReview(int instanceId) {
         DocInstance instance = ownership.requireSubmittedForReview(instanceId);
-        String fileName = pdf ? instance.getLastGeneratedPdf() : instance.getLastGeneratedDocx();
-        if (fileName == null) {
-            throw new IllegalStateException(pdf
-                    ? "No PDF was generated for this document; review the .docx instead."
-                    : "The document has no generated file; ask the author to generate it again.");
+        String key = instance.getGeneratedPdfKey();
+        if (key == null && instance.getLastGeneratedPdf() != null) {
+            key = FileStoreKeys.tryExport(instance.getLastGeneratedPdf()).orElse(null);
         }
-        Path path;
-        try {
-            path = storage.localCopy(FileStoreKeys.export(fileName));
+        if (key == null) {
+            throw new IllegalStateException(
+                    "The document has no generated PDF; ask the author to generate it again.");
+        }
+        try (java.io.InputStream in = storage.open(key)) {
+            return new DocInstanceUseCase.PdfDownload(in.readAllBytes(),
+                    PdfTemplateStore.downloadName(instance.getTitle(), ".pdf"));
         } catch (java.nio.file.NoSuchFileException e) {
             throw new IllegalStateException(
                     "The generated file is missing; ask the author to generate it again.");
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException("Could not read the generated file.", e);
         }
-        return new DocInstanceUseCase.DownloadFile(path,
-                DocInstanceUseCase.sanitizeFileName(instance.getTitle()) + (pdf ? ".pdf" : ".docx"));
     }
 
     // -------------------------------------------------------------- plumbing
@@ -313,22 +311,50 @@ public class DocReleaseUseCase {
         }
     }
 
+    /**
+     * The approver's view of one document, in the queue's (unchanged) shape:
+     * one review section per region group (in reading order), each filled
+     * value a PARAGRAPH "Label: value", each placed photo an IMAGE.
+     */
     private static PendingReleaseDto toPendingRelease(DocInstance instance, ReleaseQueueContext context) {
         Optional<DocBlueprint> blueprint =
                 Optional.ofNullable(context.blueprints().get(instance.getBlueprintId()));
-        Map<Integer, List<DocContentBlock>> blocksBySection =
-                context.blocks().getOrDefault(instance.getDocInstanceId(), List.of()).stream()
-                        .collect(Collectors.groupingBy(DocContentBlock::getSectionId));
-        Map<Integer, DocImageAsset> assetsById =
-                context.assets().getOrDefault(instance.getDocInstanceId(), List.of()).stream()
-                        .collect(Collectors.toMap(DocImageAsset::getDocImageAssetId,
-                                Function.identity()));
-        List<PendingReleaseDto.ReviewSectionDto> sectionDtos = blueprint
-                .map(b -> context.sections().getOrDefault(b.getDocBlueprintId(), List.of()))
-                .orElse(List.of()).stream()
-                .filter(s -> s.getVersion() == instance.getBlueprintVersion())
-                .map(s -> toReviewSection(s, blocksBySection, assetsById))
+        Map<String, String> values = DocInstanceUseCase.readValues(instance);
+        Map<String, DocInstanceImage> photos = new LinkedHashMap<>();
+        for (DocInstanceImage image : context.images().getOrDefault(instance.getDocInstanceId(), List.of())) {
+            if (image.getRegionKey() != null) {
+                photos.put(image.getRegionKey(), image);
+            }
+        }
+        List<DocTemplateRegion> regionRows = context.regions()
+                .getOrDefault(instance.getBlueprintId(), List.of()).stream()
+                .filter(r -> r.getVersion() == instance.getBlueprintVersion())
+                .sorted(java.util.Comparator.comparingInt(DocTemplateRegion::getSortOrder))
                 .toList();
+        Map<String, List<BlockDto>> byGroup = new LinkedHashMap<>();
+        int position = 0;
+        for (DocTemplateRegion region : regionRows) {
+            String group = region.getGroupName() == null || region.getGroupName().isBlank()
+                    ? "Fields" : region.getGroupName();
+            DocInstanceImage photo = photos.get(region.getRegionKey());
+            String value = values.get(region.getRegionKey());
+            List<BlockDto> blocks = byGroup.computeIfAbsent(group, g -> new ArrayList<>());
+            if (photo != null) {
+                position++;
+                blocks.add(new BlockDto(position, BlockDto.TYPE_IMAGE, position, null, null, region.getLabel(),
+                        photo.getOriginalName()));
+            } else if (value != null && !value.isEmpty()) {
+                position++;
+                blocks.add(new BlockDto(position, BlockDto.TYPE_PARAGRAPH, position,
+                        region.getLabel() + ": " + value, null, null, null));
+            }
+        }
+        List<PendingReleaseDto.ReviewSectionDto> sectionDtos = new ArrayList<>();
+        int sectionId = 0;
+        for (Map.Entry<String, List<BlockDto>> group : byGroup.entrySet()) {
+            sectionId++;
+            sectionDtos.add(new PendingReleaseDto.ReviewSectionDto(sectionId, group.getKey(), group.getValue()));
+        }
         return new PendingReleaseDto(
                 instance.getDocInstanceId(),
                 instance.getTitle(),
@@ -344,27 +370,16 @@ public class DocReleaseUseCase {
                 sectionDtos);
     }
 
-    private static PendingReleaseDto.ReviewSectionDto toReviewSection(
-            DocBlueprintSection section,
-            Map<Integer, List<DocContentBlock>> blocksBySection,
-            Map<Integer, DocImageAsset> assetsById) {
-        List<BlockDto> blockDtos = blocksBySection
-                .getOrDefault(section.getDocBlueprintSectionId(), List.of()).stream()
-                .sorted(java.util.Comparator.comparingInt(DocContentBlock::getOrderIndex))
-                .map(b -> BlockDto.from(b, b.getAssetId() == null ? null
-                        : Optional.ofNullable(assetsById.get(b.getAssetId()))
-                                .map(DocImageAsset::getOriginalFileName).orElse(null)))
-                .toList();
-        return new PendingReleaseDto.ReviewSectionDto(
-                section.getDocBlueprintSectionId(), section.getTitle(), blockDtos);
-    }
-
     private InstanceSummaryDto toSummary(DocInstance instance) {
         // Approver path: the blueprint belongs to the author, so the lookup
         // is by id (access was authorized through the bank-scoped instance).
-        String blueprintName = blueprints.getById(instance.getBlueprintId())
-                .map(DocBlueprint::getName).orElse("");
-        return InstanceSummaryDto.from(instance, blueprintName);
+        Optional<DocBlueprint> blueprint = blueprints.getById(instance.getBlueprintId());
+        return InstanceSummaryDto.from(instance, blueprint.map(DocBlueprint::getName).orElse(""),
+                blueprint.map(DocReleaseUseCase::pageCount).orElse(0));
+    }
+
+    private static int pageCount(DocBlueprint blueprint) {
+        return blueprint.getPageCount() == null ? 0 : blueprint.getPageCount();
     }
 
     /** The audited view: the parties and the aiComposed flag, never content. */

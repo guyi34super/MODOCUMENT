@@ -7,6 +7,7 @@ import com.modocument.doccreation.entity.DocImageAsset;
 import com.modocument.doccreation.entity.DocInstance;
 import com.modocument.doccreation.repo.DocContentBlockJpaRepository;
 import com.modocument.doccreation.repo.DocImageAssetJpaRepository;
+import com.modocument.doccreation.repo.DocInstanceImageJpaRepository;
 import com.modocument.doccreation.repo.DocInstanceJpaRepository;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.entity.UploadedFile;
@@ -58,8 +59,9 @@ import java.util.Map;
  *       where the owning import is past the cutoff; row skeleton stays.</li>
  *   <li><b>Extraction records</b> — raw Body and processed FieldsJson
  *       nulled past the cutoff; fetch/dedup metadata stays.</li>
- *   <li><b>Doc-creation instances</b> — customer content (content blocks,
- *       image assets + their files, generated docx/pdf) deleted 30 days
+ *   <li><b>Doc-creation instances</b> — customer content (values, photos and
+ *       image assets + their files, legacy content blocks, generated
+ *       docx/pdf) deleted 30 days
  *       after the LAST UPDATE, ContentPurgedAt set, the instance shell
  *       (title, status, dates) stays. Blueprints/sections are configuration
  *       and are never purged.</li>
@@ -78,6 +80,9 @@ public class RetentionPurger {
     private final DocImageAssetJpaRepository docAssets;
     private final FileStore storage;
     private final AuditRecorder audit;
+    /** ws31: the photo rows of PDF-template documents (null in unit wiring). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private DocInstanceImageJpaRepository docImages;
     /** BUG-12: where a file delete that keeps failing after the commit waits for a retry. */
     private final PendingFileDeletes pendingDeletes;
     /** ws28 (SE4): the AI result cache follows the customer-data retention. */
@@ -158,7 +163,14 @@ public class RetentionPurger {
                 addKey(filesToDelete, FileStoreKeys.tryUpload(asset.getFileName()), asset.getFileName());
             }
             docBlocks.deleteByInstanceId(id);
+            if (docImages != null) {
+                docImages.deleteAll(docImages.findByInstanceId(id));
+            }
             docAssets.deleteByInstanceId(id);
+            if (instance.getValuesJson() != null || instance.getFieldValuesJson() != null) {
+                instance.setValuesJson(null);
+                instance.setFieldValuesJson(null);
+            }
             if (instance.getLastGeneratedDocx() != null) {
                 addKey(filesToDelete, FileStoreKeys.tryExport(instance.getLastGeneratedDocx()),
                         instance.getLastGeneratedDocx());
@@ -168,6 +180,12 @@ public class RetentionPurger {
                 addKey(filesToDelete, FileStoreKeys.tryExport(instance.getLastGeneratedPdf()),
                         instance.getLastGeneratedPdf());
                 instance.setLastGeneratedPdf(null);
+            }
+            if (instance.getGeneratedPdfKey() != null) {
+                if (!filesToDelete.contains(instance.getGeneratedPdfKey())) {
+                    filesToDelete.add(instance.getGeneratedPdfKey());
+                }
+                instance.setGeneratedPdfKey(null);
             }
             instance.setContentPurgedAt(LocalDateTime.now());
         }

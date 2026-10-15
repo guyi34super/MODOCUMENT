@@ -291,50 +291,44 @@ no LLM involved.
 - **Synthetic probe**: `GET /api/probe/synthetic` (public, rate-limited) for
   uptime monitors — build version + database round trip only.
 
-### Document creation (blueprint → sections → fill → generate)
-- **Template from PDF or Word** — upload `.docx` or `.pdf` (PDF is reflowed to
-  editable Word). Optionally **strip sample/filled-in values** while keeping
-  layout (`stripSampleData` on upload, or the upload checkbox in the UI). The
-  stored blueprint file is the reproduction source for generation.
-- **Upload your company's report (.docx) as a blueprint** — the engine breaks it
-  down into sections. An **AI breakdown runs first**: the LLM reads the
-  document's paragraph listing and identifies every logical section the way a
-  human reader would (styled headings, numbered lines, bold titles, labelled
-  parts), returning validated anchors into the real document. When AI is
-  disabled, unconfigured, over quota, or returns anything that doesn't check
-  out, a deterministic heuristic takes over (outline levels or `Heading N`
-  styles, a bold-paragraph fallback, and a single implicit section for
-  heading-less files) — uploads never fail for lack of an API key. The
-  uploaded file itself is kept untouched as the source of truth.
-  Configure with `MODOCUMENT_DOCCREATION_SECTION_AI` (default `true`) and
-  `MODOCUMENT_DOCCREATION_SECTION_MODEL` (default: the global model).
-- **Review template coverage** on the blueprint detail page (coverage %, gaps,
-  health checklist). Edit sections or re-run AI when something is missing.
-- **Fill each section** with **form fields** (FORM sections) and/or **paragraphs
-  and pictures** (NARRATIVE sections). Bulk-drop all images at
-  once: file names are matched against each section's editable keywords ("roof"
-  claims `Roof_East_02.jpg`, "dc2" claims `dc2-overview.png`) and placed
-  automatically; unmatched images wait in an **Unsorted tray** instead of being
-  lost.
-- **One click reproduces the document in that exact manner** — the **AI
-  composes the final document**: it is handed the full template plus everything
-  you added and returns the complete document as an assembly plan (where each
-  paragraph and image goes, wording polished into the document's tone). The
-  plan is validated so the output is provably exact — every original element
-  kept once, in order; every user block placed exactly once; nothing invented —
-  and rendered onto the original file, so layout, styles and letterhead survive
-  byte-for-byte. The deterministic engine takes over whenever AI is disabled
-  (`MODOCUMENT_DOCCREATION_GENERATE_AI=false`), unconfigured, over quota, or
-  its plan fails validation. Output: an editable **.docx** always, plus **PDF**
-  when LibreOffice is available (it ships in the Docker image; without it the
-  PDF endpoint answers 409 and the .docx keeps working).
-- **Per-company flows:** the flow behind the engine is a strategy bean selected
-  by the blueprint's `companyId` (`DocumentCreationFlow` → section parsing,
-  image auto-assignment, generation decoration). The DEFAULT flow covers
-  everything above; giving a company its own flow is one new `@Component`
-  implementing the interface — nothing else changes. There is no Company table
-  yet: `companyId` is a free-form key, and every blueprint/document is owned by
-  the user who created it like all other data.
+### Document creation (exact PDF templates)
+The template **is the original PDF**: logo, fonts, layout, colours and page
+geometry stay exactly as uploaded. Documents store only values and photos;
+generation draws them onto the template. Output is **PDF only** (the Word
+path is gone; see [docs/doccreation/pdf-templates-contract.md](docs/doccreation/pdf-templates-contract.md)).
+- **Two upload flows.** A **blank form** becomes the template as-is. A
+  **filled document** has its data removed first (text cut from the page,
+  AcroForm values cleared); the rest of the page stays pixel-identical. `AUTO`
+  lets the engine decide. Only real PDFs are accepted, checked by their bytes
+  (`%PDF-`); password-protected files and files over 500 pages are refused.
+- **Review before saving.** The upload is a DRAFT: the proposed fill-in areas
+  (text, multi-line, date, number, checkbox, photo, signature) and, for a filled
+  document, each removed value shown next to its box. The removed sample values
+  exist only during the review and are deleted when the template is confirmed.
+- **Template editor.** Draw, move and resize regions; set label, kind, group,
+  font size, alignment and "required"; erase anything ("remove this"), replace
+  or add text, add a logo. Every save is a new **version**; documents keep the
+  version they were started from. Concurrent edits get a 409 instead of
+  overwriting each other. Page previews are rendered server-side and cached.
+- **Code first, AI only adds.** AcroForm widgets, leader lines, empty boxes and
+  `Label:` gaps are detected by code; with **Template AI assistance**
+  (`doccreation.sectionAiEnabled`, default on, also off with the bank's AI
+  master switch) the model may improve labels and recall, validated against the
+  real page geometry.
+- **WYSIWYG builder.** The template pages are shown exactly, with inputs on the
+  regions. Values are **merged per field**, so saving one never wipes another.
+  Text that does not fit is shrunk down to `doccreation.pdfMinFontSize` (default
+  6 pt, 4–10) and then continues on an added page; the builder warns early.
+- **Photos.** Upload them once into a tray; **auto-fill** places them by file
+  name (matched against each photo box's label, key and group) and then in
+  reading order. Drag a photo onto any photo box; a filled box swaps.
+- **Exact output.** Generation re-checks its own output: outside the filled
+  regions every page must be pixel-identical to the template, or the PDF is
+  refused (`500 EXACTNESS_FAILED`, audited). Release review (submit, release,
+  reject, review file) works on the generated PDF.
+- **Word templates from earlier versions** are hidden from the lists and answer
+  `410 GONE`; a bank administrator removes them, with their documents and
+  files, through the audited `POST /api/admin/doccreation/purge-legacy`.
 
 ## Quick start
 
@@ -670,22 +664,23 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/doccreation/blueprints` | Upload a .docx or .pdf template (optional `stripSampleData`, `name`, `companyId`); AI/heuristic sections + coverage on the response |
-| `PUT /api/doccreation/instances/{id}/fields` | Save form field values for FORM sections |
-| `GET /api/doccreation/blueprints[/{id}]` | List / get blueprints with their sections |
-| `GET /api/doccreation/blueprints/{id}/file` | Download the original blueprint |
-| `PUT .../blueprints/{id}/sections/{sectionId}/keywords` | Tune a section's image auto-assignment keywords |
+| `POST /api/doccreation/blueprints` | Upload a PDF (`file`, optional `name`, `companyId`, `flow=BLANK\|WITH_DATA\|AUTO`); returns the DRAFT with proposed regions and removals |
+| `GET /api/doccreation/blueprints[/{id}?version=N]` | List PDF templates / get one version's overlay (boxes as page fractions) |
+| `PUT /api/doccreation/blueprints/{id}/overlay` | Confirm the draft or save edits as a new version (`baseVersion`; 409 when stale) |
+| `GET /api/doccreation/blueprints/{id}/pages/{page}?variant=original\|template` | Page preview (PNG, cached) |
+| `POST /api/doccreation/blueprints/{id}/edit-images` | Upload a logo/image for an ADD_IMAGE edit |
+| `GET /api/doccreation/blueprints/{id}/versions` | Version history |
+| `GET /api/doccreation/blueprints/{id}/file?variant=original\|template` | Download the original or a version's template PDF |
 | `DELETE /api/doccreation/blueprints/{id}` | Delete (409 while documents build on it) |
-| `POST /api/doccreation/instances` | Start a document from a blueprint |
-| `GET /api/doccreation/instances/{id}` | Builder view: sections + blocks + Unsorted tray + `pdfAvailable` |
-| `POST .../instances/{id}/sections/{sectionId}/blocks` | Add a paragraph or image block |
-| `PUT /api/doccreation/blocks/{blockId}` / `DELETE` | Edit / remove a block (an image block's asset returns to Unsorted) |
-| `PUT .../instances/{id}/sections/{sectionId}/blocks/order` | Reorder a section's blocks |
-| `POST /api/doccreation/instances/{id}/assets` | Bulk image upload with keyword auto-assignment |
-| `GET /api/doccreation/assets/{assetId}/content` | Image bytes for authenticated previews |
-| `PUT /api/doccreation/assets/{assetId}/assignment` | Place an image in a section or back to Unsorted |
-| `POST /api/doccreation/instances/{id}/generate` | Reproduce the document (.docx always, PDF when available) |
-| `GET /api/doccreation/instances/{id}/download?format=docx\|pdf` | Download the generated file (regenerates when stale) |
+| `POST /api/doccreation/instances` | Start a document (409 on a DRAFT template) |
+| `GET /api/doccreation/instances/{id}` | Builder view: pages, regions, values, photos, overflow warnings |
+| `PUT /api/doccreation/instances/{id}/values` | Merge values (empty string clears a key) |
+| `POST /api/doccreation/instances/{id}/images` | Upload photos (`files`, `autoFill`) |
+| `PUT` / `DELETE /api/doccreation/instances/{id}/images/{imageId}` | Place a photo (swap) or back to the tray / delete it |
+| `GET /api/doccreation/instances/{id}/pages/{page}` | Preview a page with the values drawn in |
+| `POST /api/doccreation/instances/{id}/generate` | Generate the PDF (exactness-checked) |
+| `GET /api/doccreation/instances/{id}/download` | Download the PDF (regenerates when stale) |
+| `POST /api/admin/doccreation/purge-legacy` | Bank admin: delete the old Word templates and their documents |
 
 ## Ingestion walkthrough
 
