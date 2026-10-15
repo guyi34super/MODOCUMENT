@@ -21,11 +21,15 @@ e2e/
                           seeding (API first, SQL only for the fresh-install deadlock),
                           fake-LLM control, Playwright fixtures; phase2.js (settings,
                           dashboard, onboarding, announcements, extraction helpers);
-                          integration.js + banksim.js (Wave 3, written against the contracts)
-  fixtures/               employees.csv, pdf.js (free-text PDF writer for the AI path)
+                          integration.js + banksim.js (Wave 3, written against the contracts);
+                          doccreation.js + pdf-inspect.js (exact PDF templates: page PNGs,
+                          page count and text of a generated PDF, no dependencies)
+  fixtures/               employees.csv, pdf.js (free-text PDF writer for the AI path),
+                          pdf-form.js (multi-page form PDF writer: text, boxes, images;
+                          blank and filled twins), png.js (PNG encode/decode/pixel diff)
   tests/                  00-harness, 01-auth, 02-templates-ingestion, 03-session (@smoke)
                           04-known-bugs (@bug), phase2/* (@phase2 @waveN; all live
-                          since Wave 4 except AC-EXT-13)
+                          since Wave 4 except AC-EXT-13); phase2/pdf-templates (@pdf)
 ```
 
 Phase-2 status (Wave 4 QA round): every phase-2 spec is **live**, including
@@ -170,6 +174,8 @@ Run it alone with `FAKE_LLM_PORT=18089 node stubs/fake-llm.mjs`.
 |---|---|---|---|
 | BUG-01 | P1 | **Fixed (Wave 2)** — kept as a regression test. `POST /api/auth/mfa/verify` returned 502 under `modocument_app` (LOGIN_SUCCESS audit flushed outside the tenant binding). | — |
 | BUG-02 | P4 | **Fixed (Wave 2)** — kept as a regression test. "Your session expired" after a forced password change. | — |
+| BUG-PDF-01 | P3 | **Open** — `test.fixme` PDF-02b in `tests/phase2/pdf-templates.spec.js`. A low-confidence data guess (confidence < 0.6, e.g. a free-standing e-mail or date that may be static form text) is removed by default: the upload cuts it from the draft template and "Confirm template" keeps the removal unless the user restores it; the plan says such guesses are shown for review, not applied. | Restore the flagged removal in the editor (the checklist lists it). |
+| BUG-PDF-02 | P2 | **Fixed (QA, exact PDF templates)** — kept as a regression test (`PdfContentEditorTest.removedValuesLeaveNoPerGlyphWidthsBehind`, PDF-02). A removed value stayed in the template PDF as a TJ of its glyph widths (word lengths, `@`, digit groups of the customer's data). | — |
 | BUG-04 | P4 | **Fixed (Wave 4)** — kept as a regression test. After a forced password change the inline "Password changed — sign in again" notice never showed (ProtectedRoute redirected before the page navigated with state). `logout({notice})` now commits the notice with the sign-out and ProtectedRoute's redirect carries it. | — |
 
 An open bug's test fails until the bug is fixed; from phase 2 Wave 2 on, a

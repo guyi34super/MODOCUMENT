@@ -758,7 +758,9 @@ export default function DocBuilderPage() {
                                 <span className="mb-0.5 block">
                                   {label}
                                   {region.required && <span className="ml-0.5 text-danger-ink">*</span>}
-                                  <span className="ml-1 text-xs text-muted">page {region.page + 1}</span>
+                                  {/* A real space: inline spans alone make one word of the name ("Full namepage 1"). */}
+                                  {' '}
+                                  <span className="text-xs text-muted">page {region.page + 1}</span>
                                 </span>
                                 {input}
                               </label>
