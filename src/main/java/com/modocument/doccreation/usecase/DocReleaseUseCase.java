@@ -326,6 +326,7 @@ public class DocReleaseUseCase {
         List<PendingReleaseDto.ReviewSectionDto> sectionDtos = blueprint
                 .map(b -> context.sections().getOrDefault(b.getDocBlueprintId(), List.of()))
                 .orElse(List.of()).stream()
+                .filter(s -> s.getVersion() == instance.getBlueprintVersion())
                 .map(s -> toReviewSection(s, blocksBySection, assetsById))
                 .toList();
         return new PendingReleaseDto(

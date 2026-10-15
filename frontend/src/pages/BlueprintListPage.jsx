@@ -99,11 +99,12 @@ export default function BlueprintListPage() {
         <Card className="mb-6">
           <h2 className="mb-1 text-lg font-normal">Upload a blueprint</h2>
           <p className="mb-4 text-sm text-muted">
-            Word (.docx) or PDF (.pdf). PDFs are converted to Word on the server (LibreOffice);
-            scanned or image-only PDFs may not section well unless they contain extractable text.
-            The engine breaks the template into sections by its headings; each section becomes a
-            place to add paragraphs and pictures, and generation reproduces the document exactly
-            with your additions in place.
+            Word (.docx) or PDF (.pdf). A PDF is rebuilt as an editable Word document: its text,
+            headings and filled-in form values are kept, scanned pages are read with OCR, and the
+            layout is simplified. The AI then breaks the template into sections (falling back to
+            its headings when AI is off); each section becomes a place to add paragraphs and
+            pictures, and you can fix the sections afterwards. Generation reproduces the stored
+            Word document with your additions in place.
           </p>
           <form onSubmit={upload} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -156,6 +157,11 @@ export default function BlueprintListPage() {
               ),
             },
             { key: 'sectionCount', label: 'Sections' },
+            {
+              key: 'currentVersion',
+              label: 'Version',
+              render: (row) => `v${row.currentVersion ?? 1}`,
+            },
             { key: 'instanceCount', label: 'Documents' },
             { key: 'companyId', label: 'Company', render: (row) => row.companyId || '—' },
             { key: 'flowKey', label: 'Flow' },

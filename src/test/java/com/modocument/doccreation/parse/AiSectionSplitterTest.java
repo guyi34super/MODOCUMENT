@@ -158,6 +158,75 @@ class AiSectionSplitterTest {
     }
 
     @Test
+    void aDocumentWithoutParagraphTextNeverCallsTheModel() throws IOException {
+        Path empty = tempDir.resolve("empty.docx");
+        try (XWPFDocument doc = new XWPFDocument(); OutputStream out = Files.newOutputStream(empty)) {
+            doc.createParagraph();
+            doc.createParagraph().createRun().setText("   ");
+            doc.write(out);
+        }
+
+        assertThat(splitter.split(empty)).isEmpty();
+        verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());
+    }
+
+    @Test
+    void aLongDocumentIsSentAsACondensedHeadingListingWithRealIndexes() throws IOException {
+        Path big = tempDir.resolve("big.docx");
+        String body = "This paragraph is ordinary body text describing the findings in some detail, "
+                + "long enough that the whole listing runs past the AI listing cap. ";
+        int scopeIndex;
+        try (XWPFDocument doc = new XWPFDocument(); OutputStream out = Files.newOutputStream(big)) {
+            doc.createParagraph().createRun().setText("1. Introduction");
+            for (int i = 0; i < 200; i++) {
+                doc.createParagraph().createRun().setText(body + java.util.UUID.randomUUID() + " "
+                        + java.util.UUID.randomUUID() + " " + java.util.UUID.randomUUID());
+            }
+            doc.createParagraph().createRun().setText("2. Scope of works");
+            scopeIndex = doc.getBodyElements().size() - 1;
+            for (int i = 0; i < 200; i++) {
+                doc.createParagraph().createRun().setText(body + java.util.UUID.randomUUID() + " "
+                        + java.util.UUID.randomUUID() + " " + java.util.UUID.randomUUID());
+            }
+            doc.write(out);
+        }
+        org.mockito.ArgumentCaptor<PromptEnvelope> prompt = org.mockito.ArgumentCaptor.forClass(PromptEnvelope.class);
+        when(ai.sendForObject(prompt.capture(), any())).thenReturn(List.of(
+                new AiSectionSplitter.AiSection(0, "Introduction", 1, List.of()),
+                new AiSectionSplitter.AiSection(scopeIndex, "Scope of works", 1, List.of())));
+
+        Optional<List<ParsedSection>> result = splitter.split(big);
+
+        assertThat(result).isPresent();
+        assertThat(result.get()).extracting(ParsedSection::anchorParagraphIndex).containsExactly(0, scopeIndex);
+        String sent = prompt.getValue().text();
+        assertThat(sent).contains("ONLY the lines most likely to be headings");
+        assertThat(sent).contains("[" + scopeIndex + "] 2. Scope of works");
+        assertThat(sent).doesNotContain("ordinary body text");
+    }
+
+    @Test
+    void headingCandidatesAreShortStructuredLines() {
+        try (XWPFDocument doc = new XWPFDocument()) {
+            assertThat(candidate(doc, "3.1 Earthing")).isTrue();
+            assertThat(candidate(doc, "SCHEDULE OF RATES")).isTrue();
+            assertThat(candidate(doc, "Annexure B - Declarations")).isTrue();
+            assertThat(candidate(doc, "Applicant details:")).isTrue();
+            assertThat(candidate(doc, "The applicant confirms that the information given in this form is "
+                    + "true and complete to the best of their knowledge and belief.")).isFalse();
+            assertThat(candidate(doc, "")).isFalse();
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    private static boolean candidate(XWPFDocument doc, String text) {
+        org.apache.poi.xwpf.usermodel.XWPFParagraph paragraph = doc.createParagraph();
+        paragraph.createRun().setText(text);
+        return AiSectionSplitter.isHeadingCandidate(paragraph);
+    }
+
+    @Test
     void digestListsParagraphsWithIndexesAndMarksTables() throws IOException {
         try (XWPFDocument doc = new XWPFDocument(Files.newInputStream(docx))) {
             String digest = AiSectionSplitter.digest(List.copyOf(doc.getBodyElements()));

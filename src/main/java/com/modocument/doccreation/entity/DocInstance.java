@@ -38,6 +38,10 @@ public class DocInstance {
     @Column(name = "BlueprintId")
     private int blueprintId;
 
+    /** The blueprint section-structure version this document builds on (V291). */
+    @Column(name = "BlueprintVersion", nullable = false)
+    private int blueprintVersion = 1;
+
     @Column(name = "Title")
     private String title;
 
@@ -140,6 +144,14 @@ public class DocInstance {
 
     public void setBlueprintId(int blueprintId) {
         this.blueprintId = blueprintId;
+    }
+
+    public int getBlueprintVersion() {
+        return blueprintVersion;
+    }
+
+    public void setBlueprintVersion(int blueprintVersion) {
+        this.blueprintVersion = blueprintVersion;
     }
 
     public String getTitle() {

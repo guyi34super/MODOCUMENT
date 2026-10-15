@@ -9,11 +9,14 @@ public record SectionDto(int sectionId,
                          int orderIndex,
                          String title,
                          int headingLevel,
-                         List<String> keywords) {
+                         List<String> keywords,
+                         int anchorParagraphIndex,
+                         String anchorText) {
 
     public static SectionDto from(DocBlueprintSection section) {
         return new SectionDto(section.getDocBlueprintSectionId(), section.getOrderIndex(),
-                section.getTitle(), section.getHeadingLevel(), splitKeywords(section.getKeywords()));
+                section.getTitle(), section.getHeadingLevel(), splitKeywords(section.getKeywords()),
+                section.getAnchorParagraphIndex(), section.getAnchorText());
     }
 
     static List<String> splitKeywords(String commaSeparated) {

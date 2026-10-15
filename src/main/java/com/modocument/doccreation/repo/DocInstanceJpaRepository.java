@@ -47,4 +47,10 @@ public interface DocInstanceJpaRepository extends JpaRepository<DocInstance, Int
             + " where d.blueprintId in :blueprintIds group by d.blueprintId")
     List<Object[]> countByBlueprintIds(
             @org.springframework.data.repository.query.Param("blueprintIds") java.util.Collection<Integer> blueprintIds);
+
+    /** V291: rows of [BlueprintVersion, count (Long)] for one blueprint. */
+    @org.springframework.data.jpa.repository.Query("select d.blueprintVersion, count(d) from DocInstance d"
+            + " where d.blueprintId = :blueprintId group by d.blueprintVersion")
+    List<Object[]> countByBlueprintVersion(
+            @org.springframework.data.repository.query.Param("blueprintId") int blueprintId);
 }

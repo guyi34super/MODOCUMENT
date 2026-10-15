@@ -50,4 +50,9 @@ public interface DocInstanceRepository {
         }
         return counts;
     }
+
+    /** V291: how many instances (all owners) build on each version of one blueprint, keyed by version. */
+    default java.util.Map<Integer, Long> countByBlueprintVersion(int blueprintId) {
+        return java.util.Map.of();
+    }
 }

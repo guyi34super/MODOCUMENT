@@ -265,6 +265,17 @@ function SectionCard({ instanceId, section, onChanged }) {
   );
 }
 
+/** "Blueprint: X · built on template version N" (+ a note when the template has moved on). */
+function builderSubtitle(doc) {
+  const version = doc.blueprintVersion ?? 1;
+  const current = doc.blueprintCurrentVersion ?? version;
+  const newer =
+    current > version
+      ? ` (template is now at version ${current}; this document keeps version ${version})`
+      : '';
+  return `Blueprint: ${doc.blueprintName} · built on template version ${version}${newer}`;
+}
+
 export default function DocBuilderPage() {
   const { id } = useParams();
   const toast = useToast();
@@ -393,7 +404,7 @@ export default function DocBuilderPage() {
         sticky
         crumbs={[{ label: 'My Documents', to: '/creation/documents' }, { label: doc?.title || `#${id}` }]}
         title={doc?.title || 'Document'}
-        subtitle={doc ? `Blueprint: ${doc.blueprintName}` : undefined}
+        subtitle={doc ? builderSubtitle(doc) : undefined}
         actions={
           doc && (
             <>

@@ -125,6 +125,7 @@ public class DocInstanceUseCase {
         instance.setOwnerUserId(ownership.requireUserId());
         instance.setBankId(ownership.requireBankId());
         instance.setBlueprintId(blueprintId);
+        instance.setBlueprintVersion(blueprint.getCurrentVersion());
         instance.setTitle(title.strip());
         instance.setStatus(DocInstance.STATUS_DRAFT);
         instance.setCreatedDate(LocalDateTime.now());
@@ -147,7 +148,7 @@ public class DocInstanceUseCase {
     public InstanceBuilderDto getBuilder(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
         DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
-        List<DocBlueprintSection> sectionList = sections.listByBlueprint(blueprint.getDocBlueprintId());
+        List<DocBlueprintSection> sectionList = sectionsOf(instance, blueprint);
         Map<Integer, List<DocContentBlock>> blocksBySection = blocks.listByInstance(instanceId).stream()
                 .collect(Collectors.groupingBy(DocContentBlock::getSectionId));
         Map<Integer, DocImageAsset> assetsById = assets.listByInstance(instanceId).stream()
@@ -175,7 +176,13 @@ public class DocInstanceUseCase {
                 blueprint.getDocBlueprintId(), blueprint.getName(), instance.getStatus(),
                 instance.getLastGeneratedDate(), pdfConverter.isAvailable(),
                 instance.isAiComposed(), instance.getSubmittedAt(), instance.getReleasedAt(),
-                instance.getReviewComment(), sectionDtos, unsorted);
+                instance.getReviewComment(), sectionDtos, unsorted,
+                instance.getBlueprintVersion(), blueprint.getCurrentVersion());
+    }
+
+    /** The sections of the blueprint version this document was started from. */
+    private List<DocBlueprintSection> sectionsOf(DocInstance instance, DocBlueprint blueprint) {
+        return sections.listByBlueprintVersion(blueprint.getDocBlueprintId(), instance.getBlueprintVersion());
     }
 
     @Transactional
@@ -311,7 +318,7 @@ public class DocInstanceUseCase {
     public BulkUploadResultDto uploadAssets(int instanceId, List<MultipartFile> files, boolean autoAssign) {
         DocInstance instance = ownership.requireInstance(instanceId);
         DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
-        List<DocBlueprintSection> sectionList = sections.listByBlueprint(blueprint.getDocBlueprintId());
+        List<DocBlueprintSection> sectionList = sectionsOf(instance, blueprint);
         DocumentCreationFlow flow = flows.flowFor(blueprint.getCompanyId());
 
         List<BulkUploadResultDto.AssignedDto> assigned = new ArrayList<>();
@@ -444,7 +451,7 @@ public class DocInstanceUseCase {
     public GenerationResultDto generate(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
         DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
-        List<DocBlueprintSection> sectionList = sections.listByBlueprint(blueprint.getDocBlueprintId());
+        List<DocBlueprintSection> sectionList = sectionsOf(instance, blueprint);
         // REPORT channel (gate C2, PRIV-005): a generated document carries
         // only user-typed content blocks (no job data is injected into this
         // path), so PII value SHAPES in their text and captions — NIC,
@@ -644,7 +651,8 @@ public class DocInstanceUseCase {
 
     private DocBlueprintSection requireSectionOf(DocInstance instance, int sectionId) {
         return sections.getById(sectionId)
-                .filter(s -> s.getBlueprintId() == instance.getBlueprintId())
+                .filter(s -> s.getBlueprintId() == instance.getBlueprintId()
+                        && s.getVersion() == instance.getBlueprintVersion())
                 .orElseThrow(() -> new NoSuchElementException("Section " + sectionId + " not found."));
     }
 

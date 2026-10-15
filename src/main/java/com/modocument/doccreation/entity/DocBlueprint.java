@@ -59,7 +59,19 @@ public class DocBlueprint {
     @Column(name = "UpdatedDate")
     private LocalDateTime updatedDate;
 
+    /** The section-structure version new documents pin (V291). */
+    @Column(name = "CurrentVersion", nullable = false)
+    private int currentVersion = 1;
+
     public DocBlueprint() {
+    }
+
+    public int getCurrentVersion() {
+        return currentVersion;
+    }
+
+    public void setCurrentVersion(int currentVersion) {
+        this.currentVersion = currentVersion;
     }
 
     @JsonIgnore

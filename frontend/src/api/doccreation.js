@@ -14,8 +14,32 @@ export function listBlueprints() {
   return api.get('/api/doccreation/blueprints');
 }
 
-export function getBlueprint(id) {
-  return api.get(`/api/doccreation/blueprints/${id}`);
+/** `version` (optional) reads an older version read-only; omitted = the current one. */
+export function getBlueprint(id, version) {
+  const query = version ? `?version=${encodeURIComponent(version)}` : '';
+  return api.get(`/api/doccreation/blueprints/${id}${query}`);
+}
+
+export function listBlueprintVersions(id) {
+  return api.get(`/api/doccreation/blueprints/${id}/versions`);
+}
+
+/** The stored document's paragraphs ({ index, text, style, headingCandidate }) for the section picker. */
+export function getBlueprintParagraphs(id) {
+  return api.get(`/api/doccreation/blueprints/${id}/paragraphs`);
+}
+
+/**
+ * Saves the whole edited section list as a new version.
+ * `sections`: [{ title, headingLevel, anchorParagraphIndex, keywords }].
+ */
+export function saveBlueprintSections(id, baseVersion, sections, note) {
+  return api.put(`/api/doccreation/blueprints/${id}/sections`, { baseVersion, note, sections });
+}
+
+/** Re-runs the AI section breakdown on the stored document; the result is a new version. */
+export function resectionBlueprint(id, baseVersion, note) {
+  return api.post(`/api/doccreation/blueprints/${id}/resection`, { baseVersion, note });
 }
 
 export function downloadBlueprintFile(id, fallbackName = 'blueprint.docx') {

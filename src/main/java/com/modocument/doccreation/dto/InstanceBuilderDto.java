@@ -16,7 +16,9 @@ public record InstanceBuilderDto(int instanceId,
                                  LocalDateTime releasedAt,
                                  String reviewComment,
                                  List<BuilderSectionDto> sections,
-                                 List<UnsortedAssetDto> unsortedAssets) {
+                                 List<UnsortedAssetDto> unsortedAssets,
+                                 int blueprintVersion,
+                                 int blueprintCurrentVersion) {
 
     public record BuilderSectionDto(int sectionId,
                                     int orderIndex,

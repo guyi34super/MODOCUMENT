@@ -5,7 +5,7 @@
 # docs/api/versioning-policy.md. Regenerate with:
 #   mvn -Dtest=OpenApiContractTest \
 #       -Dmodocument.contract.update=true test
-# 211 operations.
+# 215 operations.
 POST /ImportDetails/Create
 GET /ImportDetails/GetAll
 GET /ImportDetails/GetById/{id}
@@ -134,7 +134,11 @@ POST /api/doccreation/blueprints
 DELETE /api/doccreation/blueprints/{id}
 GET /api/doccreation/blueprints/{id}
 GET /api/doccreation/blueprints/{id}/file
+GET /api/doccreation/blueprints/{id}/paragraphs
+POST /api/doccreation/blueprints/{id}/resection
+PUT /api/doccreation/blueprints/{id}/sections
 PUT /api/doccreation/blueprints/{id}/sections/{sectionId}/keywords
+GET /api/doccreation/blueprints/{id}/versions
 GET /api/doccreation/instances
 POST /api/doccreation/instances
 GET /api/doccreation/instances/pending-release

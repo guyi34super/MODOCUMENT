@@ -65,6 +65,11 @@ public class DocInstanceRepositoryImpl implements DocInstanceRepository {
         return blueprintIds.isEmpty() ? java.util.Map.of() : counts(jpa.countByBlueprintIds(blueprintIds));
     }
 
+    @Override
+    public java.util.Map<Integer, Long> countByBlueprintVersion(int blueprintId) {
+        return counts(jpa.countByBlueprintVersion(blueprintId));
+    }
+
     private static java.util.Map<Integer, Long> counts(List<Object[]> rows) {
         java.util.Map<Integer, Long> counts = new java.util.LinkedHashMap<>();
         for (Object[] row : rows) {
