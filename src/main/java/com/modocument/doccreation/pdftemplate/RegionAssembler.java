@@ -152,7 +152,7 @@ final class RegionAssembler {
         Rect box = frame.toBoxSpace(c.removeBox);
         String id = stableId(seed + "|" + c.page + "|" + box);
         return new TemplateEdit(id, EditKind.REMOVE, box.toBox(c.page), null, null, null, null, null,
-                EditSource.DATA_REMOVAL, round(c.confidence), c.sample);
+                EditSource.DATA_REMOVAL, round(c.confidence), c.sample, c.key);
     }
 
     /** A UUID-shaped id derived from SHA-256, so the same upload proposes the same edit ids. */

@@ -39,6 +39,7 @@ import java.io.UncheckedIOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -114,9 +115,14 @@ public class DocBlueprintUseCase {
 
     /**
      * Analyses the uploaded PDF and stores it as a DRAFT template with the
-     * proposed regions (and, WITH_DATA, the proposed removals already applied
-     * to the draft's template PDF). Deliberately not one transaction: the
-     * analysis may call the model; only the writes are transactional.
+     * proposed regions (and, WITH_DATA, the proposed removals at or above
+     * {@link RemovalPolicy#APPLY_THRESHOLD} already applied to the draft's
+     * template PDF). Lower-confidence removals and their linked DATA_REMOVED
+     * regions are only SUGGESTED (BUG-PDF-01): kept in the draft review data,
+     * returned with {@code applied:false} / {@code suggested:true}, and never
+     * applied unless the client sends them back. Deliberately not one
+     * transaction: the analysis may call the model; only the writes are
+     * transactional.
      *
      * @throws DocCreationException 400 NOT_A_PDF / ENCRYPTED / TOO_MANY_PAGES / UNREADABLE
      */
@@ -157,9 +163,22 @@ public class DocBlueprintUseCase {
             throw DocCreationException.badPdf("UNREADABLE", "The PDF has no readable pages.");
         }
         UploadFlow flow = analysis.flowUsed() == UploadFlow.WITH_DATA ? UploadFlow.WITH_DATA : UploadFlow.BLANK;
-        List<TemplateRegion> proposed = OverlayMapper.normalizeProposed(analysis.regions(), pages.size());
-        List<TemplateEdit> removals = flow == UploadFlow.WITH_DATA
-                ? OverlayMapper.normalizeProposedEdits(analysis.removals(), pages.size()) : List.of();
+        List<TemplateRegion> allRegions = OverlayMapper.normalizeProposed(analysis.regions(), pages.size());
+        List<TemplateEdit> allRemovals = flow == UploadFlow.WITH_DATA
+                ? linked(OverlayMapper.normalizeProposedEdits(analysis.removals(), pages.size()), allRegions)
+                : List.of();
+        List<TemplateEdit> removals = allRemovals.stream().filter(RemovalPolicy::appliesByDefault).toList();
+        List<TemplateEdit> suggestions = allRemovals.stream().filter(e -> !RemovalPolicy.appliesByDefault(e))
+                .toList();
+        Set<String> suggestedKeys = new HashSet<>();
+        for (TemplateEdit suggestion : suggestions) {
+            if (suggestion.regionKey() != null) {
+                suggestedKeys.add(suggestion.regionKey());
+            }
+        }
+        List<TemplateRegion> proposed = allRegions.stream().filter(r -> !suggestedKeys.contains(r.key())).toList();
+        List<TemplateRegion> suggestedRegions = allRegions.stream().filter(r -> suggestedKeys.contains(r.key()))
+                .toList();
         try {
             draftTemplate = flow == UploadFlow.WITH_DATA
                     ? store.engine().applyEdits(pdf, removals, Map.of(), true) : pdf;
@@ -167,14 +186,15 @@ public class DocBlueprintUseCase {
             throw DocCreationException.badPdf(e.code(), describe(e));
         }
         String detectedBy = analysis.detectedBy() == null ? "CODE" : truncate(analysis.detectedBy(), 16);
-        DraftReview review = draftReview(proposed, removals, analysis.warnings(), detectedBy);
+        DraftReview review = draftReview(proposed, removals, suggestions, suggestedRegions, pages,
+                analysis.warnings(), detectedBy);
 
         String finalName = blueprintName;
         DocBlueprint created = transaction.execute(status -> persistDraft(pdf, draftTemplate, finalName,
                 originalName, cleanCompany, flow, pages, proposed, removals, review));
-        log.info("PDF template {} '{}' uploaded: {} page(s), flow {}, {} region(s), {} removal(s), {}",
-                created.getDocBlueprintId(), finalName, pages.size(), flow, proposed.size(), removals.size(),
-                detectedBy);
+        log.info("PDF template {} '{}' uploaded: {} page(s), flow {}, {} region(s), {} removal(s), "
+                        + "{} suggested removal(s), {}", created.getDocBlueprintId(), finalName, pages.size(), flow,
+                proposed.size(), removals.size(), suggestions.size(), detectedBy);
         return toDto(created, 1);
     }
 
@@ -221,6 +241,7 @@ public class DocBlueprintUseCase {
         values.put("pages", pages.size());
         values.put("regions", proposed.size());
         values.put("removals", removals.size());
+        values.put("suggestedRemovals", review.suggestions().size());
         values.put("detectedBy", review.detectedBy());
         audit.record(AuditEventSpec.builder("DOC_BLUEPRINT_CREATED", AuditOutcome.SUCCESS)
                 .entity("DocBlueprint", String.valueOf(id))
@@ -314,6 +335,13 @@ public class DocBlueprintUseCase {
      *   <li>a DRAFT, {@code confirm} false: the draft's version 1, still DRAFT;</li>
      *   <li>a READY template: version N+1.</li>
      * </ul>
+     * The server applies exactly the applied edits and kept regions the
+     * client sends (BUG-PDF-01): an edit sent with {@code applied:false} (a
+     * suggested removal not applied) and a region sent with
+     * {@code suggested:true} are ignored, not refused. Confirming a draft
+     * deletes the remaining suggestions with the rest of the review data; a
+     * {@code confirm:false} draft save keeps them, so a suggestion dismissed
+     * only in the editor is shown again after reloading such a draft.
      *
      * @throws IllegalStateException when {@code baseVersion} is stale (409)
      * @throws IllegalArgumentException for invalid geometry, kinds or duplicate keys (400)
@@ -452,14 +480,33 @@ public class DocBlueprintUseCase {
         List<PageInfo> pages = TemplateVersions.pages(blueprint);
         boolean draft = TemplateVersions.isDraft(blueprint);
         DraftReview review = draft ? loadDraft(blueprint) : DraftReview.EMPTY;
-        List<RegionDto> regionDtos = templates.regions(blueprint, version).stream()
-                .map(r -> OverlayMapper.toDto(r, pages, draft ? review.samples().get(r.key()) : null))
-                .toList();
-        List<EditDto> editDtos = templates.edits(blueprint, version).stream()
-                .map(e -> OverlayMapper.toDto(e, pages,
-                        draft ? review.editConfidence().get(e.id()) : null,
-                        draft ? review.removed().get(e.id()) : null))
-                .toList();
+        Map<String, String> suggestedSamples = new HashMap<>();
+        review.suggestedRegions().stream().filter(r -> r.sampleValue() != null)
+                .forEach(r -> suggestedSamples.put(r.key(), r.sampleValue()));
+        List<RegionDto> regionDtos = new ArrayList<>(templates.regions(blueprint, version).stream()
+                .map(r -> OverlayMapper.toDto(r, pages, draft
+                        ? review.samples().getOrDefault(r.key(), suggestedSamples.get(r.key())) : null, false))
+                .toList());
+        // A suggestion the client applied in a draft save is a stored edit now; its review data stays here.
+        Map<String, EditDto> suggestionById = new HashMap<>();
+        review.suggestions().forEach(s -> suggestionById.put(s.id(), s));
+        List<EditDto> editDtos = new ArrayList<>(templates.edits(blueprint, version).stream()
+                .map(e -> {
+                    if (!draft) {
+                        return OverlayMapper.toDto(e, pages, null, null, true, null);
+                    }
+                    EditDto suggestion = suggestionById.get(e.id());
+                    return OverlayMapper.toDto(e, pages,
+                            review.editConfidence().getOrDefault(e.id(),
+                                    suggestion == null ? null : suggestion.confidence()),
+                            review.removed().getOrDefault(e.id(), suggestion == null ? null : suggestion.removedText()),
+                            true, review.editRegions().getOrDefault(e.id(),
+                                    suggestion == null ? null : suggestion.regionKey()));
+                })
+                .toList());
+        if (draft) {
+            addPendingSuggestions(review, editDtos, regionDtos);
+        }
         String detectedBy = versions.get(blueprint.getDocBlueprintId(), 1)
                 .map(DocBlueprintVersion::getSectionSource).orElse(review.detectedBy());
         return new BlueprintDto(blueprint.getDocBlueprintId(), blueprint.getName(), TemplateVersions.status(blueprint),
@@ -479,8 +526,51 @@ public class DocBlueprintUseCase {
         }
     }
 
+    /**
+     * Adds the suggested removals (BUG-PDF-01) the client has not applied
+     * yet (their id is not a stored edit) and, for those, their linked
+     * regions (unless a stored region took that key).
+     */
+    private static void addPendingSuggestions(DraftReview review, List<EditDto> editDtos,
+                                              List<RegionDto> regionDtos) {
+        Set<String> editIds = new HashSet<>();
+        editDtos.forEach(e -> editIds.add(e.id()));
+        Set<String> regionKeys = new HashSet<>();
+        regionDtos.forEach(r -> regionKeys.add(r.key()));
+        Set<String> pendingRegionKeys = new HashSet<>();
+        for (EditDto suggestion : review.suggestions()) {
+            if (!editIds.contains(suggestion.id())) {
+                editDtos.add(suggestion);
+                if (suggestion.regionKey() != null) {
+                    pendingRegionKeys.add(suggestion.regionKey());
+                }
+            }
+        }
+        for (RegionDto region : review.suggestedRegions()) {
+            if (pendingRegionKeys.contains(region.key()) && !regionKeys.contains(region.key())) {
+                regionDtos.add(region);
+            }
+        }
+    }
+
+    /** The removals with their region links kept only where the linked region was proposed (once). */
+    private static List<TemplateEdit> linked(List<TemplateEdit> removals, List<TemplateRegion> regions) {
+        Set<String> keys = new HashSet<>();
+        regions.forEach(r -> keys.add(r.key()));
+        Set<String> taken = new HashSet<>();
+        List<TemplateEdit> out = new ArrayList<>();
+        for (TemplateEdit e : removals) {
+            boolean keep = e.regionKey() != null && keys.contains(e.regionKey()) && taken.add(e.regionKey());
+            out.add(keep || e.regionKey() == null ? e
+                    : new TemplateEdit(e.id(), e.kind(), e.box(), e.text(), e.fontName(), e.fontSize(), e.color(),
+                            e.imageKey(), e.source(), e.confidence(), e.removedText(), null));
+        }
+        return out;
+    }
+
     private static DraftReview draftReview(List<TemplateRegion> proposed, List<TemplateEdit> removals,
-                                           List<String> warnings, String detectedBy) {
+                                           List<TemplateEdit> suggestions, List<TemplateRegion> suggestedRegions,
+                                           List<PageInfo> pages, List<String> warnings, String detectedBy) {
         Map<String, String> samples = new LinkedHashMap<>();
         for (TemplateRegion region : proposed) {
             if (region.sampleValue() != null && !region.sampleValue().isEmpty()) {
@@ -489,16 +579,32 @@ public class DocBlueprintUseCase {
         }
         Map<String, String> removed = new LinkedHashMap<>();
         Map<String, Double> confidence = new LinkedHashMap<>();
+        Map<String, String> editRegions = new LinkedHashMap<>();
         for (TemplateEdit edit : removals) {
             if (edit.removedText() != null && !edit.removedText().isEmpty()) {
                 removed.put(edit.id(), truncate(edit.removedText(), 2000));
             }
             confidence.put(edit.id(), edit.confidence());
+            if (edit.regionKey() != null) {
+                editRegions.put(edit.id(), edit.regionKey());
+            }
         }
+        List<EditDto> suggestionDtos = suggestions.stream()
+                .map(e -> OverlayMapper.toDto(e, pages, null, blankToNullTruncated(e.removedText()), false,
+                        e.regionKey()))
+                .toList();
+        List<RegionDto> suggestedRegionDtos = suggestedRegions.stream()
+                .map(r -> OverlayMapper.toDto(r, pages, blankToNullTruncated(r.sampleValue()), true))
+                .toList();
         List<String> cleanWarnings = warnings == null ? List.of()
                 : warnings.stream().filter(w -> w != null && !w.isBlank()).limit(50)
                         .map(w -> truncate(w, 500)).toList();
-        return new DraftReview(samples, removed, confidence, cleanWarnings, detectedBy);
+        return new DraftReview(samples, removed, confidence, cleanWarnings, detectedBy, suggestionDtos,
+                suggestedRegionDtos, editRegions);
+    }
+
+    private static String blankToNullTruncated(String value) {
+        return value == null || value.isEmpty() ? null : truncate(value, 2000);
     }
 
     /** The image keys uploaded for this template's ADD_IMAGE edits. */

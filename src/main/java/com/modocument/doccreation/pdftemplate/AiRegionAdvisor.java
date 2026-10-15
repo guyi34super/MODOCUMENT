@@ -16,6 +16,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -138,7 +139,10 @@ final class AiRegionAdvisor {
 
     // ------------------------------------------------------------------ regions
 
-    /** Relabels/regroups/re-kinds candidates. True when a valid reply was applied. */
+    /**
+     * Relabels/regroups/re-kinds candidates. True only when a valid reply actually changed a label, group
+     * or kind (an empty or no-op reply leaves {@code detectedBy} at CODE).
+     */
     boolean improveRegions(List<PageModel> pages, List<Candidate> cands, List<String> warnings) {
         if (cands.isEmpty()) {
             return false;
@@ -165,20 +169,25 @@ final class AiRegionAdvisor {
                 warnings.add("The AI suggestion for field labels was not usable; the code labels were kept.");
                 return false;
             }
+            boolean changed = false;
             for (RegionHint h : reply.regions()) {
                 Candidate c = byId.get(h.candidateId());
                 if (h.label() != null && !h.label().isBlank()) {
-                    c.label = Labels.clean(h.label());
-                    if (h.labelRunId() != null) {
-                        c.labelRun = l.runs.get(h.labelRunId());
-                    }
+                    String label = Labels.clean(h.label());
+                    TextRun labelRun = h.labelRunId() == null ? c.labelRun : l.runs.get(h.labelRunId());
+                    changed |= !Objects.equals(label, c.label) || labelRun != c.labelRun;
+                    c.label = label;
+                    c.labelRun = labelRun;
                 }
                 if (h.group() != null && !h.group().isBlank()) {
-                    c.group = Labels.clean(h.group());
+                    String group = Labels.clean(h.group());
+                    changed |= !Objects.equals(group, c.group);
+                    c.group = group;
                 }
                 if (h.kind() != null && !h.kind().isBlank()) {
                     RegionKind k = RegionKind.valueOf(h.kind().strip().toUpperCase(Locale.ROOT));
                     if (kindFits(c, k)) {
+                        changed |= k != c.kind;
                         c.kind = k;
                         c.maxLines = switch (k) {
                             case CHECKBOX, IMAGE, SIGNATURE -> 0;
@@ -188,7 +197,7 @@ final class AiRegionAdvisor {
                     }
                 }
             }
-            return true;
+            return changed;
         } catch (RuntimeException e) {
             log.warn("AI region labels unavailable, keeping the code result: {}", e.getMessage());
             return false;
@@ -261,6 +270,8 @@ final class AiRegionAdvisor {
     /**
      * Adds data runs the code missed (AI-only items get confidence 0.6, shown for review) and demotes code
      * proposals the model calls template text (never below the review line by deletion: they stay, at 0.4).
+     * True only when the reply changed the data classification (an item added, lifted or demoted); a valid
+     * reply that changes nothing leaves {@code detectedBy} at CODE.
      */
     boolean improveData(List<PageModel> pages, List<Candidate> data, List<Candidate> blanks,
                         SampleDataDetector detector, List<String> warnings) {
@@ -302,10 +313,13 @@ final class AiRegionAdvisor {
                     labelOf.put(h.runId(), h.labelRunId());
                 }
             }
+            boolean changed = false;
             for (String id : nullSafe(reply.templateRunIds())) {
                 Candidate c = proposedRuns.get(l.runs.get(id));
                 if (c != null) {
-                    c.confidence = Math.min(c.confidence, 0.4);
+                    double lowered = Math.min(c.confidence, 0.4);
+                    changed |= lowered != c.confidence;
+                    c.confidence = lowered;
                 }
             }
             for (String id : nullSafe(reply.dataRunIds())) {
@@ -313,7 +327,9 @@ final class AiRegionAdvisor {
                 Candidate existing = proposedRuns.get(run);
                 if (existing != null) {
                     // AI agrees with a code proposal: lift a review-only item over the line
-                    existing.confidence = Math.max(existing.confidence, Math.min(0.75, existing.confidence + 0.2));
+                    double lifted = Math.max(existing.confidence, Math.min(0.75, existing.confidence + 0.2));
+                    changed |= lifted != existing.confidence;
+                    existing.confidence = lifted;
                     continue;
                 }
                 String labelId = labelOf.get(id);
@@ -322,9 +338,10 @@ final class AiRegionAdvisor {
                 if (c != null) {
                     c.source = RegionSource.AI;
                     data.add(c);
+                    changed = true;
                 }
             }
-            return true;
+            return changed;
         } catch (RuntimeException e) {
             log.warn("AI data classification unavailable, keeping the code result: {}", e.getMessage());
             return false;

@@ -9,9 +9,13 @@
 //
 //   PDF-01 blank flow: upload -> editor shows the page and the detected
 //          regions -> move + resize one, draw a new one -> confirm -> Ready
-//   PDF-02 filled flow: removed values shown for review; restore the
-//          low-confidence one and remove it again by drawing -> confirm ->
-//          the template renders pixel-identical to the blank twin
+//   PDF-02 filled flow: removed values shown for review; the low-confidence
+//          one is only suggested: apply it, restore it, remove it again by
+//          drawing -> confirm -> the template renders pixel-identical to the
+//          blank twin
+//   PDF-02b BUG-PDF-01: a low-confidence guess is suggested, not removed
+//          (draft template = original in its box); confirming unreviewed
+//          keeps it; Apply removes it
 //   PDF-03 document: type on the page (autosave), photos (auto-fill, drag
 //          onto the box = swap), long notes -> overflow -> generate (+1 page)
 //          -> download: typed values in the PDF, page count = template + 1
@@ -28,8 +32,9 @@
 // UI contract (frontend/src/pages/Blueprint*Page, DocInstancesPage,
 // DocBuilderPage, components/pdf/*): data-testid page-view (the page image +
 // overlay), region-<key> (editor box; corner handles [data-handle=se|…]),
-// region-properties, edit-list, checklist; edit boxes carry
-// data-edit-kind / data-low-confidence. Builder: field-<key> (the input on
+// region-properties, edit-list, suggestion-list, checklist; edit boxes carry
+// data-edit-kind / data-low-confidence, and a suggested (unapplied) removal
+// data-suggested="true". Builder: field-<key> (the input on
 // the page), photo-box-<key>, photo-tray, overflow-<key>, save-state.
 // Tools are buttons in role=toolbar "Editing tools"; pages are buttons
 // "Page N[, …]" in nav "Pages"; the side panel is region "Fields".
@@ -46,6 +51,7 @@ import {
   fakeDocx,
   getBlueprint,
   getBytes,
+  templatePage,
   uploadBlueprint,
 } from '../../lib/doccreation.js';
 
@@ -253,23 +259,41 @@ test.describe('exact PDF templates @phase2 @pdf', () => {
     expect(removed).toContain('[image]'); // the photo in the photo box
     expect(draft.regions.find((r) => r.key === 'full_name')?.sampleValue).toBe(FORM_VALUES.fullName);
 
-    // Every removal is listed with the value it removes.
+    // Every removal is listed with the value it removes; the uncertain guess (BUG-PDF-01) is listed
+    // as a suggestion, not among the applied changes.
+    const low = draft.edits.find((e) => e.removedText === FORM_VALUES.contact);
+    const applied = draft.edits.filter((e) => e.applied);
+    expect(applied).toHaveLength(draft.edits.length - 1);
     const editList = page.getByTestId('edit-list');
-    await expect(page.getByRole('heading', { name: `Template changes (${draft.edits.length})` })).toBeVisible();
-    for (const value of SAMPLE_VALUES) {
+    await expect(page.getByRole('heading', { name: `Template changes (${applied.length})` })).toBeVisible();
+    for (const value of SAMPLE_VALUES.filter((v) => v !== FORM_VALUES.contact)) {
       await expect(editList.getByText(`Removed content: “${value}”`, { exact: false })).toBeVisible();
     }
+    await expect(
+      page.getByTestId('suggestion-list').getByText(`Suggested — not removed: “${FORM_VALUES.contact}”`, { exact: false })
+    ).toBeVisible();
 
     // The free-standing e-mail is only a guess: low confidence, flagged for review.
-    const low = draft.edits.find((e) => e.removedText === FORM_VALUES.contact);
     expect(low.confidence).toBeLessThan(0.6);
+    expect(low.applied).toBe(false);
+    await expect(page.getByTestId('checklist')).toContainText(
+      `Suggested — not removed: “${FORM_VALUES.contact}” on page 2 (low confidence)`
+    );
+    await page.getByRole('button', { name: /^Page 2\b/ }).click();
+    await expect(
+      page.locator('[data-edit-kind="REMOVE"][data-suggested="true"][data-low-confidence="true"]')
+    ).toBeVisible();
+
+    // Apply it: it becomes a (still flagged) removal ...
+    await page.getByRole('button', { name: `Apply: Suggested — not removed: “${FORM_VALUES.contact}” on page 2` }).click();
+    await expect(page.getByRole('heading', { name: `Template changes (${draft.edits.length})` })).toBeVisible();
+    await expect(page.locator('[data-suggested="true"]')).toHaveCount(0);
     await expect(page.getByTestId('checklist')).toContainText(
       `Check the removal of “${FORM_VALUES.contact}” on page 2 (low confidence)`
     );
-    await page.getByRole('button', { name: /^Page 2\b/ }).click();
     await expect(page.locator('[data-edit-kind="REMOVE"][data-low-confidence="true"]')).toBeVisible();
 
-    // Restore it (the value stays in the template) ...
+    // ... restore it (the value stays in the template) ...
     await page.getByRole('button', { name: `Restore: Removed content: “${FORM_VALUES.contact}” on page 2` }).click();
     await expect(page.getByRole('heading', { name: `Template changes (${draft.edits.length - 1})` })).toBeVisible();
     await expect(page.locator('[data-low-confidence="true"][data-edit-kind="REMOVE"]')).toHaveCount(0);
@@ -306,31 +330,94 @@ test.describe('exact PDF templates @phase2 @pdf', () => {
     expect((await blueprintFile(operatorApi, filledId, 'original')).equals(FILLED_PDF)).toBe(true);
   });
 
-  // BUG-PDF-01: a low-confidence guess (confidence < 0.6, e.g. a free-standing
-  // e-mail or date that may be static form text) is APPLIED by default: the
-  // upload already cuts it from the draft template (DocBlueprintUseCase.create
-  // applies every proposed removal) and the editor sends it on "Confirm
-  // template" unless the user restores it. The plan says low-confidence
-  // results are "shown for review instead of being applied" (the engine's
-  // own corpus harness, CorpusSupport.applied, accepts only >= 0.6 by
-  // default). Expected: confirming without review keeps such text.
-  test.fixme('PDF-02b BUG-PDF-01 confirming a filled upload without review keeps the low-confidence guesses', async ({
+  // BUG-PDF-01 (fixed): a low-confidence guess (confidence < 0.6, e.g. a
+  // free-standing e-mail or date that may be static form text) used to be
+  // APPLIED by default — cut from the draft template and kept on "Confirm
+  // template" unless restored. Now it is only SUGGESTED (applied:false, its
+  // field suggested:true): shown for review, left in the draft template, and
+  // removed only when the user applies it.
+  test('PDF-02b BUG-PDF-01 low-confidence guesses are suggested for review, kept unless applied', async ({
     page,
     operatorApi,
   }) => {
-    const id = await uploadThroughUi(page, {
+    // 1. Confirming a filled upload without review keeps the guess.
+    const unreviewed = await uploadThroughUi(page, {
       bytes: FILLED_PDF,
       fileName: 'employee_filled.pdf',
       name: uniqueName('E2E unreviewed'),
       flowLabel: /Filled document/,
     });
-    const draft = await getBlueprint(operatorApi, id);
-    const low = draft.edits.find((e) => e.removedText === FORM_VALUES.contact);
-    expect(low.confidence).toBeLessThan(0.6);
+    const first = await getBlueprint(operatorApi, unreviewed);
+    expect(first.edits.find((e) => e.removedText === FORM_VALUES.contact).confidence).toBeLessThan(0.6);
     await page.getByRole('button', { name: 'Confirm template' }).click();
     await expect(page.getByText('Template confirmed — it is ready for new documents')).toBeVisible();
-    const templateText = pageTexts(await blueprintFile(operatorApi, id)).join('\n');
-    expect(templateText).toContain(FORM_VALUES.contact);
+    const unreviewedText = pageTexts(await blueprintFile(operatorApi, unreviewed)).join('\n');
+    expect(unreviewedText).toContain(FORM_VALUES.contact);
+    for (const value of SAMPLE_VALUES.filter((v) => v !== FORM_VALUES.contact)) {
+      expect(unreviewedText).not.toContain(value);
+    }
+    const confirmed = await getBlueprint(operatorApi, unreviewed);
+    const firstApplied = first.edits.filter((e) => e.applied);
+    expect(firstApplied.length).toBeLessThan(first.edits.length);
+    expect(confirmed.edits.map((e) => e.id).sort()).toEqual(firstApplied.map((e) => e.id).sort());
+    expect(confirmed.edits.every((e) => e.applied === true)).toBe(true);
+    expect(confirmed.regions.some((r) => r.suggested)).toBe(false);
+
+    // 2. A new upload: the guess is listed as a suggestion and NOT removed from the draft template ...
+    const id = await uploadThroughUi(page, {
+      bytes: FILLED_PDF,
+      fileName: 'employee_filled.pdf',
+      name: uniqueName('E2E reviewed'),
+      flowLabel: /Filled document/,
+    });
+    const draft = await getBlueprint(operatorApi, id);
+    const low = draft.edits.find((e) => e.removedText === FORM_VALUES.contact);
+    expect(low).toMatchObject({ kind: 'REMOVE', page: 1, applied: false, source: 'DATA_REMOVAL' });
+    expect(low.confidence).toBeLessThan(0.6);
+    for (const edit of draft.edits) expect(edit.applied, edit.removedText).toBe(edit.confidence >= 0.6);
+    if (low.regionKey) {
+      expect(draft.regions.find((r) => r.key === low.regionKey)).toMatchObject({ suggested: true, page: 1 });
+    }
+    expect(draft.regions.filter((r) => r.suggested).map((r) => r.key)).toEqual(low.regionKey ? [low.regionKey] : []);
+    await expect(page.getByTestId('checklist')).toContainText(
+      `Suggested — not removed: “${FORM_VALUES.contact}” on page 2 (low confidence)`
+    );
+    await expect(page.getByTestId('suggestion-list')).toContainText(`Suggested — not removed: “${FORM_VALUES.contact}”`);
+    // Pixel check: inside the guess's box the draft template is the original, ink for ink.
+    const lowBox = { fx: low.fx, fy: low.fy, fw: low.fw, fh: low.fh };
+    const originalInk = inkInBox(await templatePage(operatorApi, id, 1, { variant: 'original' }), lowBox);
+    expect(originalInk, 'the e-mail is printed in its box').toBeGreaterThan(20);
+    expect(inkInBox(await templatePage(operatorApi, id, 1), lowBox)).toBe(originalInk);
+    const draftTexts = pageTexts(await blueprintFile(operatorApi, id));
+    expect(draftTexts[1]).toContain(FORM_VALUES.contact);
+    // ... while the confident removals are already applied to it.
+    expect(draftTexts.join('\n')).not.toContain(FORM_VALUES.fullName);
+    const nameRemoval = draft.edits.find((e) => e.removedText === FORM_VALUES.fullName);
+    expect(nameRemoval.applied).toBe(true);
+    const nameBox = { fx: nameRemoval.fx, fy: nameRemoval.fy, fw: nameRemoval.fw, fh: nameRemoval.fh };
+    const nameInk = inkInBox(await templatePage(operatorApi, id, 0, { variant: 'original' }), nameBox);
+    expect(nameInk).toBeGreaterThan(20);
+    expect(inkInBox(await templatePage(operatorApi, id, 0), nameBox)).toBeLessThan(nameInk / 2);
+
+    // On its page it is a dashed "suggested" box, not a hatched removal.
+    await page.getByRole('button', { name: /^Page 2\b/ }).click();
+    const suggestionBox = page.locator('[data-edit-kind="REMOVE"][data-suggested="true"]');
+    await expect(suggestionBox).toBeVisible();
+    await expect(suggestionBox).toContainText('Suggested — not removed');
+
+    // 3. Apply removes it.
+    await page.getByRole('button', { name: `Apply: Suggested — not removed: “${FORM_VALUES.contact}” on page 2` }).click();
+    await expect(suggestionBox).toHaveCount(0);
+    await expect(page.getByTestId('edit-list')).toContainText(`Removed content: “${FORM_VALUES.contact}”`);
+    await page.getByRole('button', { name: 'Confirm template' }).click();
+    await expect(page.getByText('Template confirmed — it is ready for new documents')).toBeVisible();
+    const saved = await getBlueprint(operatorApi, id);
+    expect(saved.edits).toHaveLength(draft.edits.length);
+    expect(saved.edits.map((e) => e.id)).toContain(low.id);
+    if (low.regionKey) expect(saved.regions.map((r) => r.key)).toContain(low.regionKey);
+    expect(pageTexts(await blueprintFile(operatorApi, id)).join('\n')).not.toContain(FORM_VALUES.contact);
+    expect(inkInBox(await templatePage(operatorApi, id, 1), lowBox)).toBe(0);
+    if (blankId) await expectSameRendering(operatorApi, blankId, id, TEMPLATE_PAGES);
   });
 
   test('PDF-03 a document is filled on the page, gets photos, overflows to an added page and downloads as PDF', async ({
@@ -552,7 +639,8 @@ test.describe('exact PDF templates @phase2 @pdf', () => {
     const stats = await llm.stats();
     expect(stats.byMode.error500 ?? 0, 'the model was asked (and failed)').toBeGreaterThan(0);
 
-    await confirmAsProposed(operatorApi, draft);
+    // Accepting every proposal (the uncertain e-mail guess included, BUG-PDF-01) gives the blank form.
+    await confirmAsProposed(operatorApi, draft, { applySuggestions: true });
     await expectSameRendering(operatorApi, blankId, id, TEMPLATE_PAGES);
   });
 });

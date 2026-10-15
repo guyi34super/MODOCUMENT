@@ -79,8 +79,9 @@ public record TemplateEdit(
     String imageKey,       // ADD_IMAGE: key into the images map passed to applyEdits
     EditSource source,
     double confidence,
-    String removedText     // REMOVE: the text that was removed (review only)
-) {}
+    String removedText,    // REMOVE: the text that was removed (review only)
+    String regionKey       // DATA_REMOVAL: key of the DATA_REMOVED/AI region proposed for the same value, else null
+) {}                       // (an 11-argument constructor without regionKey remains for user edits)
 
 public record AnalysisOptions(boolean aiAllowed, String locale) {}
 public record AnalysisResult(
@@ -90,7 +91,7 @@ public record AnalysisResult(
     List<TemplateRegion> regions,    // proposed fill-in regions
     List<TemplateEdit> removals,     // WITH_DATA: proposed REMOVE edits (+ AcroForm clears are implicit)
     List<String> warnings,           // human-readable
-    String detectedBy) {}            // "CODE" | "CODE+AI"
+    String detectedBy) {}            // "CODE" | "CODE+AI" (only when the AI changed a label, group, kind or the data classification)
 
 public record FillOptions(float minFontSize, boolean continuationPages, boolean verify) {}
 public record ExactnessReport(boolean exact, long differingPixels, List<Integer> pagesWithDiffs, int dpi) {}
@@ -147,13 +148,20 @@ All routes are under `/api/doccreation` and use the existing `DOC_READ` / `DOC_W
                "page":0,"fx":0.1,"fy":0.2,"fw":0.3,"fh":0.02,
                "fontName":"Helvetica","fontSize":10,"color":"#000000","align":"LEFT","maxLines":1,
                "acroFieldName":null,"required":false,"sortOrder":0,"source":"DETECTED","confidence":0.9,
-               "sampleValue":"John Doe" }],
+               "sampleValue":"John Doe", "suggested":false }],
   "edits":[{ "id":"…","kind":"REMOVE","page":0,"fx":…,"fy":…,"fw":…,"fh":…,"text":null,"fontName":null,"fontSize":null,
-             "color":null,"source":"DATA_REMOVAL","confidence":0.8,"removedText":"John Doe" }],
+             "color":null,"source":"DATA_REMOVAL","confidence":0.8,"removedText":"John Doe",
+             "applied":true, "regionKey":"full_name" }],
   "warnings":["…"], "detectedBy":"CODE|CODE+AI", "documentCount":0 }
 ```
 
 - `sampleValue` and `removedText` are only returned while the blueprint is `DRAFT`. They are cleared once it is confirmed.
+- **Low-confidence guesses are suggested, not applied (BUG-PDF-01).** On upload (WITH_DATA), only proposed removals with `confidence ≥ 0.6` (`RemovalPolicy.APPLY_THRESHOLD`) are applied to the draft's template PDF and stored as edits.
+  - A removal below the threshold is a **suggestion**: returned in `edits` with `"applied":false`. Every other edit, and every edit of a confirmed template, has `"applied":true`.
+  - Its linked `DATA_REMOVED` region is returned in `regions` with `"suggested":true`; all other regions have `"suggested":false`. It is not part of the template.
+  - Suggestions and their regions, with their `removedText` / `sampleValue`, live only in the draft review data (`draft.json`), like the other review data. They never reach a database row unless the client sends them back as applied or kept.
+- **Linkage:** `edit.regionKey` names the `DATA_REMOVED` region that takes a data removal's place (the field for the removed value). It is returned while `DRAFT` only (it is review data and is not stored in a row); it is null for user edits.
+  - Restoring a removal is expected to drop its linked region; applying a suggestion adds its region.
 - **`GET /blueprints/{id}/pages/{page}?variant=original|template&version=N&dpi=110`** returns `image/png`.
   - `template` renders that version's template PDF.
   - `original` renders the uploaded PDF.
@@ -161,6 +169,10 @@ All routes are under `/api/doccreation` and use the existing `DOC_READ` / `DOC_W
   - It rebuilds the template PDF (`applyEdits` on the original) and saves version N+1, or version 1 when confirming a draft. Status becomes `READY`.
   - Returns `200 BlueprintDto`.
   - `409` when `baseVersion` is stale; `400` for invalid geometry or duplicate keys.
+  - The server applies **exactly** the applied edits and kept regions the client sends. An edit sent with `"applied":false` and a region sent with `"suggested":true` are **ignored** (not validated, not applied, no 400). So confirming a draft "as received" keeps the low-confidence guesses in the template.
+  - To apply a suggestion, the client sends it with `"applied":true` (or no `applied`); to keep its field, it sends the region with `"suggested":false` (or no `suggested`). `applied` and `suggested` default to applied / kept when absent, so older clients are unaffected.
+  - `regionKey` on input is ignored.
+  - Confirming deletes the remaining suggestions with the rest of the review data. A `confirm:false` draft save keeps them, so a suggestion that was only dismissed in the editor shows again after reloading such a draft.
 - **`POST /blueprints/{id}/edit-images`**: multipart `file` (png or jpg, for an `ADD_IMAGE` logo). Returns `{imageKey}`.
 - **`GET /blueprints/{id}/versions`**: same shape as today.
 - **`GET /blueprints/{id}/file?variant=original|template&version=N`** returns `application/pdf`.

@@ -15,8 +15,19 @@ export function editColor(kind) {
   return EDIT_COLORS[kind] || '#37474f';
 }
 
+/** Shown on a suggested removal (BUG-PDF-01): a low-confidence guess that is NOT removed unless applied. */
+export const SUGGESTED_LABEL = 'Suggested — not removed';
+
+/** A suggested removal: proposed by the analysis but not applied (`applied: false`). */
+export function isSuggestion(edit) {
+  return edit?.applied === false;
+}
+
 /** A short description of an edit for labels and lists. */
 export function describeEdit(edit) {
+  if (isSuggestion(edit)) {
+    return edit.removedText ? `${SUGGESTED_LABEL}: “${edit.removedText}”` : SUGGESTED_LABEL;
+  }
   const base = EDIT_LABELS[edit.kind] || edit.kind;
   if (edit.kind === 'REMOVE' && edit.removedText) return `${base}: “${edit.removedText}”`;
   if ((edit.kind === 'ADD_TEXT' || edit.kind === 'REPLACE_TEXT') && edit.text) {
@@ -30,13 +41,35 @@ export function describeEdit(edit) {
  * as its new text on white (it covers the old text), ADD_TEXT as plain
  * text and ADD_IMAGE as a labelled image placeholder. `scale` is CSS px per
  * PDF point, so the preview text matches the PDF's size.
+ *
+ * A SUGGESTED removal (`applied: false`) is drawn as a dashed outline with
+ * no hatching — the content under it stays in the template — and tagged
+ * "Suggested — not removed" until it is applied.
  */
 export default function EditBox({ edit, scale = 1, showRemoved = false, ...props }) {
+  const suggested = isSuggestion(edit);
   const color = editColor(edit.kind);
   const lowConfidence = edit.kind === 'REMOVE' && edit.confidence != null && edit.confidence < LOW_CONFIDENCE;
   const fontPx = Math.max(6, (edit.fontSize || 10) * scale);
   let background;
   let content = null;
+  if (suggested) {
+    return (
+      <RegionBox
+        box={edit}
+        color="#b45309"
+        highlight
+        tabText={SUGGESTED_LABEL}
+        label={`${describeEdit(edit)}${lowConfidence ? ' (low confidence)' : ''}`}
+        data-edit-kind={edit.kind}
+        data-suggested="true"
+        data-low-confidence={lowConfidence ? 'true' : undefined}
+        style={{ background: 'rgba(245, 158, 11, 0.08)' }}
+        {...props}
+        editable={false}
+      />
+    );
+  }
   if (edit.kind === 'REMOVE') {
     background = HATCH;
     if (showRemoved && edit.removedText) {

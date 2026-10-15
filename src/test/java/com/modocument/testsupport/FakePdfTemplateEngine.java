@@ -106,7 +106,7 @@ public class FakePdfTemplateEngine implements PdfTemplateEngine {
 
     public static List<TemplateEdit> defaultRemovals() {
         return List.of(new TemplateEdit("rm-1", EditKind.REMOVE, new PdfBox(0, 100, 700, 200, 20), null, null,
-                null, null, null, EditSource.DATA_REMOVAL, 0.8, "John Specimen"));
+                null, null, null, EditSource.DATA_REMOVAL, 0.8, "John Specimen", "full_name"));
     }
 
     public static TemplateRegion region(String key, String label, String group, RegionKind kind, PdfBox box,

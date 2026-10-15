@@ -55,6 +55,29 @@ class PdfTemplateRemovalTest {
         }
     }
 
+    /** BUG-PDF-01: every proposed removal names the DATA_REMOVED (or AI) region that takes its value's place. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("docs")
+    void everyRemovalIsLinkedToItsOwnDataRegion(PdfCorpus.Doc doc) {
+        if (doc.needsOcr()) {
+            Assumptions.assumeTrue(CorpusSupport.ocrAvailable(), "Tesseract is not installed here");
+        }
+        AnalysisResult analysis = CorpusSupport.engine().analyze(doc.filled(), UploadFlow.WITH_DATA,
+                CorpusSupport.codeOnly());
+        Map<String, TemplateRegion> byKey = new java.util.HashMap<>();
+        analysis.regions().forEach(r -> byKey.put(r.key(), r));
+        java.util.Set<String> linked = new java.util.HashSet<>();
+        for (TemplateEdit removal : analysis.removals()) {
+            assertThat(removal.regionKey()).as("%s: %s", doc.name(), removal.removedText()).isNotNull();
+            TemplateRegion region = byKey.get(removal.regionKey());
+            assertThat(region).as("%s: region %s", doc.name(), removal.regionKey()).isNotNull();
+            assertThat(region.source()).isIn(RegionSource.DATA_REMOVED, RegionSource.AI);
+            assertThat(region.box().page()).isEqualTo(removal.box().page());
+            assertThat(region.sampleValue()).isEqualTo(removal.removedText());
+            assertThat(linked.add(removal.regionKey())).as("one removal per region").isTrue();
+        }
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("docs")
     void blankFlowKeepsTheOriginalBytes(PdfCorpus.Doc doc) {
