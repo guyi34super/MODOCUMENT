@@ -22,7 +22,12 @@ public class DocBlueprintSectionRepositoryImpl implements DocBlueprintSectionRep
 
     @Override
     public List<DocBlueprintSection> listByBlueprint(int blueprintId) {
-        return jpa.findByBlueprintIdOrderByOrderIndex(blueprintId);
+        return jpa.findByBlueprintIdOrderByVersionAscOrderIndexAsc(blueprintId);
+    }
+
+    @Override
+    public List<DocBlueprintSection> listByBlueprintVersion(int blueprintId, int version) {
+        return jpa.findByBlueprintIdAndVersionOrderByOrderIndex(blueprintId, version);
     }
 
     @Override
@@ -43,7 +48,7 @@ public class DocBlueprintSectionRepositoryImpl implements DocBlueprintSectionRep
             return byBlueprint;
         }
         for (DocBlueprintSection section
-                : jpa.findByBlueprintIdInOrderByBlueprintIdAscOrderIndexAsc(blueprintIds)) {
+                : jpa.findByBlueprintIdInOrderByBlueprintIdAscVersionAscOrderIndexAsc(blueprintIds)) {
             byBlueprint.computeIfAbsent(section.getBlueprintId(), id -> new java.util.ArrayList<>())
                     .add(section);
         }
@@ -51,14 +56,17 @@ public class DocBlueprintSectionRepositoryImpl implements DocBlueprintSectionRep
     }
 
     @Override
-    public java.util.Map<Integer, Long> countByBlueprints(java.util.Collection<Integer> blueprintIds) {
-        return blueprintIds.isEmpty() ? java.util.Map.of() : counts(jpa.countByBlueprintIds(blueprintIds));
-    }
-
-    private static java.util.Map<Integer, Long> counts(List<Object[]> rows) {
+    public java.util.Map<Integer, Long> countByBlueprintVersions(java.util.Map<Integer, Integer> versionByBlueprint) {
         java.util.Map<Integer, Long> counts = new java.util.LinkedHashMap<>();
-        for (Object[] row : rows) {
-            counts.put(((Number) row[0]).intValue(), ((Number) row[1]).longValue());
+        if (versionByBlueprint.isEmpty()) {
+            return counts;
+        }
+        for (Object[] row : jpa.countByBlueprintIdsAndVersion(versionByBlueprint.keySet())) {
+            int blueprintId = ((Number) row[0]).intValue();
+            int version = ((Number) row[1]).intValue();
+            if (Integer.valueOf(version).equals(versionByBlueprint.get(blueprintId))) {
+                counts.put(blueprintId, ((Number) row[2]).longValue());
+            }
         }
         return counts;
     }

@@ -7,17 +7,19 @@ import java.util.List;
 
 public interface DocBlueprintSectionJpaRepository extends JpaRepository<DocBlueprintSection, Integer> {
 
-    List<DocBlueprintSection> findByBlueprintIdOrderByOrderIndex(int blueprintId);
+    List<DocBlueprintSection> findByBlueprintIdOrderByVersionAscOrderIndexAsc(int blueprintId);
+
+    List<DocBlueprintSection> findByBlueprintIdAndVersionOrderByOrderIndex(int blueprintId, int version);
 
     void deleteByBlueprintId(int blueprintId);
 
-    /** ws28: the sections of several blueprints, in blueprint then document order. */
-    List<DocBlueprintSection> findByBlueprintIdInOrderByBlueprintIdAscOrderIndexAsc(
+    /** ws28: the sections of several blueprints, in blueprint, version then document order. */
+    List<DocBlueprintSection> findByBlueprintIdInOrderByBlueprintIdAscVersionAscOrderIndexAsc(
             java.util.Collection<Integer> blueprintIds);
 
-    /** ws28: rows of [BlueprintId, count (Long)]. */
-    @org.springframework.data.jpa.repository.Query("select s.blueprintId, count(s) from DocBlueprintSection s"
-            + " where s.blueprintId in :blueprintIds group by s.blueprintId")
-    List<Object[]> countByBlueprintIds(
+    /** ws28 + V291: rows of [BlueprintId, Version, count (Long)]. */
+    @org.springframework.data.jpa.repository.Query("select s.blueprintId, s.version, count(s) from DocBlueprintSection s"
+            + " where s.blueprintId in :blueprintIds group by s.blueprintId, s.version")
+    List<Object[]> countByBlueprintIdsAndVersion(
             @org.springframework.data.repository.query.Param("blueprintIds") java.util.Collection<Integer> blueprintIds);
 }

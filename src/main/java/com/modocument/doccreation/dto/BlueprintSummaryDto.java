@@ -10,11 +10,12 @@ public record BlueprintSummaryDto(int blueprintId,
                                   String flowKey,
                                   int sectionCount,
                                   int instanceCount,
-                                  LocalDateTime createdDate) {
+                                  LocalDateTime createdDate,
+                                  int currentVersion) {
 
     public static BlueprintSummaryDto from(DocBlueprint blueprint, int sectionCount, int instanceCount) {
         return new BlueprintSummaryDto(blueprint.getDocBlueprintId(), blueprint.getName(),
                 blueprint.getCompanyId(), blueprint.getFlowKey(), sectionCount, instanceCount,
-                blueprint.getCreatedDate());
+                blueprint.getCreatedDate(), blueprint.getCurrentVersion());
     }
 }

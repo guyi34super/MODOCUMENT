@@ -5,6 +5,8 @@ import jakarta.validation.Valid;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.domain.model.Permission;
 import com.modocument.doccreation.dto.BlueprintDto;
+import com.modocument.doccreation.dto.ResectionRequest;
+import com.modocument.doccreation.dto.SaveSectionsRequest;
 import com.modocument.doccreation.dto.UpdateKeywordsRequest;
 import com.modocument.doccreation.usecase.DocBlueprintUseCase;
 import org.springframework.http.HttpHeaders;
@@ -66,8 +68,38 @@ public class DocBlueprintController {
 
     @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/blueprints/{id}")
-    public ResponseEntity<?> get(@PathVariable int id) {
-        return ResponseEntity.ok(useCase.get(id));
+    public ResponseEntity<?> get(@PathVariable int id,
+                                 @RequestParam(value = "version", required = false) Integer version) {
+        return ResponseEntity.ok(useCase.get(id, version));
+    }
+
+    @RequiresPermission(Permission.DOC_READ)
+    @GetMapping("/api/doccreation/blueprints/{id}/versions")
+    public ResponseEntity<?> versions(@PathVariable int id) {
+        return ResponseEntity.ok(useCase.versions(id));
+    }
+
+    @RequiresPermission(Permission.DOC_READ)
+    @GetMapping("/api/doccreation/blueprints/{id}/paragraphs")
+    public ResponseEntity<?> paragraphs(@PathVariable int id) {
+        return ResponseEntity.ok(useCase.paragraphs(id));
+    }
+
+    /** Saves an edited section list as a new version (409 when the base version is stale). */
+    @RequiresPermission(Permission.DOC_WRITE)
+    @PutMapping("/api/doccreation/blueprints/{id}/sections")
+    public ResponseEntity<?> saveSections(@PathVariable int id,
+                                          @Valid @RequestBody SaveSectionsRequest request) {
+        return ResponseEntity.ok(useCase.saveSections(id, request));
+    }
+
+    /** Re-runs the AI (or heuristic) section breakdown and saves the result as a new version. */
+    @RequiresPermission(Permission.DOC_WRITE)
+    @PostMapping("/api/doccreation/blueprints/{id}/resection")
+    public ResponseEntity<?> resection(@PathVariable int id,
+                                       @Valid @RequestBody(required = false) ResectionRequest request) {
+        ResectionRequest body = request == null ? new ResectionRequest() : request;
+        return ResponseEntity.ok(useCase.resection(id, body.getBaseVersion(), body.getNote()));
     }
 
     @RequiresPermission(Permission.DOC_READ)

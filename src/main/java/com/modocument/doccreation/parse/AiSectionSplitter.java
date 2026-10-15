@@ -56,6 +56,16 @@ public class AiSectionSplitter {
     public static final String TRUNCATION_MARKER = "(listing truncated)";
     private static final int MAX_TITLE_LENGTH = 500;
     private static final int MAX_KEYWORDS_PER_SECTION = 12;
+    static final int CONDENSED_PARAGRAPH_CHARS = 120;
+    private static final java.util.regex.Pattern CANDIDATE_NUMBERING = java.util.regex.Pattern.compile(
+            "^(\\d+(\\.\\d+)*\\.?\\s+\\S|[IVXLC]+\\.\\s+\\S|[A-Z][.)]\\s+\\S|\\([a-z0-9]{1,3}\\)\\s+\\S"
+                    + "|(?i:section|part|chapter|schedule|annex(ure)?|appendix|article|clause)\\s+[\\w.]+)");
+    private static final String CONDENSED_NOTE = """
+            (This document is long, so the listing below shows ONLY the lines most likely to be \
+            headings; ordinary body paragraphs and tables are left out. The [index] numbers are \
+            still the real body-element indexes — anchor to them exactly; gaps are expected.)
+
+            """;
 
     private static final String PROMPT = """
             You are an expert document-structure analyst. Below is the full body listing of a \
@@ -145,7 +155,9 @@ public class AiSectionSplitter {
      *     real document — the caller then uses the heuristic parser.
      */
     public Optional<List<ParsedSection>> split(Path docxPath) {
-        if (!enabled() || !ai.isConfigured()) {
+        String skipReason = skipReason();
+        if (skipReason != null) {
+            log.info("AI section breakdown skipped ({}); using the heuristic parser", skipReason);
             return Optional.empty();
         }
         List<IBodyElement> elements;
@@ -160,14 +172,23 @@ public class AiSectionSplitter {
             throw new IllegalArgumentException("The uploaded file is not a readable .docx document.", e);
         }
         if (digest.isBlank()) {
+            log.info("AI section breakdown skipped (the document has no paragraph text); using the heuristic parser");
             return Optional.empty();
         }
+        String preamble = "";
         if (digest.contains(TRUNCATION_MARKER)) {
-            // The model can only anchor to paragraphs it was shown; a cut
-            // listing would silently lose every section past the cap. The
-            // heuristic parser sees the whole document.
-            log.info("Blueprint too large for the AI listing; using the heuristic parser");
-            return Optional.empty();
+            // The model can only anchor to paragraphs it was shown, so a cut
+            // listing would lose every section past the cap. Instead it sees
+            // only the likely heading lines — still with their real indexes.
+            digest = condensedDigest(elements);
+            if (digest.isBlank() || digest.contains(TRUNCATION_MARKER)) {
+                log.info("AI section breakdown skipped (document too large even for the condensed listing); "
+                        + "using the heuristic parser");
+                return Optional.empty();
+            }
+            log.info("Blueprint too large for the full AI listing; sending {} heading candidates",
+                    digest.lines().count());
+            preamble = CONDENSED_NOTE;
         }
 
         // C9: one-way masking of identifier shapes in the listing. Masking
@@ -187,7 +208,7 @@ public class AiSectionSplitter {
             reply = ai.sendForObject(
                     PromptEnvelope.builder(AiPurpose.DOC_SECTION_SPLIT)
                             .user(currentUser.requireUserId())
-                            .part(PROMPT + maskedDigest)
+                            .part(PROMPT + preamble + maskedDigest)
                             .model(modelId)
                             .build(),
                     new ParameterizedTypeReference<List<AiSection>>() {
@@ -198,6 +219,79 @@ public class AiSectionSplitter {
             return Optional.empty();
         }
         return validate(reply, elements);
+    }
+
+    /** Why the AI must not be asked for the caller's bank, or null when it may. */
+    private String skipReason() {
+        if (settings == null) {
+            if (!enabled) {
+                return "modocument.doccreation.section-ai-enabled is off";
+            }
+        } else if (!settings.getBoolForCurrentBank(SettingKeys.DOCCREATION_SECTION_AI_ENABLED)) {
+            return "the bank setting " + SettingKeys.DOCCREATION_SECTION_AI_ENABLED + " is off";
+        } else if (!settings.getBoolForCurrentBank(SettingKeys.AI_ENABLED)) {
+            return "the bank's AI master switch " + SettingKeys.AI_ENABLED + " is off";
+        }
+        if (!ai.isConfigured()) {
+            return "no AI provider is configured";
+        }
+        return null;
+    }
+
+    /**
+     * Only the likely heading lines (styled, bold, numbered, capitals, short
+     * label lines), shorter per line, keeping the real body-element indexes.
+     */
+    static String condensedDigest(List<IBodyElement> elements) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < elements.size(); i++) {
+            if (!(elements.get(i) instanceof XWPFParagraph paragraph) || !isHeadingCandidate(paragraph)) {
+                continue;
+            }
+            if (out.length() >= MAX_DIGEST_CHARS) {
+                out.append("[…] ").append(TRUNCATION_MARKER).append('\n');
+                break;
+            }
+            String text = paragraph.getText().strip();
+            if (text.length() > CONDENSED_PARAGRAPH_CHARS) {
+                text = text.substring(0, CONDENSED_PARAGRAPH_CHARS) + "…";
+            }
+            out.append('[').append(i).append("] ").append(text);
+            String style = paragraph.getStyle();
+            if (style != null && !style.isBlank()) {
+                out.append("  STYLE=").append(style);
+            }
+            if (isAllBold(paragraph)) {
+                out.append("  BOLD");
+            }
+            out.append('\n');
+        }
+        return out.toString();
+    }
+
+    /** A paragraph that could plausibly be a section heading (shared with the section editor). */
+    public static boolean isHeadingCandidate(XWPFParagraph paragraph) {
+        String text = paragraph.getText() == null ? "" : paragraph.getText().strip();
+        if (text.isEmpty() || text.length() > 160) {
+            return false;
+        }
+        String style = paragraph.getStyle();
+        if (style != null && style.toLowerCase(Locale.ROOT).matches(".*(heading|title|berschrift|titre).*")) {
+            return true;
+        }
+        var ppr = paragraph.getCTP().getPPr();
+        if (ppr != null && ppr.isSetOutlineLvl()) {
+            return true;
+        }
+        boolean shortLine = text.length() <= 100 && text.split("\\s+").length <= 14;
+        if (!shortLine) {
+            return false;
+        }
+        if (isAllBold(paragraph) || text.endsWith(":") || CANDIDATE_NUMBERING.matcher(text).find()) {
+            return true;
+        }
+        String letters = text.replaceAll("[^\\p{L}]", "");
+        return letters.length() >= 3 && letters.equals(letters.toUpperCase(Locale.ROOT));
     }
 
     /** One line per body element, capped per paragraph and in total (shared with AI composition). */
@@ -254,6 +348,7 @@ public class AiSectionSplitter {
      */
     private static Optional<List<ParsedSection>> validate(List<AiSection> reply, List<IBodyElement> elements) {
         if (reply == null || reply.isEmpty()) {
+            log.info("AI section breakdown found no sections; using the heuristic parser");
             return Optional.empty();
         }
         List<ParsedSection> sections = new ArrayList<>();

@@ -27,7 +27,7 @@ class DocBlueprintControllerTest {
         MockMultipartFile file = new MockMultipartFile("file", "report.docx", null, new byte[]{1});
         when(useCase.create(any(), isNull(), isNull()))
                 .thenReturn(new BlueprintDto(5, "report", null, "DEFAULT", "report.docx", null,
-                        List.of(), "AI"));
+                        List.of(), "AI", 1, 1));
 
         ResponseEntity<?> result = controller.create(file, null, null);
 
@@ -50,12 +50,37 @@ class DocBlueprintControllerTest {
 
     @Test
     void aForeignBlueprintAnswers404() {
-        when(useCase.get(9)).thenThrow(new NoSuchElementException("Blueprint 9 not found."));
+        when(useCase.get(9, null)).thenThrow(new NoSuchElementException("Blueprint 9 not found."));
 
         ResponseEntity<?> result = controller.notFound(
-                catchNoSuchElement(() -> controller.get(9)));
+                catchNoSuchElement(() -> controller.get(9, null)));
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void aStaleSectionSaveAnswers409() {
+        com.modocument.doccreation.dto.SaveSectionsRequest request =
+                new com.modocument.doccreation.dto.SaveSectionsRequest();
+        when(useCase.saveSections(4, request))
+                .thenThrow(new IllegalStateException("This template was changed meanwhile."));
+
+        ResponseEntity<?> result = controller.conflict(
+                catchIllegalState(() -> controller.saveSections(4, request)));
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void resectionWithoutABodyRunsAgainstTheCurrentVersion() {
+        when(useCase.resection(4, null, null))
+                .thenReturn(new BlueprintDto(4, "report", null, "DEFAULT", "report.pdf", null,
+                        List.of(), "AI", 2, 2));
+
+        ResponseEntity<?> result = controller.resection(4, null);
+
+        assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(((BlueprintDto) result.getBody()).version()).isEqualTo(2);
     }
 
     @Test

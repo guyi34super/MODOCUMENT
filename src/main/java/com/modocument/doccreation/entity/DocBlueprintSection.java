@@ -50,7 +50,19 @@ public class DocBlueprintSection {
     @Column(name = "Keywords", length = 1000)
     private String keywords;
 
+    /** The blueprint version this row belongs to (V291); older versions' rows stay for older documents. */
+    @Column(name = "Version", nullable = false)
+    private int version = 1;
+
     public DocBlueprintSection() {
+    }
+
+    public int getVersion() {
+        return version;
+    }
+
+    public void setVersion(int version) {
+        this.version = version;
     }
 
     public int getBankId() {

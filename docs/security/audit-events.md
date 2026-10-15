@@ -141,6 +141,7 @@ The actor columns are not masked.
 | `DOC_SUBMITTED` | Documents | — | — | A document was submitted for release. |
 | `DOC_RELEASED` | Documents | — | — | A document was released. |
 | `DOC_RELEASE_REJECTED` | Documents | — | — | A release was rejected. |
+| `DOC_BLUEPRINT_VERSION_SAVED` | Documents | SUCCESS | DocBlueprint | **ws29.** A new section-structure version of a blueprint was saved: `PUT /api/doccreation/blueprints/{id}/sections` (hand edit) or `POST …/{id}/resection` (re-run AI) — version, source, section count, note. |
 | `SENSITIVE_DATA_VIEWED` | Privacy | SUCCESS | IngestionJob / ExtractionJob / AppUserList / DataSubject | **ws28.** Read audit, once per actor, entity and hour: the ingestion job detail, extraction records, the user list, the DSR search. Gated by the bank setting `audit.readAuditEnabled` (on when absent). |
 | `DSR_SEARCH` | Privacy | — | — | A data-subject search was run (counts only). |
 | `DSR_EXPORTED` | Privacy | — | — | A data-subject export was produced. |

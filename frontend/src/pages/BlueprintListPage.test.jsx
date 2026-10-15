@@ -51,6 +51,7 @@ describe('BlueprintListPage', () => {
         instanceCount: 2,
         companyId: 'mo-intelligence',
         flowKey: 'DEFAULT',
+        currentVersion: 3,
       },
     ]);
 
@@ -59,6 +60,7 @@ describe('BlueprintListPage', () => {
     expect(await screen.findByText('PV Survey Report')).toBeInTheDocument();
     expect(screen.getByText('mo-intelligence')).toBeInTheDocument();
     expect(screen.getByText('6')).toBeInTheDocument();
+    expect(screen.getByText('v3')).toBeInTheDocument();
   });
 
   it('uploads the file and navigates to the new blueprint', async () => {

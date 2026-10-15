@@ -79,7 +79,9 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     "airesultcache",
                     // V290 (ws29, BUG-12): a bank's failed stored-object
                     // deletes waiting for a retry.
-                    "pendingfiledelete");
+                    "pendingfiledelete",
+                    // V291 (ws29): blueprint section-structure versions.
+                    "docblueprintversion");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))
