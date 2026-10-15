@@ -11,6 +11,7 @@ import com.modocument.doccreation.dto.InstanceSummaryDto;
 import com.modocument.doccreation.dto.ReorderBlocksRequest;
 import com.modocument.doccreation.dto.UpdateBlockRequest;
 import com.modocument.doccreation.dto.UpdateDocInstanceRequest;
+import com.modocument.doccreation.dto.UpdateInstanceFieldsRequest;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
 import com.modocument.doccreation.dto.GenerationResultDto;
 import com.modocument.application.audit.AuditActions;
@@ -92,6 +93,13 @@ public class DocInstanceController {
     @PutMapping("/api/doccreation/instances/{id}")
     public ResponseEntity<?> rename(@PathVariable int id, @Valid @RequestBody UpdateDocInstanceRequest request) {
         return ResponseEntity.ok(useCase.rename(id, request.getTitle()));
+    }
+
+    @RequiresPermission(Permission.DOC_WRITE)
+    @PutMapping("/api/doccreation/instances/{id}/fields")
+    public ResponseEntity<?> updateFields(@PathVariable int id,
+                                          @Valid @RequestBody UpdateInstanceFieldsRequest request) {
+        return ResponseEntity.ok(useCase.updateFields(id, request));
     }
 
     @RequiresPermission(Permission.DOC_WRITE)

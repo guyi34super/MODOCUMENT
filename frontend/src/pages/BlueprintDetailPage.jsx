@@ -83,6 +83,9 @@ function SectionCard({ blueprintId, section, readOnly, onSaved }) {
         {section.headingLevel > 0 && (
           <span className="text-xs text-muted">H{section.headingLevel}</span>
         )}
+        {section.sectionKind && section.sectionKind !== 'NARRATIVE' && (
+          <Tag tone="info">{section.sectionKind}</Tag>
+        )}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {keywords.length === 0 && readOnly && <span className="text-xs text-muted">No keywords</span>}
@@ -513,8 +516,40 @@ export default function BlueprintDetailPage() {
       ) : (
         <>
           {blueprint.sectionSource && (
-            <div className="mb-3">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <SourceTag source={blueprint.sectionSource} />
+              {typeof blueprint.coveragePercent === 'number' && (
+                <span className="text-sm text-muted">
+                  Template coverage:{' '}
+                  <strong className={blueprint.coveragePercent >= 95 ? 'text-green-700' : 'text-amber-700'}>
+                    {blueprint.coveragePercent}%
+                  </strong>
+                </span>
+              )}
+            </div>
+          )}
+          {blueprint.healthIssues?.length > 0 && (
+            <div className="mb-4">
+              <Callout variant="warning" title="Template checklist">
+                <ul className="mt-1 list-inside list-disc text-sm">
+                  {blueprint.healthIssues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              </Callout>
+            </div>
+          )}
+          {blueprint.gaps?.length > 0 && (
+            <div className="mb-4">
+            <Callout variant="warning" title="Uncovered parts of the document">
+              <ul className="mt-1 space-y-1 text-sm">
+                {blueprint.gaps.slice(0, 5).map((gap) => (
+                  <li key={`${gap.fromIndex}-${gap.toIndex}`}>
+                    ¶{gap.fromIndex}–{gap.toIndex}: {gap.preview || '(no preview)'}
+                  </li>
+                ))}
+              </ul>
+            </Callout>
             </div>
           )}
           <div className="mb-4">
@@ -524,10 +559,9 @@ export default function BlueprintDetailPage() {
                 {blueprint.currentVersion}.
               </Callout>
             ) : (
-              <Callout variant="info" title="How keywords work">
-                When images are bulk-uploaded to a document, their file names are matched against
-                each section's keywords ("roof" claims roof_east.jpg). Unmatched images wait in the
-                Unsorted tray instead of being lost. Tune the keywords here.
+              <Callout variant="info" title="Review your template">
+                Download the clean template, check section coverage above, and tune keywords for
+                photo auto-assignment. Edit sections or re-run AI when something is missing.
               </Callout>
             )}
           </div>

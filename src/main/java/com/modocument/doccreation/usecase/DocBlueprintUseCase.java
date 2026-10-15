@@ -16,8 +16,11 @@ import com.modocument.doccreation.flow.DocumentCreationFlowRegistry;
 import com.modocument.doccreation.parse.AiSectionSplitter;
 import com.modocument.doccreation.parse.BlueprintSectionExtractor;
 import com.modocument.doccreation.parse.ParsedSection;
+import com.modocument.doccreation.parse.SectionCoverageValidator;
 import com.modocument.doccreation.pdf.LibreOfficeDocxConverter;
 import com.modocument.doccreation.pdf.PdfBlueprintReflower;
+import com.modocument.doccreation.template.TemplateFieldExtractor;
+import com.modocument.doccreation.template.TemplateNormalizer;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
 import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
 import com.modocument.doccreation.repo.DocBlueprintVersionRepository;
@@ -68,6 +71,8 @@ public class DocBlueprintUseCase {
     private static final int MAX_KEYWORDS_LENGTH = 1000;
     private static final int MAX_TITLE_LENGTH = 500;
     private static final int MAX_PARAGRAPH_PREVIEW = 300;
+    /** Below this, gap-fill sections are inserted after AI breakdown. */
+    private static final int GAP_FILL_COVERAGE_THRESHOLD = 85;
 
     private final DocBlueprintRepository blueprints;
     private final DocBlueprintSectionRepository sections;
@@ -81,6 +86,8 @@ public class DocBlueprintUseCase {
     private final PdfBlueprintReflower pdfReflower;
     private final LibreOfficeDocxConverter pdfToDocx;
     private final AuditRecorder audit;
+    private final TemplateNormalizer templateNormalizer;
+    private final TemplateFieldExtractor fieldExtractor;
 
     public DocBlueprintUseCase(DocBlueprintRepository blueprints,
                                DocBlueprintSectionRepository sections,
@@ -93,7 +100,9 @@ public class DocBlueprintUseCase {
                                FileStore files,
                                PdfBlueprintReflower pdfReflower,
                                LibreOfficeDocxConverter pdfToDocx,
-                               AuditRecorder audit) {
+                               AuditRecorder audit,
+                               TemplateNormalizer templateNormalizer,
+                               TemplateFieldExtractor fieldExtractor) {
         this.blueprints = blueprints;
         this.sections = sections;
         this.versions = versions;
@@ -106,10 +115,12 @@ public class DocBlueprintUseCase {
         this.pdfReflower = pdfReflower;
         this.pdfToDocx = pdfToDocx;
         this.audit = audit;
+        this.templateNormalizer = templateNormalizer;
+        this.fieldExtractor = fieldExtractor;
     }
 
     @Transactional
-    public BlueprintDto create(MultipartFile file, String name, String companyId) {
+    public BlueprintDto create(MultipartFile file, String name, String companyId, Boolean stripSampleData) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("No file uploaded.");
         }
@@ -146,6 +157,8 @@ public class DocBlueprintUseCase {
             StoredFileCleanup.deleteQuietly(files, pdfKey);
         }
 
+        normalizeStoredFile(storedName, originalName, shouldStripSampleData(stripSampleData, originalName));
+
         String blueprintName = name == null || name.isBlank() ? baseName(originalName) : name.strip();
         if (blueprintName.length() > 255) {
             blueprintName = blueprintName.substring(0, 255);
@@ -177,11 +190,37 @@ public class DocBlueprintUseCase {
         }
 
         blueprint = blueprints.save(blueprint);
-        List<DocBlueprintSection> saved = saveVersion(blueprint, 1, extraction.sections(),
-                extraction.source(), null);
+        List<ParsedSection> sectionList = gapFillIfNeeded(blueprint, extraction.sections(), extraction.source());
+        List<DocBlueprintSection> saved = enrichFormFieldSchemas(blueprint,
+                saveVersion(blueprint, 1, sectionList, extraction.source(), null));
         log.info("Blueprint {} '{}' created with {} sections (source {})", blueprint.getDocBlueprintId(),
                 blueprintName, saved.size(), extraction.source());
-        return BlueprintDto.from(blueprint, saved, extraction.source(), 1);
+        return toDto(blueprint, saved, extraction.source(), 1);
+    }
+
+    static boolean shouldStripSampleData(Boolean userChoice, String originalFileName) {
+        if (userChoice != null) {
+            return userChoice;
+        }
+        return TemplateNormalizer.looksFilledFilename(originalFileName);
+    }
+
+    private void normalizeStoredFile(String storedName, String originalFileName, boolean strip) {
+        if (!strip) {
+            return;
+        }
+        try {
+            Path local = uploadStorage.localCopy(storedName);
+            byte[] raw = Files.readAllBytes(local);
+            TemplateNormalizer.Result result = templateNormalizer.normalize(raw, originalFileName, true);
+            if (result.clearedCount() > 0) {
+                files.put(uploadStorage.key(storedName), new java.io.ByteArrayInputStream(result.bytes()),
+                        result.bytes().length,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not normalize the uploaded template.", e);
+        }
     }
 
     /**
@@ -237,7 +276,8 @@ public class DocBlueprintUseCase {
             throw new NoSuchElementException("Version " + shown + " of this template does not exist.");
         }
         String source = versions.get(blueprintId, shown).map(DocBlueprintVersion::getSectionSource).orElse(null);
-        return BlueprintDto.from(blueprint, sections.listByBlueprintVersion(blueprintId, shown), source, shown);
+        List<DocBlueprintSection> sectionRows = sections.listByBlueprintVersion(blueprintId, shown);
+        return toDto(blueprint, sectionRows, source, shown);
     }
 
     /** The version history, newest first. */
@@ -347,7 +387,8 @@ public class DocBlueprintUseCase {
         if (extraction.sections().isEmpty()) {
             throw new IllegalStateException("The section breakdown found no sections; the template is unchanged.");
         }
-        return newVersion(blueprint, extraction.sections(), extraction.source(), note);
+        List<ParsedSection> sectionList = gapFillIfNeeded(blueprint, extraction.sections(), extraction.source());
+        return newVersion(blueprint, sectionList, extraction.source(), note);
     }
 
     /** The stored source file, for the "download original" action. */
@@ -427,14 +468,75 @@ public class DocBlueprintUseCase {
         blueprint.setUpdatedDate(LocalDateTime.now());
         blueprint = blueprints.save(blueprint);
         String cleanNote = note == null || note.isBlank() ? null : truncate(note.strip(), 500);
-        List<DocBlueprintSection> saved = saveVersion(blueprint, version, parsed, source, cleanNote);
+        List<DocBlueprintSection> saved = enrichFormFieldSchemas(blueprint,
+                saveVersion(blueprint, version, parsed, source, cleanNote));
         audit.record(AuditEventSpec.builder("DOC_BLUEPRINT_VERSION_SAVED", AuditOutcome.SUCCESS)
                 .entity("DocBlueprint", String.valueOf(blueprint.getDocBlueprintId()))
                 .newValues(versionSummary(version, source, saved.size(), cleanNote))
                 .build());
         log.info("Blueprint {} saved as version {} with {} sections (source {})",
                 blueprint.getDocBlueprintId(), version, saved.size(), source);
-        return BlueprintDto.from(blueprint, saved, source, version);
+        return toDto(blueprint, saved, source, version);
+    }
+
+    private BlueprintDto toDto(DocBlueprint blueprint, List<DocBlueprintSection> sectionRows, String source,
+                               int version) {
+        SectionCoverageValidator.Result coverage = coverage(blueprint, sectionRows);
+        return BlueprintDto.from(blueprint, sectionRows, source, version, coverage, healthIssues(coverage, sectionRows));
+    }
+
+    private SectionCoverageValidator.Result coverage(DocBlueprint blueprint, List<DocBlueprintSection> sectionRows) {
+        try (InputStream in = Files.newInputStream(uploadStorage.localCopy(blueprint.getFileName()));
+             XWPFDocument doc = new XWPFDocument(in)) {
+            List<IBodyElement> elements = List.copyOf(doc.getBodyElements());
+            List<ParsedSection> parsed = sectionRows.stream()
+                    .map(s -> new ParsedSection(s.getOrderIndex(), s.getTitle(), s.getHeadingLevel(),
+                            s.getAnchorParagraphIndex(), s.getAnchorText(),
+                            SectionDto.splitKeywords(s.getKeywords()), s.getSectionKind()))
+                    .toList();
+            return SectionCoverageValidator.compute(parsed, elements);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read the stored blueprint.", e);
+        }
+    }
+
+    private static List<String> healthIssues(SectionCoverageValidator.Result coverage,
+                                             List<DocBlueprintSection> sectionRows) {
+        List<String> issues = new ArrayList<>();
+        if (coverage.meaningfulElements() > 0 && coverage.coveragePercent() < 100) {
+            issues.add("Some parts of the document are not covered by any section — use Edit sections or Re-run AI.");
+        }
+        long formWithoutFields = sectionRows.stream()
+                .filter(s -> ParsedSection.KIND_FORM.equals(s.getSectionKind()))
+                .filter(s -> s.getFieldSchema() == null || s.getFieldSchema().isBlank())
+                .count();
+        if (formWithoutFields > 0) {
+            issues.add(formWithoutFields + " form section(s) have no detected fields yet.");
+        }
+        return issues;
+    }
+
+    private List<ParsedSection> gapFillIfNeeded(DocBlueprint blueprint, List<ParsedSection> parsed, String source) {
+        if (!BlueprintSectionExtractor.SOURCE_AI.equals(source) || parsed.isEmpty()) {
+            return parsed;
+        }
+        try (InputStream in = Files.newInputStream(uploadStorage.localCopy(blueprint.getFileName()));
+             XWPFDocument doc = new XWPFDocument(in)) {
+            List<IBodyElement> elements = List.copyOf(doc.getBodyElements());
+            SectionCoverageValidator.Result coverage = SectionCoverageValidator.compute(parsed, elements);
+            if (coverage.coveragePercent() >= GAP_FILL_COVERAGE_THRESHOLD || coverage.gaps().isEmpty()) {
+                log.info("Template section coverage {}% ({} meaningful elements)",
+                        coverage.coveragePercent(), coverage.meaningfulElements());
+                return parsed;
+            }
+            List<ParsedSection> filled = SectionCoverageValidator.gapFillSections(parsed, coverage.gaps(), elements);
+            SectionCoverageValidator.Result after = SectionCoverageValidator.compute(filled, elements);
+            log.info("Gap-filled template sections: coverage {}% → {}%", coverage.coveragePercent(),
+                    after.coveragePercent());
+            return filled;
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read the stored blueprint.", e);
+        }
     }
 
     private List<DocBlueprintSection> saveVersion(DocBlueprint blueprint, int version, List<ParsedSection> parsed,
@@ -461,9 +563,41 @@ public class DocBlueprintUseCase {
             entity.setAnchorParagraphIndex(section.anchorParagraphIndex());
             entity.setAnchorText(section.anchorText() == null ? null : truncate(section.anchorText(), MAX_TITLE_LENGTH));
             entity.setKeywords(joinKeywords(section.keywords()));
+            entity.setSectionKind(section.sectionKind() == null || section.sectionKind().isBlank()
+                    ? ParsedSection.KIND_NARRATIVE : section.sectionKind());
             saved.add(sections.save(entity));
         }
         return saved;
+    }
+
+    private List<DocBlueprintSection> enrichFormFieldSchemas(DocBlueprint blueprint,
+                                                             List<DocBlueprintSection> saved) {
+        if (saved.isEmpty()) {
+            return saved;
+        }
+        List<DocBlueprintSection> ordered = saved.stream()
+                .sorted(Comparator.comparingInt(DocBlueprintSection::getAnchorParagraphIndex))
+                .toList();
+        return withBody(blueprint, elements -> {
+            List<DocBlueprintSection> out = new ArrayList<>();
+            for (DocBlueprintSection section : ordered) {
+                if (!TemplateFieldExtractor.isFormSection(section)
+                        || (section.getFieldSchema() != null && !section.getFieldSchema().isBlank())) {
+                    out.add(section);
+                    continue;
+                }
+                int next = TemplateFieldExtractor.nextAnchor(ordered, section);
+                String schema = fieldExtractor.extractSectionFields(elements, section, next);
+                if (schema != null) {
+                    section.setFieldSchema(schema);
+                    out.add(sections.save(section));
+                } else {
+                    out.add(section);
+                }
+            }
+            out.sort(Comparator.comparingInt(DocBlueprintSection::getOrderIndex));
+            return out;
+        });
     }
 
     private static Map<String, Object> versionSummary(int version, String source, int sectionCount, String note) {

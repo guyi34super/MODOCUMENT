@@ -131,7 +131,7 @@ class AiDocumentComposerTest {
     private Optional<byte[]> compose(AiDocumentComposer target) {
         return target.compose(blueprint, List.of(roof, inverter),
                 Map.of(10, List.of(paragraphBlock), 20, List.of(imageBlock)),
-                Map.of(7, asset), id -> png);
+                Map.of(7, asset), id -> png, Map.of());
     }
 
     private void aiReturns(List<AiDocumentComposer.AiOp> ops) {
@@ -262,7 +262,7 @@ class AiDocumentComposerTest {
     @Test
     void nothingToMergeMeansNoAiCall() {
         Optional<byte[]> result = composer.compose(blueprint, List.of(roof, inverter),
-                Map.of(), Map.of(), id -> png);
+                Map.of(), Map.of(), id -> png, Map.of());
 
         assertThat(result).isEmpty();
         verify(ai, never()).sendForObject(any(PromptEnvelope.class), any());

@@ -69,8 +69,8 @@ class AiSectionSplitterTest {
     @Test
     void acceptsAValidBreakdownAndAnchorsItToTheRealDocument() {
         aiReturns(List.of(
-                new AiSectionSplitter.AiSection(1, "Roof Overview", 1, List.of("roof", "tiles")),
-                new AiSectionSplitter.AiSection(4, "DC Routing", 2, List.of("dc2", "cable"))));
+                new AiSectionSplitter.AiSection(1, "Roof Overview", 1, List.of("roof", "tiles"), null),
+                new AiSectionSplitter.AiSection(4, "DC Routing", 2, List.of("dc2", "cable"), null)));
 
         Optional<List<ParsedSection>> result = splitter.split(docx);
 
@@ -91,24 +91,24 @@ class AiSectionSplitterTest {
 
     @Test
     void rejectsAnchorsThatAreNotRealParagraphs() {
-        aiReturns(List.of(new AiSectionSplitter.AiSection(3, "A table is not a heading", 1, List.of())));
+        aiReturns(List.of(new AiSectionSplitter.AiSection(3, "A table is not a heading", 1, List.of(), null)));
         assertThat(splitter.split(docx)).isEmpty();
 
-        aiReturns(List.of(new AiSectionSplitter.AiSection(99, "Out of range", 1, List.of())));
+        aiReturns(List.of(new AiSectionSplitter.AiSection(99, "Out of range", 1, List.of(), null)));
         assertThat(splitter.split(docx)).isEmpty();
     }
 
     @Test
     void putsOutOfOrderAnchorsInDocumentOrderAndDropsRepeats() {
         aiReturns(List.of(
-                new AiSectionSplitter.AiSection(4, "DC Routing", 1, List.of()),
-                new AiSectionSplitter.AiSection(1, "Roof", 1, List.of())));
+                new AiSectionSplitter.AiSection(4, "DC Routing", 1, List.of(), null),
+                new AiSectionSplitter.AiSection(1, "Roof", 1, List.of(), null)));
         assertThat(splitter.split(docx)).hasValueSatisfying(sections -> assertThat(sections)
                 .extracting(ParsedSection::anchorParagraphIndex).containsExactly(1, 4));
 
         aiReturns(List.of(
-                new AiSectionSplitter.AiSection(1, "Roof", 1, List.of()),
-                new AiSectionSplitter.AiSection(1, "Roof again", 1, List.of())));
+                new AiSectionSplitter.AiSection(1, "Roof", 1, List.of(), null),
+                new AiSectionSplitter.AiSection(1, "Roof again", 1, List.of(), null)));
         assertThat(splitter.split(docx)).hasValueSatisfying(sections -> assertThat(sections)
                 .extracting(ParsedSection::title).containsExactly("Roof"));
     }
@@ -116,9 +116,9 @@ class AiSectionSplitterTest {
     @Test
     void aMostlyWrongReplyIsRejectedAsAWhole() {
         aiReturns(List.of(
-                new AiSectionSplitter.AiSection(1, "Roof", 1, List.of()),
-                new AiSectionSplitter.AiSection(3, "A table", 1, List.of()),
-                new AiSectionSplitter.AiSection(99, "Out of range", 1, List.of())));
+                new AiSectionSplitter.AiSection(1, "Roof", 1, List.of(), null),
+                new AiSectionSplitter.AiSection(3, "A table", 1, List.of(), null),
+                new AiSectionSplitter.AiSection(99, "Out of range", 1, List.of(), null)));
         assertThat(splitter.split(docx)).isEmpty();
     }
 
@@ -203,8 +203,8 @@ class AiSectionSplitterTest {
         }
         org.mockito.ArgumentCaptor<PromptEnvelope> prompt = org.mockito.ArgumentCaptor.forClass(PromptEnvelope.class);
         when(ai.sendForObject(prompt.capture(), any())).thenReturn(List.of(
-                new AiSectionSplitter.AiSection(0, "Introduction", 1, List.of()),
-                new AiSectionSplitter.AiSection(scopeIndex, "Scope of works", 1, List.of())));
+                new AiSectionSplitter.AiSection(0, "Introduction", 1, List.of(), null),
+                new AiSectionSplitter.AiSection(scopeIndex, "Scope of works", 1, List.of(), null)));
 
         Optional<List<ParsedSection>> result = splitter.split(big);
 
@@ -244,7 +244,7 @@ class AiSectionSplitterTest {
 
             assertThat(digest).contains("[0] Letterhead line.");
             assertThat(digest).contains("[1] Roof Overview");
-            assertThat(digest).contains("[3] <TABLE>");
+            assertThat(digest).contains("[3] <TABLE cols=");
             assertThat(digest).contains("[4] DC Routing (DC2)");
         }
     }

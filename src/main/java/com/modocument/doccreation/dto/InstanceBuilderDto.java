@@ -18,13 +18,16 @@ public record InstanceBuilderDto(int instanceId,
                                  List<BuilderSectionDto> sections,
                                  List<UnsortedAssetDto> unsortedAssets,
                                  int blueprintVersion,
-                                 int blueprintCurrentVersion) {
+                                 int blueprintCurrentVersion,
+                                 int blueprintCoveragePercent) {
 
     public record BuilderSectionDto(int sectionId,
                                     int orderIndex,
                                     String title,
                                     int headingLevel,
                                     List<String> keywords,
+                                    String sectionKind,
+                                    List<TemplateFieldDto> fields,
                                     List<BlockDto> blocks) {
     }
 

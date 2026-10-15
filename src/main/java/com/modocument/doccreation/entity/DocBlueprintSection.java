@@ -54,7 +54,31 @@ public class DocBlueprintSection {
     @Column(name = "Version", nullable = false)
     private int version = 1;
 
+    /** NARRATIVE, FORM, TABLE, or BOILERPLATE (V292). */
+    @Column(name = "SectionKind", nullable = false, length = 16)
+    private String sectionKind = "NARRATIVE";
+
+    /** JSON array of field definitions for FORM sections (V292). */
+    @Column(name = "FieldSchema", columnDefinition = "text")
+    private String fieldSchema;
+
     public DocBlueprintSection() {
+    }
+
+    public String getSectionKind() {
+        return sectionKind;
+    }
+
+    public void setSectionKind(String sectionKind) {
+        this.sectionKind = sectionKind == null || sectionKind.isBlank() ? "NARRATIVE" : sectionKind;
+    }
+
+    public String getFieldSchema() {
+        return fieldSchema;
+    }
+
+    public void setFieldSchema(String fieldSchema) {
+        this.fieldSchema = fieldSchema;
     }
 
     public int getVersion() {

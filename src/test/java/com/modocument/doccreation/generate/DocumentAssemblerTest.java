@@ -3,6 +3,8 @@ package com.modocument.doccreation.generate;
 import com.modocument.doccreation.entity.DocBlueprintSection;
 import com.modocument.doccreation.entity.DocContentBlock;
 import com.modocument.doccreation.entity.DocImageAsset;
+import com.modocument.doccreation.template.InstanceFieldValues;
+import com.modocument.doccreation.template.TemplateFieldSchema;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
@@ -107,6 +109,29 @@ class DocumentAssemblerTest {
             }
             return texts;
         }
+    }
+
+    @Test
+    void replacesTabSeparatedFormFieldValues() throws IOException {
+        Path formBlueprint = tempDir.resolve("form.docx");
+        try (XWPFDocument doc = new XWPFDocument()) {
+            text(doc, "Applicant");
+            XWPFParagraph row = doc.createParagraph();
+            row.createRun().setText("Name\tJohn Specimen");
+            try (OutputStream out = Files.newOutputStream(formBlueprint)) {
+                doc.write(out);
+            }
+        }
+        DocBlueprintSection form = section(30, 0, "Applicant", 0);
+        form.setFieldSchema(TemplateFieldSchema.write(List.of(
+                new TemplateFieldSchema.FieldDef("name", "Name", 1,
+                        TemplateFieldSchema.FieldDef.STYLE_TAB_CELL))));
+        Map<String, String> values = Map.of(
+                InstanceFieldValues.compositeKey(30, "name"), "Jane Citizen");
+        byte[] result = assembler.assemble(formBlueprint, List.of(form), Map.of(), Map.of(),
+                id -> new byte[0], values);
+        assertThat(paragraphTexts(result)).contains("Name\tJane Citizen");
+        assertThat(paragraphTexts(result)).doesNotContain("John Specimen");
     }
 
     @Test

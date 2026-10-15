@@ -25,9 +25,9 @@ class DocBlueprintControllerTest {
     @Test
     void createReturns201WithLocation() {
         MockMultipartFile file = new MockMultipartFile("file", "report.docx", null, new byte[]{1});
-        when(useCase.create(any(), isNull(), isNull()))
+        when(useCase.create(any(), isNull(), isNull(), isNull()))
                 .thenReturn(new BlueprintDto(5, "report", null, "DEFAULT", "report.docx", null,
-                        List.of(), "AI", 1, 1));
+                        List.of(), "AI", 1, 1, 100, List.of(), List.of()));
 
         ResponseEntity<?> result = controller.create(file, null, null);
 
@@ -39,7 +39,7 @@ class DocBlueprintControllerTest {
     @Test
     void aNonDocxUploadAnswers400() {
         MockMultipartFile file = new MockMultipartFile("file", "report.pdf", null, new byte[]{1});
-        when(useCase.create(any(), isNull(), isNull()))
+        when(useCase.create(any(), isNull(), isNull(), isNull()))
                 .thenThrow(new IllegalArgumentException("Only .docx blueprints are supported."));
 
         ResponseEntity<?> result = controller.badRequest(
@@ -75,7 +75,7 @@ class DocBlueprintControllerTest {
     void resectionWithoutABodyRunsAgainstTheCurrentVersion() {
         when(useCase.resection(4, null, null))
                 .thenReturn(new BlueprintDto(4, "report", null, "DEFAULT", "report.pdf", null,
-                        List.of(), "AI", 2, 2));
+                        List.of(), "AI", 2, 2, 100, List.of(), List.of()));
 
         ResponseEntity<?> result = controller.resection(4, null);
 

@@ -7,6 +7,11 @@ import com.modocument.doccreation.dto.BulkUploadResultDto;
 import com.modocument.doccreation.dto.GenerationResultDto;
 import com.modocument.doccreation.dto.InstanceBuilderDto;
 import com.modocument.doccreation.dto.SectionDto;
+import com.modocument.doccreation.dto.UpdateInstanceFieldsRequest;
+import com.modocument.doccreation.entity.DocBlueprintSection;
+import com.modocument.doccreation.parse.ParsedSection;
+import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
+import com.modocument.doccreation.template.TemplateFieldSchema;
 import com.modocument.doccreation.usecase.DocBlueprintUseCase;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
@@ -71,6 +76,8 @@ class DocCreationEndToEndTest {
     private DocBlueprintUseCase blueprints;
     @Autowired
     private DocInstanceUseCase instances;
+    @Autowired
+    private DocBlueprintSectionRepository blueprintSections;
 
     @BeforeEach
     void authenticateAsUserOne() {
@@ -137,7 +144,7 @@ class DocCreationEndToEndTest {
     private BlueprintDto uploadBlueprint(String name) throws IOException {
         return blueprints.create(new MockMultipartFile("file", "survey report.docx",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                blueprintDocx()), name, null);
+                blueprintDocx()), name, null, null);
     }
 
     private static int sectionId(BlueprintDto blueprint, String title) {
@@ -293,14 +300,14 @@ class DocCreationEndToEndTest {
     void rejections_theSharpEdgesAnswerCleanlyInsteadOfCorruptingState() throws IOException {
         // Invalid pdf/docx and unsupported types are rejected without leaving stored files.
         assertThatThrownBy(() -> blueprints.create(
-                new MockMultipartFile("file", "report.pdf", "application/pdf", new byte[]{1}), null, null))
+                new MockMultipartFile("file", "report.pdf", "application/pdf", new byte[]{1}), null, null, null))
                 .isInstanceOf(RuntimeException.class);
         assertThatThrownBy(() -> blueprints.create(
-                new MockMultipartFile("file", "notes.txt", "text/plain", "hello".getBytes()), null, null))
+                new MockMultipartFile("file", "notes.txt", "text/plain", "hello".getBytes()), null, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining(".docx and .pdf");
         assertThatThrownBy(() -> blueprints.create(
-                new MockMultipartFile("file", "fake.docx", null, "not a zip".getBytes()), null, null))
+                new MockMultipartFile("file", "fake.docx", null, "not a zip".getBytes()), null, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
         try (var files = Files.list(storageRoot.resolve("uploads"))) {
             assertThat(files.filter(p -> p.getFileName().toString().startsWith("fake_"))).isEmpty();
@@ -350,5 +357,46 @@ class DocCreationEndToEndTest {
 
         instances.delete(instanceId);
         blueprints.delete(blueprint.blueprintId());
+    }
+
+    @Test
+    void generate_appliesFormFieldValuesAfterSampleStrip() throws IOException {
+        try (XWPFDocument doc = new XWPFDocument()) {
+            heading(doc, "Applicant");
+            org.apache.poi.xwpf.usermodel.XWPFParagraph row = doc.createParagraph();
+            row.createRun().setText("Name\tJohn Specimen");
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            doc.write(out);
+            BlueprintDto blueprint = blueprints.create(
+                    new MockMultipartFile("file", "loan_filled.docx",
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            out.toByteArray()),
+                    "Loan form", null, true);
+            DocBlueprintSection section = blueprintSections.listByBlueprintVersion(
+                    blueprint.blueprintId(), blueprint.version()).get(0);
+            section.setSectionKind(ParsedSection.KIND_FORM);
+            section.setFieldSchema(TemplateFieldSchema.write(List.of(
+                    new TemplateFieldSchema.FieldDef("name", "Name", section.getAnchorParagraphIndex() + 1,
+                            TemplateFieldSchema.FieldDef.STYLE_TAB_CELL))));
+            blueprintSections.save(section);
+
+            int instanceId = instances.create(blueprint.blueprintId(), "Loan — Jane").instanceId();
+            UpdateInstanceFieldsRequest fields = new UpdateInstanceFieldsRequest();
+            UpdateInstanceFieldsRequest.FieldValueInput input = new UpdateInstanceFieldsRequest.FieldValueInput();
+            input.setSectionId(section.getDocBlueprintSectionId());
+            input.setFieldKey("name");
+            input.setValue("Jane Citizen");
+            fields.setFields(List.of(input));
+            instances.updateFields(instanceId, fields);
+
+            GenerationResultDto generated = instances.generate(instanceId);
+            Path docxPath = storageRoot.resolve("exports").resolve(generated.docxFileName());
+            List<String> texts = paragraphTexts(Files.readAllBytes(docxPath));
+            assertThat(texts).anyMatch(t -> t != null && t.contains("Jane Citizen"));
+            assertThat(texts).noneMatch(t -> t != null && t.contains("John Specimen"));
+
+            instances.delete(instanceId);
+            blueprints.delete(blueprint.blueprintId());
+        }
     }
 }

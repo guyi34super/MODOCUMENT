@@ -292,6 +292,10 @@ no LLM involved.
   uptime monitors — build version + database round trip only.
 
 ### Document creation (blueprint → sections → fill → generate)
+- **Template from PDF or Word** — upload `.docx` or `.pdf` (PDF is reflowed to
+  editable Word). Optionally **strip sample/filled-in values** while keeping
+  layout (`stripSampleData` on upload, or the upload checkbox in the UI). The
+  stored blueprint file is the reproduction source for generation.
 - **Upload your company's report (.docx) as a blueprint** — the engine breaks it
   down into sections. An **AI breakdown runs first**: the LLM reads the
   document's paragraph listing and identifies every logical section the way a
@@ -304,7 +308,10 @@ no LLM involved.
   uploaded file itself is kept untouched as the source of truth.
   Configure with `MODOCUMENT_DOCCREATION_SECTION_AI` (default `true`) and
   `MODOCUMENT_DOCCREATION_SECTION_MODEL` (default: the global model).
-- **Fill each section** with paragraphs and pictures. Bulk-drop all images at
+- **Review template coverage** on the blueprint detail page (coverage %, gaps,
+  health checklist). Edit sections or re-run AI when something is missing.
+- **Fill each section** with **form fields** (FORM sections) and/or **paragraphs
+  and pictures** (NARRATIVE sections). Bulk-drop all images at
   once: file names are matched against each section's editable keywords ("roof"
   claims `Roof_East_02.jpg`, "dc2" claims `dc2-overview.png`) and placed
   automatically; unmatched images wait in an **Unsorted tray** instead of being
@@ -663,7 +670,8 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/doccreation/blueprints` | Upload a .docx or .pdf blueprint (PDF converted to .docx server-side; multipart `file` + optional `name`, `companyId`); parsed into sections |
+| `POST /api/doccreation/blueprints` | Upload a .docx or .pdf template (optional `stripSampleData`, `name`, `companyId`); AI/heuristic sections + coverage on the response |
+| `PUT /api/doccreation/instances/{id}/fields` | Save form field values for FORM sections |
 | `GET /api/doccreation/blueprints[/{id}]` | List / get blueprints with their sections |
 | `GET /api/doccreation/blueprints/{id}/file` | Download the original blueprint |
 | `PUT .../blueprints/{id}/sections/{sectionId}/keywords` | Tune a section's image auto-assignment keywords |

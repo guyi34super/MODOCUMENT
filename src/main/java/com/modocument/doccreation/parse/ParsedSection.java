@@ -13,5 +13,17 @@ public record ParsedSection(int orderIndex,
                             int headingLevel,
                             int anchorParagraphIndex,
                             String anchorText,
-                            List<String> keywords) {
+                            List<String> keywords,
+                            String sectionKind) {
+
+    public static final String KIND_NARRATIVE = "NARRATIVE";
+    public static final String KIND_FORM = "FORM";
+    public static final String KIND_TABLE = "TABLE";
+    public static final String KIND_BOILERPLATE = "BOILERPLATE";
+
+    /** Heuristic and legacy callers without a kind. */
+    public ParsedSection(int orderIndex, String title, int headingLevel, int anchorParagraphIndex,
+                         String anchorText, List<String> keywords) {
+        this(orderIndex, title, headingLevel, anchorParagraphIndex, anchorText, keywords, null);
+    }
 }

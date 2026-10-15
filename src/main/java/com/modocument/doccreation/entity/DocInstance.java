@@ -109,7 +109,19 @@ public class DocInstance {
     @Column(name = "ContentPurgedAt")
     private LocalDateTime contentPurgedAt;
 
+    /** JSON array of form field values keyed by section + fieldKey (V292). */
+    @Column(name = "FieldValuesJson", columnDefinition = "text")
+    private String fieldValuesJson;
+
     public DocInstance() {
+    }
+
+    public String getFieldValuesJson() {
+        return fieldValuesJson;
+    }
+
+    public void setFieldValuesJson(String fieldValuesJson) {
+        this.fieldValuesJson = fieldValuesJson;
     }
 
     @JsonIgnore

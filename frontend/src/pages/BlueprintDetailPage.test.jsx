@@ -41,7 +41,14 @@ const blueprint = (overrides = {}) => ({
   sectionSource: 'AI',
   version: 2,
   currentVersion: 2,
-  sections: [section(1, 'Applicant', 0), section(2, 'Income', 5), section(3, 'Declaration', 9)],
+  coveragePercent: 100,
+  gaps: [],
+  healthIssues: [],
+  sections: [
+    section(1, 'Applicant', 0, { sectionKind: 'FORM' }),
+    section(2, 'Income', 5),
+    section(3, 'Declaration', 9),
+  ],
   ...overrides,
 });
 

@@ -275,7 +275,7 @@ class MaskingGateC2Test extends IsolatedStorageApiTestSupport {
 
         BlueprintDto blueprint = blueprints.create(new MockMultipartFile("file", "report.docx",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                blueprintDocx()), "C2 Report", null);
+                blueprintDocx()), "C2 Report", null, null);
         int instanceId = instances.create(blueprint.blueprintId(), "C2 instance").instanceId();
         int sectionId = blueprint.sections().get(0).sectionId();
 

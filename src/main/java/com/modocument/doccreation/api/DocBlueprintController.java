@@ -53,8 +53,10 @@ public class DocBlueprintController {
     @PostMapping(value = "/api/doccreation/blueprints", consumes = "multipart/form-data")
     public ResponseEntity<?> create(@RequestParam("file") MultipartFile file,
                                     @RequestParam(value = "name", required = false) String name,
-                                    @RequestParam(value = "companyId", required = false) String companyId) {
-        BlueprintDto created = useCase.create(file, name, companyId);
+                                    @RequestParam(value = "companyId", required = false) String companyId,
+                                    @RequestParam(value = "stripSampleData", required = false)
+                                    Boolean stripSampleData) {
+        BlueprintDto created = useCase.create(file, name, companyId, stripSampleData);
         return ResponseEntity
                 .created(URI.create("/api/doccreation/blueprints/" + created.blueprintId()))
                 .body(created);

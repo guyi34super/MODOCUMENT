@@ -17,6 +17,7 @@ export default function BlueprintListPage() {
   const [name, setName] = useState('');
   const [companyId, setCompanyId] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [stripSampleData, setStripSampleData] = useState(false);
   // null = "not decided by the user yet": auto-open only for first-time users.
   const [showUpload, setShowUpload] = useState(null);
   const uploadOpen = showUpload ?? (blueprints !== null && blueprints.length === 0);
@@ -43,13 +44,19 @@ export default function BlueprintListPage() {
     setUploading(true);
     try {
       const created = await toast.promise(
-        () => uploadBlueprint(file, name.trim() || undefined, companyId.trim() || undefined),
+        () =>
+          uploadBlueprint(
+            file,
+            name.trim() || undefined,
+            companyId.trim() || undefined,
+            stripSampleData
+          ),
         {
-          loading: 'Uploading & breaking the document into sections…',
+          loading: 'Creating template from your document…',
           success: (b) =>
-            `Blueprint ready — ${b.sections.length} section${b.sections.length === 1 ? '' : 's'} found${
-              b.sectionSource === 'AI' ? ' by AI' : ''
-            }`,
+            `Template ready — ${b.sections.length} section${b.sections.length === 1 ? '' : 's'}${
+              b.sectionSource === 'AI' ? ' (AI)' : ''
+            }${stripSampleData ? ' · sample data removed' : ''}`,
           error: (err) => err.message,
         }
       );
@@ -114,7 +121,19 @@ export default function BlueprintListPage() {
                   required
                   accept=".docx,.pdf"
                   className="block w-full text-sm text-muted file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-pill file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-accent"
-                  onChange={(e) => setFile(e.target.files[0] || null)}
+                  onChange={(e) => {
+                    const chosen = e.target.files[0] || null;
+                    setFile(chosen);
+                    if (chosen?.name) {
+                      const lower = chosen.name.toLowerCase();
+                      setStripSampleData(
+                        lower.includes('_filled') ||
+                          lower.includes('specimen') ||
+                          lower.includes('_sample') ||
+                          lower.includes('_mock')
+                      );
+                    }
+                  }}
                 />
               </Field>
               <Field label="Name" hint="Defaults to the file name">
@@ -134,8 +153,16 @@ export default function BlueprintListPage() {
                 />
               </Field>
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={stripSampleData}
+                onChange={(e) => setStripSampleData(e.target.checked)}
+              />
+              This file contains sample or filled-in data — strip values and keep the layout
+            </label>
             <Button type="submit" disabled={uploading || !file}>
-              {uploading ? 'Uploading…' : 'Upload & break into sections'}
+              {uploading ? 'Creating template…' : 'Create template from document'}
             </Button>
           </form>
         </Card>

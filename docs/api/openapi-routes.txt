@@ -145,6 +145,7 @@ GET /api/doccreation/instances/pending-release
 DELETE /api/doccreation/instances/{id}
 GET /api/doccreation/instances/{id}
 PUT /api/doccreation/instances/{id}
+PUT /api/doccreation/instances/{id}/fields
 POST /api/doccreation/instances/{id}/assets
 GET /api/doccreation/instances/{id}/download
 POST /api/doccreation/instances/{id}/generate

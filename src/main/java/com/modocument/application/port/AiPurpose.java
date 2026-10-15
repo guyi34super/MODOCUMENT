@@ -30,6 +30,10 @@ public enum AiPurpose {
     EXTRACTION_SUMMARY(OutputPolicy.LENIENT, true),
     /** Blueprint section breakdown; falls back to the heuristic parser. */
     DOC_SECTION_SPLIT(OutputPolicy.STRICT, true),
+    /** Strip sample values from an uploaded template; heuristics remain primary. */
+    DOC_TEMPLATE_CLEAN(OutputPolicy.STRICT, true),
+    /** Detect fillable fields inside a FORM template section. */
+    DOC_TEMPLATE_FIELD(OutputPolicy.LENIENT, true),
     /** AI-composed document generation; falls back to the deterministic engine. */
     DOC_COMPOSE(OutputPolicy.STRICT, true),
     /**

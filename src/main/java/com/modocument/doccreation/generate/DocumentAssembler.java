@@ -3,6 +3,8 @@ package com.modocument.doccreation.generate;
 import com.modocument.doccreation.entity.DocBlueprintSection;
 import com.modocument.doccreation.entity.DocContentBlock;
 import com.modocument.doccreation.entity.DocImageAsset;
+import com.modocument.doccreation.template.InstanceFieldValues;
+import com.modocument.doccreation.template.TemplateFieldSchema;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.Document;
 import org.apache.poi.xwpf.usermodel.IBodyElement;
@@ -60,11 +62,23 @@ public class DocumentAssembler {
                            Map<Integer, List<DocContentBlock>> blocksBySectionId,
                            Map<Integer, DocImageAsset> assetsById,
                            Function<Integer, byte[]> assetBytesLoader) {
+        return assemble(blueprintDocx, sectionsInOrder, blocksBySectionId, assetsById, assetBytesLoader,
+                Map.of());
+    }
+
+    public byte[] assemble(Path blueprintDocx,
+                           List<DocBlueprintSection> sectionsInOrder,
+                           Map<Integer, List<DocContentBlock>> blocksBySectionId,
+                           Map<Integer, DocImageAsset> assetsById,
+                           Function<Integer, byte[]> assetBytesLoader,
+                           Map<String, String> fieldValuesByKey) {
         try (InputStream in = Files.newInputStream(blueprintDocx);
              XWPFDocument doc = new XWPFDocument(in)) {
 
             List<IBodyElement> elements = doc.getBodyElements();
             validateAnchors(sectionsInOrder, elements);
+            applyTemplateFieldValues(doc, sectionsInOrder, fieldValuesByKey);
+            elements = doc.getBodyElements();
 
             // Resolve every section's insertion target BEFORE the first insert:
             // section i's content goes right before section i+1's heading (the
@@ -128,9 +142,19 @@ public class DocumentAssembler {
                          List<PlanOp> ops,
                          Map<Integer, DocImageAsset> assetsById,
                          Function<Integer, byte[]> assetBytesLoader) {
+        return render(blueprintDocx, List.of(), ops, assetsById, assetBytesLoader, Map.of());
+    }
+
+    public byte[] render(Path blueprintDocx,
+                         List<DocBlueprintSection> sectionsInOrder,
+                         List<PlanOp> ops,
+                         Map<Integer, DocImageAsset> assetsById,
+                         Function<Integer, byte[]> assetBytesLoader,
+                         Map<String, String> fieldValuesByKey) {
         try (InputStream in = Files.newInputStream(blueprintDocx);
              XWPFDocument doc = new XWPFDocument(in)) {
 
+            applyTemplateFieldValues(doc, sectionsInOrder, fieldValuesByKey);
             List<IBodyElement> elements = List.copyOf(doc.getBodyElements());
             // Resolve each insertion's target BEFORE the first insert (inserts
             // shift indexes; element references stay valid).
@@ -190,6 +214,68 @@ public class DocumentAssembler {
         }
         // SDT blocks and other exotic elements: append rather than fail.
         return doc.createParagraph();
+    }
+
+    /**
+     * Replaces specimen or empty values in FORM fields while keeping label runs
+     * (tab-separated rows, "Label: value" lines, etc.).
+     */
+    public static void applyTemplateFieldValues(XWPFDocument doc,
+                                                List<DocBlueprintSection> sectionsInOrder,
+                                                Map<String, String> fieldValuesByKey) {
+        if (fieldValuesByKey == null || fieldValuesByKey.isEmpty() || sectionsInOrder == null) {
+            return;
+        }
+        List<IBodyElement> elements = doc.getBodyElements();
+        for (DocBlueprintSection section : sectionsInOrder) {
+            for (TemplateFieldSchema.FieldDef field : TemplateFieldSchema.parse(section.getFieldSchema())) {
+                String value = fieldValuesByKey.get(
+                        InstanceFieldValues.compositeKey(section.getDocBlueprintSectionId(), field.fieldKey()));
+                if (value == null || value.isBlank()) {
+                    continue;
+                }
+                int anchor = field.anchorParagraphIndex();
+                if (anchor < 0 || anchor >= elements.size()
+                        || !(elements.get(anchor) instanceof XWPFParagraph paragraph)) {
+                    continue;
+                }
+                replaceValuePreservingLabel(paragraph, field.label(), value, field.normalizedStyle(), elements,
+                        anchor);
+            }
+        }
+    }
+
+    static void replaceValuePreservingLabel(XWPFParagraph paragraph,
+                                            String label,
+                                            String newValue,
+                                            String valueStyle,
+                                            List<IBodyElement> elements,
+                                            int anchorIndex) {
+        if (TemplateFieldSchema.FieldDef.STYLE_NEXT_PARAGRAPH.equals(valueStyle)) {
+            if (anchorIndex + 1 < elements.size() && elements.get(anchorIndex + 1) instanceof XWPFParagraph next) {
+                rewriteParagraphText(next, newValue);
+            }
+            return;
+        }
+        String text = paragraph.getText() == null ? "" : paragraph.getText();
+        if (TemplateFieldSchema.FieldDef.STYLE_TAB_CELL.equals(valueStyle) || text.contains("\t")) {
+            String prefix = label + "\t";
+            rewriteParagraphText(paragraph, prefix + newValue);
+            return;
+        }
+        String prefix = label.endsWith(":") ? label + " " : label + ": ";
+        if (text.strip().startsWith(label)) {
+            rewriteParagraphText(paragraph, prefix + newValue);
+        } else {
+            rewriteParagraphText(paragraph, prefix + newValue);
+        }
+    }
+
+    private static void rewriteParagraphText(XWPFParagraph paragraph, String text) {
+        for (int i = paragraph.getRuns().size() - 1; i >= 0; i--) {
+            paragraph.removeRun(i);
+        }
+        paragraph.createRun().setText(text == null ? "" : text);
     }
 
     /** Belt-and-braces: the stored blueprint file must still match the parsed anchors. */

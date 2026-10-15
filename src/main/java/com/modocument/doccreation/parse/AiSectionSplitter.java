@@ -12,6 +12,9 @@ import org.apache.poi.xwpf.usermodel.IBodyElement;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableCell;
+import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,30 +71,34 @@ public class AiSectionSplitter {
             """;
 
     private static final String PROMPT = """
-            You are an expert document-structure analyst. Below is the full body listing of a \
-            business document (.docx). Each line is one body element: "[index] text" for a \
-            paragraph (with STYLE= and BOLD markers when present) or "[index] <TABLE>" for a table.
+            You are an expert document-structure analyst building a REUSABLE TEMPLATE from an \
+            uploaded business document (.docx). Each line is one body element: "[index] text" for \
+            a paragraph (STYLE=, BOLD=, LABEL= when present) or "[index] <TABLE cols=N preview=\"…\">".
 
-            Break the ENTIRE document into its logical sections — exactly the sections a careful \
-            human reader would use as chapters to file photos and notes under. Follow every rule:
-            - A section starts at the paragraph that acts as its heading or title line. Headings \
-            come in many disguises: styled headings, numbered lines ("3.1 Earthing"), short \
-            standalone lines in bold or capitals, labelled parts ("Scope of Works:"), etc.
-            - anchorIndex is the exact [index] of that heading paragraph. Never invent an index, \
-            never point at a <TABLE> line, never reuse an index. anchorIndex values must be \
-            strictly increasing.
-            - Cover the whole document: every meaningful part of it belongs to some section. \
-            Prefer the document's own structure over inventing one. Include sub-sections when \
-            they are clearly delineated and useful as separate slots.
-            - Do NOT treat ordinary body sentences, list items, captions, page headers/footers or \
-            table content as sections.
-            - headingLevel: 1 for top-level sections, 2-9 for nested ones (from numbering depth, \
-            styles or indentation).
-            - title: the heading's clean text, kept faithful to the document.
-            - keywords: 3-8 short lowercase tokens someone would put in a photo file name meant \
-            for that section (e.g. "roof", "dc2", "inverter", "earthing"). Always include codes \
-            and abbreviations appearing in the heading.
-            - If the document truly has no identifiable sections, return an empty array [].
+            Break the ENTIRE document into logical template sections — the parts a user would fill \
+            or edit separately when creating a new document from this template. Document kinds \
+            include forms (label/value rows), reports (headings + narrative), schedules/tables, \
+            legal (Part/Article/Schedule), and letters (addressee, body, signature).
+
+            Rules (follow all):
+            - anchorIndex is the exact [index] of the paragraph that STARTS the section (the \
+            heading, part title, or field-group label line). Never invent an index. Never anchor \
+            on a <TABLE> line — anchor on the paragraph immediately BEFORE a table if that is the \
+            section title. Never reuse an index; order by increasing anchorIndex.
+            - COVERAGE: every meaningful paragraph and table must fall between consecutive \
+            section anchors (from this anchor up to, but not including, the next). Add a final \
+            section for trailing content after the last heading when needed. If the file has no \
+            headings at all, return one section anchored at the first non-empty paragraph.
+            - Prefer field-GROUP sections (e.g. "Applicant details", "Loan particulars") over one \
+            section per single form field. Use headingLevel 2-3 for nested parts under a Part/Chapter.
+            - sectionKind (optional): NARRATIVE (prose the user adds to), FORM (label/value fields \
+            to fill), TABLE (mostly tabular block), BOILERPLATE (headers, watermarks, legal footers \
+            — still list them but mark BOILERPLATE).
+            - Do NOT start sections on ordinary body sentences, isolated list items, or page numbers.
+            - headingLevel: 1 top-level, 2-9 nested (numbering depth, styles, indentation).
+            - title: clean heading text faithful to the document.
+            - keywords: 3-8 short lowercase tokens for auto-matching uploads (include codes in headings).
+            - If nothing is sectionable, return [].
 
             Document listing:
             """;
@@ -146,7 +153,11 @@ public class AiSectionSplitter {
     }
 
     /** The shape the model must return; validated before anything is trusted. */
-    public record AiSection(Integer anchorIndex, String title, Integer headingLevel, List<String> keywords) {
+    public record AiSection(Integer anchorIndex,
+                            String title,
+                            Integer headingLevel,
+                            List<String> keywords,
+                            String sectionKind) {
     }
 
     /**
@@ -245,7 +256,11 @@ public class AiSectionSplitter {
     static String condensedDigest(List<IBodyElement> elements) {
         StringBuilder out = new StringBuilder();
         for (int i = 0; i < elements.size(); i++) {
-            if (!(elements.get(i) instanceof XWPFParagraph paragraph) || !isHeadingCandidate(paragraph)) {
+            if (elements.get(i) instanceof XWPFTable table) {
+                appendCondensedTable(out, i, table);
+                continue;
+            }
+            if (!(elements.get(i) instanceof XWPFParagraph paragraph) || !condensedCandidate(paragraph)) {
                 continue;
             }
             if (out.length() >= MAX_DIGEST_CHARS) {
@@ -264,9 +279,18 @@ public class AiSectionSplitter {
             if (isAllBold(paragraph)) {
                 out.append("  BOLD");
             }
+            appendLabelMarker(out, text);
             out.append('\n');
         }
         return out.toString();
+    }
+
+    private static boolean condensedCandidate(XWPFParagraph paragraph) {
+        if (isHeadingCandidate(paragraph)) {
+            return true;
+        }
+        String text = paragraph.getText() == null ? "" : paragraph.getText().strip();
+        return text.contains("\t") || text.endsWith(":");
     }
 
     /** A paragraph that could plausibly be a section heading (shared with the section editor). */
@@ -318,12 +342,76 @@ public class AiSectionSplitter {
                 if (isAllBold(paragraph)) {
                     out.append("  BOLD");
                 }
+                appendLabelMarker(out, text);
                 out.append('\n');
-            } else {
-                out.append('[').append(i).append("] <TABLE>\n");
+            } else if (elements.get(i) instanceof XWPFTable table) {
+                appendTableLine(out, i, table);
             }
         }
         return out.toString();
+    }
+
+    private static void appendTableLine(StringBuilder out, int index, XWPFTable table) {
+        out.append('[').append(index).append("] <TABLE cols=").append(tableColumnCount(table))
+                .append(" preview=\"").append(escapeAttr(tablePreview(table))).append("\">\n");
+    }
+
+    private static void appendCondensedTable(StringBuilder out, int index, XWPFTable table) {
+        if (out.length() >= MAX_DIGEST_CHARS) {
+            return;
+        }
+        appendTableLine(out, index, table);
+    }
+
+    private static int tableColumnCount(XWPFTable table) {
+        if (table.getNumberOfRows() == 0) {
+            return 0;
+        }
+        return table.getRow(0).getTableCells().size();
+    }
+
+    static String tablePreview(XWPFTable table) {
+        if (table.getNumberOfRows() == 0) {
+            return "";
+        }
+        XWPFTableRow row = table.getRow(0);
+        StringBuilder cells = new StringBuilder();
+        for (XWPFTableCell cell : row.getTableCells()) {
+            if (cells.length() > 0) {
+                cells.append(" | ");
+            }
+            String text = cell.getText() == null ? "" : cell.getText().strip().replaceAll("\\s+", " ");
+            if (text.length() > 40) {
+                text = text.substring(0, 40) + "…";
+            }
+            cells.append(text);
+        }
+        String preview = cells.toString();
+        return preview.length() > 120 ? preview.substring(0, 120) + "…" : preview;
+    }
+
+    private static void appendLabelMarker(StringBuilder out, String text) {
+        int tab = text.indexOf('\t');
+        if (tab > 0) {
+            out.append("  LABEL=").append(text.substring(0, tab).strip());
+        } else if (text.endsWith(":") && text.length() <= 80) {
+            out.append("  LABEL=").append(text.substring(0, text.length() - 1).strip());
+        }
+    }
+
+    private static String escapeAttr(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "'");
+    }
+
+    static String normalizeSectionKind(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return ParsedSection.KIND_NARRATIVE;
+        }
+        String upper = raw.strip().toUpperCase(Locale.ROOT);
+        return switch (upper) {
+            case ParsedSection.KIND_FORM, ParsedSection.KIND_TABLE, ParsedSection.KIND_BOILERPLATE -> upper;
+            default -> ParsedSection.KIND_NARRATIVE;
+        };
     }
 
     private static boolean isAllBold(XWPFParagraph paragraph) {
@@ -390,7 +478,8 @@ public class AiSectionSplitter {
             int level = section.headingLevel() == null ? 1
                     : Math.max(1, Math.min(9, section.headingLevel()));
             sections.add(new ParsedSection(sections.size(), truncate(title), level, anchor,
-                    truncate(paragraphText), mergeKeywords(section.keywords(), title)));
+                    truncate(paragraphText), mergeKeywords(section.keywords(), title),
+                    normalizeSectionKind(section.sectionKind())));
         });
         return Optional.of(sections);
     }

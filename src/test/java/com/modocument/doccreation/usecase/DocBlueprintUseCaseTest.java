@@ -14,6 +14,8 @@ import com.modocument.doccreation.parse.BlueprintSectionExtractor;
 import com.modocument.doccreation.parse.ParsedSection;
 import com.modocument.doccreation.pdf.LibreOfficeDocxConverter;
 import com.modocument.doccreation.pdf.PdfBlueprintReflower;
+import com.modocument.doccreation.template.TemplateFieldExtractor;
+import com.modocument.doccreation.template.TemplateNormalizer;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
 import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
 import com.modocument.doccreation.repo.DocBlueprintVersionRepository;
@@ -74,6 +76,10 @@ class DocBlueprintUseCaseTest {
     LibreOfficeDocxConverter pdfToDocx;
     @Mock
     AuditRecorder audit;
+    @Mock
+    TemplateNormalizer templateNormalizer;
+    @Mock
+    TemplateFieldExtractor fieldExtractor;
 
     @InjectMocks
     DocBlueprintUseCase useCase;
@@ -89,7 +95,7 @@ class DocBlueprintUseCaseTest {
         when(pdfReflower.toDocx(Path.of("/tmp/report.pdf")))
                 .thenReturn(new PdfBlueprintReflower.Reflowed(DOCX_BYTES, 12, 3, 2, 0));
 
-        BlueprintDto dto = useCase.create(pdf(), null, null);
+        BlueprintDto dto = useCase.create(pdf(), null, null, null);
 
         verify(pdfToDocx, never()).convertPdfToDocx(any());
         ArgumentCaptor<DocBlueprint> captor = ArgumentCaptor.forClass(DocBlueprint.class);
@@ -113,7 +119,7 @@ class DocBlueprintUseCaseTest {
                 .thenReturn(new PdfBlueprintReflower.Reflowed(new byte[0], 0, 0, 1, 0));
         when(pdfToDocx.convertPdfToDocx(Path.of("/tmp/report.pdf"))).thenReturn(DOCX_BYTES);
 
-        useCase.create(pdf(), null, null);
+        useCase.create(pdf(), null, null, null);
 
         verify(pdfToDocx).convertPdfToDocx(Path.of("/tmp/report.pdf"));
     }
@@ -126,7 +132,7 @@ class DocBlueprintUseCaseTest {
         when(pdfReflower.toDocx(Path.of("/tmp/report.pdf")))
                 .thenThrow(new IllegalArgumentException("This PDF is password-protected."));
 
-        assertThatThrownBy(() -> useCase.create(pdf(), null, null))
+        assertThatThrownBy(() -> useCase.create(pdf(), null, null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("password");
         verify(pdfToDocx, never()).convertPdfToDocx(any());
@@ -264,20 +270,36 @@ class DocBlueprintUseCaseTest {
         when(flow.flowKey()).thenReturn("DEFAULT");
         when(flow.customizeSections(any(), any())).thenAnswer(inv -> inv.getArgument(0));
         when(flows.flowFor(null)).thenReturn(flow);
+        Path docx = tmp.resolve("report.docx");
+        try (XWPFDocument doc = new XWPFDocument(); OutputStream out = Files.newOutputStream(docx)) {
+            doc.createParagraph().createRun().setText("Intro");
+            doc.write(out);
+        }
+        byte[] docxBytes = Files.readAllBytes(docx);
+        when(templateNormalizer.normalize(any(), any(), any()))
+                .thenAnswer(inv -> new TemplateNormalizer.Result(inv.getArgument(0), 0, false));
+        when(fieldExtractor.extractSectionFields(any(), any(), any())).thenReturn(null);
         when(uploadStorage.store(any(MockMultipartFile.class))).thenReturn("report_20260101120000.pdf");
         when(uploadStorage.key("report_20260101120000.pdf")).thenReturn("uploads/report_20260101120000.pdf");
         when(uploadStorage.localCopy("report_20260101120000.pdf")).thenReturn(Path.of("/tmp/report.pdf"));
         when(uploadStorage.store(eq("report.docx"), eq(DOCX_BYTES))).thenReturn("report_20260101120000.docx");
         when(uploadStorage.key("report_20260101120000.docx")).thenReturn("uploads/report_20260101120000.docx");
-        when(uploadStorage.localCopy("report_20260101120000.docx")).thenReturn(Path.of("/tmp/report.docx"));
-        when(sectionExtractor.extract(Path.of("/tmp/report.docx"), "report"))
+        when(uploadStorage.localCopy("report_20260101120000.docx")).thenReturn(docx);
+        when(sectionExtractor.extract(docx, "report"))
                 .thenReturn(new BlueprintSectionExtractor.Extraction(
                         List.of(new ParsedSection(0, "Intro", 1, 0, "Intro", List.of("intro"))),
                         BlueprintSectionExtractor.SOURCE_AI));
         DocBlueprint saved = new DocBlueprint();
         saved.setDocBlueprintId(7);
         saved.setBankId(1);
-        when(blueprints.save(any(DocBlueprint.class))).thenReturn(saved);
+        saved.setFileName("report_20260101120000.docx");
+        when(blueprints.save(any(DocBlueprint.class))).thenAnswer(inv -> {
+            DocBlueprint bp = inv.getArgument(0);
+            if (bp.getDocBlueprintId() == 0) {
+                bp.setDocBlueprintId(7);
+            }
+            return bp;
+        });
         when(sections.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 

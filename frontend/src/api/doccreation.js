@@ -2,11 +2,12 @@ import { api, downloadFile } from './client';
 
 // ---------------------------------------------------------------- blueprints
 
-export function uploadBlueprint(file, name, companyId) {
+export function uploadBlueprint(file, name, companyId, stripSampleData) {
   const form = new FormData();
   form.append('file', file);
   if (name) form.append('name', name);
   if (companyId) form.append('companyId', companyId);
+  if (stripSampleData != null) form.append('stripSampleData', String(stripSampleData));
   return api.post('/api/doccreation/blueprints', form);
 }
 
@@ -69,6 +70,11 @@ export function listInstances(blueprintId) {
 
 export function getInstance(id) {
   return api.get(`/api/doccreation/instances/${id}`);
+}
+
+/** Batch-update form field values: `{ fields: [{ sectionId, fieldKey, value }] }`. */
+export function updateInstanceFields(id, fields) {
+  return api.put(`/api/doccreation/instances/${id}/fields`, { fields });
 }
 
 export function renameInstance(id, title) {

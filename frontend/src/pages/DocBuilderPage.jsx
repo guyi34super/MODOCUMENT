@@ -12,6 +12,7 @@ import {
   reorderBlocks,
   submitInstance,
   updateBlock,
+  updateInstanceFields,
   uploadAssets,
 } from '../api/doccreation';
 import PageHeader from '../components/PageHeader';
@@ -156,6 +157,67 @@ function ImageBlock({ block, onChanged }) {
   );
 }
 
+/** Labeled inputs for FORM template sections (V292). */
+function FormFields({ instanceId, section, onChanged }) {
+  const toast = useToast();
+  const [drafts, setDrafts] = useState(() =>
+    (section.fields || []).map((f) => ({ ...f, value: f.value ?? '' }))
+  );
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDrafts((section.fields || []).map((f) => ({ ...f, value: f.value ?? '' })));
+  }, [section.fields]);
+
+  if (!drafts.length) return null;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await toast.promise(
+        () =>
+          updateInstanceFields(
+            instanceId,
+            drafts.map((f) => ({
+              sectionId: section.sectionId,
+              fieldKey: f.fieldKey,
+              value: f.value,
+            }))
+          ),
+        { loading: 'Saving fields…', success: 'Fields saved', error: (err) => err.message }
+      );
+      onChanged();
+    } catch {
+      // The error toast is already shown.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 space-y-3 rounded border border-line bg-sidebar/40 p-3">
+      <p className="text-xs font-medium text-muted">Form fields</p>
+      {drafts.map((field) => (
+        <label key={field.fieldKey} className="block text-sm">
+          <span className="mb-1 block text-muted">{field.label || field.fieldKey}</span>
+          <input
+            className={inputClass}
+            value={field.value}
+            onChange={(e) =>
+              setDrafts((prev) =>
+                prev.map((f) => (f.fieldKey === field.fieldKey ? { ...f, value: e.target.value } : f))
+              )
+            }
+          />
+        </label>
+      ))}
+      <Button size="sm" onClick={save} disabled={saving}>
+        {saving ? 'Saving…' : 'Save fields'}
+      </Button>
+    </div>
+  );
+}
+
 /** One blueprint section with its ordered blocks and an "add paragraph" action. */
 function SectionCard({ instanceId, section, onChanged }) {
   const toast = useToast();
@@ -202,8 +264,12 @@ function SectionCard({ instanceId, section, onChanged }) {
         {section.keywords.length > 0 && (
           <span className="text-xs text-muted">keywords: {section.keywords.join(', ')}</span>
         )}
+        {section.sectionKind && section.sectionKind !== 'NARRATIVE' && (
+          <span className="text-xs text-muted">{section.sectionKind}</span>
+        )}
       </div>
-      {section.blocks.length === 0 && (
+      <FormFields instanceId={instanceId} section={section} onChanged={onChanged} />
+      {section.blocks.length === 0 && !(section.fields?.length > 0) && (
         <p className="mb-2 text-sm text-muted">Nothing added to this section yet.</p>
       )}
       <ul className="space-y-3">
@@ -273,7 +339,11 @@ function builderSubtitle(doc) {
     current > version
       ? ` (template is now at version ${current}; this document keeps version ${version})`
       : '';
-  return `Blueprint: ${doc.blueprintName} · built on template version ${version}${newer}`;
+  const coverage =
+    typeof doc.blueprintCoveragePercent === 'number'
+      ? ` · template coverage ${doc.blueprintCoveragePercent}%`
+      : '';
+  return `Blueprint: ${doc.blueprintName} · built on template version ${version}${newer}${coverage}`;
 }
 
 export default function DocBuilderPage() {

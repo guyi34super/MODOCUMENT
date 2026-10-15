@@ -7,6 +7,10 @@ import com.modocument.doccreation.dto.GenerationResultDto;
 import com.modocument.doccreation.dto.InstanceBuilderDto;
 import com.modocument.doccreation.dto.InstanceSummaryDto;
 import com.modocument.doccreation.dto.SectionDto;
+import com.modocument.doccreation.dto.UpdateInstanceFieldsRequest;
+import com.modocument.doccreation.parse.ParsedSection;
+import com.modocument.doccreation.parse.SectionCoverageValidator;
+import com.modocument.doccreation.template.InstanceFieldValues;
 import com.modocument.doccreation.entity.DocBlueprint;
 import com.modocument.doccreation.entity.DocBlueprintSection;
 import com.modocument.doccreation.entity.DocContentBlock;
@@ -26,6 +30,8 @@ import com.modocument.doccreation.repo.DocInstanceRepository;
 import com.modocument.application.port.FileStore;
 import com.modocument.infrastructure.file.store.FileStoreKeys;
 import com.modocument.infrastructure.file.UploadStorage;
+import org.apache.poi.xwpf.usermodel.IBodyElement;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -35,7 +41,9 @@ import org.springframework.web.multipart.MultipartFile;
 import javax.imageio.ImageIO;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -153,10 +161,12 @@ public class DocInstanceUseCase {
                 .collect(Collectors.groupingBy(DocContentBlock::getSectionId));
         Map<Integer, DocImageAsset> assetsById = assets.listByInstance(instanceId).stream()
                 .collect(Collectors.toMap(DocImageAsset::getDocImageAssetId, Function.identity()));
+        Map<String, String> fieldValues = InstanceFieldValues.indexBySectionAndKey(
+                InstanceFieldValues.parse(instance.getFieldValuesJson()));
 
         List<InstanceBuilderDto.BuilderSectionDto> sectionDtos = sectionList.stream()
                 .map(s -> {
-                    SectionDto base = SectionDto.from(s);
+                    SectionDto base = SectionDto.from(s, fieldValues);
                     List<BlockDto> blockDtos = blocksBySection
                             .getOrDefault(s.getDocBlueprintSectionId(), List.of()).stream()
                             .sorted(java.util.Comparator.comparingInt(DocContentBlock::getOrderIndex))
@@ -165,7 +175,8 @@ public class DocInstanceUseCase {
                                             .map(DocImageAsset::getOriginalFileName).orElse(null)))
                             .toList();
                     return new InstanceBuilderDto.BuilderSectionDto(base.sectionId(), base.orderIndex(),
-                            base.title(), base.headingLevel(), base.keywords(), blockDtos);
+                            base.title(), base.headingLevel(), base.keywords(), base.sectionKind(),
+                            base.fields(), blockDtos);
                 })
                 .toList();
         List<InstanceBuilderDto.UnsortedAssetDto> unsorted = assets.listByInstance(instanceId).stream()
@@ -177,7 +188,43 @@ public class DocInstanceUseCase {
                 instance.getLastGeneratedDate(), pdfConverter.isAvailable(),
                 instance.isAiComposed(), instance.getSubmittedAt(), instance.getReleasedAt(),
                 instance.getReviewComment(), sectionDtos, unsorted,
-                instance.getBlueprintVersion(), blueprint.getCurrentVersion());
+                instance.getBlueprintVersion(), blueprint.getCurrentVersion(),
+                blueprintCoveragePercent(blueprint, sectionList));
+    }
+
+    @Transactional
+    public InstanceBuilderDto updateFields(int instanceId, UpdateInstanceFieldsRequest request) {
+        DocInstance instance = ownership.requireInstance(instanceId);
+        List<InstanceFieldValues.Entry> entries = new ArrayList<>();
+        if (request.getFields() != null) {
+            for (UpdateInstanceFieldsRequest.FieldValueInput input : request.getFields()) {
+                if (input.getSectionId() == null || input.getFieldKey() == null) {
+                    continue;
+                }
+                requireSectionOf(instance, input.getSectionId());
+                entries.add(new InstanceFieldValues.Entry(input.getSectionId(), input.getFieldKey().strip(),
+                        input.getValue() == null ? "" : input.getValue()));
+            }
+        }
+        instance.setFieldValuesJson(InstanceFieldValues.write(entries));
+        touch(instance);
+        instances.save(instance);
+        return getBuilder(instanceId);
+    }
+
+    private int blueprintCoveragePercent(DocBlueprint blueprint, List<DocBlueprintSection> sectionRows) {
+        try (InputStream in = Files.newInputStream(requireBlueprintFile(blueprint));
+             XWPFDocument doc = new XWPFDocument(in)) {
+            List<IBodyElement> elements = List.copyOf(doc.getBodyElements());
+            List<ParsedSection> parsed = sectionRows.stream()
+                    .map(s -> new ParsedSection(s.getOrderIndex(), s.getTitle(), s.getHeadingLevel(),
+                            s.getAnchorParagraphIndex(), s.getAnchorText(),
+                            SectionDto.splitKeywords(s.getKeywords()), s.getSectionKind()))
+                    .toList();
+            return SectionCoverageValidator.compute(parsed, elements).coveragePercent();
+        } catch (IOException e) {
+            return 100;
+        }
     }
 
     /** The sections of the blueprint version this document was started from. */
@@ -468,17 +515,19 @@ public class DocInstanceUseCase {
 
         Path blueprintPath = requireBlueprintFile(blueprint);
         Function<Integer, byte[]> assetLoader = assetBytesLoader(assetsById);
+        Map<String, String> fieldValues = InstanceFieldValues.indexBySectionAndKey(
+                InstanceFieldValues.parse(instance.getFieldValuesJson()));
         // AI composes the final document from the template + all the user's
         // content (validated to reproduce the template exactly); the
         // deterministic engine carries generation whenever AI can't.
         String composedBy = "AI";
         byte[] docxBytes = aiComposer
-                .compose(blueprintPath, sectionList, blocksBySection, assetsById, assetLoader)
+                .compose(blueprintPath, sectionList, blocksBySection, assetsById, assetLoader, fieldValues)
                 .orElse(null);
         if (docxBytes == null) {
             composedBy = "ENGINE";
             docxBytes = assembler.assemble(blueprintPath, sectionList, blocksBySection,
-                    assetsById, assetLoader);
+                    assetsById, assetLoader, fieldValues);
         }
         docxBytes = decorate(docxBytes, blueprint, instance);
 

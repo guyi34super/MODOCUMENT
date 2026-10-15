@@ -44,6 +44,8 @@ const baseDoc = {
       title: 'Roof',
       headingLevel: 1,
       keywords: ['roof'],
+      sectionKind: 'NARRATIVE',
+      fields: [],
       blocks: [
         { blockId: 100, blockType: 'PARAGRAPH', orderIndex: 0, text: 'Roof note.' },
       ],
@@ -54,10 +56,15 @@ const baseDoc = {
       title: 'Inverter',
       headingLevel: 1,
       keywords: ['inverter', 'dc2'],
+      sectionKind: 'NARRATIVE',
+      fields: [],
       blocks: [],
     },
   ],
   unsortedAssets: [{ assetId: 7, originalFileName: 'IMG_1234.png' }],
+  blueprintVersion: 1,
+  blueprintCurrentVersion: 1,
+  blueprintCoveragePercent: 100,
 };
 
 function renderPage() {

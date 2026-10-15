@@ -70,6 +70,8 @@ public class AiDocumentComposer {
             - {"op":"IMAGE","assetId":N,"caption":"..."} inserts user image N at that point, \
             exactly once per image. Keep the user's caption (you may fix obvious typos); write a \
             short factual caption from the file name only when none was given.
+            - {"op":"SET_FIELD","fieldKey":"…","text":"…"} is reserved for form templates; \
+            ignore it — form values are applied separately.
             - Place each block inside its own section — after that section's heading and its \
             existing body text, before the next section starts — in the order the user arranged \
             them, unless the content plainly reads better elsewhere within the same section.
@@ -147,11 +149,13 @@ public class AiDocumentComposer {
                                     List<DocBlueprintSection> sectionsInOrder,
                                     Map<Integer, List<DocContentBlock>> blocksBySectionId,
                                     Map<Integer, DocImageAsset> assetsById,
-                                    Function<Integer, byte[]> assetBytesLoader) {
+                                    Function<Integer, byte[]> assetBytesLoader,
+                                    Map<String, String> fieldValuesByKey) {
+        Map<String, String> fields = fieldValuesByKey == null ? Map.of() : fieldValuesByKey;
         if (!enabled() || !ai.isConfigured()) {
             return Optional.empty();
         }
-        boolean nothingToMerge = sectionsInOrder.stream()
+        boolean nothingToMerge = fields.isEmpty() && sectionsInOrder.stream()
                 .allMatch(s -> blocksBySectionId
                         .getOrDefault(s.getDocBlueprintSectionId(), List.<DocContentBlock>of()).isEmpty());
         if (nothingToMerge) {
@@ -215,7 +219,7 @@ public class AiDocumentComposer {
 
         Optional<List<PlanOp>> plan = validate(reply, elementCount, allBlocks, assetsById);
         return plan.map(ops -> assembler.render(
-                blueprintDocx, detokenize(ops, session), assetsById, assetBytesLoader));
+                blueprintDocx, sectionsInOrder, detokenize(ops, session), assetsById, assetBytesLoader, fields));
     }
 
     /** Detached copy whose text/caption carry tokens instead of identifiers. */
@@ -347,6 +351,9 @@ public class AiDocumentComposer {
                         caption = caption.substring(0, 500);
                     }
                     ops.add(PlanOp.image(op.assetId(), caption));
+                }
+                case "SET_FIELD" -> {
+                    // Form fills are applied deterministically before render; skip in the plan.
                 }
                 default -> {
                     return invalid("unknown op '" + op.op() + "'");
