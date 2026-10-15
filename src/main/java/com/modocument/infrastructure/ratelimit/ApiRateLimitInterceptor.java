@@ -52,11 +52,10 @@ import java.util.TreeMap;
  *   <li>The legacy {@code /api/transform/transform} (and its {@code transform}
  *       bucket) was removed in 1.2.0 (ws28); the {@code ratelimit.transform}
  *       knob is kept, unused, so stored settings stay valid.</li>
- *   <li>Document generation is metered here for its rendering cost; its
- *       optional AI composition additionally draws on the LLM quota inside
- *       {@code AiDocumentComposer}, where exhaustion degrades to the
- *       deterministic engine instead of failing — two different resources,
- *       intentionally both.</li>
+ *   <li>Document generation is metered here for its rendering and
+ *       exactness-check cost (PDF templates, ws31); it makes no model call.
+ *       A template upload's optional AI analysis draws on the LLM quota
+ *       inside the template engine (AiGateway) as well.</li>
  *   <li>Login/refresh ({@link AuthRateLimiter}, per IP + per email) and MFA
  *       verify ({@link MfaRateLimiter}) are anonymous-phase throttles; only
  *       the authenticated credential checks — password change, MFA
@@ -117,11 +116,12 @@ public class ApiRateLimitInterceptor implements HandlerInterceptor {
         Bucket adminSecurity = bucket("admin-security", "credential reset",
                 properties.getAdminSecurity(), SettingKeys.RATELIMIT_ADMIN_SECURITY);
 
-        // File uploads: standalone data files, document assets (several
-        // files per call) and .docx blueprints (parsed + section-split).
+        // File uploads: standalone data files, document photos (several
+        // files per call), PDF templates (analysed) and template images.
         route("POST", "/api/fileupload/upload", uploads);
-        route("POST", "/api/doccreation/instances/{id}/assets", uploads);
+        route("POST", "/api/doccreation/instances/{id}/images", uploads);
         route("POST", "/api/doccreation/blueprints", uploads);
+        route("POST", "/api/doccreation/blueprints/{id}/edit-images", uploads);
 
         // Ingestion pipeline runs: create (multipart and JSON share the
         // pattern) and every stage re-run.

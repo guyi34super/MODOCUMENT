@@ -1,37 +1,35 @@
 package com.modocument.doccreation.usecase;
 
-import com.modocument.doccreation.dto.AddBlockRequest;
-import com.modocument.doccreation.dto.BlockDto;
-import com.modocument.doccreation.dto.BulkUploadResultDto;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.modocument.application.port.AuditEventSpec;
+import com.modocument.application.port.AuditRecorder;
+import com.modocument.application.port.FileStore;
+import com.modocument.application.privacy.PiiMaskingService;
+import com.modocument.doccreation.dto.CreatedInstanceDto;
 import com.modocument.doccreation.dto.GenerationResultDto;
-import com.modocument.doccreation.dto.InstanceBuilderDto;
+import com.modocument.doccreation.dto.ImageUploadResultDto;
+import com.modocument.doccreation.dto.InstanceDto;
 import com.modocument.doccreation.dto.InstanceSummaryDto;
-import com.modocument.doccreation.dto.SectionDto;
-import com.modocument.doccreation.dto.UpdateInstanceFieldsRequest;
-import com.modocument.doccreation.parse.ParsedSection;
-import com.modocument.doccreation.parse.SectionCoverageValidator;
-import com.modocument.doccreation.template.InstanceFieldValues;
+import com.modocument.doccreation.dto.RegionDto;
 import com.modocument.doccreation.entity.DocBlueprint;
-import com.modocument.doccreation.entity.DocBlueprintSection;
-import com.modocument.doccreation.entity.DocContentBlock;
 import com.modocument.doccreation.entity.DocImageAsset;
 import com.modocument.doccreation.entity.DocInstance;
-import com.modocument.doccreation.flow.DocumentCreationFlow;
-import com.modocument.doccreation.flow.DocumentCreationFlowRegistry;
-import com.modocument.doccreation.generate.AiDocumentComposer;
-import com.modocument.doccreation.generate.DocumentAssembler;
-import com.modocument.doccreation.pdf.PdfConverter;
+import com.modocument.doccreation.entity.DocInstanceImage;
+import com.modocument.doccreation.pdftemplate.ExactnessReport;
+import com.modocument.doccreation.pdftemplate.FillOptions;
+import com.modocument.doccreation.pdftemplate.FillResult;
+import com.modocument.doccreation.pdftemplate.PageInfo;
+import com.modocument.doccreation.pdftemplate.PdfTemplateException;
+import com.modocument.doccreation.pdftemplate.RegionKind;
+import com.modocument.doccreation.pdftemplate.TemplateRegion;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
-import com.modocument.doccreation.repo.DocBlueprintSectionRepository;
-import com.modocument.doccreation.repo.DocContentBlockRepository;
 import com.modocument.doccreation.repo.DocImageAssetRepository;
-import com.modocument.application.privacy.PiiMaskingService;
+import com.modocument.doccreation.repo.DocInstanceImageRepository;
 import com.modocument.doccreation.repo.DocInstanceRepository;
-import com.modocument.application.port.FileStore;
-import com.modocument.infrastructure.file.store.FileStoreKeys;
+import com.modocument.domain.model.AuditOutcome;
 import com.modocument.infrastructure.file.UploadStorage;
-import org.apache.poi.xwpf.usermodel.IBodyElement;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import com.modocument.infrastructure.file.store.FileStoreKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -43,92 +41,91 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.NoSuchFileException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Everything a document instance does: per-section paragraphs and images,
- * bulk image upload with flow-driven auto-assignment (Unsorted tray for the
- * rest), and generation — reproducing the blueprint exactly with the added
- * content, as .docx always and PDF when a converter is available.
+ * A document built on a PDF template (docs/doccreation/pdf-templates-contract.md
+ * §5): its values (merged per key), its photos (uploaded once into a tray,
+ * auto-filled into photo boxes or dragged onto them, swapping when a box is
+ * taken), live page previews and the generated PDF — the template PDF of the
+ * pinned version with the values drawn in by the engine, refused when the
+ * exactness self-check fails.
  *
- * <p>Invariant kept here (single transactions): an image asset has
- * {@code assignedSectionId} set iff exactly one IMAGE block references it,
- * and that block's section matches.
+ * <p>Values and photos can no longer change once the document is SUBMITTED
+ * or RELEASED (409): the approver reviews exactly what was submitted.
  */
 @Service
 public class DocInstanceUseCase {
 
     private static final Logger log = LoggerFactory.getLogger(DocInstanceUseCase.class);
-    private static final String DOCX_CONTENT_TYPE =
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    private static final Map<String, String> IMAGE_CONTENT_TYPES = Map.of(
-            "png", "image/png",
-            "jpg", "image/jpeg",
-            "jpeg", "image/jpeg",
-            "gif", "image/gif",
-            "bmp", "image/bmp");
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final TypeReference<LinkedHashMap<String, String>> VALUES = new TypeReference<>() {
+    };
+    private static final int MAX_VALUE_LENGTH = 20_000;
+    private static final int MAX_IMAGES_PER_UPLOAD = 100;
 
     private final DocInstanceRepository instances;
     private final DocBlueprintRepository blueprints;
-    private final DocBlueprintSectionRepository sections;
-    private final DocContentBlockRepository blocks;
     private final DocImageAssetRepository assets;
+    private final DocInstanceImageRepository images;
     private final DocCreationOwnership ownership;
-    private final DocumentCreationFlowRegistry flows;
-    private final DocumentAssembler assembler;
-    private final AiDocumentComposer aiComposer;
-    private final PdfConverter pdfConverter;
+    private final TemplateVersions templates;
+    private final PdfTemplateStore store;
+    private final DocCreationSettings settings;
     private final UploadStorage uploadStorage;
     private final FileStore storage;
     private final PiiMaskingService masking;
+    private final AuditRecorder audit;
 
     public DocInstanceUseCase(DocInstanceRepository instances,
                               DocBlueprintRepository blueprints,
-                              DocBlueprintSectionRepository sections,
-                              DocContentBlockRepository blocks,
                               DocImageAssetRepository assets,
+                              DocInstanceImageRepository images,
                               DocCreationOwnership ownership,
-                              DocumentCreationFlowRegistry flows,
-                              DocumentAssembler assembler,
-                              AiDocumentComposer aiComposer,
-                              PdfConverter pdfConverter,
+                              TemplateVersions templates,
+                              PdfTemplateStore store,
+                              DocCreationSettings settings,
                               UploadStorage uploadStorage,
                               FileStore storage,
-                              PiiMaskingService masking) {
+                              PiiMaskingService masking,
+                              AuditRecorder audit) {
         this.instances = instances;
         this.blueprints = blueprints;
-        this.sections = sections;
-        this.blocks = blocks;
         this.assets = assets;
+        this.images = images;
         this.ownership = ownership;
-        this.flows = flows;
-        this.assembler = assembler;
-        this.aiComposer = aiComposer;
-        this.pdfConverter = pdfConverter;
+        this.templates = templates;
+        this.store = store;
+        this.settings = settings;
         this.uploadStorage = uploadStorage;
         this.storage = storage;
         this.masking = masking;
+        this.audit = audit;
     }
 
     // ------------------------------------------------------------------ CRUD
 
+    /** A new document on the template's current version; a DRAFT template is a 409. */
     @Transactional
-    public InstanceSummaryDto create(int blueprintId, String title) {
-        DocBlueprint blueprint = ownership.requireBlueprint(blueprintId);
+    public CreatedInstanceDto create(int blueprintId, String title) {
+        DocBlueprint blueprint = ownership.requireTemplate(blueprintId);
         requireTitle(title);
+        if (TemplateVersions.isDraft(blueprint)) {
+            throw new IllegalStateException("This template is still a draft; review and save it before "
+                    + "creating documents from it.");
+        }
         DocInstance instance = new DocInstance();
         instance.setOwnerUserId(ownership.requireUserId());
         instance.setBankId(ownership.requireBankId());
@@ -138,608 +135,478 @@ public class DocInstanceUseCase {
         instance.setStatus(DocInstance.STATUS_DRAFT);
         instance.setCreatedDate(LocalDateTime.now());
         instance.setUpdatedDate(instance.getCreatedDate());
-        return InstanceSummaryDto.from(instances.save(instance), blueprint.getName());
+        int id = instances.save(instance).getDocInstanceId();
+        return new CreatedInstanceDto(id, id);
     }
 
+    /** The caller's documents on PDF templates (documents of Word templates are not listed). */
+    @Transactional(readOnly = true)
     public List<InstanceSummaryDto> list(Integer blueprintId) {
         int userId = ownership.requireUserId();
         List<DocInstance> found = blueprintId == null
                 ? instances.listByOwner(userId)
                 : instances.listByOwnerAndBlueprint(userId, blueprintId);
-        Map<Integer, String> blueprintNames = new HashMap<>();
+        Map<Integer, DocBlueprint> byId = blueprints.getByIds(
+                found.stream().map(DocInstance::getBlueprintId).collect(Collectors.toCollection(LinkedHashSet::new)));
         return found.stream()
-                .map(i -> InstanceSummaryDto.from(i, blueprintNames.computeIfAbsent(i.getBlueprintId(),
-                        id -> blueprints.getByIdAndOwner(id, userId).map(DocBlueprint::getName).orElse(""))))
-                .toList();
-    }
-
-    public InstanceBuilderDto getBuilder(int instanceId) {
-        DocInstance instance = ownership.requireInstance(instanceId);
-        DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
-        List<DocBlueprintSection> sectionList = sectionsOf(instance, blueprint);
-        Map<Integer, List<DocContentBlock>> blocksBySection = blocks.listByInstance(instanceId).stream()
-                .collect(Collectors.groupingBy(DocContentBlock::getSectionId));
-        Map<Integer, DocImageAsset> assetsById = assets.listByInstance(instanceId).stream()
-                .collect(Collectors.toMap(DocImageAsset::getDocImageAssetId, Function.identity()));
-        Map<String, String> fieldValues = InstanceFieldValues.indexBySectionAndKey(
-                InstanceFieldValues.parse(instance.getFieldValuesJson()));
-
-        List<InstanceBuilderDto.BuilderSectionDto> sectionDtos = sectionList.stream()
-                .map(s -> {
-                    SectionDto base = SectionDto.from(s, fieldValues);
-                    List<BlockDto> blockDtos = blocksBySection
-                            .getOrDefault(s.getDocBlueprintSectionId(), List.of()).stream()
-                            .sorted(java.util.Comparator.comparingInt(DocContentBlock::getOrderIndex))
-                            .map(b -> BlockDto.from(b, b.getAssetId() == null ? null
-                                    : Optional.ofNullable(assetsById.get(b.getAssetId()))
-                                            .map(DocImageAsset::getOriginalFileName).orElse(null)))
-                            .toList();
-                    return new InstanceBuilderDto.BuilderSectionDto(base.sectionId(), base.orderIndex(),
-                            base.title(), base.headingLevel(), base.keywords(), base.sectionKind(),
-                            base.fields(), blockDtos);
+                .filter(i -> {
+                    DocBlueprint b = byId.get(i.getBlueprintId());
+                    return b != null && !b.isLegacy() && b.getOwnerUserId() == userId;
+                })
+                .map(i -> {
+                    DocBlueprint b = byId.get(i.getBlueprintId());
+                    return InstanceSummaryDto.from(i, b.getName(), b.getPageCount() == null ? 0 : b.getPageCount());
                 })
                 .toList();
-        List<InstanceBuilderDto.UnsortedAssetDto> unsorted = assets.listByInstance(instanceId).stream()
-                .filter(a -> a.getAssignedSectionId() == null)
-                .map(a -> new InstanceBuilderDto.UnsortedAssetDto(a.getDocImageAssetId(), a.getOriginalFileName()))
-                .toList();
-        return new InstanceBuilderDto(instance.getDocInstanceId(), instance.getTitle(),
-                blueprint.getDocBlueprintId(), blueprint.getName(), instance.getStatus(),
-                instance.getLastGeneratedDate(), pdfConverter.isAvailable(),
-                instance.isAiComposed(), instance.getSubmittedAt(), instance.getReleasedAt(),
-                instance.getReviewComment(), sectionDtos, unsorted,
-                instance.getBlueprintVersion(), blueprint.getCurrentVersion(),
-                blueprintCoveragePercent(blueprint, sectionList));
     }
 
-    @Transactional
-    public InstanceBuilderDto updateFields(int instanceId, UpdateInstanceFieldsRequest request) {
+    @Transactional(readOnly = true)
+    public InstanceDto get(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
-        List<InstanceFieldValues.Entry> entries = new ArrayList<>();
-        if (request.getFields() != null) {
-            for (UpdateInstanceFieldsRequest.FieldValueInput input : request.getFields()) {
-                if (input.getSectionId() == null || input.getFieldKey() == null) {
-                    continue;
-                }
-                requireSectionOf(instance, input.getSectionId());
-                entries.add(new InstanceFieldValues.Entry(input.getSectionId(), input.getFieldKey().strip(),
-                        input.getValue() == null ? "" : input.getValue()));
-            }
-        }
-        instance.setFieldValuesJson(InstanceFieldValues.write(entries));
-        touch(instance);
-        instances.save(instance);
-        return getBuilder(instanceId);
-    }
-
-    private int blueprintCoveragePercent(DocBlueprint blueprint, List<DocBlueprintSection> sectionRows) {
-        try (InputStream in = Files.newInputStream(requireBlueprintFile(blueprint));
-             XWPFDocument doc = new XWPFDocument(in)) {
-            List<IBodyElement> elements = List.copyOf(doc.getBodyElements());
-            List<ParsedSection> parsed = sectionRows.stream()
-                    .map(s -> new ParsedSection(s.getOrderIndex(), s.getTitle(), s.getHeadingLevel(),
-                            s.getAnchorParagraphIndex(), s.getAnchorText(),
-                            SectionDto.splitKeywords(s.getKeywords()), s.getSectionKind()))
-                    .toList();
-            return SectionCoverageValidator.compute(parsed, elements).coveragePercent();
-        } catch (IOException e) {
-            return 100;
-        }
-    }
-
-    /** The sections of the blueprint version this document was started from. */
-    private List<DocBlueprintSection> sectionsOf(DocInstance instance, DocBlueprint blueprint) {
-        return sections.listByBlueprintVersion(blueprint.getDocBlueprintId(), instance.getBlueprintVersion());
+        return toDto(instance, templateOf(instance));
     }
 
     @Transactional
     public InstanceSummaryDto rename(int instanceId, String title) {
         DocInstance instance = ownership.requireInstance(instanceId);
+        DocBlueprint blueprint = templateOf(instance);
         requireTitle(title);
         instance.setTitle(title.strip());
         touch(instance);
-        DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
-        return InstanceSummaryDto.from(instances.save(instance), blueprint.getName());
+        return InstanceSummaryDto.from(instances.save(instance), blueprint.getName(),
+                blueprint.getPageCount() == null ? 0 : blueprint.getPageCount());
     }
 
     @Transactional
     public void delete(int instanceId) {
-        ownership.requireInstance(instanceId);
-        List<DocImageAsset> assetList = assets.listByInstance(instanceId);
-        blocks.deleteByInstance(instanceId);
+        DocInstance instance = ownership.requireInstance(instanceId);
+        templateOf(instance);
+        int bankId = instance.getBankId();
+        List<String> files = new ArrayList<>();
+        for (DocImageAsset asset : assets.listByInstance(instanceId)) {
+            FileStoreKeys.tryUpload(asset.getFileName()).ifPresent(files::add);
+        }
+        if (instance.getGeneratedPdfKey() != null) {
+            files.add(instance.getGeneratedPdfKey());
+        }
+        files.add(FileStoreKeys.export(exportName(instanceId, "pdf")));
+        images.deleteByInstance(bankId, instanceId);
         assets.deleteByInstance(instanceId);
         instances.delete(instanceId);
-        List<String> files = new ArrayList<>();
-        for (DocImageAsset asset : assetList) {
-            files.add(uploadStorage.key(asset.getFileName()));
-        }
-        files.add(FileStoreKeys.export(exportName(instanceId, "docx")));
-        files.add(FileStoreKeys.export(exportName(instanceId, "pdf")));
-        // Only after commit: a rollback must not orphan the surviving rows'
-        // files.
+        // Only after commit: a rollback must not orphan the surviving rows' files.
         StoredFileCleanup.deleteAfterCommit(storage, files);
     }
 
-    // ---------------------------------------------------------------- blocks
+    // ---------------------------------------------------------------- values
 
+    /**
+     * MERGES the given values into the stored ones: a key not sent keeps its
+     * value, an empty string (or null) clears the key, an unknown key is a
+     * 400. Fixes the Word path's "saving one section wipes the others" bug by
+     * construction.
+     */
     @Transactional
-    public BlockDto addBlock(int instanceId, int sectionId, AddBlockRequest request) {
+    public InstanceDto updateValues(int instanceId, Map<String, String> changes) {
         DocInstance instance = ownership.requireInstance(instanceId);
-        DocBlueprintSection section = requireSectionOf(instance, sectionId);
-
-        DocContentBlock block = new DocContentBlock();
-        block.setInstanceId(instanceId);
-        block.setBankId(instance.getBankId());
-        block.setSectionId(section.getDocBlueprintSectionId());
-        block.setOrderIndex(nextOrderIndex(instanceId, sectionId));
-
-        String assetFileName = null;
-        if (DocContentBlock.TYPE_PARAGRAPH.equals(request.getBlockType())) {
-            block.setBlockType(DocContentBlock.TYPE_PARAGRAPH);
-            block.setTextContent(request.getText() == null ? "" : request.getText());
-        } else if (DocContentBlock.TYPE_IMAGE.equals(request.getBlockType())) {
-            if (request.getAssetId() == null) {
-                throw new IllegalArgumentException("An image block needs an assetId.");
+        DocBlueprint blueprint = templateOf(instance);
+        requireEditable(instance);
+        List<TemplateRegion> regionList = templates.regions(blueprint, instance.getBlueprintVersion());
+        Map<String, TemplateRegion> byKey = regionList.stream()
+                .collect(Collectors.toMap(TemplateRegion::key, Function.identity(), (a, b) -> a));
+        Map<String, String> values = readValues(instance);
+        for (Map.Entry<String, String> change : (changes == null ? Map.<String, String>of() : changes).entrySet()) {
+            String key = change.getKey();
+            TemplateRegion region = byKey.get(key);
+            if (region == null) {
+                throw new IllegalArgumentException("Unknown field \"" + truncate(String.valueOf(key), 80) + "\".");
             }
-            DocImageAsset asset = requireAssetOf(instanceId, request.getAssetId());
-            if (asset.getAssignedSectionId() != null) {
-                throw new IllegalArgumentException(
-                        "Image " + asset.getOriginalFileName() + " is already placed in a section.");
+            if (region.kind() == RegionKind.IMAGE || region.kind() == RegionKind.SIGNATURE) {
+                throw new IllegalArgumentException("Field \"" + key + "\" takes a photo, not a value.");
             }
-            block.setBlockType(DocContentBlock.TYPE_IMAGE);
-            block.setAssetId(asset.getDocImageAssetId());
-            block.setCaption(requireCaption(request.getCaption()));
-            asset.setAssignedSectionId(sectionId);
-            assets.save(asset);
-            assetFileName = asset.getOriginalFileName();
-        } else {
-            throw new IllegalArgumentException("blockType must be PARAGRAPH or IMAGE.");
+            String value = change.getValue();
+            if (value == null || value.isEmpty()) {
+                values.remove(key);
+            } else if (value.length() > MAX_VALUE_LENGTH) {
+                throw new IllegalArgumentException("Values are limited to " + MAX_VALUE_LENGTH + " characters.");
+            } else {
+                values.put(key, value);
+            }
         }
+        instance.setValuesJson(writeValues(values, regionList));
         touch(instance);
         instances.save(instance);
-        return BlockDto.from(blocks.save(block), assetFileName);
+        return toDto(instance, blueprint);
     }
 
-    @Transactional
-    public BlockDto updateBlock(int blockId, String text, String caption) {
-        DocContentBlock block = requireBlock(blockId);
-        DocInstance instance = ownership.requireInstance(block.getInstanceId());
-        String assetFileName = null;
-        if (DocContentBlock.TYPE_PARAGRAPH.equals(block.getBlockType())) {
-            if (text != null) {
-                block.setTextContent(text);
-            }
-        } else {
-            if (caption != null) {
-                block.setCaption(requireCaption(caption));
-            }
-            assetFileName = block.getAssetId() == null ? null
-                    : assets.getById(block.getAssetId()).map(DocImageAsset::getOriginalFileName).orElse(null);
-        }
-        touch(instance);
-        instances.save(instance);
-        return BlockDto.from(blocks.save(block), assetFileName);
-    }
+    // ---------------------------------------------------------------- photos
 
+    /**
+     * Uploads photos into the document's tray (PNG or JPEG, by content);
+     * with {@code autoFill} they are then placed into the empty photo boxes
+     * ({@link PhotoAutoFill}: file-name match, then reading order).
+     */
     @Transactional
-    public void reorderBlocks(int instanceId, int sectionId, List<Integer> blockIds) {
+    public ImageUploadResultDto uploadImages(int instanceId, List<MultipartFile> files, boolean autoFill) {
         DocInstance instance = ownership.requireInstance(instanceId);
-        requireSectionOf(instance, sectionId);
-        List<DocContentBlock> current = blocks.listBySection(instanceId, sectionId);
-        Set<Integer> currentIds = current.stream()
-                .map(DocContentBlock::getDocContentBlockId).collect(Collectors.toSet());
-        if (blockIds == null || blockIds.size() != currentIds.size()
-                || !currentIds.equals(new HashSet<>(blockIds))) {
-            throw new IllegalArgumentException("blockIds must be a permutation of the section's blocks.");
+        DocBlueprint blueprint = templateOf(instance);
+        requireEditable(instance);
+        if (files == null || files.isEmpty()) {
+            throw new IllegalArgumentException("No files uploaded.");
         }
-        Map<Integer, DocContentBlock> byId = current.stream()
-                .collect(Collectors.toMap(DocContentBlock::getDocContentBlockId, Function.identity()));
-        for (int i = 0; i < blockIds.size(); i++) {
-            DocContentBlock block = byId.get(blockIds.get(i));
-            block.setOrderIndex(i);
-            blocks.save(block);
+        if (files.size() > MAX_IMAGES_PER_UPLOAD) {
+            throw new IllegalArgumentException("Upload at most " + MAX_IMAGES_PER_UPLOAD + " photos at once.");
         }
-        touch(instance);
-        instances.save(instance);
-    }
-
-    @Transactional
-    public void deleteBlock(int blockId) {
-        DocContentBlock block = requireBlock(blockId);
-        DocInstance instance = ownership.requireInstance(block.getInstanceId());
-        if (block.getAssetId() != null) {
-            // The image itself survives: back to the Unsorted tray.
-            assets.getById(block.getAssetId()).ifPresent(asset -> {
-                asset.setAssignedSectionId(null);
-                assets.save(asset);
-            });
-        }
-        blocks.delete(blockId);
-        touch(instance);
-        instances.save(instance);
-    }
-
-    // ---------------------------------------------------------------- assets
-
-    @Transactional
-    public BulkUploadResultDto uploadAssets(int instanceId, List<MultipartFile> files, boolean autoAssign) {
-        DocInstance instance = ownership.requireInstance(instanceId);
-        DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
-        List<DocBlueprintSection> sectionList = sectionsOf(instance, blueprint);
-        DocumentCreationFlow flow = flows.flowFor(blueprint.getCompanyId());
-
-        List<BulkUploadResultDto.AssignedDto> assigned = new ArrayList<>();
-        List<BulkUploadResultDto.UnsortedDto> unsorted = new ArrayList<>();
-        List<BulkUploadResultDto.RejectedDto> rejected = new ArrayList<>();
-
+        int bankId = instance.getBankId();
+        List<DocInstanceImage> existing = images.listByInstance(bankId, instanceId);
+        int nextOrder = existing.stream().mapToInt(DocInstanceImage::getSortOrder).max().orElse(-1) + 1;
+        List<ImageUploadResultDto.RejectedDto> rejected = new ArrayList<>();
+        List<DocInstanceImage> uploaded = new ArrayList<>();
         for (MultipartFile file : files) {
-            String originalName = file.getOriginalFilename() == null ? "image" : file.getOriginalFilename();
-            if (contentTypeFor(originalName) == null) {
-                rejected.add(new BulkUploadResultDto.RejectedDto(originalName,
-                        "Unsupported image type; use png, jpg, jpeg, gif or bmp."));
-                continue;
-            }
-            // The stored content type comes from the BYTES, not the file name:
-            // a PNG renamed .jpg would otherwise be embedded with the wrong
-            // OOXML picture type and can break PDF conversion.
+            String originalName = cleanName(file.getOriginalFilename());
             String contentType;
             try {
                 contentType = file.isEmpty() ? null : sniffImageContentType(file.getBytes());
             } catch (IOException e) {
                 contentType = null;
             }
-            if (contentType == null) {
-                rejected.add(new BulkUploadResultDto.RejectedDto(originalName, "Not a readable image."));
+            if (!"image/png".equals(contentType) && !"image/jpeg".equals(contentType)) {
+                rejected.add(new ImageUploadResultDto.RejectedDto(originalName,
+                        "Not a readable PNG or JPEG image."));
                 continue;
             }
-
             DocImageAsset asset = new DocImageAsset();
             asset.setInstanceId(instanceId);
-            asset.setBankId(instance.getBankId());
+            asset.setBankId(bankId);
             asset.setFileName(uploadStorage.store(file));
-            // A rollback of this bulk upload must not orphan the stored bytes.
+            // A rollback of this upload must not orphan the stored bytes.
             StoredFileCleanup.deleteOnRollback(storage, uploadStorage.key(asset.getFileName()));
             asset.setOriginalFileName(originalName);
             asset.setContentType(contentType);
             asset.setUploadedDate(LocalDateTime.now());
             asset = assets.save(asset);
 
-            Optional<Integer> sectionId = autoAssign
-                    ? flow.assignSection(originalName, sectionList) : Optional.empty();
-            if (sectionId.isPresent()) {
-                DocContentBlock block = new DocContentBlock();
-                block.setInstanceId(instanceId);
-                block.setBankId(instance.getBankId());
-                block.setSectionId(sectionId.get());
-                block.setBlockType(DocContentBlock.TYPE_IMAGE);
-                block.setOrderIndex(nextOrderIndex(instanceId, sectionId.get()));
-                block.setAssetId(asset.getDocImageAssetId());
-                block = blocks.save(block);
-                asset.setAssignedSectionId(sectionId.get());
-                assets.save(asset);
-                assigned.add(new BulkUploadResultDto.AssignedDto(asset.getDocImageAssetId(), originalName,
-                        sectionId.get(), block.getDocContentBlockId()));
-            } else {
-                unsorted.add(new BulkUploadResultDto.UnsortedDto(asset.getDocImageAssetId(), originalName));
+            DocInstanceImage image = new DocInstanceImage();
+            image.setBankId(bankId);
+            image.setInstanceId(instanceId);
+            image.setAssetId(asset.getDocImageAssetId());
+            image.setOriginalName(originalName);
+            image.setSortOrder(nextOrder++);
+            uploaded.add(images.save(image));
+        }
+
+        List<ImageUploadResultDto.AssignedDto> assigned = new ArrayList<>();
+        if (autoFill && !uploaded.isEmpty()) {
+            List<TemplateRegion> regionList = templates.regions(blueprint, instance.getBlueprintVersion());
+            Set<String> filled = existing.stream().map(DocInstanceImage::getRegionKey)
+                    .filter(k -> k != null).collect(Collectors.toSet());
+            Map<Integer, String> placement = PhotoAutoFill.assign(
+                    uploaded.stream().map(i -> new PhotoAutoFill.Photo(i.getDocInstanceImageId(),
+                            i.getOriginalName())).toList(), regionList, filled);
+            for (DocInstanceImage image : uploaded) {
+                String key = placement.get(image.getDocInstanceImageId());
+                if (key != null) {
+                    image.setRegionKey(key);
+                    images.save(image);
+                    assigned.add(new ImageUploadResultDto.AssignedDto(image.getDocInstanceImageId(), key));
+                }
             }
         }
-        touch(instance);
-        instances.save(instance);
-        return new BulkUploadResultDto(assigned, unsorted, rejected);
+        List<Integer> unassigned = uploaded.stream().filter(i -> i.getRegionKey() == null)
+                .map(DocInstanceImage::getDocInstanceImageId).toList();
+        if (!uploaded.isEmpty()) {
+            touch(instance);
+            instances.save(instance);
+        }
+        return new ImageUploadResultDto(assigned, unassigned, rejected);
     }
 
-    /** The stored image, for authenticated previews in the builder. */
-    public StoredAsset getAssetContent(int assetId) {
-        DocImageAsset asset = requireAsset(assetId);
+    /**
+     * Drag and drop: places the photo in an image region, or back in the tray
+     * when {@code regionKey} is null. A region that already holds a photo
+     * swaps: that photo takes this one's previous place.
+     */
+    @Transactional
+    public InstanceDto placeImage(int instanceId, int imageId, String regionKey) {
+        DocInstance instance = ownership.requireInstance(instanceId);
+        DocBlueprint blueprint = templateOf(instance);
+        requireEditable(instance);
+        DocInstanceImage image = requireImage(instance, imageId);
+        String target = regionKey == null || regionKey.isBlank() ? null : regionKey.strip();
+        if (target != null) {
+            TemplateRegion region = templates.regions(blueprint, instance.getBlueprintVersion()).stream()
+                    .filter(r -> r.key().equals(target)).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Unknown photo box \"" + truncate(target, 80) + "\"."));
+            if (region.kind() != RegionKind.IMAGE && region.kind() != RegionKind.SIGNATURE) {
+                throw new IllegalArgumentException("Field \"" + target + "\" does not take a photo.");
+            }
+        }
+        String previous = image.getRegionKey();
+        if (target != null && !target.equals(previous)) {
+            for (DocInstanceImage other : images.listByInstance(instance.getBankId(), instanceId)) {
+                if (other.getDocInstanceImageId() != imageId && target.equals(other.getRegionKey())) {
+                    other.setRegionKey(previous);
+                    images.save(other);
+                }
+            }
+        }
+        image.setRegionKey(target);
+        images.save(image);
+        touch(instance);
+        instances.save(instance);
+        return toDto(instance, blueprint);
+    }
+
+    @Transactional
+    public void deleteImage(int instanceId, int imageId) {
+        DocInstance instance = ownership.requireInstance(instanceId);
+        templateOf(instance);
+        requireEditable(instance);
+        DocInstanceImage image = requireImage(instance, imageId);
+        List<String> files = new ArrayList<>();
+        assets.getById(image.getAssetId()).ifPresent(asset -> {
+            FileStoreKeys.tryUpload(asset.getFileName()).ifPresent(files::add);
+        });
+        images.delete(image);
+        assets.delete(image.getAssetId());
+        StoredFileCleanup.deleteAfterCommit(storage, files);
+        touch(instance);
+        instances.save(instance);
+    }
+
+    /** The stored photo, for the builder's previews. */
+    public StoredImage imageContent(int instanceId, int imageId) {
+        DocInstance instance = ownership.requireInstance(instanceId);
+        templateOf(instance);
+        DocInstanceImage image = requireImage(instance, imageId);
+        DocImageAsset asset = assets.getById(image.getAssetId())
+                .orElseThrow(() -> new NoSuchElementException("Photo " + imageId + " not found."));
         try {
-            return new StoredAsset(uploadStorage.localCopy(asset.getFileName()), asset.getContentType(),
-                    asset.getOriginalFileName());
+            return new StoredImage(uploadStorage.readAllBytes(asset.getFileName()), asset.getContentType(),
+                    image.getOriginalName());
+        } catch (NoSuchFileException e) {
+            throw new IllegalStateException("The photo's file is missing; upload it again.", e);
         } catch (IOException e) {
-            throw new UncheckedIOException("Could not read the image file.", e);
+            throw new UncheckedIOException("Could not read the photo.", e);
         }
     }
 
-    /** Moves an image into a section (replacing its previous placement) or back to Unsorted. */
-    @Transactional
-    public void assignAsset(int assetId, Integer sectionId) {
-        DocImageAsset asset = requireAsset(assetId);
-        DocInstance instance = ownership.requireInstance(asset.getInstanceId());
-        if (sectionId != null) {
-            requireSectionOf(instance, sectionId);
-        }
-        Optional<DocContentBlock> existing = blocks.findByAsset(assetId);
-        if (sectionId == null) {
-            existing.ifPresent(b -> blocks.delete(b.getDocContentBlockId()));
-            asset.setAssignedSectionId(null);
-        } else if (existing.isPresent()) {
-            DocContentBlock block = existing.get();
-            if (block.getSectionId() != sectionId) {
-                block.setSectionId(sectionId);
-                block.setOrderIndex(nextOrderIndex(asset.getInstanceId(), sectionId));
-                blocks.save(block);
-            }
-            asset.setAssignedSectionId(sectionId);
-        } else {
-            DocContentBlock block = new DocContentBlock();
-            block.setInstanceId(asset.getInstanceId());
-            block.setBankId(instance.getBankId());
-            block.setSectionId(sectionId);
-            block.setBlockType(DocContentBlock.TYPE_IMAGE);
-            block.setOrderIndex(nextOrderIndex(asset.getInstanceId(), sectionId));
-            block.setAssetId(assetId);
-            blocks.save(block);
-            asset.setAssignedSectionId(sectionId);
-        }
-        assets.save(asset);
-        touch(instance);
-        instances.save(instance);
-    }
+    // ------------------------------------------------------------- previews
 
-    @Transactional
-    public void deleteAsset(int assetId) {
-        DocImageAsset asset = requireAsset(assetId);
-        DocInstance instance = ownership.requireInstance(asset.getInstanceId());
-        blocks.findByAsset(assetId).ifPresent(b -> blocks.delete(b.getDocContentBlockId()));
-        assets.delete(assetId);
-        StoredFileCleanup.deleteAfterCommit(storage, List.of(uploadStorage.key(asset.getFileName())));
-        touch(instance);
-        instances.save(instance);
+    /**
+     * One page of the document as it would generate, with the values and
+     * photos drawn in (not stored, no exactness check). Pages past the
+     * template's are the continuation pages.
+     */
+    public byte[] pagePng(int instanceId, int page, Integer dpi) {
+        DocInstance instance = ownership.requireInstance(instanceId);
+        DocBlueprint blueprint = templateOf(instance);
+        Filled filled = fill(instance, blueprint, false, false);
+        int pageCount = store.engine().pages(filled.result().pdf()).size();
+        if (page < 0 || page >= pageCount) {
+            throw new NoSuchElementException("Page " + page + " does not exist in this document.");
+        }
+        return store.engine().renderPage(filled.result().pdf(), page, PdfTemplateStore.clampDpi(dpi));
     }
 
     // ------------------------------------------------------------ generation
 
     /**
-     * Deliberately NOT {@code @Transactional}: composing (an LLM call) and PDF
-     * conversion (LibreOffice) can take minutes, and pinning a pooled DB
-     * connection across them exhausts the pool under a handful of concurrent
-     * generations. Every read stands alone and the only write is the final
-     * status save.
+     * Draws the values onto the template PDF and stores the output.
+     * Deliberately NOT {@code @Transactional}: rendering and the exactness
+     * check take a while and must not pin a pooled connection. A failed
+     * exactness check refuses the output (500 EXACTNESS_FAILED) and is
+     * audited (DOC_GENERATED, FAILED).
      */
     public GenerationResultDto generate(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
-        DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
-        List<DocBlueprintSection> sectionList = sectionsOf(instance, blueprint);
-        // REPORT channel (gate C2, PRIV-005): a generated document carries
-        // only user-typed content blocks (no job data is injected into this
-        // path), so PII value SHAPES in their text and captions — NIC,
-        // account digit runs, emails — are masked before composition; the
-        // masked text is also what the AI composer's prompt sees. The STORED
-        // blocks stay raw: masking is a render-time transform on detached
-        // copies (the builder screen and DSR search/erase still see the
-        // user's own text).
-        Map<Integer, List<DocContentBlock>> blocksBySection = blocks.listByInstance(instanceId).stream()
-                .map(this::maskedForReport)
-                .collect(Collectors.groupingBy(DocContentBlock::getSectionId));
-        Map<Integer, DocImageAsset> assetsById = assets.listByInstance(instanceId).stream()
-                .collect(Collectors.toMap(DocImageAsset::getDocImageAssetId, Function.identity()));
-
-        Path blueprintPath = requireBlueprintFile(blueprint);
-        Function<Integer, byte[]> assetLoader = assetBytesLoader(assetsById);
-        Map<String, String> fieldValues = InstanceFieldValues.indexBySectionAndKey(
-                InstanceFieldValues.parse(instance.getFieldValuesJson()));
-        // AI composes the final document from the template + all the user's
-        // content (validated to reproduce the template exactly); the
-        // deterministic engine carries generation whenever AI can't.
-        String composedBy = "AI";
-        byte[] docxBytes = aiComposer
-                .compose(blueprintPath, sectionList, blocksBySection, assetsById, assetLoader, fieldValues)
-                .orElse(null);
-        if (docxBytes == null) {
-            composedBy = "ENGINE";
-            docxBytes = assembler.assemble(blueprintPath, sectionList, blocksBySection,
-                    assetsById, assetLoader, fieldValues);
+        DocBlueprint blueprint = templateOf(instance);
+        // REPORT channel (gate C2, PRIV-005): PII value shapes the user typed
+        // are masked in the generated document when the policy says so; the
+        // stored values (and the owner's preview) stay raw.
+        Filled filled = fill(instance, blueprint, true, true);
+        FillResult result = filled.result();
+        ExactnessReport report = result.report();
+        if (report != null && !report.exact()) {
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("exact", false);
+            values.put("differingPixels", report.differingPixels());
+            values.put("pagesWithDiffs", report.pagesWithDiffs());
+            values.put("dpi", report.dpi());
+            audit.record(AuditEventSpec.builder("DOC_GENERATED", AuditOutcome.FAILED)
+                    .entity("DocInstance", String.valueOf(instanceId))
+                    .newValues(values)
+                    .build());
+            log.error("Document {}: generated PDF failed the exactness check ({} differing pixels on pages {})",
+                    instanceId, report.differingPixels(), report.pagesWithDiffs());
+            throw new DocCreationException(500, DocCreationException.EXACTNESS_FAILED,
+                    "The generated PDF did not reproduce the template exactly and was refused. "
+                            + "The template's administrator has been notified through the audit trail.");
         }
-        docxBytes = decorate(docxBytes, blueprint, instance);
+        String name = exportName(instanceId, "pdf");
+        String key = FileStoreKeys.export(name);
+        store.write(key, result.pdf(), "application/pdf");
 
-        try {
-            String docxName = exportName(instanceId, "docx");
-            String docxKey = FileStoreKeys.export(docxName);
-            writeExport(docxKey, docxBytes, DOCX_CONTENT_TYPE);
-
-            String pdfName = null;
-            String pdfError = null;
-            try {
-                // LibreOffice needs a file: the stored docx itself on local
-                // storage, a cached download on S3 (FileStore.localCopy).
-                byte[] pdfBytes = pdfConverter.convert(storage.localCopy(docxKey));
-                pdfName = exportName(instanceId, "pdf");
-                writeExport(FileStoreKeys.export(pdfName), pdfBytes, "application/pdf");
-            } catch (IllegalStateException e) {
-                pdfError = e.getMessage();
-            }
-
-            LocalDateTime now = LocalDateTime.now();
-            // The release workflow states (ws11) survive a working-copy
-            // regeneration: only a DRAFT moves to GENERATED here. A SUBMITTED
-            // instance stays in the approver queue (the queue reads the live
-            // content anyway) and a RELEASED one keeps its release record.
-            if (DocInstance.STATUS_DRAFT.equals(instance.getStatus())) {
-                instance.setStatus(DocInstance.STATUS_GENERATED);
-            }
-            // C10: record whether the content the approver will review was
-            // written by the model — per generation, so the flag always
-            // describes the CURRENT exports.
-            instance.setAiComposed("AI".equals(composedBy));
-            instance.setLastGeneratedDocx(docxName);
-            instance.setLastGeneratedPdf(pdfName);
-            instance.setLastGeneratedDate(now);
-            instances.save(instance);
-            return new GenerationResultDto(docxName, pdfName, pdfName != null, pdfError, now, composedBy);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not write the generated document.", e);
+        LocalDateTime now = LocalDateTime.now();
+        DocInstance fresh = ownership.requireInstance(instanceId);
+        // The release states (ws11) survive a regeneration: only a DRAFT moves
+        // to GENERATED here.
+        if (DocInstance.STATUS_DRAFT.equals(fresh.getStatus())) {
+            fresh.setStatus(DocInstance.STATUS_GENERATED);
         }
+        fresh.setAiComposed(false);
+        fresh.setLastGeneratedDocx(null);
+        fresh.setLastGeneratedPdf(name);
+        fresh.setGeneratedPdfKey(key);
+        fresh.setLastGeneratedDate(now);
+        instances.save(fresh);
+        List<String> continued = result.continuedKeys() == null ? List.of() : List.copyOf(result.continuedKeys());
+        return new GenerationResultDto(true, result.addedPages(), continued, report == null || report.exact(), now);
     }
 
-    /**
-     * REPORT-channel masking of one block: paragraph text and image caption
-     * go through the PII shape masker. When nothing changes (no PII shapes,
-     * or the policy says raw) the block passes through untouched; otherwise
-     * a DETACHED copy carries the masked text so the entity is never
-     * accidentally persisted with masked content.
-     */
-    private DocContentBlock maskedForReport(DocContentBlock block) {
-        String maskedText = masking.maskReportText(block.getTextContent());
-        String maskedCaption = masking.maskReportText(block.getCaption());
-        if (java.util.Objects.equals(maskedText, block.getTextContent())
-                && java.util.Objects.equals(maskedCaption, block.getCaption())) {
-            return block;
-        }
-        DocContentBlock copy = new DocContentBlock();
-        copy.setDocContentBlockId(block.getDocContentBlockId());
-        copy.setInstanceId(block.getInstanceId());
-        copy.setBankId(block.getBankId());
-        copy.setSectionId(block.getSectionId());
-        copy.setBlockType(block.getBlockType());
-        copy.setOrderIndex(block.getOrderIndex());
-        copy.setAssetId(block.getAssetId());
-        copy.setTextContent(maskedText);
-        copy.setCaption(maskedCaption);
-        return copy;
-    }
-
-    /**
-     * The generated file for download; regenerates first when nothing was
-     * generated yet or the content changed since (GET-safe: a re-download just
-     * overwrites the same export files).
-     */
-    public DownloadFile download(int instanceId, String format) {
-        boolean pdf = "pdf".equalsIgnoreCase(format);
-        if (!pdf && !"docx".equalsIgnoreCase(format)) {
-            throw new IllegalArgumentException("format must be docx or pdf.");
-        }
+    /** The generated PDF; regenerates first when nothing was generated yet or the document changed since. */
+    public PdfDownload download(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
-        if (pdf && !pdfConverter.isAvailable()) {
-            throw new IllegalStateException("PDF conversion is not available on this server "
-                    + "(LibreOffice is not installed); download the .docx instead.");
-        }
-        if (isStale(instance, pdf)) {
+        templateOf(instance);
+        if (isStale(instance)) {
             generate(instanceId);
             instance = ownership.requireInstance(instanceId);
         }
-        String fileName = pdf ? instance.getLastGeneratedPdf() : instance.getLastGeneratedDocx();
-        if (fileName == null) {
-            throw new IllegalStateException("PDF conversion failed; download the .docx instead.");
-        }
-        Path path;
-        try {
-            path = storage.localCopy(FileStoreKeys.export(fileName));
-        } catch (java.nio.file.NoSuchFileException e) {
-            throw new IllegalStateException("The generated file is missing; generate the document again.");
+        try (InputStream in = storage.open(instance.getGeneratedPdfKey())) {
+            return new PdfDownload(in.readAllBytes(), PdfTemplateStore.downloadName(instance.getTitle(), ".pdf"));
+        } catch (NoSuchFileException e) {
+            throw new IllegalStateException("The generated file is missing; generate the document again.", e);
         } catch (IOException e) {
             throw new UncheckedIOException("Could not read the generated file.", e);
         }
-        return new DownloadFile(path, sanitizeFileName(instance.getTitle()) + (pdf ? ".pdf" : ".docx"));
     }
 
-    private boolean isStale(DocInstance instance, boolean pdf) {
-        if (instance.getLastGeneratedDate() == null || instance.getLastGeneratedDocx() == null) {
+    boolean isStale(DocInstance instance) {
+        if (instance.getLastGeneratedDate() == null || instance.getGeneratedPdfKey() == null) {
             return true;
         }
-        if (pdf && instance.getLastGeneratedPdf() == null) {
-            return true; // generated before the converter was available
-        }
-        if (instance.getUpdatedDate() != null
-                && instance.getUpdatedDate().isAfter(instance.getLastGeneratedDate())) {
+        if (instance.getUpdatedDate() != null && instance.getUpdatedDate().isAfter(instance.getLastGeneratedDate())) {
             return true;
         }
-        String fileName = pdf ? instance.getLastGeneratedPdf() : instance.getLastGeneratedDocx();
         try {
-            return !storage.exists(FileStoreKeys.export(fileName));
+            return !storage.exists(instance.getGeneratedPdfKey());
         } catch (IOException e) {
             throw new UncheckedIOException("Could not check the generated file.", e);
         }
     }
 
-    /** The company flow's last touch on the assembled document (stamps, footers, ...). */
-    private byte[] decorate(byte[] docxBytes, DocBlueprint blueprint, DocInstance instance) {
-        DocumentCreationFlow flow = flows.flowFor(blueprint.getCompanyId());
-        try (var doc = new org.apache.poi.xwpf.usermodel.XWPFDocument(
-                new java.io.ByteArrayInputStream(docxBytes))) {
-            flow.decorateGeneratedDocument(doc, instance, blueprint);
-            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-            doc.write(out);
-            return out.toByteArray();
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not finalize the generated document.", e);
+    private record Filled(FillResult result) {
+    }
+
+    private Filled fill(DocInstance instance, DocBlueprint blueprint, boolean forReport, boolean verify) {
+        int version = instance.getBlueprintVersion();
+        List<TemplateRegion> regionList = templates.regions(blueprint, version);
+        Map<String, String> values = readValues(instance);
+        if (forReport) {
+            Map<String, String> masked = new LinkedHashMap<>();
+            values.forEach((k, v) -> masked.put(k, masking.maskReportText(v)));
+            values = masked;
         }
-    }
-
-    /**
-     * Exports live at fixed per-instance keys that downloads read while
-     * regenerations overwrite; FileStore.put replaces the object in one step
-     * (atomic move on disk, a single PUT on S3), so a reader always sees a
-     * complete file, never a truncated one.
-     */
-    private void writeExport(String key, byte[] bytes, String contentType) throws IOException {
-        storage.put(key, new ByteArrayInputStream(bytes), bytes.length, contentType);
-    }
-
-    private Path requireBlueprintFile(DocBlueprint blueprint) {
-        try {
-            return uploadStorage.localCopy(blueprint.getFileName());
-        } catch (java.nio.file.NoSuchFileException e) {
-            throw new IllegalStateException("The blueprint's source file is missing; re-upload the blueprint.");
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read the blueprint's source file.", e);
-        }
-    }
-
-    private Function<Integer, byte[]> assetBytesLoader(Map<Integer, DocImageAsset> assetsById) {
-        return assetId -> {
-            DocImageAsset asset = assetsById.get(assetId);
-            try {
-                return uploadStorage.readAllBytes(asset.getFileName());
-            } catch (IOException e) {
-                throw new IllegalStateException(
-                        "Image " + asset.getOriginalFileName() + " is missing; upload it again.", e);
+        Map<String, byte[]> photoBytes = new HashMap<>();
+        Set<String> photoKeys = regionList.stream()
+                .filter(r -> r.kind() == RegionKind.IMAGE || r.kind() == RegionKind.SIGNATURE)
+                .map(TemplateRegion::key).collect(Collectors.toSet());
+        for (DocInstanceImage image : images.listByInstance(instance.getBankId(), instance.getDocInstanceId())) {
+            if (image.getRegionKey() == null || !photoKeys.contains(image.getRegionKey())) {
+                continue;
             }
-        };
+            DocImageAsset asset = assets.getById(image.getAssetId()).orElse(null);
+            if (asset == null) {
+                continue;
+            }
+            try {
+                photoBytes.put(image.getRegionKey(), uploadStorage.readAllBytes(asset.getFileName()));
+            } catch (IOException e) {
+                throw new IllegalStateException("Photo " + image.getOriginalName() + " is missing; upload it again.",
+                        e);
+            }
+        }
+        byte[] template = templates.templatePdf(blueprint, version);
+        FillOptions options = new FillOptions(settings.pdfMinFontSize(), true, verify);
+        try {
+            return new Filled(store.engine().fill(template, regionList, values, photoBytes, options));
+        } catch (PdfTemplateException e) {
+            throw new IllegalStateException("The document could not be drawn: " + e.getMessage(), e);
+        }
     }
 
     // ---------------------------------------------------------------- shared
 
-    private DocBlueprintSection requireSectionOf(DocInstance instance, int sectionId) {
-        return sections.getById(sectionId)
-                .filter(s -> s.getBlueprintId() == instance.getBlueprintId()
-                        && s.getVersion() == instance.getBlueprintVersion())
-                .orElseThrow(() -> new NoSuchElementException("Section " + sectionId + " not found."));
+    private InstanceDto toDto(DocInstance instance, DocBlueprint blueprint) {
+        List<PageInfo> pages = TemplateVersions.pages(blueprint);
+        List<TemplateRegion> regionList = templates.regions(blueprint, instance.getBlueprintVersion());
+        List<RegionDto> regionDtos = regionList.stream().map(r -> OverlayMapper.toDto(r, pages, null)).toList();
+        Map<String, String> values = readValues(instance);
+        List<InstanceDto.ImageDto> imageDtos = images.listByInstance(instance.getBankId(), instance.getDocInstanceId())
+                .stream().map(i -> new InstanceDto.ImageDto(i.getDocInstanceImageId(), i.getRegionKey(),
+                        i.getOriginalName()))
+                .toList();
+        List<String> overflow = OverflowEstimator.overflowing(regionList, values, settings.pdfMinFontSize());
+        return new InstanceDto(instance.getDocInstanceId(), instance.getTitle(), instance.getStatus(),
+                blueprint.getDocBlueprintId(), blueprint.getName(), instance.getBlueprintVersion(),
+                TemplateVersions.effectiveVersion(blueprint), pages, regionDtos, values, imageDtos, overflow,
+                instance.getLastGeneratedDate(), instance.getGeneratedPdfKey() != null,
+                instance.getReviewComment());
     }
 
-    private DocContentBlock requireBlock(int blockId) {
-        DocContentBlock block = blocks.getById(blockId)
-                .orElseThrow(() -> new NoSuchElementException("Block " + blockId + " not found."));
+    /** The document's template: 410 for a document of a retired Word template. */
+    private DocBlueprint templateOf(DocInstance instance) {
+        DocBlueprint blueprint = ownership.requireBlueprint(instance.getBlueprintId());
+        if (blueprint.isLegacy()) {
+            throw DocCreationException.legacy();
+        }
+        return blueprint;
+    }
+
+    private DocInstanceImage requireImage(DocInstance instance, int imageId) {
+        return images.getById(instance.getBankId(), imageId)
+                .filter(i -> i.getInstanceId() == instance.getDocInstanceId())
+                .orElseThrow(() -> new NoSuchElementException("Photo " + imageId + " not found."));
+    }
+
+    /** Values and photos are frozen while the document is under review or released. */
+    private static void requireEditable(DocInstance instance) {
+        if (DocInstance.STATUS_SUBMITTED.equals(instance.getStatus())) {
+            throw new IllegalStateException("This document is submitted for release; it cannot change "
+                    + "until the review is done.");
+        }
+        if (DocInstance.STATUS_RELEASED.equals(instance.getStatus())) {
+            throw new IllegalStateException("This document is released and can no longer change.");
+        }
+    }
+
+    static Map<String, String> readValues(DocInstance instance) {
+        if (instance.getValuesJson() == null || instance.getValuesJson().isBlank()) {
+            return new LinkedHashMap<>();
+        }
         try {
-            ownership.requireInstance(block.getInstanceId());
-        } catch (NoSuchElementException e) {
-            throw new NoSuchElementException("Block " + blockId + " not found.");
+            LinkedHashMap<String, String> values = JSON.readValue(instance.getValuesJson(), VALUES);
+            values.values().removeIf(v -> v == null);
+            return values;
+        } catch (IOException e) {
+            throw new IllegalStateException("The document's values are unreadable.", e);
         }
-        return block;
     }
 
-    private DocImageAsset requireAsset(int assetId) {
-        DocImageAsset asset = assets.getById(assetId)
-                .orElseThrow(() -> new NoSuchElementException("Image " + assetId + " not found."));
+    /** Writes the values in the regions' reading order (stable JSON, readable diffs). */
+    private static String writeValues(Map<String, String> values, List<TemplateRegion> regionList) {
+        Map<String, String> ordered = new LinkedHashMap<>();
+        for (TemplateRegion region : regionList) {
+            String value = values.get(region.key());
+            if (value != null) {
+                ordered.put(region.key(), value);
+            }
+        }
         try {
-            ownership.requireInstance(asset.getInstanceId());
-        } catch (NoSuchElementException e) {
-            throw new NoSuchElementException("Image " + assetId + " not found.");
+            return ordered.isEmpty() ? null : JSON.writeValueAsString(ordered);
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not write the document's values.", e);
         }
-        return asset;
-    }
-
-    private DocImageAsset requireAssetOf(int instanceId, int assetId) {
-        DocImageAsset asset = requireAsset(assetId);
-        if (asset.getInstanceId() != instanceId) {
-            throw new NoSuchElementException("Image " + assetId + " not found.");
-        }
-        return asset;
-    }
-
-    private int nextOrderIndex(int instanceId, int sectionId) {
-        return blocks.listBySection(instanceId, sectionId).stream()
-                .mapToInt(DocContentBlock::getOrderIndex)
-                .max()
-                .orElse(-1) + 1;
     }
 
     private static void requireTitle(String title) {
@@ -751,38 +618,40 @@ public class DocInstanceUseCase {
         }
     }
 
-    private static String requireCaption(String caption) {
-        if (caption != null && caption.length() > 500) {
-            throw new IllegalArgumentException("The caption is too long (500 characters max).");
-        }
-        return caption;
-    }
-
     private static void touch(DocInstance instance) {
         instance.setUpdatedDate(LocalDateTime.now());
     }
 
-    static String contentTypeFor(String fileName) {
-        int dot = fileName.lastIndexOf('.');
-        if (dot < 0) {
-            return null;
-        }
-        return IMAGE_CONTENT_TYPES.get(fileName.substring(dot + 1).toLowerCase(Locale.ROOT));
+    private static String cleanName(String name) {
+        String cleaned = name == null || name.isBlank() ? "image" : name.replace('\\', '/');
+        cleaned = cleaned.substring(cleaned.lastIndexOf('/') + 1);
+        cleaned = cleaned.isBlank() ? "image" : cleaned;
+        return truncate(cleaned, 255);
     }
 
-    /** The image type according to its bytes, or null when unreadable/unsupported. */
-    static String sniffImageContentType(byte[] bytes) throws IOException {
+    /** The image type according to its BYTES (png, jpeg, gif, bmp), or null when unreadable. */
+    static String sniffImageContentType(byte[] bytes) {
         try (javax.imageio.stream.ImageInputStream in =
                      ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            if (in == null) {
+                return null;
+            }
             var readers = ImageIO.getImageReaders(in);
             if (!readers.hasNext()) {
                 return null;
             }
             String format = readers.next().getFormatName().toLowerCase(Locale.ROOT);
-            String contentType = IMAGE_CONTENT_TYPES.get("jpeg".equals(format) ? "jpg" : format);
+            String contentType = switch (format) {
+                case "png" -> "image/png";
+                case "jpeg", "jpg" -> "image/jpeg";
+                case "gif" -> "image/gif";
+                case "bmp" -> "image/bmp";
+                default -> null;
+            };
             // Confirm it actually decodes, not just that a header matched.
-            return contentType != null && ImageIO.read(new ByteArrayInputStream(bytes)) != null
-                    ? contentType : null;
+            return contentType != null && ImageIO.read(new ByteArrayInputStream(bytes)) != null ? contentType : null;
+        } catch (IOException | RuntimeException e) {
+            return null;
         }
     }
 
@@ -790,14 +659,18 @@ public class DocInstanceUseCase {
         return "doccreation-instance" + instanceId + "." + extension;
     }
 
-    static String sanitizeFileName(String title) {
+    public static String sanitizeFileName(String title) {
         String cleaned = title == null ? "" : title.replaceAll("[\\\\/:*?\"<>|\\r\\n]", " ").strip();
         return cleaned.isBlank() ? "document" : cleaned;
     }
 
-    public record StoredAsset(Path path, String contentType, String originalFileName) {
+    private static String truncate(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max);
     }
 
-    public record DownloadFile(Path path, String downloadName) {
+    public record StoredImage(byte[] bytes, String contentType, String originalName) {
+    }
+
+    public record PdfDownload(byte[] bytes, String downloadName) {
     }
 }

@@ -5,6 +5,8 @@ import com.modocument.domain.entity.AiResultCacheEntry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.doccreation.entity.DocContentBlock;
+import com.modocument.doccreation.entity.DocInstance;
+import com.modocument.doccreation.repo.DocInstanceJpaRepository;
 import com.modocument.doccreation.repo.DocContentBlockJpaRepository;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
@@ -87,6 +89,8 @@ class DataSubjectRightsGateC12Test extends IsolatedStorageApiTestSupport {
     @Autowired
     private DocContentBlockJpaRepository docBlocks;
     @Autowired
+    private DocInstanceJpaRepository docInstances;
+    @Autowired
     private TemplateJpaRepository templates;
     @Autowired
     private JwtService jwtService;
@@ -104,6 +108,7 @@ class DataSubjectRightsGateC12Test extends IsolatedStorageApiTestSupport {
     private ExtractionRawRecordEntity raw;
     private ExtractionProcessedRecordEntity processed;
     private DocContentBlock block;
+    private DocInstance document;
 
     @BeforeEach
     void seedSubjectAcrossStores() throws Exception {
@@ -193,6 +198,15 @@ class DataSubjectRightsGateC12Test extends IsolatedStorageApiTestSupport {
         block.setOrderIndex(0);
         block.setTextContent("Contract issued to " + SUBJECT + " on request.");
         block = docBlocks.save(block);
+
+        // Store 5 (ws31): a PDF-template document's values naming the subject.
+        document = new DocInstance();
+        document.setOwnerUserId(991);
+        document.setBankId(bank.getBankId());
+        document.setBlueprintId(991);
+        document.setTitle("C12 document");
+        document.setValuesJson("{\"nic\":\"" + SUBJECT + "\",\"city\":\"Port Louis\"}");
+        document = docInstances.save(document);
     }
 
     private static String table(String column, String... nics) {
@@ -265,6 +279,7 @@ class DataSubjectRightsGateC12Test extends IsolatedStorageApiTestSupport {
         assertThat(byStore.get("extractionProcessedRecords")).isEqualTo(1);
         assertThat(byStore.get("uploadedFiles")).isEqualTo(1);         // the job's original
         assertThat(byStore.get("docContentBlocks")).isEqualTo(1);
+        assertThat(byStore.get("docValues")).isEqualTo(1);
 
         // ---- 2. export ZIP carries the subject's rows in full ----
         Map<String, JsonNode> zip = exportZipEntries();
@@ -279,6 +294,8 @@ class DataSubjectRightsGateC12Test extends IsolatedStorageApiTestSupport {
                 .get("fields").get("nic").asText()).isEqualTo(SUBJECT);
         assertThat(export.get("stores").get("docContentBlocks").get(0)
                 .get("textContent").asText()).contains(SUBJECT);
+        assertThat(export.get("stores").get("docValues").get(0).get("values").get("nic").asText())
+                .isEqualTo(SUBJECT);
         assertThat(export.toString()).doesNotContain(OTHER);
         assertThat(zip.get("dsr-export.txt").asText()).contains(SUBJECT);
 
@@ -313,6 +330,8 @@ class DataSubjectRightsGateC12Test extends IsolatedStorageApiTestSupport {
         assertThat(extractionRaw.findById(raw.getId())).isEmpty();
         assertThat(extractionProcessed.findById(processed.getId())).isEmpty();
         assertThat(docBlocks.findById(block.getDocContentBlockId())).isEmpty();
+        assertThat(docInstances.findById(document.getDocInstanceId()).orElseThrow().getValuesJson())
+                .doesNotContain(SUBJECT).contains("Port Louis");
 
         // ---- 6. the audit trail shows the three events, values-free ----
         for (String action : new String[] {"DSR_SEARCH", "DSR_EXPORTED", "DSR_ERASED"}) {

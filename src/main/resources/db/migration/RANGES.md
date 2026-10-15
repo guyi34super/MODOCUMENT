@@ -43,7 +43,9 @@ per new workstream:
 | ws26       | V260–V269 | SE2 (SE5: V261 IntegrationAgent) | Machine identity: V260 ApiClient/secrets/idempotency, V261 agents + connection FK (NOT VALID) |
 | ws27       | V270–V279 | SE1 | Optimization: performance indexes, retention/housekeeping |
 | ws28       | V280–V289 | SE2/SE4 | Optimization: audit trail (viewer, new actions), AI result cache, ingestion summary columns |
-| ws29       | V290–V299 | SE5 | Optimization: S3 file storage references; V290 PendingFileDelete (failed object-delete retry queue, BUG-12) |
+| ws29       | V290–V291 | SE5 | Optimization: S3 file storage references; V290 PendingFileDelete (failed object-delete retry queue, BUG-12); V291 doc blueprint versions (DocBlueprintVersion, CurrentVersion/Version/BlueprintVersion columns) |
+| ws30       | V292–V299 | — | Document creation: V292 template section kinds (DocBlueprintSection.SectionKind/FieldSchema, DocInstance.FieldValuesJson) |
+| ws31       | V300–V309 | BE-2 | Exact PDF templates (docs/doccreation/pdf-templates-contract.md §4): V300 DocBlueprint Kind/OriginalFileKey/PageCount/UploadFlow/PagesJson + DocBlueprintVersion.TemplatePdfKey, V301 DocTemplateRegion, V302 DocTemplateEdit, DocInstance ValuesJson/GeneratedPdfKey, DocInstanceImage |
 
 Phase-2 migrations must also follow docs/release/migration-policy.md
 (expand/contract: a release only adds; drops/renames/SET NOT NULL ship one

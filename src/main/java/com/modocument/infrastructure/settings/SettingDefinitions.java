@@ -354,18 +354,26 @@ public final class SettingDefinitions {
                     .defaultValue("0.6").range("0.1", "1.0").build(),
             builder(DOCCREATION_SECTION_AI_ENABLED, BOOLEAN).bank().operational()
                     .group(SettingGroup.AI_EXTRACTION)
-                    .label("Document creation: AI section breakdown")
-                    .description("Let the AI identify blueprint sections (heuristic parser "
-                            + "otherwise).")
+                    .label("Template AI assistance")
+                    .description("Let the AI improve the fill-in areas and the data found in an "
+                            + "uploaded PDF template (code detection always runs).")
                     .property("modocument.doccreation.section-ai-enabled")
                     .defaultValue("true").build(),
             builder(DOCCREATION_GENERATE_AI_ENABLED, BOOLEAN).bank().operational()
                     .group(SettingGroup.AI_EXTRACTION)
-                    .label("Document creation: AI composition")
-                    .description("Let the AI compose generated documents (deterministic "
-                            + "engine otherwise).")
+                    .label("Document creation: AI composition (retired)")
+                    .description("No effect: PDF documents are drawn from the entered values "
+                            + "only. Kept for stored overrides; removed in a later release.")
                     .property("modocument.doccreation.generate-ai-enabled")
                     .defaultValue("true").build(),
+            builder(DOCCREATION_PDF_MIN_FONT_SIZE, INT).bank().operational()
+                    .group(SettingGroup.AI_EXTRACTION)
+                    .label("Document creation: minimum font size")
+                    .description("A value that does not fit its box is shrunk down to this "
+                            + "size, then continues on an added page.")
+                    .unit("pt")
+                    .property("modocument.doccreation.pdf-min-font-size")
+                    .defaultValue("6").range("4", "10").build(),
             builder(AI_CIRCUIT_FAILURE_THRESHOLD, INT).platform().operational()
                     .group(SettingGroup.AI_EXTRACTION)
                     .label("AI circuit breaker: failures to open")

@@ -1,16 +1,15 @@
 package com.modocument.doccreation.api;
 
+import com.modocument.api.security.RequiresPermission;
+import com.modocument.doccreation.dto.BlueprintDto;
+import com.modocument.doccreation.dto.SaveOverlayRequest;
+import com.modocument.doccreation.usecase.DocBlueprintUseCase;
+import com.modocument.doccreation.usecase.DocCreationException;
+import com.modocument.domain.model.Permission;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import com.modocument.api.security.RequiresPermission;
-import com.modocument.domain.model.Permission;
-import com.modocument.doccreation.dto.BlueprintDto;
-import com.modocument.doccreation.dto.ResectionRequest;
-import com.modocument.doccreation.dto.SaveSectionsRequest;
-import com.modocument.doccreation.dto.UpdateKeywordsRequest;
-import com.modocument.doccreation.usecase.DocBlueprintUseCase;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,24 +23,20 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.URI;
-import java.nio.file.Files;
+import java.time.Duration;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
- * Document-creation blueprints: upload the company's source .docx or .pdf, see the
- * sections the engine broke it into, tune each section's auto-assignment
- * keywords, download the original, and delete when nothing builds on it.
+ * Exact PDF templates (docs/doccreation/pdf-templates-contract.md §5): upload
+ * a PDF (blank, or filled with data to remove), review and edit the region
+ * overlay as versions, page previews, the original and template PDFs.
+ * Templates of the retired Word path answer 410.
  */
 @RestController
-@Tag(name = "Doc Creation: Blueprints")
+@Tag(name = "Doc Creation: Blueprints", description = "Exact PDF templates: upload, overlay editor, versions")
 public class DocBlueprintController {
-
-    private static final String DOCX_CONTENT_TYPE =
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
     private final DocBlueprintUseCase useCase;
 
@@ -49,17 +44,15 @@ public class DocBlueprintController {
         this.useCase = useCase;
     }
 
+    /** Multipart {@code file} (PDF only, checked by its bytes), {@code name}, {@code companyId}, {@code flow}. */
     @RequiresPermission(Permission.DOC_WRITE)
     @PostMapping(value = "/api/doccreation/blueprints", consumes = "multipart/form-data")
     public ResponseEntity<?> create(@RequestParam("file") MultipartFile file,
                                     @RequestParam(value = "name", required = false) String name,
                                     @RequestParam(value = "companyId", required = false) String companyId,
-                                    @RequestParam(value = "stripSampleData", required = false)
-                                    Boolean stripSampleData) {
-        BlueprintDto created = useCase.create(file, name, companyId, stripSampleData);
-        return ResponseEntity
-                .created(URI.create("/api/doccreation/blueprints/" + created.blueprintId()))
-                .body(created);
+                                    @RequestParam(value = "flow", required = false) String flow) {
+        BlueprintDto created = useCase.create(file, name, companyId, flow);
+        return ResponseEntity.created(URI.create("/api/doccreation/blueprints/" + created.id())).body(created);
     }
 
     @RequiresPermission(Permission.DOC_READ)
@@ -81,50 +74,46 @@ public class DocBlueprintController {
         return ResponseEntity.ok(useCase.versions(id));
     }
 
+    /** A page as PNG: {@code variant=original|template} (default template), {@code version}, {@code dpi} (36–200). */
     @RequiresPermission(Permission.DOC_READ)
-    @GetMapping("/api/doccreation/blueprints/{id}/paragraphs")
-    public ResponseEntity<?> paragraphs(@PathVariable int id) {
-        return ResponseEntity.ok(useCase.paragraphs(id));
+    @GetMapping("/api/doccreation/blueprints/{id}/pages/{page}")
+    public ResponseEntity<byte[]> page(@PathVariable int id,
+                                       @PathVariable int page,
+                                       @RequestParam(value = "variant", required = false) String variant,
+                                       @RequestParam(value = "version", required = false) Integer version,
+                                       @RequestParam(value = "dpi", required = false) Integer dpi) {
+        byte[] png = useCase.pagePng(id, page, variant, version, dpi);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(5)).cachePrivate())
+                .contentType(MediaType.IMAGE_PNG)
+                .body(png);
     }
 
-    /** Saves an edited section list as a new version (409 when the base version is stale). */
+    /** Saves the reviewed or edited overlay (409 when {@code baseVersion} is stale). */
     @RequiresPermission(Permission.DOC_WRITE)
-    @PutMapping("/api/doccreation/blueprints/{id}/sections")
-    public ResponseEntity<?> saveSections(@PathVariable int id,
-                                          @Valid @RequestBody SaveSectionsRequest request) {
-        return ResponseEntity.ok(useCase.saveSections(id, request));
+    @PutMapping("/api/doccreation/blueprints/{id}/overlay")
+    public ResponseEntity<?> saveOverlay(@PathVariable int id, @Valid @RequestBody SaveOverlayRequest request) {
+        return ResponseEntity.ok(useCase.saveOverlay(id, request));
     }
 
-    /** Re-runs the AI (or heuristic) section breakdown and saves the result as a new version. */
+    /** Multipart {@code file}: a PNG/JPEG for an ADD_IMAGE edit; returns its {@code imageKey}. */
     @RequiresPermission(Permission.DOC_WRITE)
-    @PostMapping("/api/doccreation/blueprints/{id}/resection")
-    public ResponseEntity<?> resection(@PathVariable int id,
-                                       @Valid @RequestBody(required = false) ResectionRequest request) {
-        ResectionRequest body = request == null ? new ResectionRequest() : request;
-        return ResponseEntity.ok(useCase.resection(id, body.getBaseVersion(), body.getNote()));
+    @PostMapping(value = "/api/doccreation/blueprints/{id}/edit-images", consumes = "multipart/form-data")
+    public ResponseEntity<?> uploadEditImage(@PathVariable int id, @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(Map.of("imageKey", useCase.uploadEditImage(id, file)));
     }
 
+    /** The uploaded PDF ({@code variant=original}) or a version's template PDF (default). */
     @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/blueprints/{id}/file")
-    public ResponseEntity<?> downloadOriginal(@PathVariable int id) {
-        DocBlueprintUseCase.StoredFile stored = useCase.getFile(id);
-        try {
-            return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION,
-                            "attachment; filename=\"" + stored.downloadName().replace("\"", "") + "\"")
-                    .contentType(MediaType.parseMediaType(DOCX_CONTENT_TYPE))
-                    .body(Files.readAllBytes(stored.path()));
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read the blueprint file.", e);
-        }
-    }
-
-    @RequiresPermission(Permission.DOC_WRITE)
-    @PutMapping("/api/doccreation/blueprints/{id}/sections/{sectionId}/keywords")
-    public ResponseEntity<?> updateKeywords(@PathVariable int id,
-                                            @PathVariable int sectionId,
-                                            @Valid @RequestBody UpdateKeywordsRequest request) {
-        return ResponseEntity.ok(useCase.updateKeywords(id, sectionId, request.getKeywords()));
+    public ResponseEntity<byte[]> file(@PathVariable int id,
+                                       @RequestParam(value = "variant", required = false) String variant,
+                                       @RequestParam(value = "version", required = false) Integer version) {
+        DocBlueprintUseCase.PdfFile file = useCase.file(id, variant, version);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, DocCreationErrors.attachment(file.downloadName()))
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(file.bytes());
     }
 
     @RequiresPermission(Permission.DOC_WRITE)
@@ -134,18 +123,23 @@ public class DocBlueprintController {
         return ResponseEntity.noContent().build();
     }
 
+    @ExceptionHandler(DocCreationException.class)
+    public ResponseEntity<?> docCreation(DocCreationException e) {
+        return DocCreationErrors.of(e);
+    }
+
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<?> notFound(NoSuchElementException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        return DocCreationErrors.notFound(e);
     }
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<?> conflict(IllegalStateException e) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+        return DocCreationErrors.conflict(e);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<?> badRequest(IllegalArgumentException e) {
-        return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        return DocCreationErrors.badRequest(e);
     }
 }

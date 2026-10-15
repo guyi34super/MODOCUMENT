@@ -20,7 +20,7 @@ import com.modocument.domain.entity.RefreshToken;
 import com.modocument.domain.model.Hashing;
 import com.modocument.domain.model.Role;
 import com.modocument.domain.model.settings.SettingKeys;
-import com.modocument.doccreation.parse.AiSectionSplitter;
+import com.modocument.doccreation.usecase.DocCreationSettings;
 import com.modocument.infrastructure.alerting.AlertProperties;
 import com.modocument.infrastructure.alerting.AlertRule;
 import com.modocument.infrastructure.alerting.AlertRuleCatalogue;
@@ -389,14 +389,16 @@ class SettingsConsumersOverrideTest {
 
     @Test
     void doccreationAiFollowsTheBankToggleAndTheAiMasterSwitch() throws Exception {
-        AiSectionSplitter splitter = new AiSectionSplitter(null, null, null, null, true, "",
-                settings.reader());
+        DocCreationSettings docSettings = new DocCreationSettings(settings.reader());
         settings.bank(BANK_A, SettingKeys.DOCCREATION_SECTION_AI_ENABLED, "false")
-                .bank(BANK_B, SettingKeys.AI_ENABLED, "false");
+                .bank(BANK_B, SettingKeys.AI_ENABLED, "false")
+                .bank(BANK_B, SettingKeys.DOCCREATION_PDF_MIN_FONT_SIZE, "8");
 
-        TenantContext.runAs(BANK_A, () -> assertThat(splitter.enabled()).isFalse());
-        TenantContext.runAs(BANK_B, () -> assertThat(splitter.enabled()).isFalse());
-        TenantContext.runAs(BANK_C, () -> assertThat(splitter.enabled()).isTrue());
+        TenantContext.runAs(BANK_A, () -> assertThat(docSettings.templateAiAllowed()).isFalse());
+        TenantContext.runAs(BANK_B, () -> assertThat(docSettings.templateAiAllowed()).isFalse());
+        TenantContext.runAs(BANK_C, () -> assertThat(docSettings.templateAiAllowed()).isTrue());
+        TenantContext.runAs(BANK_B, () -> assertThat(docSettings.pdfMinFontSize()).isEqualTo(8));
+        TenantContext.runAs(BANK_C, () -> assertThat(docSettings.pdfMinFontSize()).isEqualTo(6));
     }
 
     // ------------------------------------------------------------- alerts

@@ -21,6 +21,12 @@ public interface DocBlueprintRepository {
 
     List<DocBlueprint> listByOwner(int ownerUserId);
 
+    /** The owner's templates of one kind (ws31: the lists show PDF_OVERLAY only). */
+    List<DocBlueprint> listByOwnerAndKind(int ownerUserId, String kind);
+
+    /** One bank's templates of one kind (the legacy purge; RLS backs the bank filter). */
+    List<DocBlueprint> listByBankAndKind(int bankId, String kind);
+
     DocBlueprint save(DocBlueprint entity);
 
     void delete(int id);
