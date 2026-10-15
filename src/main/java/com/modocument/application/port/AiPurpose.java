@@ -28,12 +28,6 @@ public enum AiPurpose {
     SCHEMA_INFERENCE(OutputPolicy.LENIENT, true),
     /** Prose summary of an extraction run. */
     EXTRACTION_SUMMARY(OutputPolicy.LENIENT, true),
-    /** Blueprint section breakdown; falls back to the heuristic parser. */
-    DOC_SECTION_SPLIT(OutputPolicy.STRICT, true),
-    /** Strip sample values from an uploaded template; heuristics remain primary. */
-    DOC_TEMPLATE_CLEAN(OutputPolicy.STRICT, true),
-    /** Detect fillable fields inside a FORM template section. */
-    DOC_TEMPLATE_FIELD(OutputPolicy.LENIENT, true),
     /**
      * Exact PDF templates: labels, groups and kinds for the fill-in regions the
      * code found. Suggestions only: every id is re-validated against the page
@@ -46,8 +40,6 @@ public enum AiPurpose {
      * rejected and the code classification stands.
      */
     DOC_PDF_DATA(OutputPolicy.STRICT, true),
-    /** AI-composed document generation; falls back to the deterministic engine. */
-    DOC_COMPOSE(OutputPolicy.STRICT, true),
     /**
      * Vision OCR of an uploaded page. The completion IS the document's own
      * text, so identifier shapes in it are the customer's data coming back

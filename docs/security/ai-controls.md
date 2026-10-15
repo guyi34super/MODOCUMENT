@@ -59,12 +59,8 @@ Per call site:
 | `CleanRecordsUseCase` | `DATA_CLEANING` | Row batches tokenized; cleaned rows detokenized. |
 | `InferSchemaUseCase` | `SCHEMA_INFERENCE` | Sample records already tokenized upstream; envelope pinned to the job's bank. When `AiPreflight` reports the AI off/unconfigured/circuit-open or the call fails, types are inferred from the sample values in code (`generatedBy: CODE`, `fallbackReason`). |
 | `SummarizeExtractionUseCase` | `EXTRACTION_SUMMARY` | Stats + tokenized samples; summary detokenized. Same fallback: a summary from counters, fill rates and distinct counts that quotes no value (`generatedBy: CODE`). |
-| `AiSectionSplitter` | `DOC_SECTION_SPLIT` | Body listing **one-way masked** (`maskText`), not tokenized: the model's anchors are body-element indexes (`[3]`), not character offsets, so length changes are safe, and the accepted titles/anchor text are re-read from the document itself — nothing from the model needs unmasking. |
-| `TemplateNormalizer` | `DOC_TEMPLATE_CLEAN` | Optional AI-assisted sample-data strip on blueprint upload; heuristics are primary. |
-| `TemplateFieldExtractor` | `DOC_TEMPLATE_FIELD` | Detect fillable fields in FORM sections (LENIENT). |
 | `AiRegionAdvisor` (PDF templates) | `DOC_PDF_REGIONS` | Listing of text runs (`r12 p0 72,700,80,10 s10 "Full name:"`) and code-found candidate fields, **one-way masked** (`maskText`): coordinates are comma-separated so no number shape is masked, and the model answers with run/candidate ids only. Every id is re-validated against the page model; a reply with any unknown id, kind or a masked placeholder in a label is dropped whole and the code labels stand (`detectedBy: CODE`). Runs only when the caller passes `aiAllowed`. |
 | `AiRegionAdvisor` (PDF templates) | `DOC_PDF_DATA` | Same masked run listing plus the run ids code classified as sample data. The model may only add real run ids as data (never a heading or label run) or demote proposed ones; boxes are always taken from the real glyphs, AI-only items get confidence 0.6 and are shown for review, and any invalid reply leaves the code classification unchanged. |
-| `AiDocumentComposer` | `DOC_COMPOSE` | **Reversible tokenization** of the template listing, user paragraphs, captions, section titles and image file names in one session; the validated plan is detokenized before rendering, so the generated document carries the real values while the model never saw them. (Deliberately NOT the one-way masking used for classification snippets/section splitting: masking would bake `[ID]` placeholders into the generated document.) |
 | ~~`AiFilesController` (`POST /api/aifiles/send`)~~ | `DIAGNOSTIC` | **Removed in 1.2.0** (open prompt proxy). |
 | `VisionOcrService` | `VISION_OCR` | Images cannot be tokenized — see the vision policy below. |
 
@@ -90,7 +86,7 @@ Policy per purpose (`AiPurpose.outputPolicy()`):
 
 | Policy | Purposes | On a finding |
 |---|---|---|
-| **STRICT** | `TABLE_EXTRACTION`, `TRANSFORM_EXTRACTION`, `CHAT_EDIT`, `DATA_CLEANING`, `DOC_SECTION_SPLIT`, `DOC_COMPOSE`, `DOC_PDF_DATA` | Completion rejected (`AiOutputRejectedException`), `AI_OUTPUT_BLOCKED` audit (`DENIED`); the caller falls back to its non-AI path (heuristic section parser, deterministic document engine, code data detection, original rows) or reports "nothing was changed". |
+| **STRICT** | `TABLE_EXTRACTION`, `TRANSFORM_EXTRACTION`, `CHAT_EDIT`, `DATA_CLEANING`, `DOC_PDF_DATA` | Completion rejected (`AiOutputRejectedException`), `AI_OUTPUT_BLOCKED` audit (`DENIED`); the caller falls back to its non-AI path (code data detection, original rows) or reports "nothing was changed". |
 | **LENIENT** | `TEMPLATE_CLASSIFY`, `AUTO_MAP`, `SCHEMA_INFERENCE`, `EXTRACTION_SUMMARY`, `VISION_OCR`, `DIAGNOSTIC`, `DOC_PDF_REGIONS` | Identifier shapes scrubbed (`«redacted»`), `AI_OUTPUT_FLAGGED` audit (`FAILED`), the sanitized completion is returned — these outputs are suggestions validated downstream. |
 
 `VISION_OCR` is the one purpose with the identifier scan off: its completion
