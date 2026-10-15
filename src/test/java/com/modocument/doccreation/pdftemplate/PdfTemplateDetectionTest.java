@@ -178,6 +178,29 @@ class PdfTemplateDetectionTest {
         assertThat(a).isEqualTo(b);
     }
 
+    @Test
+    void contentsLinesAndLeadInColonsAreNotConfidentFields() throws java.io.IOException {
+        byte[] pdf;
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = new org.apache.pdfbox.pdmodel.PDDocument()) {
+            org.apache.pdfbox.pdmodel.PDPage page = new org.apache.pdfbox.pdmodel.PDPage(
+                    org.apache.pdfbox.pdmodel.common.PDRectangle.A4);
+            doc.addPage(page);
+            try (var cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(doc, page)) {
+                PdfCorpus.text(cs, PdfCorpus.helvBold(), 14, 72, 780, "Contents");
+                PdfCorpus.text(cs, PdfCorpus.helv(), 10, 72, 750, "Introduction ........................ 3");
+                PdfCorpus.text(cs, PdfCorpus.helv(), 10, 72, 735, "Scope ............................... 7");
+                PdfCorpus.text(cs, PdfCorpus.helv(), 10, 72, 690, "The following conditions apply:");
+                PdfCorpus.text(cs, PdfCorpus.helv(), 10, 72, 676, "all work is carried out by qualified staff only.");
+            }
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            doc.save(out);
+            pdf = out.toByteArray();
+        }
+        AnalysisResult r = engine.analyze(pdf, UploadFlow.BLANK, CorpusSupport.codeOnly());
+        assertThat(r.regions()).noneMatch(x -> x.box().y() > 730);
+        assertThat(r.regions()).allMatch(x -> x.confidence() < 0.6);
+    }
+
     private static TemplateRegion find(AnalysisResult r, String key) {
         return r.regions().stream().filter(x -> x.key().equals(key)).findFirst()
                 .orElseThrow(() -> new AssertionError("no " + key + " in " + r.regions()));

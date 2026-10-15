@@ -96,6 +96,21 @@ final class BlankRegionDetector {
         }
     }
 
+    /** "Chapter ........ 12": a dot leader running into a page number is a contents line, not a field. */
+    private static boolean tableOfContents(PageModel page, TextRun run, int leaderEnd) {
+        String after = run.text.substring(leaderEnd).strip();
+        if (after.matches("\\d{1,4}|[ivxlcIVXLC]{1,6}")) {
+            return true;
+        }
+        if (!after.isEmpty()) {
+            return false;
+        }
+        List<TextRun> line = page.lineOf(run);
+        int i = line.indexOf(run);
+        return i >= 0 && i + 1 < line.size() && line.get(i + 1).trimmed().matches("\\d{1,4}|[ivxlcIVXLC]{1,6}")
+                && line.get(i + 1).box.x0() - run.box.x1() < 30;
+    }
+
     static String humanize(String name) {
         if (name == null || name.isBlank()) {
             return "Field";
@@ -112,7 +127,7 @@ final class BlankRegionDetector {
             int prevEnd = 0;
             while (m.find()) {
                 List<Glyph> leader = run.glyphsFor(m.start(), m.end());
-                if (leader.isEmpty()) {
+                if (leader.isEmpty() || tableOfContents(page, run, m.end())) {
                     continue;
                 }
                 Rect lb = TextRun.layoutBox(leader);
@@ -453,9 +468,22 @@ final class BlankRegionDetector {
                 if (kind == RegionKind.IMAGE) {
                     kind = RegionKind.TEXT;
                 }
-                add(out, page, Candidate.Origin.LABEL_SPACE, kind, box, Labels.clean(t), run, 0.7);
+                add(out, page, Candidate.Origin.LABEL_SPACE, kind, box, Labels.clean(t), run,
+                        introducesText(page, run) ? 0.5 : 0.7);
             }
         }
+    }
+
+    /** "The following applies:" with text lines right under it: more likely a lead-in than a field. */
+    private static boolean introducesText(PageModel page, TextRun label) {
+        for (TextRun r : page.runs) {
+            float below = label.baseline - r.baseline;
+            if (below > 0.5f * label.size && below < 1.8f * label.size && Math.abs(r.box.x0() - label.box.x0()) < 20
+                    && !r.trimmed().endsWith(":") && Labels.words(r.text) >= 4) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The run already labels a candidate, or a candidate with the same label sits close by. */

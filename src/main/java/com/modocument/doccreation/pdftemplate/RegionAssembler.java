@@ -150,10 +150,23 @@ final class RegionAssembler {
 
     static TemplateEdit toRemoval(Candidate c, PageFrame frame, String seed) {
         Rect box = frame.toBoxSpace(c.removeBox);
-        String id = UUID.nameUUIDFromBytes((seed + "|" + c.page + "|" + box).getBytes(StandardCharsets.UTF_8))
-                .toString();
+        String id = stableId(seed + "|" + c.page + "|" + box);
         return new TemplateEdit(id, EditKind.REMOVE, box.toBox(c.page), null, null, null, null, null,
                 EditSource.DATA_REMOVAL, round(c.confidence), c.sample);
+    }
+
+    /** A UUID-shaped id derived from SHA-256, so the same upload proposes the same edit ids. */
+    static String stableId(String material) {
+        byte[] h = PdfDocuments.sha256(material.getBytes(StandardCharsets.UTF_8));
+        h[6] = (byte) ((h[6] & 0x0F) | 0x80);
+        h[8] = (byte) ((h[8] & 0x3F) | 0x80);
+        long msb = 0;
+        long lsb = 0;
+        for (int i = 0; i < 8; i++) {
+            msb = (msb << 8) | (h[i] & 0xFF);
+            lsb = (lsb << 8) | (h[i + 8] & 0xFF);
+        }
+        return new UUID(msb, lsb).toString();
     }
 
     static String hex(int rgb) {
