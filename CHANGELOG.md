@@ -81,6 +81,11 @@ All notable changes to MoDocument are recorded here. The format follows
 - `detectedBy` reports `CODE+AI` only when the AI actually changed a label, group or kind, or
   the data classification.
 
+### Security
+- Admins must set up MFA again by default (`MODOCUMENT_MFA_REQUIRE_FOR_ADMIN` defaults to
+  `true`, go-live gate B3). An earlier change had turned it off in every environment, though it
+  was meant only for docker-compose and the `local` profile. Those two still turn it off.
+
 ## [1.2.0] - 2026-10-11
 
 Optimization release: faster pages and APIs, a smaller and cheaper deployment,
