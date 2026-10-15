@@ -5,7 +5,7 @@
 # docs/api/versioning-policy.md. Regenerate with:
 #   mvn -Dtest=OpenApiContractTest \
 #       -Dmodocument.contract.update=true test
-# 213 operations.
+# 222 operations.
 POST /ImportDetails/Create
 GET /ImportDetails/GetAll
 GET /ImportDetails/GetById/{id}
@@ -133,6 +133,10 @@ POST /api/doccreation/blueprints/{id}/edit-images
 GET /api/doccreation/blueprints/{id}/file
 PUT /api/doccreation/blueprints/{id}/overlay
 GET /api/doccreation/blueprints/{id}/pages/{page}
+GET /api/doccreation/blueprints/{id}/sources
+POST /api/doccreation/blueprints/{id}/sources
+DELETE /api/doccreation/blueprints/{id}/sources/{sourceId}
+PUT /api/doccreation/blueprints/{id}/sources/{sourceId}
 GET /api/doccreation/blueprints/{id}/versions
 GET /api/doccreation/instances
 POST /api/doccreation/instances
@@ -141,6 +145,8 @@ DELETE /api/doccreation/instances/{id}
 GET /api/doccreation/instances/{id}
 PUT /api/doccreation/instances/{id}
 GET /api/doccreation/instances/{id}/download
+POST /api/doccreation/instances/{id}/fill-from-record
+GET /api/doccreation/instances/{id}/fill-preview
 POST /api/doccreation/instances/{id}/generate
 POST /api/doccreation/instances/{id}/images
 DELETE /api/doccreation/instances/{id}/images/{imageId}
@@ -151,7 +157,10 @@ POST /api/doccreation/instances/{id}/reject
 POST /api/doccreation/instances/{id}/release
 GET /api/doccreation/instances/{id}/review-file
 POST /api/doccreation/instances/{id}/submit
+POST /api/doccreation/instances/{id}/upgrade
 PUT /api/doccreation/instances/{id}/values
+GET /api/doccreation/records
+GET /api/doccreation/records/{id}
 GET /api/extraction/jobs
 POST /api/extraction/jobs
 GET /api/extraction/jobs/{id}

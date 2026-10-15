@@ -26,10 +26,12 @@ e2e/
                           page count and text of a generated PDF, no dependencies)
   fixtures/               employees.csv, pdf.js (free-text PDF writer for the AI path),
                           pdf-form.js (multi-page form PDF writer: text, boxes, images;
-                          blank and filled twins), png.js (PNG encode/decode/pixel diff)
+                          blank and filled twins; customerForm() for @records),
+                          png.js (PNG encode/decode/pixel diff, ink in a box)
   tests/                  00-harness, 01-auth, 02-templates-ingestion, 03-session (@smoke)
                           04-known-bugs (@bug), phase2/* (@phase2 @waveN; all live
-                          since Wave 4 except AC-EXT-13); phase2/pdf-templates (@pdf)
+                          since Wave 4 except AC-EXT-13); phase2/pdf-templates (@pdf);
+                          phase2/flow-records (@records)
 ```
 
 Phase-2 status (Wave 4 QA round): every phase-2 spec is **live**, including
@@ -39,6 +41,20 @@ UI (provenance badge, low-confidence callout, extraction section). Still
 `fixme`: AC-EXT-13 (AI_PARTIAL needs a multi-batch document). Skipped
 without the right stack: AC-INT-15 (SFTP: `E2E_BANK_SIM_SFTP_*`, the compose
 simulator) and AC-INT-21 (nginx mTLS listener: `E2E_MTLS_URL`).
+
+Flow records in document creation (`tests/phase2/flow-records.spec.js`,
+`@phase2 @records`, [contract](../docs/doccreation/flow-records-contract.md)):
+REC-01 validated CSV rows of two bank-shared flow templates become records
+(the invalid row never does); REC-02 a generated PDF form becomes a template;
+REC-03 the "Data sources" tab (Customers primary, auto-mapped by name;
+Accounts linked by `nic` ↔ `national_id`); REC-04 "Fill from data" in the
+builder (both templates, a field left out, fill-empty-only); REC-05 "Edit
+layout" saved to the template (new version, document moved, the PDF draws
+the value in the moved box: ink in the new vs the old box on the page
+preview; REPORT masking of NIC / account number in the PDF); REC-06 a
+READ_ONLY user gets masked NIC/phone and 403 on fill, a second bank 404;
+REC-07 deleting the ingestion job removes its records. `createTemplate()`
+takes `visibility: 'BANK'` (bank admin only).
 
 ## Run it locally (no Docker)
 

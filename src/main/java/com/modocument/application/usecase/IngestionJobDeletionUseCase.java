@@ -36,6 +36,15 @@ import java.util.NoSuchElementException;
 @Service
 public class IngestionJobDeletionUseCase {
 
+    /** ws32: the searchable record index (null in unit-test wiring = no index). */
+    private com.modocument.application.port.TemplateRecordIndex recordIndex;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setTemplateRecordIndex(com.modocument.application.port.TemplateRecordIndex recordIndex) {
+        this.recordIndex = recordIndex;
+    }
+
+
     private final IngestionJobRepository jobs;
     private final UploadedFileRepository uploads;
     private final CurrentUserProvider currentUser;
@@ -88,6 +97,9 @@ public class IngestionJobDeletionUseCase {
             }
         }
 
+        if (recordIndex != null) { // ws32: the job's records go with it (before the row: FK)
+            recordIndex.jobDeleted(job.getBankId(), jobId);
+        }
         jobs.delete(job);
 
         Map<String, Object> snapshot = new LinkedHashMap<>();

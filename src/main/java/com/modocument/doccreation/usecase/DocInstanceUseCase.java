@@ -5,6 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.FileStore;
+import com.modocument.application.port.TemplateRepository;
+import com.modocument.doccreation.dto.EditDto;
+import com.modocument.domain.entity.Template;
+import com.modocument.domain.model.Permission;
 import com.modocument.application.privacy.PiiMaskingService;
 import com.modocument.doccreation.dto.CreatedInstanceDto;
 import com.modocument.doccreation.dto.GenerationResultDto;
@@ -73,6 +77,8 @@ public class DocInstanceUseCase {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final TypeReference<LinkedHashMap<String, String>> VALUES = new TypeReference<>() {
     };
+    private static final TypeReference<List<SourceRef>> SOURCES = new TypeReference<>() {
+    };
     private static final int MAX_VALUE_LENGTH = 20_000;
     private static final int MAX_IMAGES_PER_UPLOAD = 100;
 
@@ -88,6 +94,8 @@ public class DocInstanceUseCase {
     private final FileStore storage;
     private final PiiMaskingService masking;
     private final AuditRecorder audit;
+    /** ws32: the names of the templates a document was filled from. */
+    private final TemplateRepository templateRepository;
 
     public DocInstanceUseCase(DocInstanceRepository instances,
                               DocBlueprintRepository blueprints,
@@ -100,7 +108,9 @@ public class DocInstanceUseCase {
                               UploadStorage uploadStorage,
                               FileStore storage,
                               PiiMaskingService masking,
-                              AuditRecorder audit) {
+                              AuditRecorder audit,
+                              TemplateRepository templateRepository) {
+        this.templateRepository = templateRepository;
         this.instances = instances;
         this.blueprints = blueprints;
         this.assets = assets;
@@ -210,6 +220,91 @@ public class DocInstanceUseCase {
         DocInstance instance = ownership.requireInstance(instanceId);
         DocBlueprint blueprint = templateOf(instance);
         requireEditable(instance);
+        merge(instance, blueprint, changes);
+        touch(instance);
+        instances.save(instance);
+        return toDto(instance, blueprint);
+    }
+
+    /**
+     * ws32 fill from records (docs/doccreation/flow-records-contract.md §4):
+     * the values merge exactly like {@link #updateValues} (unknown key 400,
+     * photo field 400, length cap 400, SUBMITTED/RELEASED 409) and the
+     * records used are appended to SourceRecordsJson (a record already
+     * listed is replaced, ids only).
+     */
+    @Transactional
+    public InstanceDto fillValues(int instanceId, Map<String, String> changes, List<SourceRef> sources) {
+        DocInstance instance = ownership.requireInstance(instanceId);
+        DocBlueprint blueprint = templateOf(instance);
+        requireEditable(instance);
+        merge(instance, blueprint, changes);
+        List<SourceRef> refs = new ArrayList<>(readSources(instance));
+        for (SourceRef source : sources) {
+            refs.removeIf(existing -> existing.recordId() == source.recordId());
+            refs.add(source);
+        }
+        instance.setSourceRecordsJson(refs.isEmpty() ? null : writeJson(refs));
+        touch(instance);
+        instances.save(instance);
+        return toDto(instance, blueprint);
+    }
+
+    /**
+     * {@code POST /instances/{id}/upgrade} (contract §4): moves the document
+     * to the template's current version. Values keep their region key when
+     * it still exists as a field; the others are dropped, and photos on
+     * photo boxes that are gone go back to the tray — every such key is
+     * reported in {@code droppedKeys}. A SUBMITTED or RELEASED document is a
+     * 409.
+     */
+    @Transactional
+    public InstanceDto upgrade(int instanceId) {
+        DocInstance instance = ownership.requireInstance(instanceId);
+        DocBlueprint blueprint = templateOf(instance);
+        requireEditable(instance);
+        int target = TemplateVersions.effectiveVersion(blueprint);
+        Set<String> dropped = new LinkedHashSet<>();
+        if (instance.getBlueprintVersion() != target) {
+            List<TemplateRegion> regionList = templates.regions(blueprint, target);
+            Map<String, TemplateRegion> byKey = regionList.stream()
+                    .collect(Collectors.toMap(TemplateRegion::key, Function.identity(), (a, b) -> a));
+            Map<String, String> values = readValues(instance);
+            Map<String, String> kept = new LinkedHashMap<>();
+            values.forEach((key, value) -> {
+                TemplateRegion region = byKey.get(key);
+                if (region == null || region.kind() == RegionKind.IMAGE || region.kind() == RegionKind.SIGNATURE) {
+                    dropped.add(key);
+                } else {
+                    kept.put(key, value);
+                }
+            });
+            for (DocInstanceImage image : images.listByInstance(instance.getBankId(), instanceId)) {
+                String key = image.getRegionKey();
+                if (key == null) {
+                    continue;
+                }
+                TemplateRegion region = byKey.get(key);
+                if (region == null || (region.kind() != RegionKind.IMAGE && region.kind() != RegionKind.SIGNATURE)) {
+                    image.setRegionKey(null);
+                    images.save(image);
+                    dropped.add(key);
+                }
+            }
+            instance.setBlueprintVersion(target);
+            instance.setValuesJson(writeValues(kept, regionList));
+            touch(instance);
+            instances.save(instance);
+        }
+        return toDto(instance, blueprint).withDroppedKeys(new ArrayList<>(dropped));
+    }
+
+    /** A record a document was filled from: {@code {recordId, templateId, role}}. */
+    public record SourceRef(long recordId, int templateId, String role) {
+    }
+
+    /** Merges {@code changes} into the instance's values (see {@link #updateValues}); does not save. */
+    private void merge(DocInstance instance, DocBlueprint blueprint, Map<String, String> changes) {
         List<TemplateRegion> regionList = templates.regions(blueprint, instance.getBlueprintVersion());
         Map<String, TemplateRegion> byKey = regionList.stream()
                 .collect(Collectors.toMap(TemplateRegion::key, Function.identity(), (a, b) -> a));
@@ -233,9 +328,6 @@ public class DocInstanceUseCase {
             }
         }
         instance.setValuesJson(writeValues(values, regionList));
-        touch(instance);
-        instances.save(instance);
-        return toDto(instance, blueprint);
     }
 
     // ---------------------------------------------------------------- photos
@@ -547,11 +639,59 @@ public class DocInstanceUseCase {
                         i.getOriginalName()))
                 .toList();
         List<String> overflow = OverflowEstimator.overflowing(regionList, values, settings.pdfMinFontSize());
+        int currentVersion = TemplateVersions.effectiveVersion(blueprint);
+        List<EditDto> blueprintEdits = templates.edits(blueprint, currentVersion).stream()
+                .map(e -> OverlayMapper.toDto(e, pages, null, null, true, null))
+                .toList();
+        boolean canEditLayout = blueprint.getOwnerUserId() == ownership.requireUserId()
+                && ownership.callerHas(Permission.DOC_WRITE);
         return new InstanceDto(instance.getDocInstanceId(), instance.getTitle(), instance.getStatus(),
                 blueprint.getDocBlueprintId(), blueprint.getName(), instance.getBlueprintVersion(),
-                TemplateVersions.effectiveVersion(blueprint), pages, regionDtos, values, imageDtos, overflow,
+                currentVersion, pages, regionDtos, values, imageDtos, overflow,
                 instance.getLastGeneratedDate(), instance.getGeneratedPdfKey() != null,
-                instance.getReviewComment());
+                instance.getReviewComment(), sourceRecordDtos(instance), canEditLayout, blueprintEdits, null);
+    }
+
+    /** The records the document was filled from, with their template's name (null when it is gone). */
+    private List<InstanceDto.SourceRecordDto> sourceRecordDtos(DocInstance instance) {
+        List<SourceRef> refs = readSources(instance);
+        if (refs.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, String> names = new HashMap<>();
+        List<InstanceDto.SourceRecordDto> out = new ArrayList<>();
+        for (SourceRef ref : refs) {
+            String name = names.computeIfAbsent(ref.templateId(), id -> {
+                try {
+                    return templateRepository.getById(id).map(Template::getName).orElse(null);
+                } catch (RuntimeException e) {
+                    return null;
+                }
+            });
+            out.add(new InstanceDto.SourceRecordDto(ref.recordId(), ref.templateId(), name, ref.role()));
+        }
+        return out;
+    }
+
+    static List<SourceRef> readSources(DocInstance instance) {
+        if (instance.getSourceRecordsJson() == null || instance.getSourceRecordsJson().isBlank()) {
+            return List.of();
+        }
+        try {
+            List<SourceRef> refs = JSON.readValue(instance.getSourceRecordsJson(), SOURCES);
+            return refs == null ? List.of() : refs;
+        } catch (IOException e) {
+            log.warn("Document {}: unreadable source records", instance.getDocInstanceId());
+            return List.of();
+        }
+    }
+
+    private static String writeJson(Object value) {
+        try {
+            return JSON.writeValueAsString(value);
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not write the document's source records.", e);
+        }
     }
 
     /** The document's template: 410 for a document of a retired Word template. */
@@ -580,7 +720,7 @@ public class DocInstanceUseCase {
         }
     }
 
-    static Map<String, String> readValues(DocInstance instance) {
+    public static Map<String, String> readValues(DocInstance instance) {
         if (instance.getValuesJson() == null || instance.getValuesJson().isBlank()) {
             return new LinkedHashMap<>();
         }

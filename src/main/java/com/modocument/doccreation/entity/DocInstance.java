@@ -124,7 +124,23 @@ public class DocInstance {
     @Column(name = "GeneratedPdfKey", length = 512)
     private String generatedPdfKey;
 
+    /**
+     * The records the document was filled from (V310, ws32): a JSON array of
+     * {@code {recordId, templateId, role}} — ids only, never values.
+     */
+    @Column(name = "SourceRecordsJson", columnDefinition = "text")
+    private String sourceRecordsJson;
+
     public DocInstance() {
+    }
+
+    @JsonIgnore
+    public String getSourceRecordsJson() {
+        return sourceRecordsJson;
+    }
+
+    public void setSourceRecordsJson(String sourceRecordsJson) {
+        this.sourceRecordsJson = sourceRecordsJson;
     }
 
     @JsonIgnore

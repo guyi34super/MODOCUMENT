@@ -44,6 +44,15 @@ import java.util.NoSuchElementException;
 @Service
 public class BridgeToTemplateUseCase {
 
+    /** ws32: the searchable record index (null in unit-test wiring = no index). */
+    private com.modocument.application.port.TemplateRecordIndex recordIndex;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setTemplateRecordIndex(com.modocument.application.port.TemplateRecordIndex recordIndex) {
+        this.recordIndex = recordIndex;
+    }
+
+
     /** Seeded ProcessStep ids (same as IngestionJobUseCase). */
     private static final int STEP_TRANSFORMING = 1;
     private static final int STEP_MAPPING = 2;
@@ -179,6 +188,9 @@ public class BridgeToTemplateUseCase {
         ingestionJob.setCurrentStep(JobStep.VALIDATED);
         ingestionJob.setStatus(JobStatus.COMPLETED);
         IngestionJob savedJob = ingestionJobs.save(ingestionJob);
+        if (recordIndex != null) { // ws32: the bridged job is VALIDATED: index its valid rows
+            recordIndex.jobChanged(savedJob);
+        }
 
         recordDetails(savedHistory.getImportHistoryId(), bankId, STEP_TRANSFORMING,
                 ingestionJob.getParsedTableJson());
