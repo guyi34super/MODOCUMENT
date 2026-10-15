@@ -157,6 +157,12 @@ import java.util.concurrent.Callable;
  *       anonymous until tokens are issued): {@code runAs(user's bank)}
  *       around a new transaction for that user's second-factor check and
  *       session creation. Never {@code runAsSystem}.</li>
+ *   <li>{@code TemplateRecordBackfill#runOnce} — ws32 one-off startup backfill
+ *       of the flow record index (ApplicationRunner): {@code runAsSystem}
+ *       only to list the RLS-protected Bank table, then {@code runAs(bank)}
+ *       per bank for that bank's unindexed VALIDATED/EXPORTED job ids and
+ *       their indexing (TemplateRecord / TemplateRecordKey rows of that bank
+ *       only). No row content is read as SYSTEM.</li>
  *   <li>{@code RetentionPurgeJob#runOnce} — the ws14 daily retention sweep
  *       (and its manual admin trigger): {@code runAsSystem} to list the
  *       RLS-protected Bank table across tenants, then

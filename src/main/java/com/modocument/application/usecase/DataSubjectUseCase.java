@@ -14,6 +14,9 @@ import com.modocument.doccreation.repo.DocContentBlockJpaRepository;
 import com.modocument.doccreation.repo.DocImageAssetJpaRepository;
 import com.modocument.doccreation.entity.DocInstance;
 import com.modocument.doccreation.repo.DocInstanceJpaRepository;
+import com.modocument.doccreation.entity.TemplateRecord;
+import com.modocument.doccreation.repo.TemplateRecordJpaRepository;
+import com.modocument.doccreation.usecase.TemplateRecordIndexer;
 import com.modocument.domain.entity.ImportDetails;
 import com.modocument.domain.entity.IngestionJob;
 import com.modocument.domain.entity.UploadedFile;
@@ -100,6 +103,9 @@ public class DataSubjectUseCase {
     private final PendingFileDeletes pendingDeletes;
     /** v1.2.0: cached AI results are copies of extracted rows (cleared on erase). */
     private final AiResultCacheJpaRepository aiResultCache;
+    /** ws32: the record index holds copies of validated rows. */
+    private final TemplateRecordJpaRepository templateRecords;
+    private final TemplateRecordIndexer recordIndexer;
 
     public DataSubjectUseCase(CurrentUserProvider currentUser,
                               IngestionJobJpaRepository jobs,
@@ -114,7 +120,11 @@ public class DataSubjectUseCase {
                               AuditRecorder audit,
                               ObjectMapper objectMapper,
                               PendingFileDeletes pendingDeletes,
-                              AiResultCacheJpaRepository aiResultCache) {
+                              AiResultCacheJpaRepository aiResultCache,
+                              TemplateRecordJpaRepository templateRecords,
+                              TemplateRecordIndexer recordIndexer) {
+        this.templateRecords = templateRecords;
+        this.recordIndexer = recordIndexer;
         this.currentUser = currentUser;
         this.jobs = jobs;
         this.importDetails = importDetails;
@@ -302,6 +312,11 @@ public class DataSubjectUseCase {
         }
         counts.put("docValues", valueCount);
 
+        // Flow records (ws32): the index rows that name the subject go (the
+        // job rows they copy were rewritten above).
+        counts.put("templateRecords", recordIndexer.eraseRecords(bankId,
+                scan.recordMatches.stream().map(TemplateRecord::getTemplateRecordId).toList()));
+
         // The AI result cache holds copies of extracted rows under a text
         // hash, so the subject's values cannot be found in it reliably: the
         // bank's whole cache goes (it only saves model calls). Not counted in
@@ -357,6 +372,7 @@ public class DataSubjectUseCase {
         final Set<String> jobMatchedStoredNames = new LinkedHashSet<>();
         final List<DocContentBlock> docBlockMatches = new ArrayList<>();
         final List<DocValueMatch> docValueMatches = new ArrayList<>();
+        final List<TemplateRecord> recordMatches = new ArrayList<>();
 
         Scan(String subject) {
             this.subjectRef = Hashing.sha256(subject.toLowerCase(Locale.ROOT)).substring(0, 16);
@@ -367,7 +383,8 @@ public class DataSubjectUseCase {
                     + importDetailMatches.size() + rawMatches.size() + processedMatches.size()
                     + nameMatchedUploads.size() + jobMatchedStoredNames.size()
                     + docBlockMatches.size()
-                    + docValueMatches.stream().mapToInt(m -> m.keys().size()).sum();
+                    + docValueMatches.stream().mapToInt(m -> m.keys().size()).sum()
+                    + recordMatches.size();
         }
 
         List<StoreHits> storeHits() {
@@ -402,6 +419,10 @@ public class DataSubjectUseCase {
                     docValueMatches.stream().map(m -> new HitRef(
                             String.valueOf(m.instance().getDocInstanceId()),
                             "document " + m.instance().getDocInstanceId(), m.keys().size())).toList()));
+            stores.add(new StoreHits("templateRecords", recordMatches.size(),
+                    recordMatches.stream().map(r -> new HitRef(String.valueOf(r.getTemplateRecordId()),
+                            "template " + r.getTemplateId() + ", job " + r.getIngestionJobId()
+                                    + ", row " + r.getRowIndex(), 1)).toList()));
             return stores;
         }
 
@@ -473,6 +494,13 @@ public class DataSubjectUseCase {
             });
             if (!keys.isEmpty()) {
                 scan.docValueMatches.add(new DocValueMatch(instance, keys));
+            }
+        }
+
+        // Flow records (ws32): structured, so equality on any value.
+        for (TemplateRecord record : templateRecords.findByBankId(bankId)) {
+            if (readValues(record.getValuesJson()).values().stream().anyMatch(v -> valueMatches(v, subject))) {
+                scan.recordMatches.add(record);
             }
         }
         return scan;
@@ -690,6 +718,16 @@ public class DataSubjectUseCase {
             match.keys().forEach(key -> fields.put(key, values.get(key)));
         }
 
+        ArrayNode recordsNode = stores.putArray("templateRecords");
+        for (TemplateRecord record : scan.recordMatches) {
+            ObjectNode node = recordsNode.addObject();
+            node.put("recordId", record.getTemplateRecordId());
+            node.put("templateId", record.getTemplateId());
+            node.put("jobId", record.getIngestionJobId());
+            node.put("rowIndex", record.getRowIndex());
+            node.set("values", objectMapper.valueToTree(readValues(record.getValuesJson())));
+        }
+
         try {
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(root);
         } catch (IOException e) {
@@ -816,6 +854,14 @@ public class DataSubjectUseCase {
                 text.append("Document ").append(match.instance().getDocInstanceId())
                         .append(", field ").append(key).append(": ").append(values.get(key)).append('\n');
             }
+        }
+        text.append("\n-- Flow records (record index) --\n");
+        for (TemplateRecord record : scan.recordMatches) {
+            text.append("Record ").append(record.getTemplateRecordId())
+                    .append(" (template ").append(record.getTemplateId())
+                    .append(", job ").append(record.getIngestionJobId())
+                    .append(", row ").append(record.getRowIndex()).append("): ")
+                    .append(readValues(record.getValuesJson())).append('\n');
         }
         return text.toString().getBytes(StandardCharsets.UTF_8);
     }

@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 /**
  * Applies the masking matrix (ws12, gate C2, PRIV-005) at the channels'
@@ -114,6 +115,30 @@ public class PiiMaskingService {
                 view.parseFallbackReason(),
                 view.parseMinConfidence(),
                 view.parseLowConfidence());
+    }
+
+    /**
+     * ws32 (flow records): the screen masking of one template's records for
+     * the caller — {@link MaskingPolicy#screenChannel} by role, the field
+     * kinds of the template (NIC, ACCOUNT_NUMBER, EMAIL, PHONE and NAME mask,
+     * NONE and unclassified-as-NONE fields stay raw). The identity when the
+     * caller's channel shows raw values. Kinds are looked up once per call,
+     * so a page of records costs one lookup.
+     */
+    public UnaryOperator<Map<String, String>> screenValueMasker(int templateId) {
+        MaskingPolicy.Channel channel = policy.screenChannel(callerRole());
+        if (!policy.mask(channel, callerRole())) {
+            return UnaryOperator.identity();
+        }
+        Map<String, PiiKind> kinds = fieldKinds(templateId, null);
+        return values -> {
+            if (values == null) {
+                return null;
+            }
+            Map<String, String> masked = new LinkedHashMap<>();
+            values.forEach((field, value) -> masked.put(field, Masker.mask(kinds.get(field), value)));
+            return masked;
+        };
     }
 
     /** Masks every view of a listing the same way as a single view. */

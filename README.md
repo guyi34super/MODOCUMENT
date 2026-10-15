@@ -329,6 +329,24 @@ path is gone; see [docs/doccreation/pdf-templates-contract.md](docs/doccreation/
 - **Word templates from earlier versions** are hidden from the lists and answer
   `410 GONE`; a bank administrator removes them, with their documents and
   files, through the audited `POST /api/admin/doccreation/purge-legacy`.
+- **Fill from data.** In the builder, pick a flow template, search its
+  validated records (people) and pick one: a preview shows each field's
+  proposed value, where it came from and whether it would overwrite, with a
+  tick per field; then apply ("fill empty fields only" or "overwrite"). Every
+  validated row of the data flow is indexed for this
+  (`TemplateRecord`, see [docs/doccreation/flow-records-contract.md](docs/doccreation/flow-records-contract.md));
+  a user sees the records of their own jobs and of templates shared with the
+  bank, masked per role exactly like the job views.
+- **Data sources.** A template keeps saved mappings to one or more flow
+  templates: one **primary** source (the record you pick) and **linked**
+  sources found through a shared key (e.g. the NIC), so one person's details
+  can come from several flows. Fields with the same or a similar name
+  (aliases included) are connected automatically, one-to-one; any link can be
+  changed. Without saved sources the mapping is built on the fly by name.
+- **Layout from the builder.** Move, resize or add a field while filling a
+  document and save the layout to the template as a new version; the document
+  moves to it (`POST …/instances/{id}/upgrade`), keeping values by field key
+  and reporting the ones that no longer exist.
 
 ## Quick start
 
@@ -681,6 +699,13 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 | `POST /api/doccreation/instances/{id}/generate` | Generate the PDF (exactness-checked) |
 | `GET /api/doccreation/instances/{id}/download` | Download the PDF (regenerates when stale) |
 | `POST /api/admin/doccreation/purge-legacy` | Bank admin: delete the old Word templates and their documents |
+| `GET /api/doccreation/records?templateId=&q=&field=&page=&size=` | Search a flow template's validated records (masked per role; `size` ≤ 100) |
+| `GET /api/doccreation/records/{id}` | One record (read-audited) |
+| `GET` / `POST /api/doccreation/blueprints/{id}/sources` | A template's data sources with mappings and suggestions / add one (auto-mapped; 409 for a second primary or a duplicate) |
+| `PUT` / `DELETE /api/doccreation/blueprints/{id}/sources/{sourceId}` | Save a source's mapping and link fields / remove it (the primary only once no linked source is left) |
+| `GET /api/doccreation/instances/{id}/fill-preview?recordId=` | What filling from a record would write (saved or automatic mapping, linked records) |
+| `POST /api/doccreation/instances/{id}/fill-from-record` | Fill from a record (`fields`, `overwrite=EMPTY_ONLY\|ALL`, `linkedRecordIds`) |
+| `POST /api/doccreation/instances/{id}/upgrade` | Move the document to the template's current version (`droppedKeys`) |
 
 ## Ingestion walkthrough
 

@@ -71,6 +71,11 @@ import java.util.UUID;
 @Service
 public class DocBlueprintUseCase {
 
+    /** ws32: the saved data sources (null in unit wiring). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.modocument.doccreation.repo.DocBlueprintSourceJpaRepository sources;
+
+
     private static final Logger log = LoggerFactory.getLogger(DocBlueprintUseCase.class);
     private static final String PDF = "application/pdf";
     private static final int MAX_NAME_LENGTH = 255;
@@ -467,6 +472,9 @@ public class DocBlueprintUseCase {
         List<String> keys = new ArrayList<>(store.listBlueprintFiles(bankId, blueprintId));
         regions.deleteByBlueprint(bankId, blueprintId);
         edits.deleteByBlueprint(bankId, blueprintId);
+        if (sources != null) { // ws32: the template's saved data sources
+            sources.deleteBlueprint(bankId, blueprintId);
+        }
         versions.deleteByBlueprint(blueprintId);
         blueprints.delete(blueprintId);
         // Only after commit: a rollback (e.g. a racing document create hitting
