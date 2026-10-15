@@ -9,8 +9,10 @@ import {
   imageContentPath,
   instancePagePath,
   placeImage,
+  saveOverlay,
   saveValues,
   submitInstance,
+  upgradeInstance,
   uploadImages,
 } from '../api/doccreation';
 import PageHeader from '../components/PageHeader';
@@ -18,10 +20,15 @@ import AuthedImage from '../components/AuthedImage';
 import Modal from '../components/Modal';
 import { Badge, Button, Callout, Card, ErrorBanner, Spinner, Tag, inputClass } from '../components/ui';
 import { useToast } from '../context/ToastContext';
+import useUnsavedGuard from '../hooks/useUnsavedGuard';
 import PageView from '../components/pdf/PageView';
 import ThumbnailStrip from '../components/pdf/ThumbnailStrip';
-import { boxStyle } from '../components/pdf/RegionBox';
-import { KIND_COLORS, displaySize, estimateOverflow } from '../components/pdf/geometry';
+import RegionBox, { boxStyle } from '../components/pdf/RegionBox';
+import DrawLayer from '../components/pdf/DrawLayer';
+import RegionPropertiesPanel, { keyProblem } from '../components/pdf/RegionPropertiesPanel';
+import { KIND_COLORS, KIND_LABELS, displaySize, estimateOverflow } from '../components/pdf/geometry';
+import FillFromDataDialog from '../components/records/FillFromDataDialog';
+import { newRegion, toRegionDto, withUid } from '../components/records/layoutDraft';
 
 /** How long typing pauses before the values are saved. */
 export const AUTOSAVE_MS = 600;
@@ -29,6 +36,7 @@ const PHOTO_MIME = 'application/x-modoc-image';
 const PHOTO_EXT = /\.(png|jpe?g|gif|bmp)$/i;
 const PHOTO_KINDS = new Set(['IMAGE', 'SIGNATURE']);
 const OVERFLOW_TEXT = 'Will continue on an added page';
+const DRAW_HINT = 'Draw a new field: drag on the page, or press Enter to add one in the centre';
 
 const fieldLabel = (region) => region.label?.trim() || region.key;
 
@@ -207,6 +215,17 @@ export default function DocBuilderPage() {
   const [generating, setGenerating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [fillOpen, setFillOpen] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
+  // "Edit layout" mode: a draft copy of the regions (null when not editing).
+  const [layoutRegions, setLayoutRegions] = useState(null);
+  const [layoutSelected, setLayoutSelected] = useState(null);
+  const [layoutTool, setLayoutTool] = useState('select');
+  const [layoutDirty, setLayoutDirty] = useState(false);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutConflict, setLayoutConflict] = useState(false);
+  const [focusProperties, setFocusProperties] = useState(false);
+  const propertiesRef = useRef(null);
 
   // Autosave: changed keys wait here until typing pauses, then go out as
   // one merge (PUT values merges server-side). One request at a time.
@@ -440,6 +459,126 @@ export default function DocBuilderPage() {
     setPreviewOpen(true);
   };
 
+  // ------------------------------------------- template version / layout
+
+  const droppedText = (dto) => {
+    const dropped = dto?.droppedKeys || [];
+    return dropped.length
+      ? ` · values removed for fields no longer on the template: ${dropped.join(', ')}`
+      : '';
+  };
+
+  const moveToCurrentVersion = async () => {
+    setUpgrading(true);
+    try {
+      await flush();
+      const dto = await toast.promise(() => upgradeInstance(id), {
+        loading: 'Moving to the newest template version…',
+        success: (result) => `Moved to template version ${result?.blueprintVersion ?? ''}${droppedText(result)}`.trim(),
+        error: (err) => err.message,
+      });
+      adopt(dto);
+    } catch {
+      // The error toast is already shown.
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  const startLayout = async () => {
+    await flush();
+    setLayoutRegions(regions.map(withUid));
+    setLayoutSelected(null);
+    setLayoutTool('select');
+    setLayoutDirty(false);
+  };
+
+  const endLayout = () => {
+    setLayoutRegions(null);
+    setLayoutSelected(null);
+    setLayoutTool('select');
+    setLayoutDirty(false);
+  };
+
+  const updateLayoutRegion = (uid, patch) => {
+    setLayoutRegions((list) => list.map((r) => (r._uid === uid ? { ...r, ...patch } : r)));
+    setLayoutDirty(true);
+  };
+
+  const deleteLayoutRegion = (uid) => {
+    setLayoutRegions((list) => list.filter((r) => r._uid !== uid));
+    setLayoutSelected(null);
+    setLayoutDirty(true);
+  };
+
+  const drawLayoutRegion = (box) => {
+    const region = newRegion(box, pageIndex, layoutRegions);
+    setLayoutRegions((list) => [...list, region]);
+    setLayoutSelected(region._uid);
+    setLayoutTool('select');
+    setLayoutDirty(true);
+    setFocusProperties(true);
+  };
+
+  /**
+   * Saves the draft layout to the blueprint as a new version (the current
+   * edits are resent unchanged), then moves this document onto it.
+   */
+  const saveLayout = async () => {
+    if (!doc || !layoutRegions) return;
+    setLayoutSaving(true);
+    setError('');
+    let saved;
+    try {
+      await flush();
+      saved = await saveOverlay(doc.blueprintId, {
+        baseVersion: doc.blueprintCurrentVersion,
+        regions: layoutRegions.map(toRegionDto),
+        edits: doc.blueprintEdits,
+        note: `Layout adjusted from document "${doc.title}"`,
+        confirm: true,
+      });
+    } catch (err) {
+      if (err.status === 409) setLayoutConflict(true);
+      else setError(err.message);
+      setLayoutSaving(false);
+      return;
+    }
+    try {
+      const dto = await upgradeInstance(id);
+      adopt(dto);
+      endLayout();
+      toast.success(
+        `Layout saved to the template as version ${saved?.version ?? dto?.blueprintVersion}${droppedText(dto)}`
+      );
+    } catch (err) {
+      endLayout();
+      setError(`The layout was saved to the template, but this document could not be moved to it: ${err.message}`);
+      load();
+    } finally {
+      setLayoutSaving(false);
+    }
+  };
+
+  const reloadAfterLayoutConflict = async () => {
+    setLayoutConflict(false);
+    endLayout();
+    await load();
+    toast.success('Loaded the latest template version — your layout changes were discarded');
+  };
+
+  useUnsavedGuard(layoutDirty, 'You have unsaved layout changes. Leave without saving them?');
+
+  // A newly drawn field: move focus to its properties once they are on screen.
+  useEffect(() => {
+    if (!focusProperties) return;
+    const element = propertiesRef.current?.querySelector('input, textarea, select, button');
+    if (element) {
+      element.focus();
+      setFocusProperties(false);
+    }
+  });
+
   const saveText = {
     idle: '',
     pending: 'Unsaved changes…',
@@ -452,6 +591,21 @@ export default function DocBuilderPage() {
   const version = doc?.blueprintVersion ?? 1;
   const currentVersion = doc?.blueprintCurrentVersion ?? version;
   const reviewerComment = doc?.reviewerComment ?? doc?.reviewComment;
+  const outdated = currentVersion > version;
+  // The layout tools need the blueprint's edits to resend them unchanged.
+  const canLayout = Boolean(doc?.canEditLayout) && !locked && Array.isArray(doc?.blueprintEdits);
+  const layoutMode = layoutRegions != null;
+  const layoutSelectedRegion = layoutMode ? layoutRegions.find((r) => r._uid === layoutSelected) : null;
+  const layoutKeyProblem = layoutMode && layoutRegions.some((r) => keyProblem(r.key, layoutRegions, r));
+  const sourceRecords = useMemo(() => {
+    const seen = new Set();
+    return (doc?.sourceRecords || []).filter((r) => {
+      const key = `${r.templateId}:${r.recordId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [doc]);
 
   return (
     <div>
@@ -509,9 +663,88 @@ export default function DocBuilderPage() {
               </Callout>
             </div>
           )}
+          {outdated && !locked && (
+            <div className="mb-4" data-testid="newer-version">
+              <Callout variant="info" title={`A newer template version ${currentVersion} exists`}>
+                <p className="mt-1 text-sm">
+                  This document uses version {version}. Moving keeps the values of the fields that still
+                  exist on the new version{canLayout ? '; move before editing the layout' : ''}.
+                </p>
+                <div className="mt-2">
+                  <Button size="sm" onClick={moveToCurrentVersion} disabled={upgrading || layoutMode}>
+                    Move to version {currentVersion}
+                  </Button>
+                </div>
+              </Callout>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <div className="min-w-0">
+              {canLayout && (
+                <div className="mb-3 flex flex-wrap items-center gap-2" data-testid="layout-bar">
+                  {!layoutMode ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={startLayout}
+                        disabled={outdated}
+                        aria-describedby={outdated ? 'layout-outdated-note' : undefined}
+                      >
+                        Edit layout
+                      </Button>
+                      {outdated && (
+                        <span id="layout-outdated-note" className="text-xs text-muted">
+                          Move to version {currentVersion} first to edit the layout.
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div role="toolbar" aria-label="Layout tools" className="flex flex-wrap gap-1">
+                        {[
+                          ['select', 'Select'],
+                          ['field', 'Add field'],
+                        ].map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            aria-pressed={layoutTool === value}
+                            onClick={() => setLayoutTool(value)}
+                            className={`rounded border px-2.5 py-1 text-xs ${
+                              layoutTool === value
+                                ? 'border-accent bg-accent text-white'
+                                : 'border-line bg-white text-accent hover:bg-pill/50'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="flex-1" />
+                      <Button
+                        size="sm"
+                        onClick={saveLayout}
+                        disabled={layoutSaving || !layoutDirty || layoutKeyProblem}
+                        title={layoutKeyProblem ? 'Fix the field keys first' : undefined}
+                      >
+                        {layoutSaving ? 'Saving layout…' : 'Save layout to template'}
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={endLayout} disabled={layoutSaving}>
+                        Cancel
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
+              {layoutMode && (
+                <p className="mb-2 text-xs text-muted" aria-live="polite">
+                  {layoutTool === 'field'
+                    ? `${DRAW_HINT}.`
+                    : 'Drag a field to move it or its corners to resize it; with the keyboard, select it and use the arrow keys to move or Shift+arrows to resize.'}
+                </p>
+              )}
               <ThumbnailStrip
                 pages={pages}
                 current={pageIndex}
@@ -527,6 +760,35 @@ export default function DocBuilderPage() {
                   alt={`Page ${pageIndex + 1} of ${pages.length}`}
                 >
                   {({ scale }) =>
+                    layoutMode ? (
+                      <>
+                        {layoutRegions
+                          .filter((region) => region.page === pageIndex)
+                          .map((region) => {
+                            const color = KIND_COLORS[region.kind] || KIND_COLORS.TEXT;
+                            return (
+                              <RegionBox
+                                key={region._uid}
+                                id={`layout-box-${region._uid}`}
+                                box={region}
+                                color={color}
+                                tabText={fieldLabel(region)}
+                                label={`${fieldLabel(region)}, ${KIND_LABELS[region.kind] || region.kind}`}
+                                selected={layoutSelected === region._uid}
+                                editable
+                                onSelect={() => setLayoutSelected(region._uid)}
+                                onChange={(box) => updateLayoutRegion(region._uid, box)}
+                                onDelete={() => deleteLayoutRegion(region._uid)}
+                                data-testid={`layout-region-${region.key}`}
+                                style={{ background: `${color}1f` }}
+                              />
+                            );
+                          })}
+                        {layoutTool === 'field' && (
+                          <DrawLayer label={DRAW_HINT} onDraw={drawLayoutRegion} color={KIND_COLORS.TEXT} />
+                        )}
+                      </>
+                    ) : (
                     regions
                       .filter((region) => region.page === pageIndex)
                       .map((region) => {
@@ -575,12 +837,93 @@ export default function DocBuilderPage() {
                           </div>
                         );
                       })
+                    )
                   }
                 </PageView>
               )}
             </div>
 
             <div className="space-y-4">
+              {layoutMode ? (
+                <>
+                  <Card padding="compact">
+                    <h2 className="mb-2 text-sm font-medium">
+                      {layoutSelectedRegion ? `Field: ${fieldLabel(layoutSelectedRegion)}` : 'Field properties'}
+                    </h2>
+                    <div ref={propertiesRef}>
+                      {layoutSelectedRegion ? (
+                        <RegionPropertiesPanel
+                          region={layoutSelectedRegion}
+                          regions={layoutRegions}
+                          onChange={(patch) => updateLayoutRegion(layoutSelectedRegion._uid, patch)}
+                          onDelete={() => deleteLayoutRegion(layoutSelectedRegion._uid)}
+                        />
+                      ) : (
+                        <p className="text-xs text-muted">
+                          Select a field on the page or in the list to change it, or use “Add field” to draw a
+                          new one.
+                        </p>
+                      )}
+                    </div>
+                  </Card>
+                  <Card padding="compact">
+                    <h2 className="mb-2 text-sm font-medium">Layout fields ({layoutRegions.length})</h2>
+                    <ul className="max-h-96 space-y-0.5 overflow-y-auto" data-testid="layout-field-list">
+                      {layoutRegions.map((region) => (
+                        <li key={region._uid}>
+                          <button
+                            type="button"
+                            aria-pressed={layoutSelected === region._uid}
+                            onClick={() => {
+                              setLayoutSelected(region._uid);
+                              if (region.page !== pageIndex) setPageIndex(region.page);
+                            }}
+                            className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-pill/50 ${
+                              layoutSelected === region._uid ? 'bg-pill' : ''
+                            }`}
+                          >
+                            <span className="flex-1 truncate">{fieldLabel(region)}</span>
+                            <span className="text-muted">page {region.page + 1}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </Card>
+                  {layoutDirty && (
+                    <p className="text-xs text-amber-800" role="status">
+                      Unsaved layout changes — “Save layout to template” keeps them.
+                    </p>
+                  )}
+                </>
+              ) : (
+              <>
+              <Card padding="compact">
+                <h2 className="mb-2 text-sm font-medium">Data from the flow</h2>
+                <Button size="sm" onClick={() => setFillOpen(true)} disabled={locked}>
+                  Fill from data
+                </Button>
+                {locked && (
+                  <p className="mt-1 text-xs text-muted">
+                    Locked while the document is {String(doc.status).toLowerCase()}.
+                  </p>
+                )}
+                {sourceRecords.length > 0 && (
+                  <div className="mt-2 text-xs">
+                    <span className="text-muted">Filled from:</span>
+                    <ul className="mt-1 flex flex-wrap gap-1" aria-label="Filled from" data-testid="source-records">
+                      {sourceRecords.map((r) => (
+                        <li key={`${r.templateId}:${r.recordId}`}>
+                          <Tag tone="info">
+                            {r.templateName || `Template ${r.templateId}`} · record {r.recordId}
+                            {r.role === 'LINKED' ? ' (linked)' : ''}
+                          </Tag>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </Card>
+
               <Card padding="compact">
                 <h2 className="mb-2 text-sm font-medium">Photos</h2>
                 {!locked && (
@@ -777,12 +1120,44 @@ export default function DocBuilderPage() {
                   ))}
                 </div>
               </section>
+              </>
+              )}
             </div>
           </div>
         </>
       )}
 
       <PreviewDialog open={previewOpen} onClose={() => setPreviewOpen(false)} instanceId={id} pages={pages} />
+
+      {doc && (
+        <FillFromDataDialog
+          open={fillOpen && !locked}
+          onClose={() => setFillOpen(false)}
+          instance={doc}
+          onBeforeFill={flush}
+          onFilled={adopt}
+        />
+      )}
+
+      <Modal
+        open={layoutConflict}
+        onClose={() => setLayoutConflict(false)}
+        title="The template was changed elsewhere"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setLayoutConflict(false)}>
+              Keep editing
+            </Button>
+            <Button onClick={reloadAfterLayoutConflict}>Reload the latest version</Button>
+          </>
+        }
+      >
+        <p>
+          Someone saved a newer version of this template while you were moving fields, so your layout was
+          not saved. Reload to see the latest version (your layout changes are discarded), then move this
+          document to it before editing the layout again.
+        </p>
+      </Modal>
     </div>
   );
 }

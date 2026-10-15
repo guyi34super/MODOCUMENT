@@ -157,6 +157,68 @@ export function downloadInstance(id, fallbackName) {
   return downloadFile(`${BASE}/instances/${id}/download`, fallbackName || 'document.pdf');
 }
 
+// ------------------------------------------- flow records (ws32 contract §4)
+
+/**
+ * The blueprint's saved data sources: [{ id, templateId, templateName, role: 'PRIMARY'|'LINKED',
+ * linkFieldPrimary, linkFieldThis, mapping: { regionKey: fieldName }, fields: [{ name, dataType }],
+ * suggestions: [{ regionKey, fieldName, score, sameName }] }].
+ */
+export function listBlueprintSources(blueprintId) {
+  return api.get(`${BASE}/blueprints/${blueprintId}/sources`);
+}
+
+/**
+ * Adds a flow template as a source (201 with the auto-mapped source). 409 for a second
+ * PRIMARY or a duplicate template; 400 when a LINKED source has no (or unknown) link fields.
+ */
+export function addBlueprintSource(blueprintId, { templateId, role, linkFieldPrimary, linkFieldThis }) {
+  const body = { templateId: Number(templateId), role };
+  if (role === 'LINKED') {
+    body.linkFieldPrimary = linkFieldPrimary;
+    body.linkFieldThis = linkFieldThis;
+  }
+  return api.post(`${BASE}/blueprints/${blueprintId}/sources`, body);
+}
+
+/** Saves a source's mapping (region key → template field) and link fields. */
+export function saveBlueprintSource(blueprintId, sourceId, { mapping, linkFieldPrimary, linkFieldThis }) {
+  const body = { mapping };
+  if (linkFieldPrimary !== undefined) body.linkFieldPrimary = linkFieldPrimary;
+  if (linkFieldThis !== undefined) body.linkFieldThis = linkFieldThis;
+  return api.put(`${BASE}/blueprints/${blueprintId}/sources/${sourceId}`, body);
+}
+
+/** Removes a source; removing the PRIMARY while LINKED sources exist answers 409. */
+export function deleteBlueprintSource(blueprintId, sourceId) {
+  return api.del(`${BASE}/blueprints/${blueprintId}/sources/${sourceId}`);
+}
+
+/**
+ * What a record would fill: { recordId, templateId, mappingSource: 'SAVED'|'AUTO',
+ * linked: [{ templateId, templateName, matchedBy, recordId, alternatives: [id] }],
+ * fields: [{ regionKey, label, value, currentValue, sourceTemplateId, sourceField, willOverwrite, sameName }] }.
+ */
+export function getFillPreview(instanceId, recordId) {
+  return api.get(`${BASE}/instances/${instanceId}/fill-preview${query({ recordId })}`);
+}
+
+/**
+ * Fills the document from a record. `body`: { recordId, linkedRecordIds?: { templateId: recordId },
+ * fields?: [regionKey], overwrite: 'EMPTY_ONLY'|'ALL' }. Resolves to the InstanceDto.
+ */
+export function fillFromRecord(instanceId, body) {
+  return api.post(`${BASE}/instances/${instanceId}/fill-from-record`, body);
+}
+
+/**
+ * Moves the document to the blueprint's current version. Resolves to the InstanceDto plus
+ * `droppedKeys` (values whose region no longer exists); 409 when SUBMITTED or RELEASED.
+ */
+export function upgradeInstance(id) {
+  return api.post(`${BASE}/instances/${id}/upgrade`);
+}
+
 // ------------------------------------------------------------ release (ws11)
 
 // Separation of duties (gate B8): the owner submits a GENERATED document;

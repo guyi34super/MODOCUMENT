@@ -19,6 +19,7 @@ import DrawLayer from '../components/pdf/DrawLayer';
 import EditBox, { SUGGESTED_LABEL, describeEdit, isSuggestion } from '../components/pdf/EditBox';
 import RegionPropertiesPanel, { keyProblem } from '../components/pdf/RegionPropertiesPanel';
 import ThumbnailStrip from '../components/pdf/ThumbnailStrip';
+import DataSourcesTab from '../components/records/DataSourcesTab';
 import {
   EDIT_LABELS,
   KIND_COLORS,
@@ -36,6 +37,11 @@ const TOOLS = [
   { value: 'replace', label: 'Edit text', draw: 'Draw a box over the text to replace: drag on the page, or press Enter' },
   { value: 'text', label: 'Add text', draw: 'Draw where the new text goes: drag on the page, or press Enter' },
   { value: 'image', label: 'Add image/logo', draw: 'Draw where the image goes: drag on the page, or press Enter' },
+];
+
+const TABS = [
+  { value: 'layout', label: 'Layout' },
+  { value: 'sources', label: 'Data sources' },
 ];
 
 const VIEWS = [
@@ -380,6 +386,7 @@ export default function BlueprintDetailPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [error, setError] = useState('');
   const [focusTarget, setFocusTarget] = useState(null);
+  const [tab, setTab] = useState('layout');
   const propertiesRef = useRef(null);
 
   const adopt = useCallback((bp) => {
@@ -433,6 +440,10 @@ export default function BlueprintDetailPage() {
   });
 
   const isDraft = blueprint?.status === 'DRAFT';
+  // Data sources belong to a confirmed template; an older version shows them read-only.
+  const showTabs = blueprint?.status === 'READY';
+  const activeTab = showTabs ? tab : 'layout';
+  const savedRegions = useMemo(() => (blueprint?.regions || []).filter((r) => !r.suggested), [blueprint]);
   const readOnly = Boolean(
     blueprint && !isDraft && requestedVersion != null && blueprint.version !== blueprint.currentVersion
   );
@@ -773,7 +784,59 @@ export default function BlueprintDetailPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          {showTabs && (
+            <div role="tablist" aria-label="Template sections" className="mb-4 flex flex-wrap gap-1 border-b border-line">
+              {TABS.map((option, index) => {
+                const selected = activeTab === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="tab"
+                    id={`blueprint-tab-${option.value}`}
+                    aria-selected={selected}
+                    aria-controls={selected ? `blueprint-panel-${option.value}` : undefined}
+                    tabIndex={selected ? 0 : -1}
+                    onClick={() => setTab(option.value)}
+                    onKeyDown={(event) => {
+                      let target = null;
+                      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                        const step = event.key === 'ArrowRight' ? 1 : -1;
+                        target = TABS[(index + step + TABS.length) % TABS.length];
+                      } else if (event.key === 'Home') {
+                        target = TABS[0];
+                      } else if (event.key === 'End') {
+                        target = TABS[TABS.length - 1];
+                      }
+                      if (target) {
+                        event.preventDefault();
+                        setTab(target.value);
+                        document.getElementById(`blueprint-tab-${target.value}`)?.focus();
+                      }
+                    }}
+                    className={`-mb-px cursor-pointer rounded-t border-b-2 px-3 py-2 text-sm ${
+                      selected ? 'border-accent font-medium text-accent' : 'border-transparent text-muted hover:text-ink'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {activeTab === 'sources' ? (
+            <div role="tabpanel" id="blueprint-panel-sources" aria-labelledby="blueprint-tab-sources">
+              {/* The saved fields: a mapping can only name regions the server knows. */}
+              <DataSourcesTab blueprintId={id} regions={savedRegions} readOnly={readOnly} />
+            </div>
+          ) : (
+          <div
+            className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]"
+            {...(showTabs
+              ? { role: 'tabpanel', id: 'blueprint-panel-layout', 'aria-labelledby': 'blueprint-tab-layout' }
+              : {})}
+          >
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <div role="group" aria-label="Page view" className="inline-flex overflow-hidden rounded border border-line">
@@ -1119,6 +1182,7 @@ export default function BlueprintDetailPage() {
               )}
             </aside>
           </div>
+          )}
         </>
       )}
 
