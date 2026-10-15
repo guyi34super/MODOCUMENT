@@ -111,6 +111,31 @@ class AiRegionAdvisorTest {
         assertThat(engine.analyze(PdfCorpus.flatForm().blank(), UploadFlow.BLANK, AI).detectedBy()).isEqualTo("CODE");
     }
 
+    /** A valid reply that changes nothing is not an AI contribution: detectedBy stays CODE. */
+    @Test
+    void aValidReplyThatChangesNothingKeepsDetectedByCode() {
+        reply(env -> new AiRegionAdvisor.RegionsReply(List.of()),
+                env -> new AiRegionAdvisor.DataReply(List.of(), List.of(), List.of()));
+        AnalysisResult code = CorpusSupport.engine().analyze(PdfCorpus.letterhead().filled(), UploadFlow.WITH_DATA,
+                CorpusSupport.codeOnly());
+        AnalysisResult r = engine.analyze(PdfCorpus.letterhead().filled(), UploadFlow.WITH_DATA, AI);
+        assertThat(prompts).extracting(PromptEnvelope::purpose)
+                .containsExactly(AiPurpose.DOC_PDF_DATA, AiPurpose.DOC_PDF_REGIONS);
+        assertThat(r.detectedBy()).isEqualTo("CODE");
+        assertThat(r.regions()).isEqualTo(code.regions());
+        assertThat(r.removals()).isEqualTo(code.removals());
+
+        // Restating the code's own label, with no group or kind, changes nothing either.
+        reply(env -> new AiRegionAdvisor.RegionsReply(List.of(new AiRegionAdvisor.RegionHint(
+                idOf(env.text(), "CANDIDATES", "Full name"), "Full name", null, null, null))), env -> null);
+        assertThat(engine.analyze(PdfCorpus.flatForm().blank(), UploadFlow.BLANK, AI).detectedBy()).isEqualTo("CODE");
+        // ... while a real relabel is.
+        reply(env -> new AiRegionAdvisor.RegionsReply(List.of(new AiRegionAdvisor.RegionHint(
+                idOf(env.text(), "CANDIDATES", "Full name"), "Legal name", null, null, null))), env -> null);
+        assertThat(engine.analyze(PdfCorpus.flatForm().blank(), UploadFlow.BLANK, AI).detectedBy())
+                .isEqualTo("CODE+AI");
+    }
+
     @Test
     void gatewayFailureLeavesTheCodeResult() {
         when(ai.sendForObject(any(PromptEnvelope.class), any(ParameterizedTypeReference.class)))

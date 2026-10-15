@@ -5,8 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.modocument.api.IsolatedStorageApiTestSupport;
+import com.modocument.doccreation.pdftemplate.EditKind;
+import com.modocument.doccreation.pdftemplate.EditSource;
 import com.modocument.doccreation.pdftemplate.PdfBox;
 import com.modocument.doccreation.pdftemplate.RegionKind;
+import com.modocument.doccreation.pdftemplate.RegionSource;
+import com.modocument.doccreation.pdftemplate.TemplateEdit;
+import com.modocument.doccreation.pdftemplate.TemplateRegion;
+import com.modocument.doccreation.usecase.RemovalPolicy;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
 import com.modocument.domain.model.Role;
@@ -293,6 +299,133 @@ class DocCreationPdfApiTest extends IsolatedStorageApiTestSupport {
                 .andExpect(jsonPath("$[0].status").value("READY"))
                 .andExpect(jsonPath("$[0].pageCount").value(1))
                 .andExpect(jsonPath("$[0].flow").value("WITH_DATA"));
+    }
+
+    /** A filled upload whose engine proposes one confident removal and one low-confidence guess. */
+    private JsonNode uploadWithALowConfidenceGuess() throws Exception {
+        engine.looksFilled = true;
+        List<TemplateRegion> regions = new ArrayList<>(FakePdfTemplateEngine.defaultRegions());
+        TemplateRegion contact = FakePdfTemplateEngine.region("contact", "Contact", null, RegionKind.TEXT,
+                new PdfBox(0, 300, 300, 150, 14), 4, "jane@example.com");
+        regions.add(new TemplateRegion(contact.key(), contact.label(), contact.group(), contact.kind(),
+                contact.box(), contact.fontName(), contact.fontSize(), contact.color(), contact.align(),
+                contact.maxLines(), null, false, 4, RegionSource.DATA_REMOVED, 0.45, contact.sampleValue()));
+        engine.proposedRegions = regions;
+        List<TemplateEdit> removals = new ArrayList<>(FakePdfTemplateEngine.defaultRemovals());
+        removals.add(new TemplateEdit("rm-low", EditKind.REMOVE, new PdfBox(0, 300, 300, 150, 14), null, null,
+                null, null, null, EditSource.DATA_REMOVAL, 0.45, "jane@example.com", "contact"));
+        engine.proposedRemovals = removals;
+        return uploadDraft(FakePdfTemplateEngine.blankPdf(1, 0), "AUTO");
+    }
+
+    private static JsonNode byField(JsonNode list, String field, String value) {
+        for (JsonNode node : list) {
+            if (value.equals(node.path(field).asText(null))) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    /** BUG-PDF-01: a guess below RemovalPolicy.APPLY_THRESHOLD is shown as a suggestion, never applied by default. */
+    @Test
+    void aLowConfidenceGuessIsSuggestedButNotAppliedUnlessTheClientAppliesIt() throws Exception {
+        assertThat(RemovalPolicy.APPLY_THRESHOLD).isEqualTo(0.6);
+        JsonNode draft = uploadWithALowConfidenceGuess();
+        int id = draft.get("id").asInt();
+
+        // Only the confident removal is applied to the draft template.
+        assertThat(engine.lastEdits).extracting(TemplateEdit::id).containsExactly("rm-1");
+        JsonNode applied = byField(draft.get("edits"), "id", "rm-1");
+        assertThat(applied.get("applied").asBoolean()).isTrue();
+        assertThat(applied.get("regionKey").asText()).isEqualTo("full_name");
+        JsonNode suggestion = byField(draft.get("edits"), "id", "rm-low");
+        assertThat(suggestion.get("applied").asBoolean()).isFalse();
+        assertThat(suggestion.get("confidence").asDouble()).isEqualTo(0.45);
+        assertThat(suggestion.get("removedText").asText()).isEqualTo("jane@example.com");
+        assertThat(suggestion.get("regionKey").asText()).isEqualTo("contact");
+        assertThat(suggestion.get("source").asText()).isEqualTo("DATA_REMOVAL");
+        // Its field is returned flagged as suggested; the others are not.
+        assertThat(byField(draft.get("regions"), "key", "contact").get("suggested").asBoolean()).isTrue();
+        assertThat(byField(draft.get("regions"), "key", "contact").get("sampleValue").asText())
+                .isEqualTo("jane@example.com");
+        assertThat(byField(draft.get("regions"), "key", "full_name").get("suggested").asBoolean()).isFalse();
+        // Neither is stored in a row: review data lives only in draft.json.
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM DocTemplateRegion WHERE BlueprintId = ?",
+                Integer.class, id)).isEqualTo(4);
+        assertThat(jdbc.queryForList("SELECT EditId FROM DocTemplateEdit WHERE BlueprintId = ?", String.class, id))
+                .containsExactly("rm-1");
+        // The GET shows the same.
+        JsonNode reread = json(mvc.perform(as(get("/api/doccreation/blueprints/" + id), owner))
+                .andExpect(status().isOk()).andReturn());
+        assertThat(byField(reread.get("edits"), "id", "rm-low").get("applied").asBoolean()).isFalse();
+        assertThat(reread.get("edits")).hasSize(2);
+        assertThat(reread.get("regions")).hasSize(5);
+
+        // Confirming WITHOUT review (everything sent back as received): the guess is ignored, not refused.
+        JsonNode ready = saveOverlay(id, 1, draft.get("regions"), draft.get("edits"), 200);
+        assertThat(engine.lastEdits).extracting(TemplateEdit::id).containsExactly("rm-1");
+        assertThat(ready.get("edits")).hasSize(1);
+        assertThat(ready.get("edits").get(0).get("applied").asBoolean()).isTrue();
+        assertThat(ready.get("edits").get(0).has("regionKey")).as("linkage is draft review data").isFalse();
+        assertThat(byField(ready.get("regions"), "key", "contact")).isNull();
+        assertThat(ready.get("regions")).hasSize(4);
+        assertThat(ready.toString()).doesNotContain("jane@example.com");
+    }
+
+    @Test
+    void anAppliedSuggestionIsAppliedWithItsField() throws Exception {
+        JsonNode draft = uploadWithALowConfidenceGuess();
+        int id = draft.get("id").asInt();
+        ArrayNode edits = (ArrayNode) draft.get("edits").deepCopy();
+        edits.forEach(e -> ((ObjectNode) e).put("applied", true));
+        ArrayNode regions = (ArrayNode) draft.get("regions").deepCopy();
+        regions.forEach(r -> ((ObjectNode) r).put("suggested", false));
+
+        // A draft save (not confirmed) keeps the review data: the applied suggestion is listed once, applied.
+        ObjectNode body = MAPPER.createObjectNode();
+        body.put("baseVersion", 1);
+        body.set("regions", regions);
+        body.set("edits", edits);
+        body.put("confirm", false);
+        JsonNode saved = json(mvc.perform(as(put("/api/doccreation/blueprints/" + id + "/overlay"), owner)
+                        .contentType(MediaType.APPLICATION_JSON).content(body.toString()))
+                .andExpect(status().isOk()).andReturn());
+        assertThat(saved.get("status").asText()).isEqualTo("DRAFT");
+        assertThat(engine.lastEdits).extracting(TemplateEdit::id).containsExactlyInAnyOrder("rm-1", "rm-low");
+        assertThat(saved.get("edits")).hasSize(2);
+        JsonNode nowApplied = byField(saved.get("edits"), "id", "rm-low");
+        assertThat(nowApplied.get("applied").asBoolean()).isTrue();
+        assertThat(nowApplied.get("removedText").asText()).isEqualTo("jane@example.com");
+        assertThat(nowApplied.get("confidence").asDouble()).isEqualTo(0.45);
+        assertThat(nowApplied.get("regionKey").asText()).isEqualTo("contact");
+        assertThat(saved.get("regions")).hasSize(5);
+        assertThat(byField(saved.get("regions"), "key", "contact").get("suggested").asBoolean()).isFalse();
+
+        // Confirming applies exactly what the client sent.
+        JsonNode ready = saveOverlay(id, 1, regions, edits, 200);
+        assertThat(engine.lastEdits).extracting(TemplateEdit::id).containsExactlyInAnyOrder("rm-1", "rm-low");
+        assertThat(ready.get("edits")).hasSize(2);
+        assertThat(byField(ready.get("regions"), "key", "contact")).isNotNull();
+    }
+
+    @Test
+    void aDismissedSuggestionAndAKeptRegionWithoutItsRemoval() throws Exception {
+        JsonNode draft = uploadWithALowConfidenceGuess();
+        int id = draft.get("id").asInt();
+        // The client dismissed the suggestion (not sent) and restored the confident removal, dropping its field.
+        ArrayNode edits = MAPPER.createArrayNode();
+        ArrayNode regions = MAPPER.createArrayNode();
+        draft.get("regions").forEach(r -> {
+            if (!r.get("suggested").asBoolean() && !"full_name".equals(r.get("key").asText())) {
+                regions.add(r);
+            }
+        });
+        JsonNode ready = saveOverlay(id, 1, regions, edits, 200);
+        assertThat(engine.lastEdits).isEmpty();
+        assertThat(ready.get("edits")).isEmpty();
+        assertThat(ready.get("regions")).extracting(r -> r.get("key").asText())
+                .containsExactlyInAnyOrder("notes", "passport_photo", "house_front");
     }
 
     // ------------------------------------------------------------ geometry

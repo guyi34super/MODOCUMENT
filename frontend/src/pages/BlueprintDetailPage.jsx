@@ -16,7 +16,7 @@ import useUnsavedGuard from '../hooks/useUnsavedGuard';
 import PageView from '../components/pdf/PageView';
 import RegionBox from '../components/pdf/RegionBox';
 import DrawLayer from '../components/pdf/DrawLayer';
-import EditBox, { describeEdit } from '../components/pdf/EditBox';
+import EditBox, { SUGGESTED_LABEL, describeEdit, isSuggestion } from '../components/pdf/EditBox';
 import RegionPropertiesPanel, { keyProblem } from '../components/pdf/RegionPropertiesPanel';
 import ThumbnailStrip from '../components/pdf/ThumbnailStrip';
 import {
@@ -50,7 +50,7 @@ const REGION_FIELDS = [
 ];
 const EDIT_FIELDS = [
   'id', 'kind', 'page', 'fx', 'fy', 'fw', 'fh', 'text', 'fontName', 'fontSize', 'color', 'imageKey',
-  'source', 'confidence',
+  'source', 'confidence', 'regionKey',
 ];
 
 const pick = (object, fields) => Object.fromEntries(fields.map((f) => [f, object[f] ?? null]));
@@ -61,8 +61,11 @@ const withUid = (region) => ({ ...region, _uid: `r${(uidCounter += 1)}` });
 const isLow = (item) => item.confidence != null && item.confidence < LOW_CONFIDENCE;
 const regionName = (r) => r.label?.trim() || `Unlabelled field (${r.key})`;
 
+/** How a suggested removal is named in the checklist, the list and its Apply/Dismiss buttons. */
+const suggestionText = (s) => `${SUGGESTED_LABEL}${s.removedText ? `: “${s.removedText}”` : ''} on page ${s.page + 1}`;
+
 /** The review checklist: what to look at before the template is saved. */
-function buildChecklist(regions, edits) {
+function buildChecklist(regions, edits, suggestions = []) {
   const items = [];
   for (const r of regions) {
     if (!r.label?.trim()) {
@@ -114,7 +117,41 @@ function buildChecklist(regions, edits) {
       });
     }
   }
+  for (const s of suggestions) {
+    items.push({
+      id: `suggestion-${s.id}`,
+      text: `${suggestionText(s)}${isLow(s) ? ' (low confidence)' : ''}`,
+      target: { type: 'suggestion', id: s.id, page: s.page },
+    });
+  }
   return items;
+}
+
+/** A suggested removal selected on the page or in the list: apply it or dismiss it. */
+function SuggestionProperties({ suggestion, field, readOnly, onApply, onDismiss }) {
+  return (
+    <div className="space-y-3" data-testid="suggestion-properties">
+      <p className="text-sm font-medium">
+        {SUGGESTED_LABEL} · page {suggestion.page + 1}
+      </p>
+      <p className="rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">
+        {suggestion.removedText ? `“${suggestion.removedText}” ` : 'This content '}
+        may be filled-in data, but the analysis is not sure (it may be printed form text), so it stays in
+        the template unless you apply the removal.
+        {field && ` Applying it also adds the field “${regionName(field)}”.`}
+      </p>
+      {!readOnly && (
+        <div className="flex gap-2">
+          <Button size="sm" onClick={onApply}>
+            Apply removal
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onDismiss}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function VersionHistory({ versions, shownVersion, onView }) {
@@ -326,6 +363,10 @@ export default function BlueprintDetailPage() {
   const [blueprint, setBlueprint] = useState(null);
   const [regions, setRegions] = useState([]);
   const [edits, setEdits] = useState([]);
+  // BUG-PDF-01: low-confidence removals proposed but NOT applied, and the fields that belong to them.
+  // Neither is sent on save unless applied (then they move to `edits` / `regions`).
+  const [suggestions, setSuggestions] = useState([]);
+  const [suggestedRegions, setSuggestedRegions] = useState([]);
   const [dirty, setDirty] = useState(false);
   const [selection, setSelection] = useState(null);
   const [tool, setTool] = useState('select');
@@ -343,8 +384,10 @@ export default function BlueprintDetailPage() {
 
   const adopt = useCallback((bp) => {
     setBlueprint(bp);
-    setRegions((bp.regions || []).map(withUid));
-    setEdits(bp.edits || []);
+    setRegions((bp.regions || []).filter((r) => !r.suggested).map(withUid));
+    setSuggestedRegions((bp.regions || []).filter((r) => r.suggested));
+    setEdits((bp.edits || []).filter((e) => !isSuggestion(e)));
+    setSuggestions((bp.edits || []).filter(isSuggestion));
     setDirty(false);
     setSelection(null);
     setTool('select');
@@ -400,19 +443,25 @@ export default function BlueprintDetailPage() {
 
   useUnsavedGuard(dirty && !readOnly, 'You have unsaved template changes. Leave without saving them?');
 
-  const checklist = useMemo(() => buildChecklist(regions, edits), [regions, edits]);
+  const checklist = useMemo(() => buildChecklist(regions, edits, suggestions), [regions, edits, suggestions]);
   const keyBlocking = regions.some((r) => keyProblem(r.key, regions, r));
 
   const selectedRegion =
     selection?.type === 'region' ? regions.find((r) => r._uid === selection.uid) : null;
   const selectedEdit = selection?.type === 'edit' ? edits.find((e) => e.id === selection.id) : null;
+  const selectedSuggestion =
+    selection?.type === 'suggestion' ? suggestions.find((s) => s.id === selection.id) : null;
+  const fieldOfSuggestion = (s) =>
+    (s?.regionKey && suggestedRegions.find((r) => r.key === s.regionKey)) || null;
 
   const select = (target, { focus = false } = {}) => {
     if (!target) {
       setSelection(null);
       return;
     }
-    setSelection(target.type === 'region' ? { type: 'region', uid: target.uid } : { type: 'edit', id: target.id });
+    setSelection(
+      target.type === 'region' ? { type: 'region', uid: target.uid } : { type: target.type, id: target.id }
+    );
     if (target.page != null) setPageIndex(target.page);
     if (focus) {
       if (!overlayVisible) setView('overlay');
@@ -420,8 +469,9 @@ export default function BlueprintDetailPage() {
     }
   };
 
+  // `_edited` marks a field the user changed by hand: restoring its removal then keeps it.
   const updateRegion = (uid, patch) => {
-    setRegions((list) => list.map((r) => (r._uid === uid ? { ...r, ...patch } : r)));
+    setRegions((list) => list.map((r) => (r._uid === uid ? { ...r, ...patch, _edited: true } : r)));
     setDirty(true);
   };
   const deleteRegion = (uid) => {
@@ -433,9 +483,57 @@ export default function BlueprintDetailPage() {
     setEdits((list) => list.map((e) => (e.id === editId ? { ...e, ...patch } : e)));
     setDirty(true);
   };
+  /**
+   * Deletes an edit. Restoring a data removal also removes the field that was proposed in its place
+   * (`regionKey`), since the value now stays printed there — unless the user edited that field by hand,
+   * in which case it is kept.
+   */
   const deleteEdit = (editId) => {
+    const edit = edits.find((e) => e.id === editId);
+    const field =
+      edit?.kind === 'REMOVE' && edit.regionKey ? regions.find((r) => r.key === edit.regionKey) : null;
     setEdits((list) => list.filter((e) => e.id !== editId));
-    setSelection((current) => (current?.type === 'edit' && current.id === editId ? null : current));
+    if (field && !field._edited) {
+      setRegions((list) => list.filter((r) => r._uid !== field._uid));
+      toast.success(`Content restored — its field “${regionName(field)}” was removed too`);
+    } else if (field) {
+      toast.success(`Content restored — its field “${regionName(field)}” was kept because you changed it`);
+    }
+    setSelection((current) =>
+      (current?.type === 'edit' && current.id === editId) ||
+      (field && !field._edited && current?.type === 'region' && current.uid === field._uid)
+        ? null
+        : current
+    );
+    setDirty(true);
+  };
+
+  /** Applies a suggested removal: it becomes an applied REMOVE edit and its field is added. */
+  const applySuggestion = (suggestionId) => {
+    const suggestion = suggestions.find((s) => s.id === suggestionId);
+    if (!suggestion) return;
+    const field = fieldOfSuggestion(suggestion);
+    let regionKey = null;
+    if (field) {
+      const taken = new Set(regions.map((r) => r.key));
+      regionKey = taken.has(field.key) ? uniqueKey(field.key, taken) : field.key;
+      const kept = { ...field, key: regionKey };
+      delete kept.suggested;
+      setRegions((list) => [...list, withUid(kept)]);
+      setSuggestedRegions((list) => list.filter((r) => r !== field));
+    }
+    setEdits((list) => [...list, { ...suggestion, applied: true, regionKey }]);
+    setSuggestions((list) => list.filter((s) => s.id !== suggestionId));
+    setSelection({ type: 'edit', id: suggestionId });
+    setDirty(true);
+  };
+
+  /** Dismisses a suggested removal: the content stays in the template and no field is added. */
+  const dismissSuggestion = (suggestionId) => {
+    const field = fieldOfSuggestion(suggestions.find((s) => s.id === suggestionId));
+    setSuggestions((list) => list.filter((s) => s.id !== suggestionId));
+    if (field) setSuggestedRegions((list) => list.filter((r) => r !== field));
+    setSelection((current) => (current?.type === 'suggestion' && current.id === suggestionId ? null : current));
     setDirty(true);
   };
 
@@ -512,8 +610,9 @@ export default function BlueprintDetailPage() {
     try {
       const saved = await saveOverlay(id, {
         baseVersion: blueprint.currentVersion ?? blueprint.version,
+        // Only applied edits and kept fields: suggestions that were not applied are never sent.
         regions: regions.map((r) => pick(r, REGION_FIELDS)),
-        edits: edits.map((e) => pick(e, EDIT_FIELDS)),
+        edits: edits.map((e) => ({ ...pick(e, EDIT_FIELDS), applied: true })),
         note: note.trim() || undefined,
         confirm: true,
       });
@@ -647,6 +746,15 @@ export default function BlueprintDetailPage() {
                   ? 'The filled-in data was found and marked for removal (hatched boxes). Check each removal and field, then confirm.'
                   : 'The places to fill in were found on the page. Check each field, then confirm.'}{' '}
                 Nothing is saved until you press “Confirm template”.
+                {suggestions.length > 0 && (
+                  <>
+                    {' '}
+                    {suggestions.length === 1
+                      ? '1 uncertain guess is suggested but not removed (dashed box)'
+                      : `${suggestions.length} uncertain guesses are suggested but not removed (dashed boxes)`}{' '}
+                    — apply the ones that are filled-in data.
+                  </>
+                )}
                 {blueprint.detectedBy && (
                   <span className="ml-1 text-muted">
                     (found by {blueprint.detectedBy === 'CODE+AI' ? 'rules and AI' : 'rules'})
@@ -746,6 +854,18 @@ export default function BlueprintDetailPage() {
                               onDelete={() => deleteEdit(edit.id)}
                             />
                           ))}
+                        {suggestions
+                          .filter((s) => s.page === pageIndex)
+                          .map((suggestion) => (
+                            <EditBox
+                              key={suggestion.id}
+                              id={`edit-box-${suggestion.id}`}
+                              edit={suggestion}
+                              scale={scale}
+                              selected={selectedSuggestion?.id === suggestion.id}
+                              onSelect={() => select({ type: 'suggestion', id: suggestion.id })}
+                            />
+                          ))}
                         {regions
                           .filter((r) => r.page === pageIndex)
                           .map((region) => {
@@ -820,13 +940,25 @@ export default function BlueprintDetailPage() {
                 )}
               </Card>
 
-              {(selectedRegion || selectedEdit) && (
+              {(selectedRegion || selectedEdit || selectedSuggestion) && (
                 <Card padding="compact">
                   <h2 className="mb-2 text-sm font-medium">
-                    {selectedRegion ? `Field: ${regionName(selectedRegion)}` : 'Template change'}
+                    {selectedRegion
+                      ? `Field: ${regionName(selectedRegion)}`
+                      : selectedSuggestion
+                        ? 'Suggested removal'
+                        : 'Template change'}
                   </h2>
                   <div ref={propertiesRef}>
-                    {selectedRegion ? (
+                    {selectedSuggestion ? (
+                      <SuggestionProperties
+                        suggestion={selectedSuggestion}
+                        field={fieldOfSuggestion(selectedSuggestion)}
+                        readOnly={readOnly}
+                        onApply={() => applySuggestion(selectedSuggestion.id)}
+                        onDismiss={() => dismissSuggestion(selectedSuggestion.id)}
+                      />
+                    ) : selectedRegion ? (
                       <RegionPropertiesPanel
                         region={selectedRegion}
                         regions={regions}
@@ -925,6 +1057,53 @@ export default function BlueprintDetailPage() {
                   </ul>
                 )}
               </Card>
+
+              {suggestions.length > 0 && (
+                <Card padding="compact">
+                  <h2 className="mb-1 text-sm font-medium">Suggested removals ({suggestions.length})</h2>
+                  <p className="mb-2 text-xs text-muted">
+                    Uncertain guesses: they stay in the template unless you apply them.
+                  </p>
+                  <ul className="max-h-72 space-y-1 overflow-y-auto text-xs" data-testid="suggestion-list">
+                    {suggestions.map((suggestion) => (
+                      <li
+                        key={suggestion.id}
+                        className="flex items-center gap-2 rounded border border-dashed border-amber-600 bg-amber-50 px-1"
+                      >
+                        <button
+                          type="button"
+                          aria-pressed={selectedSuggestion?.id === suggestion.id}
+                          onClick={() => select({ type: 'suggestion', id: suggestion.id, page: suggestion.page })}
+                          className="flex-1 truncate py-1 text-left hover:underline"
+                        >
+                          p.{suggestion.page + 1} · {describeEdit(suggestion)}
+                          {isLow(suggestion) && ' (low confidence)'}
+                        </button>
+                        {!readOnly && (
+                          <>
+                            <button
+                              type="button"
+                              className="shrink-0 font-medium text-accent hover:underline"
+                              aria-label={`Apply: ${suggestionText(suggestion)}`}
+                              onClick={() => applySuggestion(suggestion.id)}
+                            >
+                              Apply
+                            </button>
+                            <button
+                              type="button"
+                              className="shrink-0 text-muted hover:underline"
+                              aria-label={`Dismiss: ${suggestionText(suggestion)}`}
+                              onClick={() => dismissSuggestion(suggestion.id)}
+                            >
+                              Dismiss
+                            </button>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              )}
 
               {!readOnly && !isDraft && (
                 <Card padding="compact">

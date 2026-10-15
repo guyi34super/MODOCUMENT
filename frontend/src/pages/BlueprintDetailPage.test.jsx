@@ -400,6 +400,152 @@ describe('BlueprintDetailPage (template editor)', () => {
     expect(await screen.findByText('Template confirmed — it is ready for new documents')).toBeInTheDocument();
   });
 
+  // BUG-PDF-01: a low-confidence guess is shown as a suggestion, not applied.
+  const draftWithSuggestion = () =>
+    draft({
+      regions: [
+        region('full_name', 'Full name', { sampleValue: 'John Doe', source: 'DATA_REMOVED', suggested: false }),
+        region('notes', 'Notes', { fy: 0.8, sortOrder: 1, suggested: false }),
+        region('contact', 'Contact', {
+          fy: 0.6,
+          sortOrder: 2,
+          source: 'DATA_REMOVED',
+          confidence: 0.45,
+          sampleValue: 'jane@example.com',
+          suggested: true,
+        }),
+      ],
+      edits: [
+        removal('e1', 'John Doe', { fy: 0.2, applied: true, regionKey: 'full_name' }),
+        removal('s1', 'jane@example.com', { fy: 0.6, confidence: 0.45, applied: false, regionKey: 'contact' }),
+      ],
+    });
+
+  it('shows a low-confidence guess as a suggestion that is not removed, and never sends it unapplied', async () => {
+    getBlueprint.mockResolvedValue(draftWithSuggestion());
+    saveOverlay.mockResolvedValue(blueprint({ version: 1, currentVersion: 1 }));
+    renderPage();
+    await screen.findByText('Review the proposed template');
+
+    // Distinct on the page: dashed, not hatched, tagged "Suggested — not removed"; its field is not shown.
+    const box = screen.getByRole('button', { name: 'Suggested — not removed: “jane@example.com” (low confidence)' });
+    expect(box).toHaveAttribute('data-suggested', 'true');
+    expect(box).toHaveAttribute('data-edit-kind', 'REMOVE');
+    expect(box.style.background).not.toContain('repeating-linear-gradient');
+    expect(box.style.border).toContain('dashed');
+    expect(within(box).getByText('Suggested — not removed')).toBeInTheDocument();
+    expect(screen.queryByTestId('region-contact')).not.toBeInTheDocument();
+    expect(screen.getByText(/1 uncertain guess is suggested but not removed/)).toBeInTheDocument();
+
+    // Listed in the checklist and in its own list, not among the template changes.
+    const checklist = screen.getByTestId('checklist');
+    expect(
+      within(checklist).getByText('Suggested — not removed: “jane@example.com” on page 1 (low confidence)')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Template changes (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Suggested removals (1)' })).toBeInTheDocument();
+    expect(within(screen.getByTestId('edit-list')).queryByText(/jane@example.com/)).not.toBeInTheDocument();
+
+    // Confirming without review sends only the applied edit and the kept fields.
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm template' }));
+    const body = savedBody();
+    expect(body.edits.map((e) => e.id)).toEqual(['e1']);
+    expect(body.edits[0]).toMatchObject({ applied: true, regionKey: 'full_name' });
+    expect(body.regions.map((r) => r.key)).toEqual(['full_name', 'notes']);
+  });
+
+  it('applies a suggestion: it becomes an applied removal and its field is added', async () => {
+    getBlueprint.mockResolvedValue(draftWithSuggestion());
+    saveOverlay.mockResolvedValue(blueprint({ version: 1, currentVersion: 1 }));
+    renderPage();
+    await screen.findByText('Review the proposed template');
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply: Suggested — not removed: “jane@example.com” on page 1' })
+    );
+    expect(screen.queryByTestId('suggestion-list')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Template changes (2)' })).toBeInTheDocument();
+    const applied = screen.getByRole('button', { name: 'Removed content: “jane@example.com” (low confidence)' });
+    expect(applied).not.toHaveAttribute('data-suggested');
+    expect(applied.style.background).toContain('repeating-linear-gradient');
+    expect(screen.getByTestId('region-contact')).toBeInTheDocument();
+    // An applied guess stays on the checklist until it is checked.
+    expect(
+      within(screen.getByTestId('checklist')).getByText(
+        'Check the removal of “jane@example.com” on page 1 (low confidence)'
+      )
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm template' }));
+    const body = savedBody();
+    expect(body.edits.map((e) => e.id)).toEqual(['e1', 's1']);
+    expect(body.edits[1]).toMatchObject({ applied: true, regionKey: 'contact', kind: 'REMOVE', fy: 0.6 });
+    expect(body.edits[1]).not.toHaveProperty('removedText');
+    expect(body.regions.map((r) => r.key)).toEqual(['full_name', 'notes', 'contact']);
+    expect(body.regions[2]).not.toHaveProperty('suggested');
+    expect(body.regions[2]).not.toHaveProperty('sampleValue');
+  });
+
+  it('applies a suggestion from its box, renaming its field when the key is taken', async () => {
+    const bp = draftWithSuggestion();
+    bp.regions[1] = region('contact', 'Contact (drawn)', { fy: 0.8, sortOrder: 1, source: 'MANUAL' });
+    getBlueprint.mockResolvedValue(bp);
+    renderPage();
+    await screen.findByText('Review the proposed template');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Suggested — not removed: “jane@example.com”/ }));
+    const panel = screen.getByTestId('suggestion-properties');
+    expect(panel).toHaveTextContent('Applying it also adds the field “Contact”');
+    await userEvent.click(within(panel).getByRole('button', { name: 'Apply removal' }));
+    expect(screen.getByTestId('region-contact_2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Restore original content' })).toBeInTheDocument();
+  });
+
+  it('dismisses a suggestion: nothing is removed and no field is added', async () => {
+    getBlueprint.mockResolvedValue(draftWithSuggestion());
+    saveOverlay.mockResolvedValue(blueprint({ version: 1, currentVersion: 1 }));
+    renderPage();
+    await screen.findByText('Review the proposed template');
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Dismiss: Suggested — not removed: “jane@example.com” on page 1' })
+    );
+    expect(screen.queryByTestId('suggestion-list')).not.toBeInTheDocument();
+    expect(pageView().querySelector('[data-suggested]')).toBeNull();
+    expect(screen.queryByText(/jane@example.com/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm template' }));
+    expect(savedBody().edits.map((e) => e.id)).toEqual(['e1']);
+    expect(savedBody().regions.map((r) => r.key)).toEqual(['full_name', 'notes']);
+  });
+
+  it('restoring a removal also removes its linked field, unless that field was edited by hand', async () => {
+    getBlueprint.mockResolvedValue(draftWithSuggestion());
+    saveOverlay.mockResolvedValue(blueprint({ version: 1, currentVersion: 1 }));
+    renderPage();
+    await screen.findByText('Review the proposed template');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Restore: Removed content: “John Doe” on page 1' }));
+    expect(screen.queryByTestId('region-full_name')).not.toBeInTheDocument();
+    expect(await screen.findByText('Content restored — its field “Full name” was removed too')).toBeInTheDocument();
+
+    // An applied suggestion whose field was then moved keeps its field when restored.
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply: Suggested — not removed: “jane@example.com” on page 1' })
+    );
+    fireEvent.keyDown(screen.getByTestId('region-contact'), { key: 'ArrowDown' });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Restore: Removed content: “jane@example.com” on page 1' })
+    );
+    expect(screen.getByTestId('region-contact')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Content restored — its field “Contact” was kept because you changed it')
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm template' }));
+    expect(savedBody().edits).toEqual([]);
+    expect(savedBody().regions.map((r) => r.key)).toEqual(['notes', 'contact']);
+  });
+
   it('offers to reload when someone else saved first (409)', async () => {
     const conflict = Object.assign(new Error('Stale base version'), { status: 409 });
     saveOverlay.mockRejectedValue(conflict);

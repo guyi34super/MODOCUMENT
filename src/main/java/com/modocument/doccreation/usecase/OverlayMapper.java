@@ -117,20 +117,33 @@ public final class OverlayMapper {
 
     // ------------------------------------------------------------ engine → API
 
+    /** A region for a document (instance): no review flags. */
     public static RegionDto toDto(TemplateRegion region, List<PageInfo> pages, String sampleValue) {
+        return toDto(region, pages, sampleValue, null);
+    }
+
+    /** A template's region; {@code suggested} marks the region of a suggested (unapplied) removal. */
+    public static RegionDto toDto(TemplateRegion region, List<PageInfo> pages, String sampleValue,
+                                  Boolean suggested) {
         PageFractions.Fractions f = PageFractions.toFractions(region.box(), page(pages, region.box().page()));
         return new RegionDto(region.key(), region.label(), region.group(), region.kind().name(),
                 region.box().page(), f.fx(), f.fy(), f.fw(), f.fh(), region.fontName(), region.fontSize(),
                 region.color(), region.align().name(), region.maxLines(), region.acroFieldName(),
                 region.required(), region.sortOrder(), region.source().name(), region.confidence(),
-                sampleValue);
+                sampleValue, suggested);
     }
 
-    public static EditDto toDto(TemplateEdit edit, List<PageInfo> pages, Double confidence, String removedText) {
+    /**
+     * A template edit; {@code applied} false marks a suggested removal (shown for review, not part of the
+     * template), {@code regionKey} the DATA_REMOVED region linked to a data removal.
+     */
+    public static EditDto toDto(TemplateEdit edit, List<PageInfo> pages, Double confidence, String removedText,
+                                boolean applied, String regionKey) {
         PageFractions.Fractions f = PageFractions.toFractions(edit.box(), page(pages, edit.box().page()));
         return new EditDto(edit.id(), edit.kind().name(), edit.box().page(), f.fx(), f.fy(), f.fw(), f.fh(),
                 edit.text(), edit.fontName(), edit.fontSize(), edit.color(), edit.imageKey(),
-                edit.source().name(), confidence == null ? edit.confidence() : confidence, removedText);
+                edit.source().name(), confidence == null ? edit.confidence() : confidence, removedText, applied,
+                regionKey);
     }
 
     // ------------------------------------------------------- API → engine (400s)
@@ -138,6 +151,8 @@ public final class OverlayMapper {
     /**
      * The editor's regions, validated: kinds, keys ([a-z0-9_]{1,64}, unique),
      * boxes inside their page, colours; sizes and line counts normalized.
+     * A region sent with {@code suggested:true} (the field of a suggested
+     * removal the client did not keep) is ignored (BUG-PDF-01).
      */
     public static List<TemplateRegion> fromDtos(List<RegionDto> dtos, List<PageInfo> pages) {
         List<TemplateRegion> out = new ArrayList<>();
@@ -146,6 +161,9 @@ public final class OverlayMapper {
         for (RegionDto dto : dtos == null ? List.<RegionDto>of() : dtos) {
             if (dto == null) {
                 throw new IllegalArgumentException("A region is empty.");
+            }
+            if (dto.treatedAsSuggested()) {
+                continue;
             }
             String key = dto.key() == null ? "" : dto.key().strip();
             if (!KEY.matcher(key).matches()) {
@@ -181,7 +199,10 @@ public final class OverlayMapper {
     /**
      * The editor's template edits, validated: kinds, boxes, the text of
      * REPLACE_TEXT/ADD_TEXT, the image of ADD_IMAGE (one of
-     * {@code knownImageKeys}); a missing id gets a fresh uuid.
+     * {@code knownImageKeys}); a missing id gets a fresh uuid. An edit sent
+     * with {@code applied:false} (a suggested removal the client did not
+     * apply) is ignored, so the server applies exactly the applied edits
+     * the client sends (BUG-PDF-01).
      */
     public static List<TemplateEdit> editsFromDtos(List<EditDto> dtos, List<PageInfo> pages,
                                                    Set<String> knownImageKeys) {
@@ -190,6 +211,9 @@ public final class OverlayMapper {
         for (EditDto dto : dtos == null ? List.<EditDto>of() : dtos) {
             if (dto == null) {
                 throw new IllegalArgumentException("An edit is empty.");
+            }
+            if (!dto.treatedAsApplied()) {
+                continue;
             }
             String id = dto.id() == null || dto.id().isBlank() ? UUID.randomUUID().toString() : dto.id().strip();
             if (!EDIT_ID.matcher(id).matches()) {
@@ -288,7 +312,8 @@ public final class OverlayMapper {
                     edit.fontSize(), edit.color() != null && COLOR.matcher(edit.color()).matches()
                             ? edit.color() : null,
                     edit.imageKey(), edit.source() == null ? EditSource.DATA_REMOVAL : edit.source(),
-                    clamp01(edit.confidence()), edit.removedText()));
+                    clamp01(edit.confidence()), edit.removedText(),
+                    edit.regionKey() != null && KEY.matcher(edit.regionKey()).matches() ? edit.regionKey() : null));
         }
         return out;
     }

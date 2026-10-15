@@ -30,13 +30,18 @@ export async function getBlueprint(api, id) {
   return api.get(`${BASE}/blueprints/${id}`);
 }
 
-/** Confirms a draft exactly as proposed (every region and every proposed edit). */
-export async function confirmAsProposed(api, blueprint) {
+/**
+ * Confirms a draft as proposed: every region and edit sent back as received.
+ * Suggested removals (`applied: false`, BUG-PDF-01) and their regions
+ * (`suggested: true`) are then ignored by the server, i.e. NOT applied —
+ * unless `applySuggestions`, which accepts every proposal, guesses included.
+ */
+export async function confirmAsProposed(api, blueprint, { applySuggestions = false } = {}) {
   const strip = ({ sampleValue, removedText, ...rest }) => rest;
   return api.put(`${BASE}/blueprints/${blueprint.id}/overlay`, {
     baseVersion: blueprint.currentVersion ?? blueprint.version,
-    regions: blueprint.regions.map(strip),
-    edits: blueprint.edits.map(strip),
+    regions: blueprint.regions.map(strip).map((r) => (applySuggestions ? { ...r, suggested: false } : r)),
+    edits: blueprint.edits.map(strip).map((e) => (applySuggestions ? { ...e, applied: true } : e)),
     confirm: true,
   });
 }

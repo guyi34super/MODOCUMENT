@@ -141,7 +141,7 @@ The actor columns are not masked.
 | `DOC_SUBMITTED` | Documents | — | — | A document was submitted for release. |
 | `DOC_RELEASED` | Documents | — | — | A document was released. |
 | `DOC_RELEASE_REJECTED` | Documents | — | — | A release was rejected. |
-| `DOC_BLUEPRINT_CREATED` | Documents | SUCCESS | DocBlueprint | **ws31.** A PDF template was uploaded as a DRAFT: `POST /api/doccreation/blueprints` — flow (BLANK / WITH_DATA), pages, proposed regions and removals, detectedBy (CODE / CODE+AI). Never the removed sample values. |
+| `DOC_BLUEPRINT_CREATED` | Documents | SUCCESS | DocBlueprint | **ws31.** A PDF template was uploaded as a DRAFT: `POST /api/doccreation/blueprints` — flow (BLANK / WITH_DATA), pages, proposed regions and removals (applied), suggestedRemovals (low-confidence guesses shown for review, not applied), detectedBy (CODE / CODE+AI). Never the removed sample values. |
 | `DOC_BLUEPRINT_VERSION_SAVED` | Documents | SUCCESS | DocBlueprint | **ws29, ws31.** A template version was saved: `PUT /api/doccreation/blueprints/{id}/overlay` — version, region, edit and removal counts, whether it confirmed the draft, note. |
 | `DOC_LEGACY_PURGED` | Documents | SUCCESS | Bank | **ws31.** `POST /api/admin/doccreation/purge-legacy`: the caller's bank's Word-based templates were deleted with their documents and stored files — counts of templates, documents and files. |
 | `SENSITIVE_DATA_VIEWED` | Privacy | SUCCESS | IngestionJob / ExtractionJob / AppUserList / DataSubject | **ws28.** Read audit, once per actor, entity and hour: the ingestion job detail, extraction records, the user list, the DSR search. Gated by the bank setting `audit.readAuditEnabled` (on when absent). |

@@ -70,6 +70,16 @@ All notable changes to MoDocument are recorded here. The format follows
 - Saving the form fields of one section no longer wipes the other sections' values, and
   editing sections no longer drops form fields: both bugs belonged to the removed Word path,
   and document values are now merged per field.
+- A filled PDF upload no longer removes low-confidence data guesses by default (BUG-PDF-01).
+  A guess below 0.6 confidence, such as a free-standing e-mail address or date that may be
+  printed form text, is now only suggested: the API returns it with `"applied":false` and its
+  field with `"suggested":true`. It stays in the draft template, and the editor lists it as
+  "Suggested — not removed", with Apply and Dismiss.
+  - Confirming applies exactly the edits the client sends; unapplied suggestions are ignored.
+  - Restoring a data removal in the editor also removes its linked field (`regionKey`), unless
+    you edited that field.
+- `detectedBy` reports `CODE+AI` only when the AI actually changed a label, group or kind, or
+  the data classification.
 
 ## [1.2.0] - 2026-10-11
 
