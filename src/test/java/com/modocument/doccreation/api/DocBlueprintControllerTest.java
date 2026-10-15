@@ -29,7 +29,7 @@ class DocBlueprintControllerTest {
                 .thenReturn(new BlueprintDto(5, "report", null, "DEFAULT", "report.docx", null,
                         List.of(), "AI", 1, 1, 100, List.of(), List.of()));
 
-        ResponseEntity<?> result = controller.create(file, null, null);
+        ResponseEntity<?> result = controller.create(file, null, null, null);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(result.getHeaders().getLocation())
@@ -43,7 +43,7 @@ class DocBlueprintControllerTest {
                 .thenThrow(new IllegalArgumentException("Only .docx blueprints are supported."));
 
         ResponseEntity<?> result = controller.badRequest(
-                catchIllegalArgument(() -> controller.create(file, null, null)));
+                catchIllegalArgument(() -> controller.create(file, null, null, null)));
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     }
