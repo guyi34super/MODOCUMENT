@@ -1,5 +1,6 @@
 package com.modocument.doccreation.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.modocument.doccreation.pdftemplate.PageInfo;
 
 import java.time.LocalDateTime;
@@ -11,6 +12,15 @@ import java.util.Map;
  * regions of the version it was started from (fractions, no sample values),
  * its values and photos, and the keys whose text will not fit their box at
  * the minimum font size ({@code overflow}: they continue on an added page).
+ *
+ * <p>ws32 (docs/doccreation/flow-records-contract.md §4):
+ * {@code sourceRecords} — the records the document was filled from;
+ * {@code canEditLayout} — the caller owns the template and holds
+ * {@code doc:write}, so the builder may save a layout to it;
+ * {@code blueprintEdits} — the template's current edits (the template
+ * editor's shape) for the builder to resend unchanged with a layout save;
+ * {@code droppedKeys} — only in the answer of {@code POST /upgrade}: the
+ * region keys whose values (or photos) the new version no longer has.
  */
 public record InstanceDto(int id,
                           String title,
@@ -26,9 +36,24 @@ public record InstanceDto(int id,
                           List<String> overflow,
                           LocalDateTime lastGeneratedDate,
                           boolean pdfAvailable,
-                          String reviewerComment) {
+                          String reviewerComment,
+                          List<SourceRecordDto> sourceRecords,
+                          boolean canEditLayout,
+                          List<EditDto> blueprintEdits,
+                          @JsonInclude(JsonInclude.Include.NON_NULL) List<String> droppedKeys) {
 
     /** A photo of the document: placed in {@code regionKey}, or in the tray when null. */
     public record ImageDto(int id, String regionKey, String originalName) {
+    }
+
+    /** A record the document was filled from (ids and the template's name only). */
+    public record SourceRecordDto(long recordId, int templateId, String templateName, String role) {
+    }
+
+    /** This document with the keys an upgrade dropped. */
+    public InstanceDto withDroppedKeys(List<String> keys) {
+        return new InstanceDto(id, title, status, blueprintId, blueprintName, blueprintVersion,
+                blueprintCurrentVersion, pages, regions, values, images, overflow, lastGeneratedDate, pdfAvailable,
+                reviewerComment, sourceRecords, canEditLayout, blueprintEdits, List.copyOf(keys));
     }
 }

@@ -55,6 +55,8 @@ import java.util.Map;
  *       no values. The export ARCHIVE copies
  *       (exports/u{owner}/job{id}.{ext}) are deleted — they hold the actual
  *       rows.</li>
+ *   <li><b>Flow records</b> (ws32) — the TemplateRecord / TemplateRecordKey
+ *       rows of every purged job are deleted with it (copies of its rows).</li>
  *   <li><b>Import details</b> — RawJson (checkpoint payload copies) nulled
  *       where the owning import is past the cutoff; row skeleton stays.</li>
  *   <li><b>Extraction records</b> — raw Body and processed FieldsJson
@@ -85,6 +87,9 @@ public class RetentionPurger {
     private DocInstanceImageJpaRepository docImages;
     /** BUG-12: where a file delete that keeps failing after the commit waits for a retry. */
     private final PendingFileDeletes pendingDeletes;
+    /** ws32: the record index of validated rows (null in unit wiring). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.modocument.doccreation.usecase.TemplateRecordIndexer recordIndexer;
     /** ws28 (SE4): the AI result cache follows the customer-data retention. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.modocument.infrastructure.persistence.AiResultCacheJpaRepository aiResultCache;
@@ -143,6 +148,10 @@ public class RetentionPurger {
             archiveCount += collectArchiveCopies(job, filesToDelete);
         }
         ingestionJobs.saveAll(oldJobs);
+        // ws32: the record index holds copies of the purged rows.
+        if (recordIndexer != null && !oldJobs.isEmpty()) {
+            recordIndexer.purgeJobs(bankId, oldJobs.stream().map(IngestionJob::getIngestionJobId).toList());
+        }
 
         int importRows = importDetails.purgeRawJsonOlderThan(bankId, cutoff);
         int rawBodies = extractionRaw.purgeBodiesOlderThan(bankId, cutoffInstant);

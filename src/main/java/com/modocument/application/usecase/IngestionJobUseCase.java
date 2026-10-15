@@ -24,6 +24,7 @@ import com.modocument.application.port.ImportHistoryRepository;
 import com.modocument.application.port.IngestionJobRepository;
 import com.modocument.application.port.SettingsReader;
 import com.modocument.application.port.TemplateFieldsRepository;
+import com.modocument.application.port.TemplateRecordIndex;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.port.integration.IntegrationEventLog;
 import com.modocument.domain.entity.ImportDetails;
@@ -90,6 +91,8 @@ public class IngestionJobUseCase {
     private final TransactionTemplate eventTx;
     /** Wave 4: the bank's code-confidence threshold for job views (null in unit tests = shipped default). */
     private SettingsReader settings;
+    /** ws32: the searchable record index (null in unit-test wiring = no index). */
+    private TemplateRecordIndex recordIndex;
 
     /** Without an audit recorder (parse fallbacks are not audited) — unit tests. */
     public IngestionJobUseCase(IngestionJobRepository jobs,
@@ -386,7 +389,7 @@ public class IngestionJobUseCase {
         if (audit != null) {
             audit.success(AuditActions.INGESTION_REMAPPED, "IngestionJob", String.valueOf(jobId));
         }
-        return runStage(job, JobStep.MAPPED, this::doMap);
+        return indexed(runStage(job, JobStep.MAPPED, this::doMap));
     }
 
     /** Re-runs validation on the mapped rows. */
@@ -444,7 +447,7 @@ public class IngestionJobUseCase {
         clampWizardStep(job);
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
-        IngestionJob remapped = jobs.save(job);
+        IngestionJob remapped = indexed(jobs.save(job));
         if (audit != null) { // BUG-10: the manual mapping editor is a remap too; no cell values
             audit.success(AuditActions.INGESTION_REMAPPED, "IngestionJob", String.valueOf(jobId),
                     null, Map.of("source", "MANUAL", "mappedColumns", claimedBy.size()));
@@ -480,7 +483,7 @@ public class IngestionJobUseCase {
         clampWizardStep(job);
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
-        IngestionJob edited = jobs.save(job);
+        IngestionJob edited = indexed(jobs.save(job));
         if (audit != null) { // ws28: counts only, never cell values
             audit.success(AuditActions.INGESTION_ROWS_EDITED, "IngestionJob",
                     String.valueOf(jobId), null, Map.of("rows", rows.size(),
@@ -522,7 +525,7 @@ public class IngestionJobUseCase {
     public IngestionJob cancel(int jobId) {
         IngestionJob job = get(jobId);
         job.setStatus(JobStatus.CANCELLED);
-        return jobs.save(job);
+        return indexed(jobs.save(job));
     }
 
     /** Marks the export stage complete; called by the export endpoints. */
@@ -534,12 +537,17 @@ public class IngestionJobUseCase {
             throw new IllegalStateException(
                     "Job " + job.getIngestionJobId() + " is cancelled and cannot be exported.");
         }
+        boolean wasIndexable = job.getCurrentStep() == JobStep.VALIDATED
+                || job.getCurrentStep() == JobStep.EXPORTED;
         job.setExportInfoJson(toJson(exportInfo));
         job.setCurrentStep(JobStep.EXPORTED);
         job.setWizardStep(WizardStep.EXPORT);
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
-        return jobs.save(job);
+        IngestionJob exported = jobs.save(job);
+        // An export does not change the rows: a job that was already
+        // VALIDATED keeps its records; only an unusual earlier step indexes.
+        return wasIndexable ? exported : indexed(exported);
     }
 
     // ---- stages ------------------------------------------------------------
@@ -557,7 +565,7 @@ public class IngestionJobUseCase {
             job.setCurrentStep(target);
             job.setStatus(JobStatus.COMPLETED);
             if (target == JobStep.VALIDATED) {
-                return saveAndPublish(job, FlowEvent.INGESTION_VALIDATED, target);
+                return indexed(saveAndPublish(job, FlowEvent.INGESTION_VALIDATED, target));
             }
             return jobs.save(job);
         } catch (Exception e) {
@@ -569,7 +577,9 @@ public class IngestionJobUseCase {
             // the same PII/credential scrub as a log line (PRIV-005): a
             // parser or driver message can quote the very values that failed.
             job.setErrorMessage(LogSafe.scrub(abbreviate(message)));
-            return saveAndPublish(job, FlowEvent.INGESTION_FAILED, target);
+            IngestionJob failed = saveAndPublish(job, FlowEvent.INGESTION_FAILED, target);
+            // A failed (re-)validation leaves the job MAPPED: its records go.
+            return target == JobStep.VALIDATED ? indexed(failed) : failed;
         }
     }
 
@@ -959,6 +969,23 @@ public class IngestionJobUseCase {
             log.debug("Unreadable mapping on job {}", row.ingestionJobId());
         }
         return (int) fieldNames.stream().filter(field -> !mapped.contains(field)).count();
+    }
+
+    /** ws32: wired by Spring; unit tests without it keep no record index. */
+    @Autowired(required = false)
+    public void setTemplateRecordIndex(TemplateRecordIndex recordIndex) {
+        this.recordIndex = recordIndex;
+    }
+
+    /**
+     * ws32: tells the record index the job changed (it re-indexes after the
+     * commit); returns the job for chaining.
+     */
+    private IngestionJob indexed(IngestionJob job) {
+        if (recordIndex != null && job != null) {
+            recordIndex.jobChanged(job);
+        }
+        return job;
     }
 
     /** Wave 4: wired by Spring; unit tests without it judge against the shipped 0.75. */

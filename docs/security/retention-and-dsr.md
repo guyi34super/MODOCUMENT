@@ -22,7 +22,8 @@ permission was minted so the role→permission matrix stays unchanged.
 | Import step payloads | `ImportDetails.RawJson` | **30 days** from the import date (`ImportHistory.ImportDate`) | PRIV-013 / gate C5 | Column nulled; row skeleton (step, ids) kept |
 | Extraction raw captures | `ExtractionRawRecord.Body` | **30 days** from fetch | PRIV-013 / gate C5 | Column nulled; fetch metadata (uri, status, hash) kept |
 | Extraction processed records | `ExtractionProcessedRecord.FieldsJson` | **30 days** from processing | PRIV-013 / gate C5 | Column nulled; dedup metadata kept |
-| Doc-creation content | `DocInstance.ValuesJson`, `DocInstanceImage`, `DocImageAsset` (+ files), the generated PDF (`GeneratedPdfKey`); legacy `DocContentBlock` and docx exports | **30 days** after the instance's last update | PRIV-013 / gate C5 | Values cleared, photo/asset/block rows and files deleted, `DocInstance.ContentPurgedAt` stamped; instance shell (title, status, dates) kept. A DSR erase removes the values naming the subject (`docValues` store) and the generated PDF |
+| Doc-creation content | `DocInstance.ValuesJson`, `DocInstance.SourceRecordsJson` (record ids only, ws32), `DocInstanceImage`, `DocImageAsset` (+ files), the generated PDF (`GeneratedPdfKey`); legacy `DocContentBlock` and docx exports | **30 days** after the instance's last update | PRIV-013 / gate C5 | Values cleared, photo/asset/block rows and files deleted, `DocInstance.ContentPurgedAt` stamped; instance shell (title, status, dates) kept. A DSR erase removes the values naming the subject (`docValues` store) and the generated PDF |
+| Flow record index (ws32) | `TemplateRecord.ValuesJson / SearchText` + `TemplateRecordKey.KeyValue` (bank-scoped, RLS) — copies of the VALID rows of VALIDATED/EXPORTED ingestion jobs, searchable for document filling | **with their job**: deleted when the retention sweep purges the job (30 days from its last update), when the job is deleted, and re-written whenever its rows change (remap, row edit, re-validation) | PRIV-013 / gate C5 | Rows deleted by the retention sweep with the job's checkpoints; a DSR erase deletes the records naming the subject (`templateRecords` store) |
 | AI result cache (ws28, v1.2.0) | `AiResultCache.ResultJson` (bank-scoped, RLS) — a copy of the rows a model extracted, keyed by a hash of the document text | **30 days** from creation | PRIV-013 / gate C5 | Rows deleted by the retention sweep; a DSR erase clears the bank's whole cache (below) |
 | Doc-creation templates | `DocBlueprint`, `DocBlueprintVersion`, `DocTemplateRegion`, `DocTemplateEdit` and the template files (original PDF, template PDFs, page previews) | n/a — **never purged** | — | Configuration (document structure). A filled upload's removed sample values are never stored past the review; Word-era templates are removed by the admin purge (`POST /api/admin/doccreation/purge-legacy`) |
 | Ingestion mapping config | `IngestionJob.MappingJson / SuggestedMappingJson / ExportInfoJson` | n/a — **not purged** | — | Column-name→field mappings and export metadata (file name, format, row count): configuration/metadata, no customer values |
@@ -111,7 +112,7 @@ works in their own bank only; every step is audited.
    (or the *Search* box in the panel). The identifier is any VALUE the
    subject is known by: NIC, account number, email, full name. Matching:
    * structured values (ingestion row cells, import payload values,
-     extraction field values) match on **case-insensitive equality** of
+     extraction field values, flow record values — ws32) match on **case-insensitive equality** of
      the trimmed value — erasure must not take neighbouring subjects
      with it;
    * unstructured text (extraction raw bodies, document paragraphs and
@@ -143,6 +144,10 @@ works in their own bank only; every step is audited.
      (each record is one capture of the subject).
    * **Document content** — matching blocks deleted; an image block's
      asset (row + file) goes with its matching caption.
+   * **Flow records** (ws32, store `templateRecords`) — the record index
+     rows whose values name the subject (equality, like the job rows they
+     copy) are deleted with their keys; the export lists them in full
+     (record id, template, job, row, values).
    * **Name-matched uploads** — a file whose NAME is the identifier is
      deleted with its row.
    * **AI result cache** (v1.2.0) — the bank's whole cache is cleared.

@@ -40,6 +40,13 @@ public final class AuditActions {
     public static final String EXPORT_DOWNLOADED = "EXPORT_DOWNLOADED";
     public static final String TOKEN_REFRESHED = "TOKEN_REFRESHED";
 
+    /** ws32: a record search (query hash prefix and result count only, never values). */
+    public static final String TEMPLATE_RECORDS_SEARCHED = "TEMPLATE_RECORDS_SEARCHED";
+    /** ws32: a data source of a PDF template was added, saved or removed (counts only). */
+    public static final String DOC_BLUEPRINT_MAPPING_SAVED = "DOC_BLUEPRINT_MAPPING_SAVED";
+    /** ws32: a document was filled from records (region keys and record ids only). */
+    public static final String DOC_FILLED_FROM_RECORD = "DOC_FILLED_FROM_RECORD";
+
     /**
      * A refusal outside method security: an AccessDeniedException raised
      * inside a use case, an owner-scoped 404 (ownership check rejected) or an
@@ -120,9 +127,9 @@ public final class AuditActions {
                 "EXPORT_OVER_CAP_WITH_REASON");
         add(c, "Documents", DOC_GENERATED, DOC_DOWNLOADED, "DOC_SUBMITTED", "DOC_RELEASED",
                 "DOC_RELEASE_REJECTED", "DOC_BLUEPRINT_CREATED", "DOC_BLUEPRINT_VERSION_SAVED",
-                "DOC_LEGACY_PURGED");
-        add(c, "Privacy", SENSITIVE_DATA_VIEWED, "DSR_SEARCH", "DSR_EXPORTED", "DSR_ERASED",
-                "RETENTION_PURGE_COMPLETED");
+                "DOC_LEGACY_PURGED", DOC_BLUEPRINT_MAPPING_SAVED, DOC_FILLED_FROM_RECORD);
+        add(c, "Privacy", SENSITIVE_DATA_VIEWED, TEMPLATE_RECORDS_SEARCHED, "DSR_SEARCH", "DSR_EXPORTED",
+                "DSR_ERASED", "RETENTION_PURGE_COMPLETED");
         add(c, "Audit", AUDIT_LOG_VIEWED, AUDIT_LOG_EXPORTED);
         add(c, "AI", "AI_CALL", "AI_PROMPT_REFUSED", "AI_PROMPT_BLOCKED_PII",
                 "AI_OUTPUT_BLOCKED", "AI_OUTPUT_FLAGGED", "AI_CIRCUIT_OPENED");

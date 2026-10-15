@@ -44,6 +44,15 @@ import java.util.Set;
 @Service
 public class ChatEditTableUseCase {
 
+    /** ws32: the searchable record index (null in unit-test wiring = no index). */
+    private com.modocument.application.port.TemplateRecordIndex recordIndex;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setTemplateRecordIndex(com.modocument.application.port.TemplateRecordIndex recordIndex) {
+        this.recordIndex = recordIndex;
+    }
+
+
     private static final Logger log = LoggerFactory.getLogger(ChatEditTableUseCase.class);
 
     /** Keeps the prompt within a sane size; larger tables should be edited via the API. */
@@ -144,6 +153,9 @@ public class ChatEditTableUseCase {
         job.setStatus(JobStatus.COMPLETED);
         job.setErrorMessage(null);
         IngestionJob edited = jobs.save(job);
+        if (recordIndex != null) { // ws32: the job's records are re-indexed after the commit
+            recordIndex.jobChanged(edited);
+        }
         if (audit != null) { // BUG-11: same row as PUT .../rows — counts only, never cell values
             List<Map<String, String>> after = modified.getRows() == null ? List.of() : modified.getRows();
             List<Map<String, String>> before = current.getRows() == null ? List.of() : current.getRows();

@@ -126,7 +126,7 @@ These routes need `DOC_READ` to read and `DOC_WRITE` to change. The user must al
 **`PUT /blueprints/{id}/sources/{sourceId}`**, body `{mapping, linkFieldPrimary?, linkFieldThis?}`:
 
 - Saves the source and audits `DOC_BLUEPRINT_MAPPING_SAVED` with counts only.
-- Returns `400` for unknown region keys or fields, for an IMAGE or SIGNATURE region, or for a template field mapped twice. Mapping one field to two regions is allowed.
+- Returns `400` for unknown region keys, unknown template fields, or an IMAGE or SIGNATURE region. Mapping one template field to several regions is allowed.
 
 **`DELETE /blueprints/{id}/sources/{sourceId}`**: removing the PRIMARY is refused while LINKED sources exist (`409`).
 

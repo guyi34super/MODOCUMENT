@@ -128,6 +128,11 @@ public class DocCreationOwnership {
         return currentUser.requireUserId();
     }
 
+    /** Whether the caller holds {@code permission} (false without a permission checker). */
+    public boolean callerHas(Permission permission) {
+        return perm != null && perm.has(permission.name());
+    }
+
     /** The caller's bank, for stamping BankId on created rows. */
     public int requireBankId() {
         return currentUser.requireBankId();

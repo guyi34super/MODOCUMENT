@@ -17,6 +17,30 @@ All notable changes to MoDocument are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- Fill a document from the data flow: every valid row of a validated or exported ingestion job is
+  indexed as a searchable record (`TemplateRecord`, re-indexed on remap, row edit and
+  re-validation, deleted with the job, by the retention purge and by a DSR erase; existing jobs
+  are backfilled at startup). `GET /api/doccreation/records` searches a flow template's records
+  (own jobs, plus every job on a bank-shared template; masked per role) and
+  `GET /api/doccreation/records/{id}` reads one.
+- Data sources of a PDF template: `GET|POST /api/doccreation/blueprints/{id}/sources` and
+  `PUT|DELETE …/sources/{sourceId}` keep one primary and any number of linked flow templates
+  (joined through a shared key), each with a field mapping that auto-mapping pre-fills (same name,
+  then aliases and similar names at the mapping confidence threshold, one-to-one, kind-compatible).
+- `GET /api/doccreation/instances/{id}/fill-preview` and `POST …/fill-from-record` fill a document
+  from a record and its linked records (newest match wins, alternatives listed), with a field
+  selection and `EMPTY_ONLY`/`ALL` overwrite; the document remembers the records it was filled
+  from (`sourceRecords`).
+- `POST /api/doccreation/instances/{id}/upgrade` moves a document to the template's current version
+  (values kept by field key, `droppedKeys` reported, photos of removed photo boxes back to the
+  tray). The builder view gains `canEditLayout` and `blueprintEdits` to save a layout to the
+  template from the builder.
+- Database (ws32): V310 `TemplateRecord`, `TemplateRecordKey` and `DocInstance.SourceRecordsJson`,
+  V311 `DocBlueprintSource` (one primary per template), all bank-scoped under row level security.
+- Audit actions `TEMPLATE_RECORDS_SEARCHED` (query hash and count only), `DOC_BLUEPRINT_MAPPING_SAVED`
+  and `DOC_FILLED_FROM_RECORD` (region keys and record ids only); reading a record is
+  `SENSITIVE_DATA_VIEWED`. Data subject requests search, export and erase the new
+  `templateRecords` store.
 - Exact PDF templates for document creation: the template is the uploaded PDF itself, with an
   overlay of fill-in regions (text, multi-line, date, number, checkbox, photo, signature).
   Logo, fonts, layout and page geometry stay exactly as uploaded; generation draws the values
