@@ -10,7 +10,11 @@ import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
 
-/** A document being built from a blueprint: per-section content plus generation state. */
+/**
+ * A document built from a template: its values ({@link #valuesJson}, region
+ * key to value), its photos (DocInstanceImage) and generation state; the
+ * output is the template PDF with the values drawn in (ws31).
+ */
 @Entity
 @Table(name = "DocInstance")
 public class DocInstance {
@@ -76,10 +80,9 @@ public class DocInstance {
     private String reviewComment;
 
     /**
-     * True when the last generation's content was composed by the AI path
-     * (AiDocumentComposer), false when the deterministic engine carried it.
-     * Shown to the approver (C10): releasing an AI-composed document is the
-     * human check of the model's text and figures.
+     * True when the last generation's content was composed by the retired AI
+     * composer of the Word path. PDF generation draws exactly the values the
+     * user entered, so it always writes false. Shown to the approver (C10).
      */
     @Column(name = "AiComposed", nullable = false)
     private boolean aiComposed;
@@ -109,11 +112,37 @@ public class DocInstance {
     @Column(name = "ContentPurgedAt")
     private LocalDateTime contentPurgedAt;
 
-    /** JSON array of form field values keyed by section + fieldKey (V292). */
+    /** Legacy (V292, Word path): form field values keyed by section + fieldKey; no longer written. */
     @Column(name = "FieldValuesJson", columnDefinition = "text")
     private String fieldValuesJson;
 
+    /** The document's values: a JSON object of region key to value (V302). */
+    @Column(name = "ValuesJson", columnDefinition = "text")
+    private String valuesJson;
+
+    /** FileStore key of the last generated PDF (V302). */
+    @Column(name = "GeneratedPdfKey", length = 512)
+    private String generatedPdfKey;
+
     public DocInstance() {
+    }
+
+    @JsonIgnore
+    public String getValuesJson() {
+        return valuesJson;
+    }
+
+    public void setValuesJson(String valuesJson) {
+        this.valuesJson = valuesJson;
+    }
+
+    @JsonIgnore
+    public String getGeneratedPdfKey() {
+        return generatedPdfKey;
+    }
+
+    public void setGeneratedPdfKey(String generatedPdfKey) {
+        this.generatedPdfKey = generatedPdfKey;
     }
 
     public String getFieldValuesJson() {

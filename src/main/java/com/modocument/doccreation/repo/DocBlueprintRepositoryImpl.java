@@ -31,6 +31,16 @@ public class DocBlueprintRepositoryImpl implements DocBlueprintRepository {
     }
 
     @Override
+    public List<DocBlueprint> listByOwnerAndKind(int ownerUserId, String kind) {
+        return jpa.findByOwnerUserIdAndKindOrderByDocBlueprintIdDesc(ownerUserId, kind);
+    }
+
+    @Override
+    public List<DocBlueprint> listByBankAndKind(int bankId, String kind) {
+        return jpa.findByBankIdAndKindOrderByDocBlueprintIdAsc(bankId, kind);
+    }
+
+    @Override
     public DocBlueprint save(DocBlueprint entity) {
         return jpa.save(entity);
     }

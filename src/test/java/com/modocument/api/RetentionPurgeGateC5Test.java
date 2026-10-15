@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.doccreation.entity.DocContentBlock;
 import com.modocument.doccreation.entity.DocImageAsset;
 import com.modocument.doccreation.entity.DocInstance;
+import com.modocument.doccreation.entity.DocInstanceImage;
 import com.modocument.doccreation.repo.DocContentBlockJpaRepository;
 import com.modocument.doccreation.repo.DocImageAssetJpaRepository;
 import com.modocument.doccreation.repo.DocInstanceJpaRepository;
@@ -92,6 +93,8 @@ class RetentionPurgeGateC5Test {
     private ExtractionProcessedRecordJpaRepository extractionProcessed;
     @Autowired
     private DocInstanceJpaRepository docInstances;
+    @Autowired
+    private com.modocument.doccreation.repo.DocInstanceImageJpaRepository docImages;
     @Autowired
     private DocContentBlockJpaRepository docBlocks;
     @Autowired
@@ -210,6 +213,12 @@ class RetentionPurgeGateC5Test {
         instance.setTitle("C5 doc");
         instance.setCreatedDate(LocalDateTime.now().minusDays(40));
         instance.setUpdatedDate(LocalDateTime.now().minusDays(31));
+        // ws31: a PDF-template document's values and generated PDF.
+        instance.setValuesJson("{\"nic\":\"X123\"}");
+        Path generatedPdf = Files.createDirectories(STORAGE.resolve("exports"))
+                .resolve("c5-generated-" + tag + ".pdf");
+        Files.writeString(generatedPdf, "%PDF-1.7");
+        instance.setGeneratedPdfKey("exports/" + generatedPdf.getFileName());
         instance = docInstances.save(instance);
         DocContentBlock block = new DocContentBlock();
         block.setInstanceId(instance.getDocInstanceId());
@@ -226,7 +235,14 @@ class RetentionPurgeGateC5Test {
         asset.setOriginalFileName("photo.png");
         asset.setContentType("image/png");
         asset.setUploadedDate(LocalDateTime.now().minusDays(31));
-        docAssets.save(asset);
+        asset = docAssets.save(asset);
+        DocInstanceImage photo = new DocInstanceImage();
+        photo.setBankId(bank.getBankId());
+        photo.setInstanceId(instance.getDocInstanceId());
+        photo.setAssetId(asset.getDocImageAssetId());
+        photo.setRegionKey("photo");
+        photo.setOriginalName("photo.png");
+        docImages.save(photo);
         Path assetFile = STORAGE.resolve("uploads").resolve(asset.getFileName());
         Files.writeString(assetFile, "png-bytes");
 
@@ -279,6 +295,10 @@ class RetentionPurgeGateC5Test {
                 instance.getDocInstanceId())).isEmpty();
         assertThat(docAssets.findByInstanceIdOrderByDocImageAssetId(
                 instance.getDocInstanceId())).isEmpty();
+        assertThat(purgedInstance.getValuesJson()).as("document values cleared").isNull();
+        assertThat(purgedInstance.getGeneratedPdfKey()).isNull();
+        assertThat(docImages.findByInstanceId(instance.getDocInstanceId())).isEmpty();
+        assertThat(Files.exists(generatedPdf)).as("generated PDF deleted").isFalse();
 
         // ---- the 29-day-old record SURVIVES ----
         assertThat(Files.exists(STORAGE.resolve("uploads").resolve(youngUpload.getStoredName())))

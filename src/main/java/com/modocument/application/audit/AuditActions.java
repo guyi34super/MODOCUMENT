@@ -119,7 +119,8 @@ public final class AuditActions {
         add(c, "Exports", "EXPORT_RUN", EXPORT_DOWNLOADED, "EXPORT_BLOCKED",
                 "EXPORT_OVER_CAP_WITH_REASON");
         add(c, "Documents", DOC_GENERATED, DOC_DOWNLOADED, "DOC_SUBMITTED", "DOC_RELEASED",
-                "DOC_RELEASE_REJECTED", "DOC_BLUEPRINT_VERSION_SAVED");
+                "DOC_RELEASE_REJECTED", "DOC_BLUEPRINT_CREATED", "DOC_BLUEPRINT_VERSION_SAVED",
+                "DOC_LEGACY_PURGED");
         add(c, "Privacy", SENSITIVE_DATA_VIEWED, "DSR_SEARCH", "DSR_EXPORTED", "DSR_ERASED",
                 "RETENTION_PURGE_COMPLETED");
         add(c, "Audit", AUDIT_LOG_VIEWED, AUDIT_LOG_EXPORTED);

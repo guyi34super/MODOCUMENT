@@ -81,7 +81,10 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     // deletes waiting for a retry.
                     "pendingfiledelete",
                     // V291 (ws29): blueprint section-structure versions.
-                    "docblueprintversion");
+                    "docblueprintversion",
+                    // V301/V302 (ws31): PDF template regions and edits, and
+                    // the photos of documents.
+                    "doctemplateregion", "doctemplateedit", "docinstanceimage");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))

@@ -2,6 +2,8 @@ package com.modocument.pgit;
 
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import com.modocument.testsupport.FakePdfEngineConfig;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -20,6 +22,7 @@ import java.nio.file.Path;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@Import(FakePdfEngineConfig.class)
 public abstract class PgSpringItSupport extends PgItSupport {
 
     /** Same dev-only secret the H2 test profile uses (permit-dev-paths on). */

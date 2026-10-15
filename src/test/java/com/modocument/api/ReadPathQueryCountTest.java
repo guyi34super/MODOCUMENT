@@ -5,13 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.application.port.integration.ClientPrincipal;
 import com.modocument.application.usecase.IntegrationApiUseCase;
 import com.modocument.doccreation.entity.DocBlueprint;
-import com.modocument.doccreation.entity.DocBlueprintSection;
-import com.modocument.doccreation.entity.DocContentBlock;
+import com.modocument.doccreation.entity.DocInstanceImage;
+import com.modocument.doccreation.entity.DocTemplateRegion;
 import com.modocument.doccreation.entity.DocImageAsset;
 import com.modocument.doccreation.entity.DocInstance;
 import com.modocument.doccreation.repo.DocBlueprintJpaRepository;
-import com.modocument.doccreation.repo.DocBlueprintSectionJpaRepository;
-import com.modocument.doccreation.repo.DocContentBlockJpaRepository;
+import com.modocument.doccreation.repo.DocInstanceImageJpaRepository;
+import com.modocument.doccreation.repo.DocTemplateRegionJpaRepository;
 import com.modocument.doccreation.repo.DocImageAssetJpaRepository;
 import com.modocument.doccreation.repo.DocInstanceJpaRepository;
 import com.modocument.domain.entity.AppUser;
@@ -92,9 +92,9 @@ class ReadPathQueryCountTest {
     @Autowired private ImportDetailsJpaRepository importDetails;
     @Autowired private PendingChangeJpaRepository changes;
     @Autowired private DocBlueprintJpaRepository blueprints;
-    @Autowired private DocBlueprintSectionJpaRepository sections;
+    @Autowired private DocTemplateRegionJpaRepository regions;
     @Autowired private DocInstanceJpaRepository instances;
-    @Autowired private DocContentBlockJpaRepository blocks;
+    @Autowired private DocInstanceImageJpaRepository instanceImages;
     @Autowired private DocImageAssetJpaRepository assets;
     @Autowired private IntegrationApiUseCase integrationApi;
 
@@ -429,23 +429,28 @@ class ReadPathQueryCountTest {
 
     // ---- doc creation ----------------------------------------------------------------
 
-    private DocInstance submitted(AppUser author, int sectionsPerBlueprint) {
+    /**
+     * A submitted document on a READY PDF template with {@code groups} region
+     * groups, each holding a filled text field and a photo box with a photo.
+     */
+    private DocInstance submitted(AppUser author, int groups) {
         DocBlueprint blueprint = new DocBlueprint();
         blueprint.setOwnerUserId(author.getAppUserId());
         blueprint.setBankId(author.getBankId());
         blueprint.setName("bp-" + UUID.randomUUID());
-        blueprint.setFileName("bp.docx");
+        blueprint.setFileName("bp.pdf");
+        blueprint.setKind(DocBlueprint.KIND_PDF_OVERLAY);
+        blueprint.setPageCount(1);
+        blueprint.setUploadFlow("BLANK");
+        blueprint.setPagesJson("[{\"index\":0,\"width\":595.0,\"height\":842.0,\"rotation\":0}]");
         blueprint.setCreatedDate(LocalDateTime.now());
         blueprint.setUpdatedDate(LocalDateTime.now());
         blueprint = blueprints.save(blueprint);
-        List<DocBlueprintSection> made = new ArrayList<>();
-        for (int s = 0; s < sectionsPerBlueprint; s++) {
-            DocBlueprintSection section = new DocBlueprintSection();
-            section.setBlueprintId(blueprint.getDocBlueprintId());
-            section.setBankId(author.getBankId());
-            section.setOrderIndex(s);
-            section.setTitle("Section " + s);
-            made.add(sections.save(section));
+        Map<String, String> values = new java.util.LinkedHashMap<>();
+        for (int g = 0; g < groups; g++) {
+            regions.save(region(blueprint, "text_" + g, "Group " + g, "TEXT", g * 2));
+            regions.save(region(blueprint, "photo_" + g, "Group " + g, "IMAGE", g * 2 + 1));
+            values.put("text_" + g, "text " + g);
         }
         DocInstance instance = new DocInstance();
         instance.setOwnerUserId(author.getAppUserId());
@@ -457,37 +462,55 @@ class ReadPathQueryCountTest {
         instance.setSubmittedAt(LocalDateTime.now());
         instance.setCreatedDate(LocalDateTime.now());
         instance.setUpdatedDate(LocalDateTime.now());
+        try {
+            instance.setValuesJson(JSON.writeValueAsString(values));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
         instance = instances.save(instance);
-        DocImageAsset asset = new DocImageAsset();
-        asset.setInstanceId(instance.getDocInstanceId());
-        asset.setBankId(author.getBankId());
-        asset.setFileName("img.png");
-        asset.setOriginalFileName("photo.png");
-        asset.setContentType("image/png");
-        asset.setUploadedDate(LocalDateTime.now());
-        asset = assets.save(asset);
-        for (DocBlueprintSection section : made) {
-            DocContentBlock text = new DocContentBlock();
-            text.setInstanceId(instance.getDocInstanceId());
-            text.setBankId(author.getBankId());
-            text.setSectionId(section.getDocBlueprintSectionId());
-            text.setBlockType(DocContentBlock.TYPE_PARAGRAPH);
-            text.setTextContent("text");
-            blocks.save(text);
-            DocContentBlock image = new DocContentBlock();
-            image.setInstanceId(instance.getDocInstanceId());
+        for (int g = 0; g < groups; g++) {
+            DocImageAsset asset = new DocImageAsset();
+            asset.setInstanceId(instance.getDocInstanceId());
+            asset.setBankId(author.getBankId());
+            asset.setFileName("img.png");
+            asset.setOriginalFileName("photo.png");
+            asset.setContentType("image/png");
+            asset.setUploadedDate(LocalDateTime.now());
+            asset = assets.save(asset);
+            DocInstanceImage image = new DocInstanceImage();
             image.setBankId(author.getBankId());
-            image.setSectionId(section.getDocBlueprintSectionId());
-            image.setBlockType(DocContentBlock.TYPE_IMAGE);
-            image.setOrderIndex(1);
+            image.setInstanceId(instance.getDocInstanceId());
             image.setAssetId(asset.getDocImageAssetId());
-            blocks.save(image);
+            image.setRegionKey("photo_" + g);
+            image.setOriginalName("photo.png");
+            instanceImages.save(image);
         }
         return instance;
     }
 
+    private static DocTemplateRegion region(DocBlueprint blueprint, String key, String group, String kind,
+                                            int sortOrder) {
+        DocTemplateRegion region = new DocTemplateRegion();
+        region.setBankId(blueprint.getBankId());
+        region.setBlueprintId(blueprint.getDocBlueprintId());
+        region.setVersion(1);
+        region.setRegionKey(key);
+        region.setLabel(key);
+        region.setGroupName(group);
+        region.setKind(kind);
+        region.setPage(0);
+        region.setX(10);
+        region.setY(10 + sortOrder * 30);
+        region.setW(100);
+        region.setH(20);
+        region.setMaxLines("TEXT".equals(kind) ? 1 : 0);
+        region.setSortOrder(sortOrder);
+        region.setSource("MANUAL");
+        return region;
+    }
+
     @Test
-    void theReleaseQueueBatchLoadsBlueprintsBlocksAssetsAndUsers() throws Exception {
+    void theReleaseQueueBatchLoadsBlueprintsRegionsPhotosAndUsers() throws Exception {
         Bank one = bank();
         AppUser approverOne = user(one, Role.APPROVER);
         submitted(user(one, Role.READ_WRITE), 2);
@@ -515,7 +538,7 @@ class ReadPathQueryCountTest {
     }
 
     @Test
-    void theBlueprintListCountsSectionsAndInstancesWithTwoGroupedQueries() throws Exception {
+    void theBlueprintListCountsDocumentsWithOneGroupedQuery() throws Exception {
         Bank bank = bank();
         AppUser few = user(bank, Role.READ_WRITE);
         submitted(few, 1);
@@ -529,8 +552,9 @@ class ReadPathQueryCountTest {
 
         JsonNode list = getJson("/api/doccreation/blueprints", many);
         assertThat(list).hasSize(5);
-        assertThat(list.get(0).get("sectionCount").asInt()).isEqualTo(3);
-        assertThat(list.get(0).get("instanceCount").asInt()).isEqualTo(1);
+        assertThat(list.get(0).get("pageCount").asInt()).isEqualTo(1);
+        assertThat(list.get(0).get("documentCount").asInt()).isEqualTo(1);
+        assertThat(list.get(0).get("status").asText()).isEqualTo("READY");
     }
 
     // ---- pending changes ---------------------------------------------------------------

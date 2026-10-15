@@ -1,21 +1,15 @@
 package com.modocument.doccreation.dto;
 
-import com.modocument.doccreation.entity.DocBlueprint;
-
 import java.time.LocalDateTime;
 
-public record BlueprintSummaryDto(int blueprintId,
+/** One entry of {@code GET /api/doccreation/blueprints} (contract §5). */
+public record BlueprintSummaryDto(int id,
                                   String name,
+                                  String status,
+                                  int currentVersion,
+                                  int pageCount,
+                                  String flow,
+                                  int documentCount,
                                   String companyId,
-                                  String flowKey,
-                                  int sectionCount,
-                                  int instanceCount,
-                                  LocalDateTime createdDate,
-                                  int currentVersion) {
-
-    public static BlueprintSummaryDto from(DocBlueprint blueprint, int sectionCount, int instanceCount) {
-        return new BlueprintSummaryDto(blueprint.getDocBlueprintId(), blueprint.getName(),
-                blueprint.getCompanyId(), blueprint.getFlowKey(), sectionCount, instanceCount,
-                blueprint.getCreatedDate(), blueprint.getCurrentVersion());
-    }
+                                  LocalDateTime createdDate) {
 }

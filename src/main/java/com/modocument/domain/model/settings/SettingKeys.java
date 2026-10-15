@@ -103,6 +103,8 @@ public final class SettingKeys {
     public static final String CHAT_EDIT_MAX_CHANGE_RATIO = "chatEdit.fullTableMaxChangeRatio";
     public static final String DOCCREATION_SECTION_AI_ENABLED = "doccreation.sectionAiEnabled";
     public static final String DOCCREATION_GENERATE_AI_ENABLED = "doccreation.generateAiEnabled";
+    /** ws31: smallest font size a PDF value is shrunk to before it continues on an added page. */
+    public static final String DOCCREATION_PDF_MIN_FONT_SIZE = "doccreation.pdfMinFontSize";
     public static final String AI_CIRCUIT_FAILURE_THRESHOLD = "ai.circuitBreaker.failureThreshold";
     public static final String AI_CIRCUIT_OPEN_DURATION = "ai.circuitBreaker.openDuration";
     /** ws28 (SE4): reuse cached AI parse results for identical documents (AiResultCache). */

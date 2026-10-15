@@ -10,8 +10,7 @@ import com.modocument.application.security.PasswordPolicy;
 import com.modocument.application.usecase.AuthUseCase;
 import com.modocument.application.usecase.ChatEditProperties;
 import com.modocument.application.usecase.ChatEditTableUseCase;
-import com.modocument.doccreation.generate.AiDocumentComposer;
-import com.modocument.doccreation.parse.AiSectionSplitter;
+import com.modocument.doccreation.usecase.DocCreationSettings;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.model.AlertSeverity;
 import com.modocument.domain.model.Role;
@@ -100,9 +99,7 @@ class SettingsConsumersParityTest extends SettingsIntegrationSupport {
     @Autowired
     private ChatEditProperties chatEditProperties;
     @Autowired
-    private AiSectionSplitter sectionSplitter;
-    @Autowired
-    private AiDocumentComposer documentComposer;
+    private DocCreationSettings docCreationSettings;
     @Autowired
     private ParsingSettings parsingSettings;
     @Autowired
@@ -229,8 +226,10 @@ class SettingsConsumersParityTest extends SettingsIntegrationSupport {
             assertThat(chatEdit.maxChangeRatio())
                     .isEqualTo(chatEditProperties.getFullTableMaxChangeRatio())
                     .isEqualTo(0.6);
-            assertThat(sectionSplitter.enabled()).isTrue();
-            assertThat(documentComposer.enabled()).isTrue();
+            assertThat(docCreationSettings.templateAiAllowed()).isTrue();
+            assertThat(docCreationSettings.pdfMinFontSize())
+                    .isEqualTo(property("modocument.doccreation.pdf-min-font-size"))
+                    .isEqualTo(6);
         });
 
         ParsingProperties parsing = parsingSettings.forBank(bankId);

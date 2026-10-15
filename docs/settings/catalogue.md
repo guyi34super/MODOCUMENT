@@ -99,7 +99,7 @@ Which bank a value is read for:
 | `WebhookAlertChannel`, `EmailAlertChannel` | `alerts.webhook.minSeverity`, `alerts.email.minSeverity` | platform |
 | `MaskingPolicy` | `privacy.masking.screenWorking` | the caller's bank |
 | `ChatEditTableUseCase` | `chatEdit.fullTableMaxChangeRatio` | the caller's bank |
-| `AiSectionSplitter`, `AiDocumentComposer` | `doccreation.sectionAiEnabled`, `doccreation.generateAiEnabled`, AND `ai.enabled` | the caller's bank |
+| `DocCreationSettings` (PDF template upload, generation) | `doccreation.sectionAiEnabled` ("Template AI assistance") AND `ai.enabled`; `doccreation.pdfMinFontSize`. `doccreation.generateAiEnabled` is retired (no consumer since ws31) | the caller's bank |
 | `ParsingSettings.forBank(id)` | `parsing.*` (batch size/concurrency platform-wide) | fresh `ParsingProperties` copy per job; `excelForBank(id)` for the Excel switch |
 | `MappingSettings.forBank(id)` | `mapping.llmFallbackEnabled`, `mapping.confidenceThreshold` | fresh `MappingProperties` copy; `AutoMapUseCase` resolves once per mapping run |
 | `IntegrationSettings` (flow engine: `FlowRunner`, `IntegrationScheduler`, `OutboundDispatcher`, `PayloadBuilder`) | `integration.maxRowsPerRun`, `integration.runTimeout`, `integration.webhookRetryAttempts` | the flow's (or delivery's) bank, per run / per delivery attempt |
@@ -241,6 +241,7 @@ application.yml has exactly one threshold and one window setting
 | `chatEdit.fullTableMaxChangeRatio` | AI & extraction | BANK | OPERATIONAL | DECIMAL | 0.6 | 0.1 – 1 |  |  | `modocument.chat-edit.full-table-max-change-ratio` |
 | `doccreation.sectionAiEnabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | `modocument.doccreation.section-ai-enabled` |
 | `doccreation.generateAiEnabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | `modocument.doccreation.generate-ai-enabled` |
+| `doccreation.pdfMinFontSize` | AI & extraction | BANK | OPERATIONAL | INT | 6 pt | 4 – 10 |  |  | `modocument.doccreation.pdf-min-font-size` |
 | `ai.circuitBreaker.failureThreshold` | AI & extraction | PLATFORM | OPERATIONAL | INT | 5 failures | 1 – 50 |  |  | — (code default) |
 | `ai.circuitBreaker.openDuration` | AI & extraction | PLATFORM | OPERATIONAL | DURATION | 2m | 10s – 30m |  |  | — (code default) |
 | `ai.resultCache.enabled` | AI & extraction | BANK | OPERATIONAL | BOOLEAN | true | true, false |  |  | — (code default) |

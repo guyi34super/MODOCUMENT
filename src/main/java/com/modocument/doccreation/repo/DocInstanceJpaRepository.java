@@ -38,6 +38,12 @@ public interface DocInstanceJpaRepository extends JpaRepository<DocInstance, Int
 
     int countByBlueprintId(int blueprintId);
 
+    /** ws31 DSR scan: one bank's documents that hold values. RLS backs this on PostgreSQL. */
+    List<DocInstance> findByBankIdAndValuesJsonIsNotNull(int bankId);
+
+    /** ws31 legacy purge: every instance (any owner) of one blueprint in one bank. */
+    List<DocInstance> findByBankIdAndBlueprintIdOrderByDocInstanceIdAsc(int bankId, int blueprintId);
+
     /** Retention sweep (ws14): instances idle past the cutoff, content not yet purged. */
     List<DocInstance> findByBankIdAndUpdatedDateBeforeAndContentPurgedAtIsNull(
             int bankId, java.time.LocalDateTime cutoff);

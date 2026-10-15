@@ -136,12 +136,14 @@ The actor columns are not masked.
 | `EXPORT_DOWNLOADED` | Exports | SUCCESS | IngestionJob | **ws28.** An export file was delivered to the caller (file name, format, rows, bytes). `EXPORT_RUN` remains the export log of both export paths. |
 | `EXPORT_BLOCKED` | Exports | — | — | An export above the role cap was refused (no reason given). |
 | `EXPORT_OVER_CAP_WITH_REASON` | Exports | — | — | An export above the cap was allowed with a stated reason. |
-| `DOC_GENERATED` | Documents | SUCCESS | DocInstance | **ws28.** `POST /api/doccreation/instances/{id}/generate` (docx name, PDF ready, composer). |
-| `DOC_DOWNLOADED` | Documents | SUCCESS | DocInstance | **ws28.** `GET /api/doccreation/instances/{id}/download` (format, bytes). |
+| `DOC_GENERATED` | Documents | SUCCESS / FAILED | DocInstance | **ws28, ws31.** `POST /api/doccreation/instances/{id}/generate`: the PDF drawn onto the template (format, exact, addedPages, continued keys). FAILED when the exactness self-check refused the output (500 EXACTNESS_FAILED): exact false, differing pixels, pages, dpi. |
+| `DOC_DOWNLOADED` | Documents | SUCCESS | DocInstance | **ws28.** `GET /api/doccreation/instances/{id}/download` (format — always pdf since ws31 — and bytes). |
 | `DOC_SUBMITTED` | Documents | — | — | A document was submitted for release. |
 | `DOC_RELEASED` | Documents | — | — | A document was released. |
 | `DOC_RELEASE_REJECTED` | Documents | — | — | A release was rejected. |
-| `DOC_BLUEPRINT_VERSION_SAVED` | Documents | SUCCESS | DocBlueprint | **ws29.** A new section-structure version of a blueprint was saved: `PUT /api/doccreation/blueprints/{id}/sections` (hand edit) or `POST …/{id}/resection` (re-run AI) — version, source, section count, note. |
+| `DOC_BLUEPRINT_CREATED` | Documents | SUCCESS | DocBlueprint | **ws31.** A PDF template was uploaded as a DRAFT: `POST /api/doccreation/blueprints` — flow (BLANK / WITH_DATA), pages, proposed regions and removals, detectedBy (CODE / CODE+AI). Never the removed sample values. |
+| `DOC_BLUEPRINT_VERSION_SAVED` | Documents | SUCCESS | DocBlueprint | **ws29, ws31.** A template version was saved: `PUT /api/doccreation/blueprints/{id}/overlay` — version, region, edit and removal counts, whether it confirmed the draft, note. |
+| `DOC_LEGACY_PURGED` | Documents | SUCCESS | Bank | **ws31.** `POST /api/admin/doccreation/purge-legacy`: the caller's bank's Word-based templates were deleted with their documents and stored files — counts of templates, documents and files. |
 | `SENSITIVE_DATA_VIEWED` | Privacy | SUCCESS | IngestionJob / ExtractionJob / AppUserList / DataSubject | **ws28.** Read audit, once per actor, entity and hour: the ingestion job detail, extraction records, the user list, the DSR search. Gated by the bank setting `audit.readAuditEnabled` (on when absent). |
 | `DSR_SEARCH` | Privacy | — | — | A data-subject search was run (counts only). |
 | `DSR_EXPORTED` | Privacy | — | — | A data-subject export was produced. |

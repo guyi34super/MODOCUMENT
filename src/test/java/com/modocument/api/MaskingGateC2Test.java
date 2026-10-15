@@ -3,11 +3,11 @@ package com.modocument.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.modocument.doccreation.dto.AddBlockRequest;
 import com.modocument.doccreation.dto.BlueprintDto;
-import com.modocument.doccreation.dto.GenerationResultDto;
+import com.modocument.doccreation.dto.SaveOverlayRequest;
 import com.modocument.doccreation.usecase.DocBlueprintUseCase;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
+import com.modocument.testsupport.FakePdfTemplateEngine;
 import com.modocument.testsupport.H2ExportTargets;
 import com.modocument.domain.entity.AppUser;
 import com.modocument.domain.entity.Bank;
@@ -25,9 +25,9 @@ import com.modocument.infrastructure.persistence.TemplateFieldsJpaRepository;
 import com.modocument.infrastructure.persistence.TemplateJpaRepository;
 import com.modocument.infrastructure.security.JwtService;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.apache.poi.xwpf.usermodel.IBodyElement;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
-import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,7 +41,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -52,6 +51,7 @@ import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -109,6 +109,8 @@ class MaskingGateC2Test extends IsolatedStorageApiTestSupport {
     private DocBlueprintUseCase blueprints;
     @Autowired
     private DocInstanceUseCase instances;
+    @Autowired
+    private FakePdfTemplateEngine pdfEngine;
 
     private Bank bank;
     private AppUser owner;
@@ -272,34 +274,28 @@ class MaskingGateC2Test extends IsolatedStorageApiTestSupport {
     @Test
     void reportChannelMasksPiiShapesInGeneratedDocuments() throws Exception {
         authenticateAs(owner);
+        pdfEngine.reset();
 
-        BlueprintDto blueprint = blueprints.create(new MockMultipartFile("file", "report.docx",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                blueprintDocx()), "C2 Report", null, null);
-        int instanceId = instances.create(blueprint.blueprintId(), "C2 instance").instanceId();
-        int sectionId = blueprint.sections().get(0).sectionId();
+        BlueprintDto draft = blueprints.create(new MockMultipartFile("file", "report.pdf", "application/pdf",
+                FakePdfTemplateEngine.blankPdf(1, 0)), "C2 Report", null, "BLANK");
+        BlueprintDto blueprint = blueprints.saveOverlay(draft.id(),
+                new SaveOverlayRequest(1, draft.regions(), draft.edits(), null, true));
+        int instanceId = instances.create(blueprint.id(), "C2 instance").id();
+        instances.updateValues(instanceId, Map.of("notes", "Issued to " + RAW_NIC + ", account " + RAW_ACCOUNT
+                + ", contact " + RAW_EMAIL + ", of Curepipe."));
 
-        AddBlockRequest paragraph = new AddBlockRequest();
-        paragraph.setBlockType("PARAGRAPH");
-        paragraph.setText("Issued to " + RAW_NIC + ", account " + RAW_ACCOUNT
-                + ", contact " + RAW_EMAIL + ", of Curepipe.");
-        instances.addBlock(instanceId, sectionId, paragraph);
+        instances.generate(instanceId);
+        Path pdf = STORAGE.resolve("exports").resolve("doccreation-instance" + instanceId + ".pdf");
+        assertThat(pdf).exists();
 
-        GenerationResultDto generated = instances.generate(instanceId);
-        Path docx = STORAGE.resolve("exports").resolve(generated.docxFileName());
-        assertThat(docx).exists();
-
-        String text = String.join("\n", paragraphTexts(Files.readAllBytes(docx)));
+        String text = pdfText(Files.readAllBytes(pdf));
         assertMaskedAndNoRawValues(text, "generated document");
         assertThat(text).contains("Issued to " + MASKED_NIC + ", account " + MASKED_ACCOUNT
                 + ", contact " + MASKED_EMAIL + ", of Curepipe.");
 
-        // The STORED block keeps the user's raw text: masking is render-time
+        // The STORED values keep the user's raw text: masking is render-time
         // only (the builder screen and DSR search still see the true values).
-        assertThat(instances.getBuilder(instanceId).sections().stream()
-                .flatMap(s -> s.blocks().stream())
-                .anyMatch(b -> b.text() != null && b.text().contains(RAW_NIC)))
-                .isTrue();
+        assertThat(instances.get(instanceId).values().get("notes")).contains(RAW_NIC);
     }
 
     // ---- (3+4) SCREENS: READ_ONLY masked, the working wizard raw -------------
@@ -397,32 +393,9 @@ class MaskingGateC2Test extends IsolatedStorageApiTestSupport {
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
     }
 
-    private static byte[] blueprintDocx() throws Exception {
-        try (XWPFDocument doc = new XWPFDocument()) {
-            doc.createParagraph().createRun().setText("C2 Masking Report");
-            XWPFParagraph heading = doc.createParagraph();
-            heading.setStyle("Heading1");
-            heading.createRun().setText("Details");
-            doc.createParagraph().createRun().setText("Standard detail notes.");
-            XWPFParagraph signOff = doc.createParagraph();
-            signOff.setStyle("Heading1");
-            signOff.createRun().setText("Sign-off");
-            doc.createParagraph().createRun().setText("Prepared by the team.");
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            doc.write(out);
-            return out.toByteArray();
-        }
-    }
-
-    private static List<String> paragraphTexts(byte[] docx) throws Exception {
-        try (XWPFDocument doc = new XWPFDocument(new ByteArrayInputStream(docx))) {
-            List<String> texts = new ArrayList<>();
-            for (IBodyElement element : doc.getBodyElements()) {
-                if (element instanceof XWPFParagraph p) {
-                    texts.add(p.getText());
-                }
-            }
-            return texts;
+    private static String pdfText(byte[] pdf) throws Exception {
+        try (PDDocument doc = Loader.loadPDF(pdf)) {
+            return new PDFTextStripper().getText(doc);
         }
     }
 }
