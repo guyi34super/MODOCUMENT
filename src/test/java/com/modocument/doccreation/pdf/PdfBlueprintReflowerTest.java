@@ -217,6 +217,55 @@ class PdfBlueprintReflowerTest {
     }
 
     @Test
+    void letterBoxValuesAreGluedBackIntoWords() throws IOException {
+        Path pdf = write(doc -> page(doc, s -> {
+            text(s, REGULAR, 10, 50, 720, "Name of the applicant as on the identity card");
+            float x = 50;
+            for (char c : "ARJUN RAJESH".toCharArray()) {
+                if (c != ' ') {
+                    text(s, REGULAR, 8, x, 700, String.valueOf(c));
+                }
+                x += 12.5f;
+            }
+        }));
+
+        assertThat(texts(reflower.toDocx(pdf))).contains("ARJUN RAJESH");
+    }
+
+    @Test
+    void aFormPrintedAsAnImageIsReadWithOcrEvenWhenValuesAreText() throws IOException {
+        Path pdf = write(doc -> {
+            PDPage page = new PDPage(PDRectangle.A4);
+            doc.addPage(page);
+            BufferedImage scan = new BufferedImage(600, 840, BufferedImage.TYPE_INT_RGB);
+            var image = org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory.createFromImage(doc, scan);
+            try (PDPageContentStream s = new PDPageContentStream(doc, page)) {
+                s.drawImage(image, 0, 0, page.getMediaBox().getWidth(), page.getMediaBox().getHeight());
+                text(s, REGULAR, 9, 120, 700, "Mehta Textiles Private Limited");
+            }
+        });
+        when(ocr.extractText(any(BufferedImage.class))).thenReturn(
+                "SECTION 1 - BUSINESS DETAILS\nName of the business Mehta Textiles Private Limited\n"
+                        + "Nature of business and the year it was established\n");
+
+        PdfBlueprintReflower.Reflowed result = reflower.toDocx(pdf);
+
+        assertThat(result.ocrPages()).isEqualTo(1);
+        assertThat(texts(result)).contains("SECTION 1 - BUSINESS DETAILS");
+        assertThat(headings(result)).contains("SECTION 1 - BUSINESS DETAILS");
+    }
+
+    @Test
+    void aTextPdfWithoutImagesIsNeverOcrd() throws IOException {
+        Path pdf = write(doc -> page(doc, s ->
+                text(s, REGULAR, 10, 50, 700, "Plain text page with enough characters to count as text.")));
+
+        reflower.toDocx(pdf);
+
+        verify(ocr, never()).extractText(any());
+    }
+
+    @Test
     void textualCuesGiveHeadingLevels() {
         assertThat(cue("3.1 Earthing arrangements")).isEqualTo(2);
         assertThat(cue("Section 4 Security")).isEqualTo(1);
