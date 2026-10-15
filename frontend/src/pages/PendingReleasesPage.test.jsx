@@ -149,10 +149,10 @@ describe('PendingReleasesPage', () => {
     renderPage();
     await screen.findByText('#11 · Compliance report Q3');
 
-    await userEvent.click(screen.getAllByRole('button', { name: 'Download .docx' })[0]);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Download PDF' })[0]);
 
     await waitFor(() =>
-      expect(downloadReviewFile).toHaveBeenCalledWith(11, 'docx', 'Compliance report Q3.docx')
+      expect(downloadReviewFile).toHaveBeenCalledWith(11, 'pdf', 'Compliance report Q3.pdf')
     );
   });
 });

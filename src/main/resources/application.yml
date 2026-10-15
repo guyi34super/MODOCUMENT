@@ -187,7 +187,9 @@ modocument:
       key: ${MODOCUMENT_MFA_KEY:}
       # An ADMIN without activated MFA gets enrollmentRequired at login and
       # cannot obtain an access token until a second factor verifies (B3).
-      require-for-admin: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:false}
+      # On by default (go-live gate B3); docker-compose and the `local`
+      # profile turn it off for development.
+      require-for-admin: ${MODOCUMENT_MFA_REQUIRE_FOR_ADMIN:true}
       # MFA challenge token lifetime (password-to-second-factor window).
       challenge-ttl-minutes: ${MODOCUMENT_MFA_CHALLENGE_TTL_MINUTES:5}
     maker-checker:

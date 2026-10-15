@@ -145,9 +145,6 @@ services:
       PARSING_LLM_BATCH_CONCURRENCY: ${PARSING_LLM_BATCH_CONCURRENCY:-8}
       PARSING_DETERMINISTIC_ENABLED: ${PARSING_DETERMINISTIC_ENABLED:-true}
       EXCEL_LLM_ENABLED: ${EXCEL_LLM_ENABLED:-false}
-      # Document-creation PDF export: LibreOffice ships in the app image, so
-      # the default "soffice" just works; point elsewhere for a custom binary.
-      MODOCUMENT_DOCCREATION_SOFFICE_PATH: ${MODOCUMENT_DOCCREATION_SOFFICE_PATH:-soffice}
       # Empty = the default model above (ws28); set a pinned tag to override.
       MODOCUMENT_CHAT_EDIT_MODEL: ${MODOCUMENT_CHAT_EDIT_MODEL:-}
       # Agentic extraction (schema inference, summaries, record cleaning).
