@@ -1,23 +1,56 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { deleteBlueprint, listBlueprints, uploadBlueprint } from '../api/doccreation';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
-import { Button, Card, ErrorBanner, Field, Spinner, inputClass } from '../components/ui';
+import { Button, Card, ErrorBanner, Field, Spinner, Tag, inputClass } from '../components/ui';
 import { useToast } from '../context/ToastContext';
+
+const FLOWS = [
+  {
+    value: 'BLANK',
+    label: 'Blank template',
+    hint: 'The PDF is empty — it becomes the template exactly as it is.',
+  },
+  {
+    value: 'WITH_DATA',
+    label: 'Filled document — remove the data',
+    hint: 'The PDF is a filled-in example — its data is removed and the rest becomes the template. You review every removal.',
+  },
+  {
+    value: 'AUTO',
+    label: 'Detect automatically',
+    hint: 'MoDocument checks whether the PDF carries filled-in data.',
+  },
+];
+
+/** File names that usually mean a filled-in example rather than a blank form. */
+const FILLED_NAME = /(_filled|specimen|_sample|-sample|_mock)/i;
+
+export function suggestedFlow(fileName) {
+  return FILLED_NAME.test(fileName || '') ? 'WITH_DATA' : 'AUTO';
+}
+
+function isPdf(file) {
+  return /\.pdf$/i.test(file?.name || '') && (!file.type || /pdf/i.test(file.type));
+}
+
+const blueprintId = (row) => row.id ?? row.blueprintId;
 
 export default function BlueprintListPage() {
   const navigate = useNavigate();
   const toast = useToast();
+  const fileErrorId = useId();
   const [blueprints, setBlueprints] = useState(null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
   const [file, setFile] = useState(null);
+  const [fileError, setFileError] = useState('');
   const [name, setName] = useState('');
   const [companyId, setCompanyId] = useState('');
+  const [flow, setFlow] = useState('AUTO');
   const [uploading, setUploading] = useState(false);
-  const [stripSampleData, setStripSampleData] = useState(false);
   // null = "not decided by the user yet": auto-open only for first-time users.
   const [showUpload, setShowUpload] = useState(null);
   const uploadOpen = showUpload ?? (blueprints !== null && blueprints.length === 0);
@@ -38,6 +71,19 @@ export default function BlueprintListPage() {
     load();
   }, [load]);
 
+  const chooseFile = (event) => {
+    const chosen = event.target.files?.[0] || null;
+    if (chosen && !isPdf(chosen)) {
+      setFile(null);
+      setFileError(`“${chosen.name}” is not a PDF. Templates are made from PDF files only.`);
+      event.target.value = '';
+      return;
+    }
+    setFileError('');
+    setFile(chosen);
+    if (chosen) setFlow(suggestedFlow(chosen.name));
+  };
+
   const upload = async (e) => {
     e.preventDefault();
     if (!file) return;
@@ -45,22 +91,24 @@ export default function BlueprintListPage() {
     try {
       const created = await toast.promise(
         () =>
-          uploadBlueprint(
-            file,
-            name.trim() || undefined,
-            companyId.trim() || undefined,
-            stripSampleData
-          ),
+          uploadBlueprint(file, {
+            name: name.trim() || undefined,
+            companyId: companyId.trim() || undefined,
+            flow,
+          }),
         {
-          loading: 'Creating template from your document…',
-          success: (b) =>
-            `Template ready — ${b.sections.length} section${b.sections.length === 1 ? '' : 's'}${
-              b.sectionSource === 'AI' ? ' (AI)' : ''
-            }${stripSampleData ? ' · sample data removed' : ''}`,
+          loading: 'Reading your PDF…',
+          success: (b) => {
+            const fields = b.regions?.length ?? 0;
+            const removed = b.edits?.filter((edit) => edit.kind === 'REMOVE').length ?? 0;
+            return `Template draft ready — ${fields} field${fields === 1 ? '' : 's'} found${
+              b.flow === 'WITH_DATA' ? `, ${removed} value${removed === 1 ? '' : 's'} to remove` : ''
+            }. Review it before saving.`;
+          },
           error: (err) => err.message,
         }
       );
-      navigate(`/creation/blueprints/${created.blueprintId}`);
+      navigate(`/creation/blueprints/${blueprintId(created)}`);
     } catch {
       // The error toast is already shown.
     } finally {
@@ -69,11 +117,11 @@ export default function BlueprintListPage() {
   };
 
   const remove = async (blueprint) => {
-    if (!window.confirm(`Delete blueprint "${blueprint.name}"?`)) return;
+    if (!window.confirm(`Delete template "${blueprint.name}"?`)) return;
     try {
-      await toast.promise(() => deleteBlueprint(blueprint.blueprintId), {
+      await toast.promise(() => deleteBlueprint(blueprintId(blueprint)), {
         loading: 'Deleting…',
-        success: 'Blueprint deleted',
+        success: 'Template deleted',
         error: (err) => err.message,
       });
       load();
@@ -88,14 +136,14 @@ export default function BlueprintListPage() {
         sticky
         crumbs={[{ label: 'Blueprints' }]}
         title="Document Blueprints"
-        subtitle="Upload your company's report — it becomes the fill-in template for new documents"
+        subtitle="Upload a PDF — it becomes an exact, fill-in template for new documents"
         actions={
           <>
             <Button variant="secondary" onClick={load} disabled={refreshing}>
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </Button>
             <Button onClick={() => setShowUpload(!uploadOpen)}>
-              {uploadOpen ? 'Close upload' : 'Upload a blueprint'}
+              {uploadOpen ? 'Close upload' : 'Upload a template'}
             </Button>
           </>
         }
@@ -104,36 +152,23 @@ export default function BlueprintListPage() {
 
       {uploadOpen && (
         <Card className="mb-6">
-          <h2 className="mb-1 text-lg font-normal">Upload a blueprint</h2>
+          <h2 className="mb-1 text-lg font-normal">Upload a template</h2>
           <p className="mb-4 text-sm text-muted">
-            Word (.docx) or PDF (.pdf). A PDF is rebuilt as an editable Word document: its text,
-            headings and filled-in form values are kept, scanned pages are read with OCR, and the
-            layout is simplified. The AI then breaks the template into sections (falling back to
-            its headings when AI is off); each section becomes a place to add paragraphs and
-            pictures, and you can fix the sections afterwards. Generation reproduces the stored
-            Word document with your additions in place.
+            PDF only. The PDF is kept exactly as it is — logo, fonts and layout — and the places to
+            fill in are marked on top of it. You review the fields (and any removed data) before
+            the template is saved.
           </p>
           <form onSubmit={upload} className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <Field label="File">
+              <Field label="PDF file">
                 <input
                   type="file"
                   required
-                  accept=".docx,.pdf"
+                  accept=".pdf,application/pdf"
+                  aria-invalid={fileError ? true : undefined}
+                  aria-describedby={fileError ? fileErrorId : undefined}
                   className="block w-full text-sm text-muted file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-pill file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-accent"
-                  onChange={(e) => {
-                    const chosen = e.target.files[0] || null;
-                    setFile(chosen);
-                    if (chosen?.name) {
-                      const lower = chosen.name.toLowerCase();
-                      setStripSampleData(
-                        lower.includes('_filled') ||
-                          lower.includes('specimen') ||
-                          lower.includes('_sample') ||
-                          lower.includes('_mock')
-                      );
-                    }
-                  }}
+                  onChange={chooseFile}
                 />
               </Field>
               <Field label="Name" hint="Defaults to the file name">
@@ -141,70 +176,112 @@ export default function BlueprintListPage() {
                   className={inputClass}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. PV Survey Report"
+                  placeholder="e.g. Loan application"
                 />
               </Field>
-              <Field label="Company id" hint="Optional — selects a company-specific flow">
+              <Field label="Company id" hint="Optional">
                 <input
                   className={inputClass}
                   value={companyId}
                   onChange={(e) => setCompanyId(e.target.value)}
-                  placeholder="Leave empty for the default flow"
+                  placeholder="Leave empty for the default"
                 />
               </Field>
             </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={stripSampleData}
-                onChange={(e) => setStripSampleData(e.target.checked)}
-              />
-              This file contains sample or filled-in data — strip values and keep the layout
-            </label>
+            {fileError && (
+              <p id={fileErrorId} role="alert" className="text-sm text-danger-ink">
+                {fileError}
+              </p>
+            )}
+            <fieldset>
+              <legend className="mb-2 text-sm font-medium">What kind of PDF is it?</legend>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {FLOWS.map((option) => (
+                  <label
+                    key={option.value}
+                    className={`flex cursor-pointer gap-2 rounded border p-3 text-sm ${
+                      flow === option.value ? 'border-accent bg-pill/40' : 'border-line'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="flow"
+                      value={option.value}
+                      checked={flow === option.value}
+                      onChange={() => setFlow(option.value)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <span className="block font-medium">{option.label}</span>
+                      <span className="block text-xs text-muted">{option.hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <Button type="submit" disabled={uploading || !file}>
-              {uploading ? 'Creating template…' : 'Create template from document'}
+              {uploading ? 'Reading the PDF…' : 'Upload and review'}
             </Button>
           </form>
         </Card>
       )}
 
-      <h2 className="mb-3 text-base font-medium">Blueprints</h2>
+      <h2 className="mb-3 text-base font-medium">Templates</h2>
       {!blueprints ? (
         <Spinner />
       ) : (
         <DataTable
+          caption="Document templates"
           columns={[
             {
               key: 'name',
               label: 'Name',
               render: (row) => (
-                <Link to={`/creation/blueprints/${row.blueprintId}`} className="text-accent hover:underline">
+                <Link to={`/creation/blueprints/${blueprintId(row)}`} className="text-accent hover:underline">
                   {row.name}
                 </Link>
               ),
             },
-            { key: 'sectionCount', label: 'Sections' },
+            {
+              key: 'status',
+              label: 'Status',
+              render: (row) =>
+                row.status === 'READY' ? (
+                  <Tag tone="success">Ready</Tag>
+                ) : (
+                  <Tag tone="warning" title="Review and confirm it before creating documents">
+                    Draft
+                  </Tag>
+                ),
+            },
             {
               key: 'currentVersion',
               label: 'Version',
               render: (row) => `v${row.currentVersion ?? 1}`,
             },
-            { key: 'instanceCount', label: 'Documents' },
-            { key: 'companyId', label: 'Company', render: (row) => row.companyId || '—' },
-            { key: 'flowKey', label: 'Flow' },
+            { key: 'pageCount', label: 'Pages', render: (row) => row.pageCount ?? '—' },
+            { key: 'documentCount', label: 'Documents', render: (row) => row.documentCount ?? 0 },
             {
               key: 'actions',
               label: '',
               render: (row) => (
-                <Button variant="secondary" size="sm" onClick={() => remove(row)}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  aria-label={`Delete ${row.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    remove(row);
+                  }}
+                >
                   Delete
                 </Button>
               ),
             },
           ]}
           rows={blueprints}
-          emptyMessage="No blueprints yet — upload your company's report to get started."
-          onRowClick={(row) => navigate(`/creation/blueprints/${row.blueprintId}`)}
+          emptyMessage="No templates yet — upload a PDF to get started."
+          onRowClick={(row) => navigate(`/creation/blueprints/${blueprintId(row)}`)}
         />
       )}
     </div>
