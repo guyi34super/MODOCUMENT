@@ -72,6 +72,12 @@ public class PdfBlueprintReflower {
     /** Fewer visible characters than this on a page means "scanned". */
     static final int MIN_TEXT_CHARS = 20;
     static final double GARBLED_RATIO = 0.30;
+    /** A page image covering this share of the page means "the form itself is a picture". */
+    static final double IMAGE_PAGE_SHARE = 0.40;
+    /** This many filled paths on a page usually means text drawn as outlines. */
+    static final int OUTLINED_TEXT_FILLS = 400;
+    /** OCR must find this many times the text layer's characters to replace it. */
+    static final double OVERLAY_OCR_GAIN = 1.5;
     static final int MAX_HEADING_LEVEL = 6;
     private static final int MAX_HEADING_CHARS = 120;
     private static final int MAX_CUE_CHARS = 80;
@@ -188,6 +194,19 @@ public class PdfBlueprintReflower {
             List<Segment> segments = extractSegments(document, pageIndex);
             segments = mergeFields(segments, fieldsByPage.getOrDefault(pageIndex, List.of()));
             String pageText = joinText(segments);
+            if (ocrPages < MAX_OCR_PAGES && visibleChars(pageText) >= MIN_TEXT_CHARS && !garbled(pageText)
+                    && looksPrintedAsGraphics(page)) {
+                // A scanned or outlined form with typed-in values on top: the
+                // text layer holds only the values. OCR reads the printed form
+                // too; use it when it clearly found more.
+                List<Line> ocrLines = ocrPage(document, pageIndex);
+                int ocrChars = ocrLines.stream().mapToInt(l -> visibleChars(l.text())).sum();
+                if (ocrChars >= visibleChars(pageText) * OVERLAY_OCR_GAIN + MIN_TEXT_CHARS) {
+                    ocrPages++;
+                    lines.addAll(ocrLines);
+                    continue;
+                }
+            }
             if (visibleChars(pageText) < MIN_TEXT_CHARS || garbled(pageText)) {
                 if (ocrPages < MAX_OCR_PAGES) {
                     List<Line> ocrLines = ocrPage(document, pageIndex);
@@ -296,10 +315,18 @@ public class PdfBlueprintReflower {
             float size = 0;
             int chars = 0;
             int boldChars = 0;
+            float letterPitch = letterSpacedPitch(piece);
+            float previousStart = Float.NaN;
             for (List<TextPosition> word : piece) {
-                if (!text.isEmpty()) {
+                float start = word.get(0).getXDirAdj();
+                // Letter-box ("comb") values arrive one glyph per word:
+                // glue the letters, keep a space only where a box was left empty.
+                boolean glue = letterPitch > 0 && !Float.isNaN(previousStart)
+                        && start - previousStart <= letterPitch * 1.5f;
+                if (!text.isEmpty() && !glue) {
                     text.append(' ');
                 }
+                previousStart = start;
                 for (TextPosition position : word) {
                     text.append(position.getUnicode());
                     x0 = Math.min(x0, position.getXDirAdj());
@@ -316,6 +343,26 @@ public class PdfBlueprintReflower {
             }
             return new Segment(text.toString().replaceAll("\\s+", " ").strip(), x0, x1, y,
                     height <= 0 ? size : height, size, chars > 0 && boldChars >= chars * 0.8, false);
+        }
+
+        /**
+         * The typical start-to-start distance of a letter-spaced piece (most
+         * "words" a single glyph, at least four of them), or 0 for normal text.
+         */
+        static float letterSpacedPitch(List<List<TextPosition>> piece) {
+            if (piece.size() < 4) {
+                return 0;
+            }
+            long singles = piece.stream().filter(w -> w.size() == 1).count();
+            if (singles < piece.size() * 0.8) {
+                return 0;
+            }
+            List<Float> pitches = new ArrayList<>();
+            for (int i = 1; i < piece.size(); i++) {
+                pitches.add(piece.get(i).get(0).getXDirAdj() - piece.get(i - 1).get(0).getXDirAdj());
+            }
+            pitches.sort(Float::compare);
+            return pitches.get(pitches.size() / 4);
         }
     }
 
@@ -577,6 +624,87 @@ public class PdfBlueprintReflower {
     }
 
     // ------------------------------------------------------------------- OCR
+
+    /** Whether the page's printed content is mostly an image or outlined glyphs rather than text. */
+    static boolean looksPrintedAsGraphics(PDPage page) {
+        try {
+            GraphicsProbe probe = new GraphicsProbe(page);
+            probe.processPage(page);
+            PDRectangle box = page.getCropBox();
+            double pageArea = Math.max(1.0, (double) box.getWidth() * box.getHeight());
+            return probe.imageArea / pageArea >= IMAGE_PAGE_SHARE || probe.fills >= OUTLINED_TEXT_FILLS;
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Sums the area images are drawn at and counts path fills; draws nothing. */
+    private static final class GraphicsProbe extends org.apache.pdfbox.contentstream.PDFGraphicsStreamEngine {
+        double imageArea;
+        int fills;
+
+        GraphicsProbe(PDPage page) {
+            super(page);
+        }
+
+        @Override
+        public void drawImage(org.apache.pdfbox.pdmodel.graphics.image.PDImage image) {
+            org.apache.pdfbox.util.Matrix ctm = getGraphicsState().getCurrentTransformationMatrix();
+            imageArea += Math.abs((double) ctm.getScalingFactorX() * ctm.getScalingFactorY());
+        }
+
+        @Override
+        public void fillPath(int windingRule) {
+            fills++;
+        }
+
+        @Override
+        public void fillAndStrokePath(int windingRule) {
+            fills++;
+        }
+
+        @Override
+        public void appendRectangle(java.awt.geom.Point2D p0, java.awt.geom.Point2D p1,
+                                    java.awt.geom.Point2D p2, java.awt.geom.Point2D p3) {
+        }
+
+        @Override
+        public void clip(int windingRule) {
+        }
+
+        @Override
+        public void moveTo(float x, float y) {
+        }
+
+        @Override
+        public void lineTo(float x, float y) {
+        }
+
+        @Override
+        public void curveTo(float x1, float y1, float x2, float y2, float x3, float y3) {
+        }
+
+        @Override
+        public java.awt.geom.Point2D getCurrentPoint() {
+            return new java.awt.geom.Point2D.Float();
+        }
+
+        @Override
+        public void closePath() {
+        }
+
+        @Override
+        public void endPath() {
+        }
+
+        @Override
+        public void strokePath() {
+        }
+
+        @Override
+        public void shadingFill(org.apache.pdfbox.cos.COSName shadingName) {
+        }
+    }
 
     private List<Line> ocrPage(PDDocument document, int pageIndex) {
         String text;

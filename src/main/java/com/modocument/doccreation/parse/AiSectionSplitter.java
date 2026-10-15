@@ -351,32 +351,47 @@ public class AiSectionSplitter {
             log.info("AI section breakdown found no sections; using the heuristic parser");
             return Optional.empty();
         }
-        List<ParsedSection> sections = new ArrayList<>();
-        int previousAnchor = -1;
+        // Entries are checked one by one: a bad index or a repeat drops that
+        // entry, and the rest are put in document order. Only a reply that is
+        // mostly wrong is rejected as a whole.
+        java.util.TreeMap<Integer, AiSection> byAnchor = new java.util.TreeMap<>();
+        List<String> dropped = new ArrayList<>();
         for (AiSection section : reply) {
             if (section == null || section.anchorIndex() == null) {
-                return invalid("a section without an anchorIndex");
+                dropped.add("a section without an anchorIndex");
+                continue;
             }
             int anchor = section.anchorIndex();
-            if (anchor <= previousAnchor) {
-                return invalid("anchors out of order (" + anchor + " after " + previousAnchor + ")");
-            }
             if (anchor < 0 || anchor >= elements.size()
                     || !(elements.get(anchor) instanceof XWPFParagraph paragraph)) {
-                return invalid("anchorIndex " + anchor + " is not a paragraph of the document");
+                dropped.add("anchorIndex " + anchor + " is not a paragraph of the document");
+                continue;
             }
-            String paragraphText = paragraph.getText() == null ? "" : paragraph.getText().strip();
-            if (paragraphText.isEmpty()) {
-                return invalid("anchorIndex " + anchor + " points at an empty paragraph");
+            if (paragraph.getText() == null || paragraph.getText().isBlank()) {
+                dropped.add("anchorIndex " + anchor + " points at an empty paragraph");
+                continue;
             }
+            if (byAnchor.putIfAbsent(anchor, section) != null) {
+                dropped.add("anchorIndex " + anchor + " used twice");
+            }
+        }
+        if (byAnchor.isEmpty() || byAnchor.size() * 2 < reply.size()) {
+            return invalid(dropped.isEmpty() ? "no usable sections" : String.join("; ", dropped));
+        }
+        if (!dropped.isEmpty()) {
+            log.info("AI section breakdown: ignored {} of {} entries ({})", dropped.size(), reply.size(),
+                    String.join("; ", dropped));
+        }
+        List<ParsedSection> sections = new ArrayList<>();
+        byAnchor.forEach((anchor, section) -> {
+            String paragraphText = ((XWPFParagraph) elements.get(anchor)).getText().strip();
             String title = section.title() == null || section.title().isBlank()
                     ? paragraphText : section.title().strip();
             int level = section.headingLevel() == null ? 1
                     : Math.max(1, Math.min(9, section.headingLevel()));
             sections.add(new ParsedSection(sections.size(), truncate(title), level, anchor,
                     truncate(paragraphText), mergeKeywords(section.keywords(), title)));
-            previousAnchor = anchor;
-        }
+        });
         return Optional.of(sections);
     }
 

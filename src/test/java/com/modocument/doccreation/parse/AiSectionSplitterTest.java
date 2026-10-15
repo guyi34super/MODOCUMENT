@@ -99,15 +99,26 @@ class AiSectionSplitterTest {
     }
 
     @Test
-    void rejectsOutOfOrderOrDuplicateAnchors() {
+    void putsOutOfOrderAnchorsInDocumentOrderAndDropsRepeats() {
         aiReturns(List.of(
                 new AiSectionSplitter.AiSection(4, "DC Routing", 1, List.of()),
                 new AiSectionSplitter.AiSection(1, "Roof", 1, List.of())));
-        assertThat(splitter.split(docx)).isEmpty();
+        assertThat(splitter.split(docx)).hasValueSatisfying(sections -> assertThat(sections)
+                .extracting(ParsedSection::anchorParagraphIndex).containsExactly(1, 4));
 
         aiReturns(List.of(
                 new AiSectionSplitter.AiSection(1, "Roof", 1, List.of()),
                 new AiSectionSplitter.AiSection(1, "Roof again", 1, List.of())));
+        assertThat(splitter.split(docx)).hasValueSatisfying(sections -> assertThat(sections)
+                .extracting(ParsedSection::title).containsExactly("Roof"));
+    }
+
+    @Test
+    void aMostlyWrongReplyIsRejectedAsAWhole() {
+        aiReturns(List.of(
+                new AiSectionSplitter.AiSection(1, "Roof", 1, List.of()),
+                new AiSectionSplitter.AiSection(3, "A table", 1, List.of()),
+                new AiSectionSplitter.AiSection(99, "Out of range", 1, List.of())));
         assertThat(splitter.split(docx)).isEmpty();
     }
 
