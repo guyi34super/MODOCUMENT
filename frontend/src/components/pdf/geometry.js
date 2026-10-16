@@ -8,7 +8,7 @@ export const KEY_STEP = 0.005;
 /** Below this confidence a proposal is flagged for review. */
 export const LOW_CONFIDENCE = 0.6;
 
-export const REGION_KINDS = ['TEXT', 'MULTILINE', 'DATE', 'NUMBER', 'CHECKBOX', 'IMAGE', 'SIGNATURE'];
+export const REGION_KINDS = ['TEXT', 'MULTILINE', 'DATE', 'NUMBER', 'CHOICE', 'CHECKBOX', 'IMAGE', 'SIGNATURE'];
 export const ALIGNS = ['LEFT', 'CENTER', 'RIGHT'];
 
 export const KIND_LABELS = {
@@ -16,6 +16,7 @@ export const KIND_LABELS = {
   MULTILINE: 'Multi-line text',
   DATE: 'Date',
   NUMBER: 'Number',
+  CHOICE: 'Dropdown',
   CHECKBOX: 'Checkbox',
   IMAGE: 'Photo / image',
   SIGNATURE: 'Signature',
@@ -27,6 +28,7 @@ export const KIND_COLORS = {
   MULTILINE: '#5e35b1',
   DATE: '#00897b',
   NUMBER: '#0277bd',
+  CHOICE: '#6d4c41',
   CHECKBOX: '#2e7d32',
   IMAGE: '#ef6c00',
   SIGNATURE: '#ad1457',
@@ -162,7 +164,7 @@ const LINE_HEIGHT_EM = 1.2;
  * authority.
  */
 export function textCapacity(region, page, minFontSize = 6) {
-  if (!page || !['TEXT', 'MULTILINE', 'DATE', 'NUMBER'].includes(region.kind)) return Infinity;
+  if (!page || !['TEXT', 'MULTILINE', 'DATE', 'NUMBER', 'CHOICE'].includes(region.kind)) return Infinity;
   const size = displaySize(page);
   const widthPt = region.fw * size.width;
   const heightPt = region.fh * size.height;
@@ -188,4 +190,134 @@ export function estimateOverflow(region, value, page, minFontSize = 6) {
     .split('\n')
     .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / perLine)), 0);
   return usedLines * perLine > capacity;
+}
+
+// ------------------------------------------------- arranging several boxes
+
+/** Arrow-key steps: Alt = fine, plain = KEY_STEP, Shift = coarse. */
+export const NUDGE_STEPS = { fine: 0.001, normal: KEY_STEP, coarse: 0.025 };
+
+const withBox = (item, box) => ({ ...item, ...clampBox(box) });
+
+/**
+ * The boxes lined up on one `edge` of their common bounds: left | hcenter |
+ * right (horizontal) or top | vcenter | bottom (vertical). Sizes never
+ * change; the result keeps the input order and every other property.
+ */
+export function alignBoxes(boxes, edge) {
+  if (boxes.length < 2) return boxes.map((b) => ({ ...b }));
+  const left = Math.min(...boxes.map((b) => b.fx));
+  const right = Math.max(...boxes.map((b) => b.fx + b.fw));
+  const top = Math.min(...boxes.map((b) => b.fy));
+  const bottom = Math.max(...boxes.map((b) => b.fy + b.fh));
+  return boxes.map((b) => {
+    let { fx, fy } = b;
+    if (edge === 'left') fx = left;
+    else if (edge === 'right') fx = right - b.fw;
+    else if (edge === 'hcenter') fx = (left + right) / 2 - b.fw / 2;
+    else if (edge === 'top') fy = top;
+    else if (edge === 'bottom') fy = bottom - b.fh;
+    else if (edge === 'vcenter') fy = (top + bottom) / 2 - b.fh / 2;
+    else throw new Error(`Unknown edge: ${edge}`);
+    return withBox(b, { fx, fy, fw: b.fw, fh: b.fh });
+  });
+}
+
+/**
+ * The boxes spread evenly along `axis` ('x' = horizontally, 'y' =
+ * vertically): the first and last stay put and the gaps between
+ * neighbours become equal. Needs three boxes; fewer come back unchanged.
+ */
+export function distribute(boxes, axis) {
+  if (boxes.length < 3) return boxes.map((b) => ({ ...b }));
+  const pos = axis === 'x' ? 'fx' : 'fy';
+  const size = axis === 'x' ? 'fw' : 'fh';
+  const order = boxes.map((b, i) => ({ b, i })).sort((a, c) => a.b[pos] - c.b[pos] || a.i - c.i);
+  const first = order[0].b;
+  const last = order[order.length - 1].b;
+  const span = last[pos] + last[size] - first[pos];
+  const sizes = order.reduce((sum, { b }) => sum + b[size], 0);
+  const gap = (span - sizes) / (order.length - 1);
+  const result = boxes.map((b) => ({ ...b }));
+  let cursor = first[pos];
+  for (const { b, i } of order) {
+    result[i] = withBox(b, { ...b, [pos]: cursor });
+    cursor += b[size] + gap;
+  }
+  return result;
+}
+
+/**
+ * The boxes given the width ('width'), height ('height') or both ('both')
+ * of `refBox` (default: the first box). Each keeps its top-left corner.
+ */
+export function matchSize(boxes, dim, refBox = boxes[0]) {
+  if (!refBox) return [];
+  return boxes.map((b) =>
+    withBox(b, {
+      fx: b.fx,
+      fy: b.fy,
+      fw: dim === 'width' || dim === 'both' ? refBox.fw : b.fw,
+      fh: dim === 'height' || dim === 'both' ? refBox.fh : b.fh,
+    })
+  );
+}
+
+/** Grid step and pull distance of the Snap option (page fractions). */
+export const SNAP_GRID = 0.01;
+export const SNAP_THRESHOLD = 0.006;
+
+/** The closest of `lines` to any of `anchors` within `threshold`: { delta, at } or null. */
+function nearest(anchors, lines, threshold) {
+  let best = null;
+  for (const anchor of anchors) {
+    for (const line of lines) {
+      const delta = line - anchor;
+      if (Math.abs(delta) <= threshold && (!best || Math.abs(delta) < Math.abs(best.delta))) {
+        best = { delta, at: line };
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Snaps a box being moved (`mode` 'move') or resized from a corner
+ * (`mode` 'nw' | 'ne' | 'sw' | 'se') to the edges and centres of `others`,
+ * else to the `grid`. Returns `{ box, guides }`, where each guide is
+ * `{ axis: 'x' | 'y', at }`: a vertical (x) or horizontal (y) line the box
+ * snapped to, for drawing. Grid snaps draw no guide.
+ */
+export function snapBox(box, others = [], { grid = SNAP_GRID, threshold = SNAP_THRESHOLD, mode = 'move' } = {}) {
+  const guides = [];
+  const xLines = others.flatMap((o) => [o.fx, o.fx + o.fw / 2, o.fx + o.fw]);
+  const yLines = others.flatMap((o) => [o.fy, o.fy + o.fh / 2, o.fy + o.fh]);
+  const toGrid = (value) => (grid > 0 ? Math.round(value / grid) * grid - value : 0);
+  const pull = (anchors, lines, axis, gridAnchor) => {
+    const hit = nearest(anchors, lines, threshold);
+    if (hit) {
+      guides.push({ axis, at: round(hit.at) });
+      return hit.delta;
+    }
+    const delta = toGrid(gridAnchor);
+    return Math.abs(delta) <= threshold ? delta : 0;
+  };
+
+  let left = box.fx;
+  let top = box.fy;
+  let right = box.fx + box.fw;
+  let bottom = box.fy + box.fh;
+  if (mode === 'move') {
+    const dx = pull([left, (left + right) / 2, right], xLines, 'x', left);
+    const dy = pull([top, (top + bottom) / 2, bottom], yLines, 'y', top);
+    return { box: { ...box, ...clampBox({ fx: left + dx, fy: top + dy, fw: box.fw, fh: box.fh }) }, guides };
+  }
+  if (mode.includes('w')) left += pull([left], xLines, 'x', left);
+  if (mode.includes('e')) right += pull([right], xLines, 'x', right);
+  if (mode.includes('n')) top += pull([top], yLines, 'y', top);
+  if (mode.includes('s')) bottom += pull([bottom], yLines, 'y', bottom);
+  return {
+    box: { ...box, ...clampBox({ fx: left, fy: top, fw: right - left, fh: bottom - top }) },
+    guides,
+  };
 }

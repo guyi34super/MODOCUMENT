@@ -15,6 +15,7 @@ import {
   saveValues,
   submitInstance,
   uploadImages,
+  validateInstance,
 } from '../api/doccreation';
 
 vi.mock('../api/doccreation', () => ({
@@ -30,6 +31,12 @@ vi.mock('../api/doccreation', () => ({
   saveValues: vi.fn(),
   submitInstance: vi.fn(),
   uploadImages: vi.fn(),
+  validateInstance: vi.fn(),
+}));
+
+vi.mock('../api/docRules', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getRules: vi.fn(() => Promise.resolve({ revision: 0, rules: [], fields: [], ruleTypes: [] })),
 }));
 
 const PAGE = { width: 600, height: 800, rotation: 0 };
@@ -289,7 +296,10 @@ describe('DocBuilderPage (WYSIWYG builder)', () => {
     expect(fetchedPaths()).toContain('/api/doccreation/instances/5/pages/1?dpi=110');
   });
 
-  it('saves pending values, then generates and reports added pages and exactness', async () => {
+  it('saves pending values and validates (Save), then generates and reports added pages and exactness', async () => {
+    validateInstance.mockImplementation(async () =>
+      doc({ status: 'VALIDATED', values: { ...doc().values, full_name: 'Jane!' }, validation: { state: 'VALIDATED', checked: true, errors: [], warnings: [] } })
+    );
     generateInstance.mockResolvedValue({
       pdfReady: true,
       addedPages: 1,
@@ -301,18 +311,24 @@ describe('DocBuilderPage (WYSIWYG builder)', () => {
     await ready();
 
     await userEvent.type(onPage().getByLabelText('Full name'), '!');
+    // A draft cannot be generated: Save first (it sends the pending value, then validates).
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Generate' })).toBeEnabled());
     await userEvent.click(screen.getByRole('button', { name: 'Generate' }));
 
     expect(saveValues).toHaveBeenCalledWith('5', { full_name: 'Jane!' });
-    expect(saveValues.mock.invocationCallOrder[0]).toBeLessThan(generateInstance.mock.invocationCallOrder[0]);
+    expect(saveValues.mock.invocationCallOrder[0]).toBeLessThan(validateInstance.mock.invocationCallOrder[0]);
+    expect(validateInstance.mock.invocationCallOrder[0]).toBeLessThan(generateInstance.mock.invocationCallOrder[0]);
     expect(generateInstance).toHaveBeenCalledWith('5');
     expect(
       await screen.findByText('PDF generated — 1 page added for text that did not fit (Notes) · layout verified exact')
     ).toBeInTheDocument();
   });
 
-  it('downloads the PDF', async () => {
+  it('downloads the PDF of a validated document', async () => {
     downloadInstance.mockResolvedValue(undefined);
+    getInstance.mockResolvedValue(doc({ status: 'VALIDATED' }));
     renderPage();
     await ready();
 

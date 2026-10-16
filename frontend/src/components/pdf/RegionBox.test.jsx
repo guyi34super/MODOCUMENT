@@ -101,6 +101,43 @@ describe('RegionBox', () => {
     expect(onDelete).toHaveBeenCalled();
   });
 
+  it('hands the arrows to an editor (onNudge) and passes the event to onSelect', () => {
+    const onNudge = vi.fn();
+    const onChange = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <Overlay>
+        <RegionBox box={BOX} label="Full name" editable onNudge={onNudge} onChange={onChange} onSelect={onSelect} />
+      </Overlay>
+    );
+    const box = screen.getByRole('button', { name: 'Full name' });
+    fireEvent.keyDown(box, { key: 'ArrowRight', shiftKey: true });
+    expect(onNudge).toHaveBeenCalledWith(expect.objectContaining({ key: 'ArrowRight', shiftKey: true }));
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true });
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ shiftKey: true }));
+  });
+
+  it('snaps a drag and reports the guides while dragging', () => {
+    const onChange = vi.fn();
+    const onGuides = vi.fn();
+    const snap = vi.fn((box) => ({ box: { ...box, fx: 0.5 }, guides: [{ axis: 'x', at: 0.5 }] }));
+    render(
+      <Overlay>
+        <RegionBox box={BOX} label="Full name" editable selected snap={snap} onGuides={onGuides} onChange={onChange} />
+      </Overlay>
+    );
+    const box = screen.getByRole('button', { name: 'Full name' });
+    fireEvent.pointerDown(box, { clientX: 150, clientY: 210, button: 0 });
+    fireEvent.pointerMove(box, { clientX: 540, clientY: 210 });
+    expect(snap).toHaveBeenCalledWith(expect.objectContaining({ fx: 0.49 }), 'move');
+    expect(onGuides).toHaveBeenLastCalledWith([{ axis: 'x', at: 0.5 }]);
+    expect(box.style.left).toBe('50%');
+    fireEvent.pointerUp(box);
+    expect(onGuides).toHaveBeenLastCalledWith([]);
+    expect(onChange).toHaveBeenCalledWith({ fx: 0.5, fy: 0.2, fw: 0.3, fh: 0.05 });
+  });
+
   it('only selects (no move) when not editable', () => {
     const onChange = vi.fn();
     const onSelect = vi.fn();

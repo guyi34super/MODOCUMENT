@@ -112,4 +112,34 @@ describe('DocInstancesPage', () => {
       '/creation/blueprints'
     );
   });
+
+  it('filters the documents by status and shows the Validated badge', async () => {
+    listInstances.mockResolvedValue([
+      { instanceId: 7, title: 'Loan — Jane', blueprintName: 'Loan form', status: 'VALIDATED', pageCount: 4, lastGeneratedDate: null },
+      { instanceId: 8, title: 'Loan — Joe', blueprintName: 'Loan form', status: 'RELEASED', pageCount: 4, lastGeneratedDate: null },
+    ]);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'My documents' });
+    expect(listInstances).toHaveBeenLastCalledWith({});
+    const badge = within(table).getByText('VALIDATED');
+    expect(badge.className).toContain('bg-teal-100');
+    expect(badge.className).not.toBe(within(table).getByText('RELEASED').className);
+
+    const filter = screen.getByLabelText('Status');
+    expect(within(filter).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'All',
+      'Draft',
+      'Validated',
+      'Generated',
+      'Submitted',
+      'Released',
+    ]);
+    listInstances.mockResolvedValue([]);
+    await userEvent.selectOptions(filter, 'VALIDATED');
+    await waitFor(() => expect(listInstances).toHaveBeenLastCalledWith({ status: 'VALIDATED' }));
+    expect(await screen.findByText('No validated documents.')).toBeInTheDocument();
+    // An empty filtered list does not open the "New document" form.
+    expect(screen.queryByRole('heading', { name: 'New document' })).not.toBeInTheDocument();
+  });
 });

@@ -94,8 +94,13 @@ export function createInstance(blueprintId, title) {
   return api.post(`${BASE}/instances`, { blueprintId, title });
 }
 
-export function listInstances(blueprintId) {
-  return api.get(`${BASE}/instances${query({ blueprintId })}`);
+/**
+ * My documents (InstanceSummaryDto[]). Filters: `blueprintId`, `status` (DRAFT, VALIDATED,
+ * GENERATED, SUBMITTED, RELEASED). A bare number is read as the blueprint id.
+ */
+export function listInstances(filters = {}) {
+  const { blueprintId, status } = typeof filters === 'object' && filters !== null ? filters : { blueprintId: filters };
+  return api.get(`${BASE}/instances${query({ blueprintId, status })}`);
 }
 
 export function getInstance(id) {
@@ -143,6 +148,15 @@ export function renameInstance(id, title) {
 
 export function deleteInstance(id) {
   return api.del(`${BASE}/instances/${id}`);
+}
+
+/**
+ * Validates the document (built-in checks plus the blueprint's field rules): VALIDATED when
+ * there are no errors, otherwise it stays (or goes back to) DRAFT. Resolves to the InstanceDto
+ * with `validation` filled in (field-validation contract §4.2).
+ */
+export function validateInstance(id) {
+  return api.post(`${BASE}/instances/${id}/validate`);
 }
 
 // ---------------------------------------------------------------- generation

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   blueprintPagePath,
   deleteImage,
@@ -7,38 +7,44 @@ import {
   generateInstance,
   getInstance,
   imageContentPath,
-  instancePagePath,
   placeImage,
   saveOverlay,
-  saveValues,
   submitInstance,
   upgradeInstance,
   uploadImages,
+  validateInstance,
 } from '../api/doccreation';
 import PageHeader from '../components/PageHeader';
 import AuthedImage from '../components/AuthedImage';
 import Modal from '../components/Modal';
 import { Badge, Button, Callout, Card, ErrorBanner, Spinner, Tag, inputClass } from '../components/ui';
+import PhotoBox, { startPhotoDrag } from '../components/doc/PhotoBox';
+import PreviewDialog from '../components/doc/PreviewDialog';
+import RegionInput from '../components/doc/RegionInput';
+import useAutosave from '../components/doc/useAutosave';
+import IssuesPanel from '../components/doc/IssuesPanel';
+import { PHOTO_KINDS, fieldLabel } from '../components/doc/fields';
+import { NOT_VALIDATED_TEXT, isBlank, liveHints, serverIssues } from '../components/doc/validation';
 import { useToast } from '../context/ToastContext';
 import useUnsavedGuard from '../hooks/useUnsavedGuard';
 import PageView from '../components/pdf/PageView';
 import ThumbnailStrip from '../components/pdf/ThumbnailStrip';
 import RegionBox, { boxStyle } from '../components/pdf/RegionBox';
 import DrawLayer from '../components/pdf/DrawLayer';
-import RegionPropertiesPanel, { keyProblem } from '../components/pdf/RegionPropertiesPanel';
+import RegionPropertiesPanel, { fieldProblem } from '../components/pdf/RegionPropertiesPanel';
+import EditorToolbar, { DeleteFieldsDialog, MarqueeLayer, SnapGuides } from '../components/pdf/EditorToolbar';
+import FieldList, { reorderPage } from '../components/pdf/FieldList';
+import useOverlayEditor from '../components/pdf/useOverlayEditor';
+import useFieldRules from '../components/rules/useFieldRules';
+import useRequiredToggle from '../components/rules/useRequiredToggle';
 import { KIND_COLORS, KIND_LABELS, displaySize, estimateOverflow } from '../components/pdf/geometry';
 import FillFromDataDialog from '../components/records/FillFromDataDialog';
 import { newRegion, toRegionDto, withUid } from '../components/records/layoutDraft';
 
-/** How long typing pauses before the values are saved. */
-export const AUTOSAVE_MS = 600;
-const PHOTO_MIME = 'application/x-modoc-image';
+export { AUTOSAVE_MS } from '../components/doc/useAutosave';
 const PHOTO_EXT = /\.(png|jpe?g|gif|bmp)$/i;
-const PHOTO_KINDS = new Set(['IMAGE', 'SIGNATURE']);
 const OVERFLOW_TEXT = 'Will continue on an added page';
 const DRAW_HINT = 'Draw a new field: drag on the page, or press Enter to add one in the centre';
-
-const fieldLabel = (region) => region.label?.trim() || region.key;
 
 /** CSS px for a region's text: its own size, or a fit to the box ("auto"), scaled to the page. */
 function fontPx(region, page, scale) {
@@ -47,166 +53,13 @@ function fontPx(region, page, scale) {
   return Math.max(7, (region.fontSize > 0 ? region.fontSize : auto) * scale);
 }
 
-function photoIdFrom(event) {
-  const data = event.dataTransfer;
-  if (!data) return null;
-  const raw = data.getData(PHOTO_MIME) || data.getData('text/plain');
-  const idValue = Number(raw);
-  return Number.isFinite(idValue) && raw !== '' ? idValue : null;
-}
-
-function startPhotoDrag(event, image) {
-  event.dataTransfer.setData(PHOTO_MIME, String(image.id));
-  event.dataTransfer.setData('text/plain', String(image.id));
-  event.dataTransfer.effectAllowed = 'move';
-}
-
-/** A drop target for a photo: the photo placed in the box, or a hint. */
-function PhotoBox({ instanceId, region, image, locked, onPlace, onFocus, active }) {
-  const [over, setOver] = useState(false);
-  const label = fieldLabel(region);
-  return (
-    <div
-      role="group"
-      aria-label={`${label} — photo box`}
-      data-testid={`photo-box-${region.key}`}
-      className={`flex h-full w-full items-center justify-center overflow-hidden border-2 border-dashed text-center ${
-        over ? 'border-accent bg-pill/70' : 'border-orange-500/70 bg-orange-50/40'
-      } ${active ? 'ring-2 ring-accent' : ''}`}
-      onDragOver={(event) => {
-        if (locked) return;
-        event.preventDefault();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setOver(false);
-        if (locked) return;
-        const imageId = photoIdFrom(event);
-        if (imageId != null && imageId !== image?.id) onPlace(imageId, region.key);
-      }}
-      onFocus={onFocus}
-    >
-      {image ? (
-        <div
-          draggable={!locked}
-          onDragStart={(event) => startPhotoDrag(event, image)}
-          className="h-full w-full"
-          title={`${image.originalName} — drag onto another photo box to swap`}
-        >
-          <AuthedImage
-            path={imageContentPath(instanceId, image.id)}
-            alt={`${label}: ${image.originalName}`}
-            className="h-full w-full object-contain"
-          />
-        </div>
-      ) : (
-        <span className="px-1 text-[10px] leading-tight text-orange-900">Drop a photo here</span>
-      )}
-    </div>
-  );
-}
-
-/**
- * The input for one region — used on the page (positioned, sized to the
- * box) and in the Fields panel (labelled, full width). Both edit the same
- * value, so they always agree.
- */
-function RegionInput({ region, value, onChange, locked, onPage, style, onFocus, describedBy }) {
-  const label = fieldLabel(region);
-  const common = {
-    disabled: locked,
-    onFocus,
-    'aria-describedby': describedBy,
-    'aria-required': region.required || undefined,
-  };
-  const pageClass = onPage
-    ? 'h-full w-full border border-sky-500/50 bg-sky-50/50 px-0.5 py-0 leading-none text-black outline-none focus:border-accent focus:bg-white/90 focus:ring-2 focus:ring-accent'
-    : inputClass;
-  const ariaLabel = onPage ? label : undefined;
-  if (region.kind === 'CHECKBOX') {
-    return (
-      <input
-        type="checkbox"
-        aria-label={ariaLabel}
-        checked={value === 'true' || value === 'x' || value === true}
-        onChange={(e) => onChange(e.target.checked ? 'true' : '')}
-        className={onPage ? 'h-full w-full cursor-pointer accent-accent' : 'size-4'}
-        {...common}
-      />
-    );
-  }
-  if (region.kind === 'MULTILINE') {
-    return (
-      <textarea
-        aria-label={ariaLabel}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
-        className={`${pageClass} resize-none`}
-        rows={onPage ? undefined : Math.min(8, Math.max(2, region.maxLines || 3))}
-        style={style}
-        {...common}
-      />
-    );
-  }
-  const type = region.kind === 'DATE' ? 'date' : region.kind === 'NUMBER' ? 'number' : 'text';
-  return (
-    <input
-      type={type}
-      aria-label={ariaLabel}
-      inputMode={region.kind === 'NUMBER' ? 'decimal' : undefined}
-      value={value ?? ''}
-      onChange={(e) => onChange(e.target.value)}
-      className={pageClass}
-      style={style}
-      {...common}
-    />
-  );
-}
-
-/** The preview: the server's rendering of each page with the values in place. */
-function PreviewDialog({ open, onClose, instanceId, pages }) {
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    if (open) setIndex(0);
-  }, [open]);
-  const count = pages.length;
-  return (
-    <Modal open={open} onClose={onClose} title="Preview" size="lg" description="The pages exactly as they will be generated.">
-      {open && count > 0 && (
-        <div>
-          <div className="mb-2 flex items-center justify-center gap-3">
-            <Button size="sm" variant="secondary" onClick={() => setIndex(index - 1)} disabled={index === 0}>
-              Previous page
-            </Button>
-            <span aria-live="polite">
-              Page {index + 1} of {count}
-            </span>
-            <Button size="sm" variant="secondary" onClick={() => setIndex(index + 1)} disabled={index >= count - 1}>
-              Next page
-            </Button>
-          </div>
-          <AuthedImage
-            key={index}
-            path={instancePagePath(instanceId, index, 110)}
-            alt={`Preview of page ${index + 1}`}
-            className="mx-auto max-h-[70vh] w-auto border border-line"
-          />
-        </div>
-      )}
-    </Modal>
-  );
-}
-
 export default function DocBuilderPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const toast = useToast();
   const fileInputRef = useRef(null);
   const [doc, setDoc] = useState(null);
   const [values, setValues] = useState({});
-  const [saveState, setSaveState] = useState('idle');
   const [error, setError] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
   const [activeKey, setActiveKey] = useState(null);
@@ -217,27 +70,62 @@ export default function DocBuilderPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fillOpen, setFillOpen] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
-  // "Edit layout" mode: a draft copy of the regions (null when not editing).
-  const [layoutRegions, setLayoutRegions] = useState(null);
-  const [layoutSelected, setLayoutSelected] = useState(null);
+  // "Edit layout" mode: a draft copy of the regions in the shared overlay editor.
+  const [layoutMode, setLayoutMode] = useState(false);
   const [layoutTool, setLayoutTool] = useState('select');
   const [layoutDirty, setLayoutDirty] = useState(false);
   const [layoutSaving, setLayoutSaving] = useState(false);
   const [layoutConflict, setLayoutConflict] = useState(false);
   const [focusProperties, setFocusProperties] = useState(false);
   const propertiesRef = useRef(null);
+  const layout = useOverlayEditor({
+    page: pageIndex,
+    enabled: layoutMode,
+    onChange: () => setLayoutDirty(true),
+    withUid,
+  });
+  const layoutRegions = layout.items;
+  // The template's rules: live hints while filling, rule counts and Required while editing the layout.
+  const fieldRules = useFieldRules(doc?.blueprintId, { enabled: Boolean(doc?.blueprintId) });
+  const required = useRequiredToggle({
+    editor: layout,
+    fieldRules,
+    blueprintId: doc?.blueprintId,
+    enabled: layoutMode,
+    // The rules live on the template page; leaving asks first when the layout is unsaved.
+    onEditRules: (region) => {
+      if (layoutDirty && !window.confirm('You have unsaved layout changes. Leave without saving them?')) return;
+      navigate(`/creation/blueprints/${doc.blueprintId}?tab=rules&field=${encodeURIComponent(region.key)}`);
+    },
+    onError: (err) => setError(err.message),
+  });
 
-  // Autosave: changed keys wait here until typing pauses, then go out as
-  // one merge (PUT values merges server-side). One request at a time.
-  const pending = useRef({});
-  const timer = useRef(null);
-  const inflight = useRef(null);
+  // Validation (contract §4): Save → flush → validate. `edited` keys changed since the last validate:
+  // the status shows Draft at once and their server messages give way to live hints.
+  const [edited, setEdited] = useState(() => new Set());
+  const [validating, setValidating] = useState(false);
+  const [goTo, setGoTo] = useState(null);
+
+  // Autosave (components/doc/useAutosave): changed keys wait until typing pauses.
+  const pendingRef = useRef(() => ({}));
 
   const adopt = useCallback((dto) => {
     if (!dto) return;
     setDoc(dto);
-    setValues({ ...(dto.values || {}), ...pending.current });
+    setValues({ ...(dto.values || {}), ...pendingRef.current() });
   }, []);
+
+  const { queue, flush, saveState, pendingValues } = useAutosave(id, {
+    onSaved: (dto) => {
+      adopt(dto);
+      // The server's copy has the status after the change (a real change makes it a draft).
+      if (Object.keys(pendingRef.current()).length === 0 && dto?.status && dto.status !== 'DRAFT') {
+        setEdited(new Set());
+      }
+    },
+    onError: (err) => setError(err.message),
+  });
+  pendingRef.current = pendingValues;
 
   const load = useCallback(async () => {
     try {
@@ -252,56 +140,19 @@ export default function DocBuilderPage() {
     load();
   }, [load]);
 
-  const flush = useCallback(async () => {
-    clearTimeout(timer.current);
-    timer.current = null;
-    if (inflight.current) await inflight.current;
-    const batch = pending.current;
-    if (Object.keys(batch).length === 0) return;
-    pending.current = {};
-    setSaveState('saving');
-    const request = saveValues(id, batch)
-      .then((dto) => {
-        adopt(dto);
-        setSaveState(Object.keys(pending.current).length ? 'pending' : 'saved');
-      })
-      .catch((err) => {
-        pending.current = { ...batch, ...pending.current };
-        setSaveState('error');
-        setError(err.message);
-      })
-      .finally(() => {
-        inflight.current = null;
-      });
-    inflight.current = request;
-    await request;
-  }, [id, adopt]);
-
-  // Leaving the page: send whatever is still waiting.
-  useEffect(
-    () => () => {
-      clearTimeout(timer.current);
-      const batch = pending.current;
-      if (Object.keys(batch).length) saveValues(id, batch).catch(() => {});
-      pending.current = {};
-    },
-    [id]
-  );
-
   const setValue = (key, value) => {
     setValues((current) => ({ ...current, [key]: value }));
-    pending.current = { ...pending.current, [key]: value };
-    setSaveState('pending');
-    clearTimeout(timer.current);
-    timer.current = setTimeout(flush, AUTOSAVE_MS);
+    setEdited((current) => (current.has(key) ? current : new Set(current).add(key)));
+    queue(key, value);
   };
 
   const pages = doc?.pages || [];
   const regions = useMemo(
     () =>
-      [...(doc?.regions || [])].sort(
-        (a, b) => a.page - b.page || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.fy - b.fy || a.fx - b.fx
-      ),
+      [...(doc?.regions || [])]
+        // Each region's field properties: on the region, or in the document's `props` map.
+        .map((r) => ({ ...r, props: r.props ?? doc?.props?.[r.key] ?? null }))
+        .sort((a, b) => a.page - b.page || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.fy - b.fy || a.fx - b.fx),
     [doc]
   );
   const images = doc?.images || [];
@@ -326,6 +177,110 @@ export default function DocBuilderPage() {
   const focusField = (region) => {
     setActiveKey(region.key);
     if (region.page !== pageIndex) setPageIndex(region.page);
+  };
+
+  // ------------------------------------------------------- validation
+
+  const serverStatus = doc?.status;
+  // Any edit makes the document a draft again (the server resets it too).
+  const status = edited.size && (serverStatus === 'VALIDATED' || serverStatus === 'GENERATED') ? 'DRAFT' : serverStatus;
+  const validation = doc?.validation || null;
+  const notValidated = status === 'DRAFT' || (status === 'VALIDATED' && validation != null && validation.checked === false);
+  const issuesByKey = useMemo(() => serverIssues(validation), [validation]);
+  const rulesByKey = useMemo(() => {
+    const map = new Map();
+    for (const rule of fieldRules.data?.rules || []) {
+      if (!map.has(rule.regionKey)) map.set(rule.regionKey, []);
+      map.get(rule.regionKey).push(rule);
+    }
+    return map;
+  }, [fieldRules.data]);
+
+  /** What to show under a field: the server's errors and warnings, else (after an edit) live hints. */
+  const fieldMessages = (region) => {
+    const server = !edited.has(region.key) ? issuesByKey.get(region.key) : null;
+    if (server && (server.errors.length || server.warnings.length)) {
+      return { errors: server.errors, warnings: server.warnings, hints: [] };
+    }
+    // Hints only for what changed since the last Save: otherwise the server's result stands.
+    const hints = edited.has(region.key)
+      ? liveHints(region, values[region.key], {
+          hasPhoto: imageByRegion.has(region.key),
+          rules: rulesByKey.get(region.key) || [],
+        })
+      : [];
+    return { errors: [], warnings: [], hints };
+  };
+
+  const issues = useMemo(() => {
+    if (!validation?.checked) return [];
+    const labelOf = (key) => fieldLabel(regions.find((r) => r.key === key) || { key });
+    const list = [];
+    (validation.errors || []).forEach((e, i) =>
+      list.push({ id: `e${i}`, level: 'error', regionKey: e.regionKey, label: e.label || labelOf(e.regionKey), message: e.message })
+    );
+    (validation.warnings || []).forEach((w, i) =>
+      list.push({ id: `w${i}`, level: 'warning', regionKey: w.regionKey, label: w.label || labelOf(w.regionKey), message: w.message })
+    );
+    return list;
+  }, [validation, regions]);
+
+  const requiredRegions = regions.filter((r) => r.required || (rulesByKey.get(r.key) || []).some((x) => x.ruleType === 'REQUIRED'));
+  const requiredFilled = requiredRegions.filter((r) => !isBlank(r, values[r.key], imageByRegion.has(r.key))).length;
+
+  /** "Go to field": shows its page, then focuses its input in the Fields panel. */
+  const goToField = (key) => {
+    const region = regions.find((r) => r.key === key);
+    if (!region) return;
+    focusField(region);
+    setGoTo(key);
+  };
+
+  useEffect(() => {
+    if (!goTo) return;
+    const element = document.getElementById(`field-input-${goTo}`) || document.getElementById(`field-panel-${goTo}`);
+    if (element) {
+      element.scrollIntoView?.({ block: 'center' });
+      element.focus();
+    }
+    setGoTo(null);
+  }, [goTo]);
+
+  /** Save: send what waits, stop if that failed, then validate. */
+  const saveAndValidate = async () => {
+    setValidating(true);
+    setError('');
+    try {
+      const flushed = await flush();
+      if (!flushed) {
+        setError('Your latest changes could not be saved, so the document was not validated. Check your connection and press Save again.');
+        return;
+      }
+      const dto = await validateInstance(id);
+      setEdited(new Set());
+      adopt(dto);
+      const result = dto?.validation;
+      const errors = result?.errors?.length || 0;
+      const warnings = result?.warnings?.length || 0;
+      if (errors) {
+        toast.error(`Saved as a draft — ${errors} issue${errors === 1 ? '' : 's'} to fix before generating`);
+      } else {
+        toast.success(`Saved and validated${warnings ? ` with ${warnings} warning${warnings === 1 ? '' : 's'}` : ''}`);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  /** The text of a failed generate / download: a 409 NOT_VALIDATED asks to save first. */
+  const failure = (err) => {
+    if (err?.code === 'NOT_VALIDATED') {
+      load();
+      return NOT_VALIDATED_TEXT;
+    }
+    return err.message;
   };
 
   // ------------------------------------------------------------ photos
@@ -413,7 +368,7 @@ export default function DocBuilderPage() {
             added ? ` — ${added} page${added === 1 ? '' : 's'} added for text that did not fit${continued ? ` (${continued})` : ''}` : ''
           }${r?.exact === false ? ' · the exactness check did not pass' : ' · layout verified exact'}`;
         },
-        error: (err) => err.message,
+        error: failure,
       });
       load();
     } catch {
@@ -431,7 +386,7 @@ export default function DocBuilderPage() {
       await toast.promise(() => submitInstance(id), {
         loading: 'Submitting for release…',
         success: 'Submitted — an approver (not you) can now release it',
-        error: (err) => err.message,
+        error: failure,
       });
       load();
     } catch {
@@ -447,7 +402,7 @@ export default function DocBuilderPage() {
       await toast.promise(() => downloadInstance(id, `${doc?.title || 'document'}.pdf`), {
         loading: 'Preparing the PDF…',
         success: 'Download started',
-        error: (err) => err.message,
+        error: failure,
       });
     } catch {
       // The error toast is already shown.
@@ -487,36 +442,26 @@ export default function DocBuilderPage() {
 
   const startLayout = async () => {
     await flush();
-    setLayoutRegions(regions.map(withUid));
-    setLayoutSelected(null);
+    layout.reset(regions.map(withUid));
+    required.reset();
+    setLayoutMode(true);
     setLayoutTool('select');
     setLayoutDirty(false);
   };
 
   const endLayout = () => {
-    setLayoutRegions(null);
-    setLayoutSelected(null);
+    layout.reset([]);
+    setLayoutMode(false);
     setLayoutTool('select');
     setLayoutDirty(false);
   };
 
-  const updateLayoutRegion = (uid, patch) => {
-    setLayoutRegions((list) => list.map((r) => (r._uid === uid ? { ...r, ...patch } : r)));
-    setLayoutDirty(true);
-  };
-
-  const deleteLayoutRegion = (uid) => {
-    setLayoutRegions((list) => list.filter((r) => r._uid !== uid));
-    setLayoutSelected(null);
-    setLayoutDirty(true);
-  };
+  const updateLayoutRegion = (uid, patch) => layout.update(uid, patch, { chain: true });
 
   const drawLayoutRegion = (box) => {
     const region = newRegion(box, pageIndex, layoutRegions);
-    setLayoutRegions((list) => [...list, region]);
-    setLayoutSelected(region._uid);
+    layout.add(region);
     setLayoutTool('select');
-    setLayoutDirty(true);
     setFocusProperties(true);
   };
 
@@ -525,9 +470,10 @@ export default function DocBuilderPage() {
    * edits are resent unchanged), then moves this document onto it.
    */
   const saveLayout = async () => {
-    if (!doc || !layoutRegions) return;
+    if (!doc || !layoutMode) return;
     setLayoutSaving(true);
     setError('');
+    const requiredChanges = required.takeChanges(layoutRegions);
     let saved;
     try {
       await flush();
@@ -543,6 +489,13 @@ export default function DocBuilderPage() {
       else setError(err.message);
       setLayoutSaving(false);
       return;
+    }
+    if (requiredChanges.size) {
+      try {
+        await required.sync(requiredChanges);
+      } catch (err) {
+        setError(`The layout was saved, but the Required settings could not be saved as rules: ${err.message}`);
+      }
     }
     try {
       const dto = await upgradeInstance(id);
@@ -579,6 +532,52 @@ export default function DocBuilderPage() {
     }
   });
 
+  /** The ids that describe a field's inputs (overflow note, help text, messages) and its messages. */
+  const describe = (region) => {
+    const messages = fieldMessages(region);
+    const help = region.props?.helpText ? `field-help-${region.key}` : null;
+    const any = messages.errors.length || messages.warnings.length || messages.hints.length;
+    const msg = any ? `field-msg-${region.key}` : null;
+    const overflow = !PHOTO_KINDS.has(region.kind) && overflows(region) ? `overflow-note-${region.key}` : null;
+    return {
+      messages,
+      helpId: help,
+      msgId: msg,
+      describedBy: [overflow, help, msg].filter(Boolean).join(' ') || undefined,
+      invalid: messages.errors.length > 0,
+    };
+  };
+
+  /** Help text and messages under a field in the Fields panel. */
+  const fieldNotes = (region, info) => (
+    <>
+      {info.helpId && (
+        <p id={info.helpId} className="mt-0.5 text-xs text-muted">
+          {region.props.helpText}
+        </p>
+      )}
+      {info.msgId && (
+        <ul id={info.msgId} className="mt-0.5 space-y-0.5 text-xs" data-testid={`field-messages-${region.key}`}>
+          {info.messages.errors.map((m, i) => (
+            <li key={`e${i}`} className="text-danger-ink">
+              {m}
+            </li>
+          ))}
+          {info.messages.warnings.map((m, i) => (
+            <li key={`w${i}`} className="text-amber-800">
+              Warning: {m}
+            </li>
+          ))}
+          {info.messages.hints.map((m, i) => (
+            <li key={`h${i}`} className="text-amber-800/90">
+              {m}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+
   const saveText = {
     idle: '',
     pending: 'Unsaved changes…',
@@ -594,9 +593,9 @@ export default function DocBuilderPage() {
   const outdated = currentVersion > version;
   // The layout tools need the blueprint's edits to resend them unchanged.
   const canLayout = Boolean(doc?.canEditLayout) && !locked && Array.isArray(doc?.blueprintEdits);
-  const layoutMode = layoutRegions != null;
-  const layoutSelectedRegion = layoutMode ? layoutRegions.find((r) => r._uid === layoutSelected) : null;
-  const layoutKeyProblem = layoutMode && layoutRegions.some((r) => keyProblem(r.key, layoutRegions, r));
+  const layoutSelectedRegion = layout.selectedItems.length === 1 ? layout.selectedItems[0] : null;
+  const layoutMulti = layout.selectedItems.length > 1 ? layout.selectedItems : null;
+  const layoutKeyProblem = layoutMode && layoutRegions.some((r) => fieldProblem(r, layoutRegions));
   const sourceRecords = useMemo(() => {
     const seen = new Set();
     return (doc?.sourceRecords || []).filter((r) => {
@@ -620,20 +619,48 @@ export default function DocBuilderPage() {
               <span role="status" aria-live="polite" className="min-w-16 text-xs text-muted" data-testid="save-state">
                 {saveText}
               </span>
+              {!locked && (
+                <Button onClick={saveAndValidate} disabled={validating || layoutMode}>
+                  {validating ? 'Saving…' : 'Save'}
+                </Button>
+              )}
               <Button variant="secondary" onClick={openPreview}>
                 Preview
               </Button>
-              <Button onClick={generate} disabled={generating || locked}>
+              <Button
+                variant="secondary"
+                onClick={generate}
+                disabled={generating || locked || notValidated}
+                aria-describedby={notValidated && !locked ? 'gate-reason' : undefined}
+                title={notValidated && !locked ? NOT_VALIDATED_TEXT : undefined}
+              >
                 {generating ? 'Generating…' : 'Generate'}
               </Button>
               {doc.status === 'GENERATED' && (
-                <Button variant="secondary" onClick={submitForRelease} disabled={submitting}>
+                <Button
+                  variant="secondary"
+                  onClick={submitForRelease}
+                  disabled={submitting || notValidated}
+                  aria-describedby={notValidated ? 'gate-reason' : undefined}
+                  title={notValidated ? NOT_VALIDATED_TEXT : undefined}
+                >
                   {submitting ? 'Submitting…' : 'Submit for release'}
                 </Button>
               )}
-              <Button variant="secondary" onClick={download}>
+              <Button
+                variant="secondary"
+                onClick={download}
+                disabled={notValidated && !locked}
+                aria-describedby={notValidated && !locked ? 'gate-reason' : undefined}
+                title={notValidated && !locked ? NOT_VALIDATED_TEXT : undefined}
+              >
                 Download PDF
               </Button>
+              {notValidated && !locked && (
+                <span id="gate-reason" className="text-xs text-amber-800">
+                  {NOT_VALIDATED_TEXT}
+                </span>
+              )}
             </>
           )
         }
@@ -645,14 +672,24 @@ export default function DocBuilderPage() {
       ) : (
         <>
           <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
-            <Badge status={doc.status} />
+            <Badge status={status} />
             <span>
               Built on template version {version}
               {currentVersion > version && ` (newer available: version ${currentVersion})`}
             </span>
             {doc.lastGeneratedDate && <span>· last generated {new Date(doc.lastGeneratedDate).toLocaleString()}</span>}
             {doc.status === 'SUBMITTED' && <span>· awaiting release by an approver</span>}
+            {requiredRegions.length > 0 && (
+              <span data-testid="required-progress">
+                · {requiredFilled} of {requiredRegions.length} required field{requiredRegions.length === 1 ? '' : 's'} filled
+              </span>
+            )}
           </div>
+          {validation?.rulesChangedSinceValidation && !locked && (
+            <p className="mb-4 rounded bg-amber-100 px-3 py-2 text-sm text-amber-900" role="note">
+              Rules changed since this document was validated — save again to re-check.
+            </p>
+          )}
           {reviewerComment && doc.status !== 'SUBMITTED' && (
             <div className="mb-4">
               <Callout
@@ -727,7 +764,7 @@ export default function DocBuilderPage() {
                         size="sm"
                         onClick={saveLayout}
                         disabled={layoutSaving || !layoutDirty || layoutKeyProblem}
-                        title={layoutKeyProblem ? 'Fix the field keys first' : undefined}
+                        title={layoutKeyProblem ? 'Fix the field problems first (keys, dropdown options)' : undefined}
                       >
                         {layoutSaving ? 'Saving layout…' : 'Save layout to template'}
                       </Button>
@@ -742,9 +779,10 @@ export default function DocBuilderPage() {
                 <p className="mb-2 text-xs text-muted" aria-live="polite">
                   {layoutTool === 'field'
                     ? `${DRAW_HINT}.`
-                    : 'Drag a field to move it or its corners to resize it; with the keyboard, select it and use the arrow keys to move or Shift+arrows to resize.'}
+                    : 'Drag a field to move it or its corners to resize it; Shift+click or drag on empty space selects several. With the keyboard, select a field and use the arrow keys to move it (Alt finer, Shift coarser) or Ctrl+arrows to resize it.'}
                 </p>
               )}
+              {layoutMode && <EditorToolbar editor={layout} />}
               <ThumbnailStrip
                 pages={pages}
                 current={pageIndex}
@@ -757,11 +795,15 @@ export default function DocBuilderPage() {
                 <PageView
                   path={blueprintPagePath(doc.blueprintId, pageIndex, { variant: 'template', version })}
                   page={page}
+                  zoom={layoutMode ? layout.zoom : 1}
                   alt={`Page ${pageIndex + 1} of ${pages.length}`}
                 >
                   {({ scale }) =>
                     layoutMode ? (
                       <>
+                        {layoutTool === 'select' && (
+                          <MarqueeLayer onSelectRect={layout.selectInRect} onClear={layout.clearSelection} />
+                        )}
                         {layoutRegions
                           .filter((region) => region.page === pageIndex)
                           .map((region) => {
@@ -774,16 +816,29 @@ export default function DocBuilderPage() {
                                 color={color}
                                 tabText={fieldLabel(region)}
                                 label={`${fieldLabel(region)}, ${KIND_LABELS[region.kind] || region.kind}`}
-                                selected={layoutSelected === region._uid}
+                                selected={layout.isSelected(region._uid)}
+                                handles={layout.selected.length <= 1}
                                 editable
-                                onSelect={() => setLayoutSelected(region._uid)}
-                                onChange={(box) => updateLayoutRegion(region._uid, box)}
-                                onDelete={() => deleteLayoutRegion(region._uid)}
+                                onSelect={(event) =>
+                                  layout.select(region._uid, {
+                                    additive: Boolean(event?.shiftKey),
+                                    keep: event?.type === 'pointerdown',
+                                  })
+                                }
+                                onTap={(event) => !event?.shiftKey && layout.select(region._uid)}
+                                onChange={(box) => layout.dragEnd(region._uid, box)}
+                                onDelete={() =>
+                                  layout.requestDelete(layout.isSelected(region._uid) ? layout.selected : [region._uid])
+                                }
+                                onNudge={(event) => layout.nudgeKey(event, region._uid)}
+                                snap={layout.snapFor(region._uid)}
+                                onGuides={layout.setGuides}
                                 data-testid={`layout-region-${region.key}`}
                                 style={{ background: `${color}1f` }}
                               />
                             );
                           })}
+                        <SnapGuides guides={layout.guides} />
                         {layoutTool === 'field' && (
                           <DrawLayer label={DRAW_HINT} onDraw={drawLayoutRegion} color={KIND_COLORS.TEXT} />
                         )}
@@ -793,6 +848,7 @@ export default function DocBuilderPage() {
                       .filter((region) => region.page === pageIndex)
                       .map((region) => {
                         const overflow = overflows(region);
+                        const info = describe(region);
                         return (
                           <div
                             key={region.key}
@@ -800,6 +856,7 @@ export default function DocBuilderPage() {
                             style={boxStyle(region)}
                             data-testid={`field-${region.key}`}
                             data-kind={region.kind}
+                            data-invalid={info.invalid ? 'true' : undefined}
                           >
                             {PHOTO_KINDS.has(region.kind) ? (
                               <PhotoBox
@@ -819,11 +876,25 @@ export default function DocBuilderPage() {
                                 locked={locked}
                                 onPage
                                 onFocus={() => setActiveKey(region.key)}
+                                invalid={info.invalid}
+                                describedBy={info.describedBy}
                                 style={{
                                   fontSize: `${fontPx(region, page, scale)}px`,
                                   textAlign: (region.align || 'LEFT').toLowerCase(),
-                                  outline: activeKey === region.key ? `2px solid ${KIND_COLORS.TEXT}` : undefined,
+                                  outline:
+                                    activeKey === region.key
+                                      ? `2px solid ${KIND_COLORS.TEXT}`
+                                      : info.invalid
+                                        ? '2px solid #c5221f'
+                                        : undefined,
                                 }}
+                              />
+                            )}
+                            {info.invalid && PHOTO_KINDS.has(region.kind) && (
+                              <span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-0 border-2 border-danger-ink"
+                                data-testid={`invalid-${region.key}`}
                               />
                             )}
                             {overflow && (
@@ -848,15 +919,23 @@ export default function DocBuilderPage() {
                 <>
                   <Card padding="compact">
                     <h2 className="mb-2 text-sm font-medium">
-                      {layoutSelectedRegion ? `Field: ${fieldLabel(layoutSelectedRegion)}` : 'Field properties'}
+                      {layoutMulti
+                        ? 'Several fields'
+                        : layoutSelectedRegion
+                          ? `Field: ${fieldLabel(layoutSelectedRegion)}`
+                          : 'Field properties'}
                     </h2>
                     <div ref={propertiesRef}>
-                      {layoutSelectedRegion ? (
+                      {layoutSelectedRegion || layoutMulti ? (
                         <RegionPropertiesPanel
                           region={layoutSelectedRegion}
                           regions={layoutRegions}
+                          selection={layoutMulti}
+                          onChangeMany={(patchFor) => layout.updateMany(layout.selected, patchFor)}
+                          fonts={doc.fonts || []}
+                          rules={layoutSelectedRegion ? required.rulesFor(layoutSelectedRegion) : null}
                           onChange={(patch) => updateLayoutRegion(layoutSelectedRegion._uid, patch)}
-                          onDelete={() => deleteLayoutRegion(layoutSelectedRegion._uid)}
+                          onDelete={() => layout.requestDelete([layoutSelectedRegion._uid])}
                         />
                       ) : (
                         <p className="text-xs text-muted">
@@ -868,26 +947,18 @@ export default function DocBuilderPage() {
                   </Card>
                   <Card padding="compact">
                     <h2 className="mb-2 text-sm font-medium">Layout fields ({layoutRegions.length})</h2>
-                    <ul className="max-h-96 space-y-0.5 overflow-y-auto" data-testid="layout-field-list">
-                      {layoutRegions.map((region) => (
-                        <li key={region._uid}>
-                          <button
-                            type="button"
-                            aria-pressed={layoutSelected === region._uid}
-                            onClick={() => {
-                              setLayoutSelected(region._uid);
-                              if (region.page !== pageIndex) setPageIndex(region.page);
-                            }}
-                            className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-pill/50 ${
-                              layoutSelected === region._uid ? 'bg-pill' : ''
-                            }`}
-                          >
-                            <span className="flex-1 truncate">{fieldLabel(region)}</span>
-                            <span className="text-muted">page {region.page + 1}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                    <FieldList
+                      regions={layoutRegions}
+                      testId="layout-field-list"
+                      isSelected={layout.isSelected}
+                      onSelect={(region, event) => {
+                        layout.select(region._uid, { additive: Boolean(event?.shiftKey) });
+                        if (region.page !== pageIndex) setPageIndex(region.page);
+                      }}
+                      onReorder={(pageNo, uids) => layout.apply((list) => reorderPage(list, pageNo, uids))}
+                      rulesCount={fieldRules.data ? fieldRules.countFor : undefined}
+                      isRequired={required.isRequired}
+                    />
                   </Card>
                   {layoutDirty && (
                     <p className="text-xs text-amber-800" role="status">
@@ -1018,6 +1089,8 @@ export default function DocBuilderPage() {
                 )}
               </Card>
 
+              <IssuesPanel issues={issues} onGoTo={goToField} />
+
               <section aria-labelledby="fields-heading" className="rounded-lg border border-line bg-white p-3">
                 <h2 id="fields-heading" className="mb-2 text-sm font-medium">
                   Fields
@@ -1031,12 +1104,18 @@ export default function DocBuilderPage() {
                         const overflow = overflows(region);
                         const noteId = `overflow-note-${region.key}`;
                         const label = fieldLabel(region);
+                        const info = describe(region);
                         if (PHOTO_KINDS.has(region.kind)) {
                           const image = imageByRegion.get(region.key);
                           return (
                             <div
                               key={region.key}
-                              className={`rounded p-1 text-sm ${activeKey === region.key ? 'bg-pill' : ''}`}
+                              id={`field-panel-${region.key}`}
+                              tabIndex={-1}
+                              aria-describedby={info.describedBy}
+                              className={`rounded p-1 text-sm outline-none ${activeKey === region.key ? 'bg-pill' : ''} ${
+                                info.invalid ? 'ring-1 ring-danger-ink' : ''
+                              }`}
                             >
                               <p className="font-medium">
                                 {label}
@@ -1072,17 +1151,20 @@ export default function DocBuilderPage() {
                               ) : (
                                 <p className="text-xs text-muted">No photo yet.</p>
                               )}
+                              {fieldNotes(region, info)}
                             </div>
                           );
                         }
                         const input = (
                           <RegionInput
+                            id={`field-input-${region.key}`}
                             region={region}
                             value={values[region.key]}
                             onChange={(value) => setValue(region.key, value)}
                             locked={locked}
                             onFocus={() => focusField(region)}
-                            describedBy={overflow ? noteId : undefined}
+                            describedBy={info.describedBy}
+                            invalid={info.invalid}
                           />
                         );
                         return (
@@ -1113,6 +1195,7 @@ export default function DocBuilderPage() {
                                 <Tag tone="warning">{OVERFLOW_TEXT}</Tag>
                               </p>
                             )}
+                            {fieldNotes(region, info)}
                           </div>
                         );
                       })}
@@ -1138,6 +1221,8 @@ export default function DocBuilderPage() {
           onFilled={adopt}
         />
       )}
+
+      <DeleteFieldsDialog editor={layout} nameOf={fieldLabel} />
 
       <Modal
         open={layoutConflict}

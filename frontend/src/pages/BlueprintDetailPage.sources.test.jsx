@@ -31,6 +31,13 @@ vi.mock('../api/doccreation', () => ({
   deleteBlueprintSource: vi.fn(),
 }));
 
+// The page reads the template's field rules; none here.
+vi.mock('../api/docRules', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getRules: vi.fn(() => Promise.resolve({ revision: 0, rules: [], fields: [], ruleTypes: [] })),
+  saveRules: vi.fn(),
+}));
+
 vi.mock('../api/cache', () => ({ getTemplates: vi.fn() }));
 vi.mock('../api/templates', () => ({ getAllFields: vi.fn() }));
 

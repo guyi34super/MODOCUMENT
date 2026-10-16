@@ -1,13 +1,14 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ToastProvider } from '../context/ToastContext';
 import DocBuilderPage from './DocBuilderPage';
 import { installPointerEvents, mockLayout, stubImageFetch } from '../test/pdfTestUtils';
 import { expectAccessible } from '../test/a11y';
 
 import { getInstance, saveOverlay, saveValues, upgradeInstance } from '../api/doccreation';
+import { getRules, saveRules } from '../api/docRules';
 
 vi.mock('../api/doccreation', () => ({
   blueprintPagePath: (id, page, { variant, version } = {}) =>
@@ -27,6 +28,13 @@ vi.mock('../api/doccreation', () => ({
   listBlueprintSources: vi.fn(),
   getFillPreview: vi.fn(),
   fillFromRecord: vi.fn(),
+}));
+
+// The page reads the template's field rules; none here.
+vi.mock('../api/docRules', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getRules: vi.fn(() => Promise.resolve({ revision: 0, rules: [], fields: [], ruleTypes: [] })),
+  saveRules: vi.fn(),
 }));
 
 const PAGE = { width: 600, height: 800, rotation: 0 };
@@ -182,8 +190,9 @@ describe('DocBuilderPage — Edit layout', () => {
     });
     expect(body.edits).toEqual(EDITS);
     expect(body.regions).toHaveLength(3);
-    expect(body.regions[0]).toEqual({ ...region('full_name', 'Full name', 'TEXT'), fx: 0.195, fy: 0.25 });
-    expect(body.regions[1]).toEqual(doc().regions[1]);
+    // The field properties (contract §2) go out with every region; none are set here.
+    expect(body.regions[0]).toEqual({ ...region('full_name', 'Full name', 'TEXT'), fx: 0.195, fy: 0.25, props: null });
+    expect(body.regions[1]).toEqual({ ...doc().regions[1], props: null });
     expect(body.regions[2]).toEqual({
       key: 'employer',
       label: 'Employer',
@@ -204,6 +213,7 @@ describe('DocBuilderPage — Edit layout', () => {
       sortOrder: 2,
       source: 'MANUAL',
       confidence: 1,
+      props: null,
     });
 
     await waitFor(() => expect(upgradeInstance).toHaveBeenCalledWith('5'));
@@ -268,5 +278,72 @@ describe('DocBuilderPage — Edit layout', () => {
     expect(await screen.findByText('Moved to template version 3')).toBeInTheDocument();
     expect(screen.queryByText('A newer template version 3 exists')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit layout' })).toBeEnabled();
+  });
+
+  it('arranges with the shared editor tools and edits Required through the template rules', async () => {
+    getRules.mockResolvedValue({
+      revision: 4,
+      rules: [{ id: 1, regionKey: 'agree', ruleType: 'REQUIRED', config: {}, message: null, severity: 'ERROR', origin: 'MANUAL' }],
+      fields: [
+        { key: 'full_name', label: 'Full name', kind: 'TEXT', page: 0 },
+        { key: 'agree', label: 'I agree', kind: 'CHECKBOX', page: 0 },
+      ],
+      ruleTypes: [],
+    });
+    saveRules.mockImplementation(async (id, { baseRevision, rules }) => ({
+      revision: baseRevision + 1,
+      rules: rules.map((r, i) => ({ id: i + 1, ...r })),
+      fields: (await getRules.mock.results[0].value).fields,
+      ruleTypes: [],
+    }));
+    function Probe() {
+      return <div data-testid="location">{`${useLocation().pathname}${useLocation().search}`}</div>;
+    }
+    stubImageFetch();
+    render(
+      <MemoryRouter initialEntries={['/creation/documents/5']}>
+        <ToastProvider>
+          <Routes>
+            <Route path="/creation/documents/:id" element={<DocBuilderPage />} />
+            <Route path="*" element={<Probe />} />
+          </Routes>
+        </ToastProvider>
+      </MemoryRouter>
+    );
+    await ready();
+    await userEvent.click(screen.getByRole('button', { name: 'Edit layout' }));
+    const toolbar = screen.getByRole('toolbar', { name: 'Arrange fields' });
+
+    // Shift-click two fields, make them the same width, undo it.
+    await userEvent.click(screen.getByTestId('layout-region-full_name'));
+    const user = userEvent.setup();
+    await user.keyboard('{Shift>}');
+    await user.click(screen.getByTestId('layout-region-agree'));
+    await user.keyboard('{/Shift}');
+    await user.click(within(toolbar).getByRole('button', { name: 'Same width' }));
+    expect(screen.getByTestId('layout-region-agree').style.width).toBe('30%');
+    await user.click(within(toolbar).getByRole('button', { name: 'Undo' }));
+    expect(screen.getByTestId('layout-region-agree').style.width).toBe('2%');
+
+    // One field: its rules and the Required toggle (a rule of the template, saved at once).
+    await user.click(screen.getByTestId('layout-region-full_name'));
+    const panel = screen.getByTestId('region-properties');
+    expect(within(panel).getByLabelText('Required')).not.toBeChecked();
+    await user.click(within(panel).getByLabelText('Required'));
+    expect(saveRules).toHaveBeenCalledWith(1, {
+      baseRevision: 4,
+      rules: [
+        { regionKey: 'agree', ruleType: 'REQUIRED', config: {}, message: null, severity: 'ERROR', origin: 'MANUAL' },
+        { regionKey: 'full_name', ruleType: 'REQUIRED', config: {}, message: null, severity: 'ERROR', origin: 'MANUAL' },
+      ],
+    });
+    await waitFor(() => expect(within(screen.getByTestId('region-properties')).getByLabelText('Required')).toBeChecked());
+    expect(screen.getByTestId('field-row-agree')).toHaveTextContent('1 rule');
+
+    // The rules themselves are edited on the template page (after confirming the unsaved layout is left).
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await user.click(within(screen.getByTestId('region-properties')).getByRole('button', { name: 'Edit rules' }));
+    expect(confirm).toHaveBeenCalledWith('You have unsaved layout changes. Leave without saving them?');
+    expect(await screen.findByTestId('location')).toHaveTextContent('/creation/blueprints/1?tab=rules&field=full_name');
   });
 });
