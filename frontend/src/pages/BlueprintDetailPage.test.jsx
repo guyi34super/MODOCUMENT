@@ -6,6 +6,7 @@ import { ToastProvider } from '../context/ToastContext';
 import BlueprintDetailPage from './BlueprintDetailPage';
 import { installPointerEvents, mockLayout, stubImageFetch } from '../test/pdfTestUtils';
 
+import { getRules, saveRules } from '../api/docRules';
 import {
   downloadBlueprintFile,
   getBlueprint,
@@ -24,6 +25,15 @@ vi.mock('../api/doccreation', () => ({
   listBlueprintVersions: vi.fn(),
   saveOverlay: vi.fn(),
   uploadEditImage: vi.fn(),
+}));
+
+vi.mock('../api/docRules', () => ({
+  getRules: vi.fn(),
+  saveRules: vi.fn(),
+  testRules: vi.fn(),
+  importPreview: vi.fn(),
+  importRules: vi.fn(),
+  toRuleInput: (r) => ({ regionKey: r.regionKey, ruleType: r.ruleType, config: r.config || {}, message: r.message ?? null, severity: r.severity || 'ERROR' }),
 }));
 
 const PAGE = { width: 600, height: 800, rotation: 0 };
@@ -118,6 +128,19 @@ const draft = (overrides = {}) =>
     ...overrides,
   });
 
+/** The blueprint's field rules (GET /rules): none yet, for the current version's fields. */
+const rulesDto = (overrides = {}) => ({
+  revision: 0,
+  rules: [],
+  fields: [
+    { key: 'full_name', label: 'Full name', kind: 'TEXT', page: 0 },
+    { key: 'photo', label: 'Photo', kind: 'IMAGE', page: 0 },
+    { key: 'notes', label: 'Notes', kind: 'MULTILINE', page: 1 },
+  ],
+  ruleTypes: [],
+  ...overrides,
+});
+
 let fetchMock;
 
 function renderPage(path = '/creation/blueprints/4') {
@@ -151,6 +174,10 @@ describe('BlueprintDetailPage (template editor)', () => {
     vi.clearAllMocks();
     mockLayout();
     getBlueprint.mockResolvedValue(blueprint());
+    getRules.mockResolvedValue(rulesDto());
+    saveRules.mockImplementation(async (id, { baseRevision, rules }) =>
+      rulesDto({ revision: baseRevision + 1, rules: rules.map((r, i) => ({ id: 100 + i, origin: 'MANUAL', orphan: false, ...r })) })
+    );
     saveOverlay.mockImplementation(async (id, body) =>
       blueprint({ version: 3, currentVersion: 3, regions: body.regions, edits: body.edits })
     );
@@ -233,6 +260,7 @@ describe('BlueprintDetailPage (template editor)', () => {
       sortOrder: 3,
       source: 'MANUAL',
       confidence: 1,
+      props: null,
     });
     expect(await screen.findByText('Saved as version 3')).toBeInTheDocument();
   });

@@ -104,6 +104,7 @@ class DocCreationPdfApiTest extends IsolatedStorageApiTestSupport {
 
     @AfterEach
     void cleanUp() {
+        engine.reset();
         int bankId = bank.getBankId();
         jdbc.update("DELETE FROM DocInstanceImage WHERE BankId = ?", bankId);
         jdbc.update("DELETE FROM DocImageAsset WHERE BankId = ?", bankId);
@@ -192,6 +193,14 @@ class DocCreationPdfApiTest extends IsolatedStorageApiTestSupport {
         return json(mvc.perform(as(put("/api/doccreation/instances/" + instanceId + "/values"), owner)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"values\":" + valuesJson + "}"))
                 .andExpect(status().is(expected))
+                .andReturn());
+    }
+
+    /** ws33: generate and download need a validated document. */
+    private JsonNode validate(int instanceId) throws Exception {
+        return json(mvc.perform(as(post("/api/doccreation/instances/" + instanceId + "/validate"), owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALIDATED"))
                 .andReturn());
     }
 
@@ -701,6 +710,7 @@ class DocCreationPdfApiTest extends IsolatedStorageApiTestSupport {
                 .andExpect(content().contentType(MediaType.IMAGE_PNG));
         assertThat(engine.lastFillOptions.verify()).as("previews skip the exactness check").isFalse();
 
+        validate(instanceId);
         mvc.perform(as(post("/api/doccreation/instances/" + instanceId + "/generate"), owner))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.pdfReady").value(true))
@@ -728,9 +738,11 @@ class DocCreationPdfApiTest extends IsolatedStorageApiTestSupport {
                 .andExpect(status().isOk());
         assertThat(engine.lastFillValues).as("fresh output is served, not regenerated").isNull();
 
-        // A change makes the output stale: the download regenerates.
+        // A change makes the output stale (and the document a DRAFT again):
+        // once validated, the download regenerates.
         Thread.sleep(5);
         putValues(instanceId, "{\"full_name\":\"Jane Q. Citizen\"}", 200);
+        validate(instanceId);
         MvcResult fresh = mvc.perform(as(get("/api/doccreation/instances/" + instanceId + "/download"), owner))
                 .andExpect(status().isOk())
                 .andReturn();
@@ -742,6 +754,7 @@ class DocCreationPdfApiTest extends IsolatedStorageApiTestSupport {
     void anOutputThatFailsTheExactnessCheckIsRefusedAndAudited() throws Exception {
         int instanceId = document(readyTemplate());
         putValues(instanceId, "{\"full_name\":\"Jane\"}", 200);
+        validate(instanceId);
         engine.failExactness = true;
         // The shared test storage may still hold an earlier context's file for this id.
         Path output = STORAGE_ROOT.resolve("exports/doccreation-instance" + instanceId + ".pdf");
@@ -754,7 +767,7 @@ class DocCreationPdfApiTest extends IsolatedStorageApiTestSupport {
         assertThat(audits("DOC_GENERATED", "FAILED", String.valueOf(instanceId))).isOne();
         assertThat(audits("DOC_GENERATED", "SUCCESS", String.valueOf(instanceId))).isZero();
         mvc.perform(as(get("/api/doccreation/instances/" + instanceId), owner))
-                .andExpect(jsonPath("$.status").value("DRAFT"))
+                .andExpect(jsonPath("$.status").value("VALIDATED"))
                 .andExpect(jsonPath("$.pdfAvailable").value(false));
         assertThat(output).as("no output stored").doesNotExist();
         assertThat(jdbc.queryForObject("SELECT GeneratedPdfKey FROM DocInstance WHERE DocInstanceId = ?",
@@ -781,6 +794,7 @@ class DocCreationPdfApiTest extends IsolatedStorageApiTestSupport {
 
         mvc.perform(as(delete("/api/doccreation/blueprints/" + blueprintId), owner))
                 .andExpect(status().isConflict());
+        validate(instanceId);
         mvc.perform(as(post("/api/doccreation/instances/" + instanceId + "/generate"), owner))
                 .andExpect(status().isOk());
         Path output = STORAGE_ROOT.resolve("exports/doccreation-instance" + instanceId + ".pdf");

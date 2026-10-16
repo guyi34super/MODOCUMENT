@@ -69,6 +69,8 @@ public class FakePdfTemplateEngine implements PdfTemplateEngine {
     public volatile Map<String, String> lastFillValues;
     public volatile Map<String, byte[]> lastFillImages;
     public volatile FillOptions lastFillOptions;
+    /** ws33: runs at the start of every fill (e.g. to change the document while it renders). */
+    public volatile Runnable onFill;
     public final AtomicInteger renders = new AtomicInteger();
 
     public FakePdfTemplateEngine() {
@@ -89,6 +91,7 @@ public class FakePdfTemplateEngine implements PdfTemplateEngine {
         lastFillValues = null;
         lastFillImages = null;
         lastFillOptions = null;
+        onFill = null;
         renders.set(0);
     }
 
@@ -113,7 +116,7 @@ public class FakePdfTemplateEngine implements PdfTemplateEngine {
                                         int sortOrder, String sample) {
         int maxLines = switch (kind) {
             case MULTILINE -> 3;
-            case TEXT, DATE, NUMBER -> 1;
+            case TEXT, DATE, NUMBER, CHOICE -> 1;
             default -> 0;
         };
         return new TemplateRegion(key, label, group, kind, box, "Helvetica", 0f, "#000000", Align.LEFT, maxLines,
@@ -176,6 +179,10 @@ public class FakePdfTemplateEngine implements PdfTemplateEngine {
     @Override
     public FillResult fill(byte[] templatePdf, List<TemplateRegion> regions, Map<String, String> values,
                            Map<String, byte[]> images, FillOptions options) {
+        Runnable hook = onFill;
+        if (hook != null) {
+            hook.run();
+        }
         lastFillValues = Map.copyOf(values);
         lastFillImages = Map.copyOf(images);
         lastFillOptions = options;

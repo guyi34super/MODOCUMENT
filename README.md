@@ -302,7 +302,7 @@ path is gone; see [docs/doccreation/pdf-templates-contract.md](docs/doccreation/
   lets the engine decide. Only real PDFs are accepted, checked by their bytes
   (`%PDF-`); password-protected files and files over 500 pages are refused.
 - **Review before saving.** The upload is a DRAFT: the proposed fill-in areas
-  (text, multi-line, date, number, checkbox, photo, signature) and, for a filled
+  (text, multi-line, date, number, dropdown, checkbox, photo, signature) and, for a filled
   document, each removed value shown next to its box. The removed sample values
   exist only during the review and are deleted when the template is confirmed.
 - **Template editor.** Draw, move and resize regions; set label, kind, group,
@@ -347,6 +347,17 @@ path is gone; see [docs/doccreation/pdf-templates-contract.md](docs/doccreation/
   document and save the layout to the template as a new version; the document
   moves to it (`POST …/instances/{id}/upgrade`), keeping values by field key
   and reporting the ones that no longer exist.
+- **Field rules and validation.** Each field can carry a placeholder, help
+  text, a default value, a maximum length and, for dates and numbers, how the
+  value is printed; a **Dropdown** field offers fixed options (AcroForm combo
+  boxes become dropdowns). Each template has its own **field rules**
+  (required, pattern, e-mail, length, range, allowed values, date format and
+  range, expiry, required-if, compare with another field), written by hand or
+  imported from the field rules of a flow template (its data sources or a
+  chosen template, matched by name). Saving a document validates it: only a
+  **validated** document can be generated, downloaded and submitted, and any
+  change makes it a draft again. See
+  [docs/doccreation/field-validation-contract.md](docs/doccreation/field-validation-contract.md).
 
 ## Quick start
 
@@ -706,6 +717,11 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 | `GET /api/doccreation/instances/{id}/fill-preview?recordId=` | What filling from a record would write (saved or automatic mapping, linked records) |
 | `POST /api/doccreation/instances/{id}/fill-from-record` | Fill from a record (`fields`, `overwrite=EMPTY_ONLY\|ALL`, `linkedRecordIds`) |
 | `POST /api/doccreation/instances/{id}/upgrade` | Move the document to the template's current version (`droppedKeys`) |
+| `GET` / `PUT /api/doccreation/blueprints/{id}/rules` | A template's field rules / replace them (`baseRevision`; 409 when stale) |
+| `POST /api/doccreation/blueprints/{id}/rules/test` | Check sample values against the saved or the given rules (nothing is stored) |
+| `GET /api/doccreation/blueprints/{id}/rules/import-preview?templateId=` | What importing flow-template field rules would add (data sources when no `templateId`) |
+| `POST /api/doccreation/blueprints/{id}/rules/import` | Import flow-template field rules (`MERGE` or `REPLACE`; also needs `validation:read`) |
+| `POST /api/doccreation/instances/{id}/validate` | Validate a document: `VALIDATED`, or `DRAFT` with the errors per field |
 
 ## Ingestion walkthrough
 

@@ -32,6 +32,13 @@ vi.mock('../api/doccreation', () => ({
   fillFromRecord: vi.fn(),
 }));
 
+// The page reads the template's field rules; none here.
+vi.mock('../api/docRules', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getRules: vi.fn(() => Promise.resolve({ revision: 0, rules: [], fields: [], ruleTypes: [] })),
+  saveRules: vi.fn(),
+}));
+
 vi.mock('../api/records', async (importOriginal) => ({
   ...(await importOriginal()),
   searchRecords: vi.fn(),

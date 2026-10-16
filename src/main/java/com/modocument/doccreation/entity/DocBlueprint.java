@@ -77,6 +77,10 @@ public class DocBlueprint {
     @Column(name = "CurrentVersion", nullable = false)
     private int currentVersion = 1;
 
+    /** V321 (ws33): counts saves of the field rules; a rules save names the revision it read. */
+    @Column(name = "RulesRevision", nullable = false)
+    private int rulesRevision;
+
     /** PDF_OVERLAY or DOCX_LEGACY (V300; existing rows default to DOCX_LEGACY). */
     @Column(name = "Kind", nullable = false, length = 16)
     private String kind = KIND_DOCX_LEGACY;
@@ -232,5 +236,13 @@ public class DocBlueprint {
 
     public void setUpdatedDate(LocalDateTime updatedDate) {
         this.updatedDate = updatedDate;
+    }
+
+    public int getRulesRevision() {
+        return rulesRevision;
+    }
+
+    public void setRulesRevision(int rulesRevision) {
+        this.rulesRevision = rulesRevision;
     }
 }

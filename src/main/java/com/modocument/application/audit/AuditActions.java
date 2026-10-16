@@ -46,6 +46,12 @@ public final class AuditActions {
     public static final String DOC_BLUEPRINT_MAPPING_SAVED = "DOC_BLUEPRINT_MAPPING_SAVED";
     /** ws32: a document was filled from records (region keys and record ids only). */
     public static final String DOC_FILLED_FROM_RECORD = "DOC_FILLED_FROM_RECORD";
+    /** ws33: a template's field rules were saved (counts only). */
+    public static final String DOC_FIELD_RULES_SAVED = "DOC_FIELD_RULES_SAVED";
+    /** ws33: field rules were imported from a flow template (counts and ids only). */
+    public static final String DOC_FIELD_RULES_IMPORTED = "DOC_FIELD_RULES_IMPORTED";
+    /** ws33: a document was validated; SUCCESS = VALIDATED, FAILED = stays DRAFT (counts only). */
+    public static final String DOC_VALIDATED = "DOC_VALIDATED";
 
     /**
      * A refusal outside method security: an AccessDeniedException raised
@@ -127,7 +133,8 @@ public final class AuditActions {
                 "EXPORT_OVER_CAP_WITH_REASON");
         add(c, "Documents", DOC_GENERATED, DOC_DOWNLOADED, "DOC_SUBMITTED", "DOC_RELEASED",
                 "DOC_RELEASE_REJECTED", "DOC_BLUEPRINT_CREATED", "DOC_BLUEPRINT_VERSION_SAVED",
-                "DOC_LEGACY_PURGED", DOC_BLUEPRINT_MAPPING_SAVED, DOC_FILLED_FROM_RECORD);
+                "DOC_LEGACY_PURGED", DOC_BLUEPRINT_MAPPING_SAVED, DOC_FILLED_FROM_RECORD,
+                DOC_FIELD_RULES_SAVED, DOC_FIELD_RULES_IMPORTED, DOC_VALIDATED);
         add(c, "Privacy", SENSITIVE_DATA_VIEWED, TEMPLATE_RECORDS_SEARCHED, "DSR_SEARCH", "DSR_EXPORTED",
                 "DSR_ERASED", "RETENTION_PURGE_COMPLETED");
         add(c, "Audit", AUDIT_LOG_VIEWED, AUDIT_LOG_EXPORTED);

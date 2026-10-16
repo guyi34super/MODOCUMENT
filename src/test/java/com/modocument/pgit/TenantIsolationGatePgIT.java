@@ -125,6 +125,7 @@ class TenantIsolationGatePgIT extends PgSpringItSupport {
                 get("/api/doccreation/blueprints/7150/file").header("Authorization", bankBToken),
                 delete("/api/doccreation/blueprints/7150").header("Authorization", bankBToken),
                 get("/api/doccreation/instances/7160").header("Authorization", bankBToken),
+                post("/api/doccreation/instances/7160/validate").header("Authorization", bankBToken),
                 post("/api/doccreation/instances/7160/generate").header("Authorization", bankBToken),
                 get("/api/doccreation/instances/7160/download").header("Authorization", bankBToken),
                 // Uploaded file (referenced by stored name)

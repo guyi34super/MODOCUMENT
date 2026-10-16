@@ -56,7 +56,8 @@ export function Badge({ status }) {
     UPLOADED: 'bg-neutral-100 text-muted',
     PARSED: 'bg-pill text-accent',
     MAPPED: 'bg-pill text-accent',
-    VALIDATED: 'bg-success-bg text-success-ink',
+    // Ingestion jobs and ws33 documents: checked, not yet released (teal, distinct from RELEASED).
+    VALIDATED: 'bg-teal-100 text-teal-800',
     EXPORTED: 'bg-success-bg text-success-ink',
     // ws11 document release workflow.
     DRAFT: 'bg-neutral-100 text-muted',

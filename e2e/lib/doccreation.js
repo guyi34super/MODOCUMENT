@@ -84,3 +84,26 @@ export function fakeDocx() {
     Buffer.alloc(64),
   ]);
 }
+
+/**
+ * The builder's Save (field-validation-contract §4/§5): flushes the autosave,
+ * then POST /instances/{id}/validate. Waits for the validate answer and, when
+ * `expectValidated` (the default), asserts it passed: no errors, the status
+ * badge shows VALIDATED and Generate is enabled. Returns the InstanceDto.
+ */
+export async function saveAndValidate(page, { expectValidated = true } = {}) {
+  const validated = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && /\/api\/doccreation\/instances\/\d+\/validate$/.test(new URL(r.url()).pathname)
+  );
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const response = await validated;
+  expect(response.status(), 'POST /validate').toBe(200);
+  const dto = await response.json();
+  if (expectValidated) {
+    expect(dto.validation?.errors ?? [], 'validation errors after Save').toEqual([]);
+    expect(dto.status).toBe('VALIDATED');
+    await expect(page.getByText('VALIDATED', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Generate', exact: true })).toBeEnabled();
+  }
+  return dto;
+}

@@ -60,6 +60,7 @@ final class BlankRegionDetector {
                 case "CHECKBOX", "RADIO" -> RegionKind.CHECKBOX;
                 case "SIGNATURE" -> RegionKind.SIGNATURE;
                 case "MULTILINE" -> RegionKind.MULTILINE;
+                case "CHOICE" -> RegionKind.CHOICE; // ws33: combo and list boxes are dropdowns
                 default -> RegionKind.TEXT;
             };
             String label = w.alternateName();

@@ -70,6 +70,13 @@ describe('Badge', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
+  it('gives VALIDATED its own colour, distinct from RELEASED', () => {
+    render(<Badge status="VALIDATED" />);
+    render(<Badge status="RELEASED" />);
+    expect(screen.getByText('VALIDATED').className).toContain('bg-teal-100');
+    expect(screen.getByText('RELEASED').className).toContain('bg-success-bg');
+  });
+
   it('uses success colors for COMPLETED and danger colors for FAILED', () => {
     render(<Badge status="COMPLETED" />);
     render(<Badge status="FAILED" />);

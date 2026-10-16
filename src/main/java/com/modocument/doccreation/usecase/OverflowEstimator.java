@@ -99,6 +99,6 @@ public final class OverflowEstimator {
 
     private static boolean isText(RegionKind kind) {
         return kind == RegionKind.TEXT || kind == RegionKind.MULTILINE || kind == RegionKind.DATE
-                || kind == RegionKind.NUMBER;
+                || kind == RegionKind.NUMBER || kind == RegionKind.CHOICE;
     }
 }

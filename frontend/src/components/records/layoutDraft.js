@@ -3,16 +3,19 @@
 // draft that is saved to the blueprint through PUT /blueprints/{id}/overlay.
 
 import { uniqueKey } from '../pdf/geometry';
+import { cleanProps } from '../pdf/RegionPropertiesPanel';
 
 /** The RegionDto fields the overlay endpoint takes (no sampleValue / suggested). */
 export const REGION_DTO_FIELDS = [
   'key', 'label', 'group', 'kind', 'page', 'fx', 'fy', 'fw', 'fh', 'fontName', 'fontSize', 'color',
-  'align', 'maxLines', 'acroFieldName', 'required', 'sortOrder', 'source', 'confidence',
+  'align', 'maxLines', 'acroFieldName', 'required', 'sortOrder', 'source', 'confidence', 'props',
 ];
 
 /** A draft region as the contract's RegionDto (UI-only fields and review-only values stripped). */
 export function toRegionDto(region) {
-  return Object.fromEntries(REGION_DTO_FIELDS.map((f) => [f, region[f] ?? null]));
+  const dto = Object.fromEntries(REGION_DTO_FIELDS.map((f) => [f, region[f] ?? null]));
+  dto.props = cleanProps(region.props);
+  return dto;
 }
 
 let uidCounter = 0;

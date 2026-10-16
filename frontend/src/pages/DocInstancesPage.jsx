@@ -14,6 +14,16 @@ import { Badge, Button, Card, ErrorBanner, Field, Spinner, inputClass } from '..
 import { useToast } from '../context/ToastContext';
 
 const blueprintIdOf = (b) => b.id ?? b.blueprintId;
+
+/** The status filter (field-validation contract §4.4): '' = all documents. */
+const STATUSES = [
+  ['', 'All'],
+  ['DRAFT', 'Draft'],
+  ['VALIDATED', 'Validated'],
+  ['GENERATED', 'Generated'],
+  ['SUBMITTED', 'Submitted'],
+  ['RELEASED', 'Released'],
+];
 const instanceIdOf = (row) => row.instanceId ?? row.id;
 
 export default function DocInstancesPage() {
@@ -23,18 +33,19 @@ export default function DocInstancesPage() {
   const [blueprints, setBlueprints] = useState([]);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [status, setStatus] = useState('');
 
   const [blueprintId, setBlueprintId] = useState('');
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(null);
-  const createOpen = showCreate ?? (instances !== null && instances.length === 0);
+  const createOpen = showCreate ?? (instances !== null && instances.length === 0 && !status);
   const chosen = blueprints.find((b) => String(blueprintIdOf(b)) === String(blueprintId));
 
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [docs, prints] = await Promise.all([listInstances(), listBlueprints()]);
+      const [docs, prints] = await Promise.all([listInstances(status ? { status } : {}), listBlueprints()]);
       setInstances(docs);
       // Only confirmed templates can start a document (a DRAFT answers 409).
       setBlueprints((prints || []).filter((b) => b.status === 'READY'));
@@ -44,7 +55,7 @@ export default function DocInstancesPage() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [status]);
 
   useEffect(() => {
     load();
@@ -165,7 +176,24 @@ export default function DocInstancesPage() {
         </Card>
       )}
 
-      <h2 className="mb-3 text-base font-medium">Documents</h2>
+      <div className="mb-3 flex flex-wrap items-end gap-3">
+        <h2 className="flex-1 text-base font-medium">Documents</h2>
+        <label className="text-sm">
+          <span className="mr-2 text-muted">Status</span>
+          <select
+            className={`${inputClass} !w-40`}
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            data-testid="status-filter"
+          >
+            {STATUSES.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {!instances ? (
         <Spinner />
       ) : (
@@ -209,7 +237,11 @@ export default function DocInstancesPage() {
           ]}
           rows={instances}
           caption="My documents"
-          emptyMessage="No documents yet — click 'New document' to start one from a template."
+          emptyMessage={
+            status
+              ? `No ${STATUSES.find(([v]) => v === status)[1].toLowerCase()} documents.`
+              : "No documents yet — click 'New document' to start one from a template."
+          }
           onRowClick={(row) => navigate(`/creation/documents/${instanceIdOf(row)}`)}
         />
       )}

@@ -63,3 +63,8 @@ b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integr
 b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:653
 b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:682
 b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integration/IntegrationHubSecurityQaTest.java:generic-api-key:735
+
+# ws33 DefaultDocRuleEvaluatorTest: the canary value "Zq9-SECRET-831" that the
+# test types into every field to prove that validation messages never repeat a
+# value; not a credential.
+fbe95bdb8ee88ff24403b613ee369a20e9360738:src/test/java/com/modocument/doccreation/rules/DefaultDocRuleEvaluatorTest.java:generic-api-key:435
