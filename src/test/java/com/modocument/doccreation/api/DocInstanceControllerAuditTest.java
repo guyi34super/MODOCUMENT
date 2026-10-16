@@ -2,6 +2,8 @@ package com.modocument.doccreation.api;
 
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.doccreation.dto.GenerationResultDto;
+import com.modocument.doccreation.dto.InstanceDto;
+import com.modocument.doccreation.dto.ValidationResultDto;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
 import com.modocument.domain.model.AuditOutcome;
 import com.modocument.testsupport.RecordingAuditRecorder;
@@ -20,7 +22,9 @@ import static org.mockito.Mockito.when;
 /**
  * ws28: generating a document records DOC_GENERATED (with the exactness
  * result and the added pages, ws31) and downloading it DOC_DOWNLOADED, once
- * per call, for that instance; a refused call records neither.
+ * per call, for that instance; a refused call records neither. ws33:
+ * validating records DOC_VALIDATED, SUCCESS or FAILED, with counts, the keys
+ * with errors and the rules revision, never values.
  */
 class DocInstanceControllerAuditTest {
 
@@ -57,6 +61,49 @@ class DocInstanceControllerAuditTest {
         assertThat(spec.entityType()).isEqualTo("DocInstance");
         assertThat(spec.entityId()).isEqualTo("12");
         assertThat(spec.newValues()).isEqualTo(Map.of("format", "pdf", "bytes", 8));
+    }
+
+    private static InstanceDto validated(String status, List<ValidationResultDto.Issue> errors) {
+        ValidationResultDto validation = new ValidationResultDto(errors.isEmpty() ? "VALIDATED" : "DRAFT", null, 4,
+                false, errors, List.of(new ValidationResultDto.Issue("amount", "Amount", 2L, "RANGE",
+                "Amount must be a number of at most 100.")), List.of(), true);
+        return new InstanceDto(12, "Loan", status, 1, "Form", 1, 1, List.of(), List.of(), Map.of("name", "Jane"),
+                List.of(), List.of(), null, false, null, List.of(), false, List.of(), null, validation, Map.of());
+    }
+
+    @Test
+    void validateIsAuditedWithCountsAndKeysButNoValues() {
+        when(useCase.validate(12)).thenReturn(validated("DRAFT", List.of(
+                new ValidationResultDto.Issue("name", "Full name", 1L, "REQUIRED", "Full name is required."),
+                new ValidationResultDto.Issue("name", "Full name", 3L, "LENGTH", "Full name is too long."),
+                new ValidationResultDto.Issue("dob", "Date of birth", null, "DATE_INVALID", "..."))));
+
+        controller.validate(12);
+
+        assertThat(audit.recorded()).singleElement().satisfies(spec -> {
+            assertThat(spec.action()).isEqualTo("DOC_VALIDATED");
+            assertThat(spec.outcome()).isEqualTo(AuditOutcome.FAILED);
+            assertThat(spec.entityType()).isEqualTo("DocInstance");
+            assertThat(spec.entityId()).isEqualTo("12");
+            Map<?, ?> values = (Map<?, ?>) spec.newValues();
+            assertThat(values.get("errors")).isEqualTo(3);
+            assertThat(values.get("warnings")).isEqualTo(1);
+            assertThat(values.get("errorKeys")).isEqualTo(List.of("name", "dob"));
+            assertThat(values.get("rulesRevision")).isEqualTo(4);
+            assertThat(values.toString()).doesNotContain("Jane");
+        });
+
+        when(useCase.validate(12)).thenReturn(validated("VALIDATED", List.of()));
+        controller.validate(12);
+        assertThat(audit.recorded().get(1).outcome()).isEqualTo(AuditOutcome.SUCCESS);
+    }
+
+    @Test
+    void aRefusedValidationRecordsNothing() {
+        when(useCase.validate(13)).thenThrow(new IllegalStateException("submitted"));
+
+        assertThatThrownBy(() -> controller.validate(13)).isInstanceOf(IllegalStateException.class);
+        assertThat(audit.recorded()).isEmpty();
     }
 
     @Test
