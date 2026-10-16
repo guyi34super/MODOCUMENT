@@ -1,5 +1,7 @@
 package com.modocument.doccreation.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -28,6 +30,7 @@ public record ValidationResultDto(String state,
     public record SetupWarning(Long ruleId, String regionKey, String message) {
     }
 
+    @JsonIgnore
     public boolean passed() {
         return errors == null || errors.isEmpty();
     }

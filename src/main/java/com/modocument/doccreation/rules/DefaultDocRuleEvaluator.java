@@ -132,21 +132,12 @@ public class DefaultDocRuleEvaluator implements DocRuleEvaluator {
     }
 
     /**
-     * Whether a rule type applies to a field kind: IMAGE and SIGNATURE take
-     * REQUIRED only, CHECKBOX REQUIRED and REQUIRED_IF, every other kind all
-     * types (contract §3).
+     * Whether a rule type applies to a field kind — the same table the rules
+     * API shows ({@link RuleTypeCatalog#fits}), so a rule the editor offers
+     * is never a setup warning here (contract §3).
      */
     public static boolean appliesTo(DocRuleType type, RegionKind kind) {
-        if (type == null || kind == null) {
-            return false;
-        }
-        if (isPhoto(kind)) {
-            return type == DocRuleType.REQUIRED;
-        }
-        if (kind == RegionKind.CHECKBOX) {
-            return type == DocRuleType.REQUIRED || type == DocRuleType.REQUIRED_IF;
-        }
-        return true;
+        return type != null && RuleTypeCatalog.fits(type, kind);
     }
 
     // ------------------------------------------------------------- built-ins
@@ -598,9 +589,8 @@ public class DefaultDocRuleEvaluator implements DocRuleEvaluator {
         return kind == RegionKind.IMAGE || kind == RegionKind.SIGNATURE;
     }
 
-    /** CHOICE is referenced by name: the constant arrives with the CHOICE kind (contract §2). */
     private static boolean isChoice(RegionKind kind) {
-        return kind != null && "CHOICE".equals(kind.name());
+        return kind == RegionKind.CHOICE;
     }
 
     private static String kindPhrase(RegionKind kind) {

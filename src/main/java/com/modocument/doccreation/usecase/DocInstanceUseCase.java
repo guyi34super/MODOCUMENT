@@ -1,5 +1,8 @@
 package com.modocument.doccreation.usecase;
 
+import java.util.HashSet;
+import com.modocument.doccreation.rules.DocRuleType;
+import com.modocument.doccreation.pdftemplate.BundledFonts;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -975,7 +978,12 @@ public class DocInstanceUseCase {
     private InstanceDto toDto(DocInstance instance, DocBlueprint blueprint) {
         List<PageInfo> pages = TemplateVersions.pages(blueprint);
         List<TemplateRegion> regionList = templates.regions(blueprint, instance.getBlueprintVersion());
-        List<RegionDto> regionDtos = regionList.stream().map(r -> OverlayMapper.toDto(r, pages, null)).toList();
+        Map<String, FieldProps> props = propsOf(blueprint, instance.getBlueprintVersion());
+        Set<String> requiredKeys = requiredKeys(blueprint);
+        List<RegionDto> regionDtos = regionList.stream()
+                .map(r -> OverlayMapper.toDto(r, pages, null, null, props.get(r.key()),
+                        requiredKeys.contains(r.key())))
+                .toList();
         Map<String, String> values = readValues(instance);
         List<InstanceDto.ImageDto> imageDtos = images.listByInstance(instance.getBankId(), instance.getDocInstanceId())
                 .stream().map(i -> new InstanceDto.ImageDto(i.getDocInstanceImageId(), i.getRegionKey(),
@@ -988,7 +996,6 @@ public class DocInstanceUseCase {
                 .toList();
         boolean canEditLayout = blueprint.getOwnerUserId() == ownership.requireUserId()
                 && ownership.callerHas(Permission.DOC_WRITE);
-        Map<String, FieldProps> props = propsOf(blueprint, instance.getBlueprintVersion());
         Map<String, FieldProps> regionProps = new LinkedHashMap<>();
         regionList.forEach(r -> regionProps.put(r.key(), props.getOrDefault(r.key(), FieldProps.NONE)));
         return new InstanceDto(instance.getDocInstanceId(), instance.getTitle(), instance.getStatus(),
@@ -996,7 +1003,19 @@ public class DocInstanceUseCase {
                 currentVersion, pages, regionDtos, values, imageDtos, overflow,
                 instance.getLastGeneratedDate(), instance.getGeneratedPdfKey() != null,
                 instance.getReviewComment(), sourceRecordDtos(instance), canEditLayout, blueprintEdits, null,
-                validationOf(instance, blueprint), regionProps);
+                validationOf(instance, blueprint), regionProps, BundledFonts.names());
+    }
+
+    /** The region keys with a REQUIRED field rule: {@code RegionDto.required} (contract §3). */
+    private Set<String> requiredKeys(DocBlueprint blueprint) {
+        Set<String> keys = new HashSet<>();
+        for (DocFieldRule rule : fieldRules.findByBankIdAndBlueprintIdOrderByRegionKeyAscSortOrderAscDocFieldRuleIdAsc(
+                blueprint.getBankId(), blueprint.getDocBlueprintId())) {
+            if (DocRuleType.REQUIRED.name().equals(rule.getRuleType())) {
+                keys.add(rule.getRegionKey());
+            }
+        }
+        return keys;
     }
 
     /** The records the document was filled from, with their template's name (null when it is gone). */

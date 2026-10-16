@@ -11,11 +11,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.IntStream;
 
@@ -150,20 +148,14 @@ class DefaultDocRuleEvaluatorTest {
 
     @Test
     void choiceValuesMustBeOneOfTheOptions() {
-        // CHOICE arrives with BE-B's RegionKind change; it is referenced by name.
-        Optional<RegionKind> choice = Arrays.stream(RegionKind.values())
-                .filter(k -> k.name().equals("CHOICE")).findFirst();
         FieldProps options = new FieldProps(null, null, null, List.of("Single", "Married"), null, null, null);
-        RegionKind kind = choice.orElse(RegionKind.TEXT);
-        ValidationResultDto result = run(List.of(field("status", "Status", kind, options)),
+        ValidationResultDto result = run(List.of(field("status", "Status", RegionKind.CHOICE, options)),
                 Map.of("status", "Divorced"));
-        if (choice.isPresent()) {
-            assertThat(codes(result.errors())).containsExactly("CHOICE_INVALID");
-            assertThat(run(List.of(field("status", "Status", kind, options)), Map.of("status", "Married"))
-                    .errors()).isEmpty();
-        } else {
-            assertThat(result.errors()).as("options only constrain CHOICE fields").isEmpty();
-        }
+        assertThat(codes(result.errors())).containsExactly("CHOICE_INVALID");
+        assertThat(run(List.of(field("status", "Status", RegionKind.CHOICE, options)), Map.of("status", "Married"))
+                .errors()).isEmpty();
+        assertThat(run(List.of(field("status", "Status", RegionKind.TEXT, options)), Map.of("status", "Divorced"))
+                .errors()).as("options only constrain CHOICE fields").isEmpty();
     }
 
     @Test

@@ -68,7 +68,8 @@ class DocInstanceControllerAuditTest {
                 false, errors, List.of(new ValidationResultDto.Issue("amount", "Amount", 2L, "RANGE",
                 "Amount must be a number of at most 100.")), List.of(), true);
         return new InstanceDto(12, "Loan", status, 1, "Form", 1, 1, List.of(), List.of(), Map.of("name", "Jane"),
-                List.of(), List.of(), null, false, null, List.of(), false, List.of(), null, validation, Map.of());
+                List.of(), List.of(), null, false, null, List.of(), false, List.of(), null, validation, Map.of(),
+                List.of());
     }
 
     @Test
