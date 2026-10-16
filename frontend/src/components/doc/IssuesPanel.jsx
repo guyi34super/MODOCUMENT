@@ -5,6 +5,7 @@ import { Button } from '../ui';
  * The validation issues of a document after Save: errors first, then
  * warnings, each with "Go to field"; "Next issue" walks through them.
  * `issues`: [{ id, level: 'error' | 'warning', regionKey, label, message }].
+ * Shown inside the Checks panel (ValidationPanel), under its h2.
  */
 export default function IssuesPanel({ issues, onGoTo }) {
   const [next, setNext] = useState(0);
@@ -19,12 +20,12 @@ export default function IssuesPanel({ issues, onGoTo }) {
   };
 
   return (
-    <section aria-labelledby="issues-heading" className="rounded-lg border border-danger-ink/40 bg-white p-3" data-testid="issues-panel">
+    <section aria-labelledby="issues-heading" className="rounded border border-danger-ink/40 bg-white p-2" data-testid="issues-panel">
       <div className="mb-2 flex items-center gap-2">
-        <h2 id="issues-heading" className="flex-1 text-sm font-medium">
+        <h3 id="issues-heading" className="flex-1 text-sm font-medium">
           Issues ({errors} error{errors === 1 ? '' : 's'}
           {warnings ? `, ${warnings} warning${warnings === 1 ? '' : 's'}` : ''})
-        </h2>
+        </h3>
         <Button size="sm" variant="secondary" onClick={goNext}>
           Next issue
         </Button>

@@ -9,15 +9,17 @@ import { fieldLabel } from './fields';
  * The field's properties shape it: `props.placeholder`, `props.maxLength`
  * and, for a dropdown (CHOICE), a <select> of `props.options` with an
  * empty choice. `invalid` marks a validation error (aria-invalid);
- * `describedBy` names the help text and messages under the input.
+ * `describedBy` names the help text and messages under the input; `title`
+ * is its tooltip (the builder sums up the field's rules in it).
  */
-export default function RegionInput({ id, region, value, onChange, locked, onPage, style, onFocus, describedBy, invalid = false }) {
+export default function RegionInput({ id, region, value, onChange, locked, onPage, style, onFocus, describedBy, invalid = false, title }) {
   const label = fieldLabel(region);
   const props = region.props || {};
   const common = {
     id,
     disabled: locked,
     onFocus,
+    title: title || undefined,
     'aria-describedby': describedBy || undefined,
     'aria-required': region.required || undefined,
     'aria-invalid': invalid || undefined,
