@@ -276,6 +276,15 @@ DRAFT --validate ok--> VALIDATED --generate--> GENERATED --submit--> SUBMITTED -
 - `RegionDto` inside `InstanceDto.regions` also carries `props`.
 - `InstanceSummaryDto` (the list of my documents) has its status updated as is; the frontend shows a Validated badge for `VALIDATED`.
 - `GET /instances?status=` gains an optional status filter.
+- **Making the checks visible (follow-up):** `InstanceDto` also gains
+  - `fieldChecks`: per region key of the document's version, `{rules, builtIn, mappedFrom}`.
+    - `rules`: `[{id, ruleType, summary, severity, origin, sourceTemplateName?, sourceFieldName?}]`. `summary` is plain text built from the rule's settings (`RuleSummaries`), such as "Required", "1–40 characters", "On or before 18 years ago" or "Must be ≥ Start date". Rules that don't fit the field's kind are left out, as the checks skip them. The source names appear only for IMPORTED rules.
+    - `builtIn`: the checks the kind and properties imply ("A date", "A number", "One of its options", "At most N characters").
+    - `mappedFrom`: `[{templateId, templateName, fieldName, role}]`, the data-source fields mapped onto this field.
+    - Template data only: never a document value.
+  - `rulesRevision`: the template's rules revision.
+  - `canEditRules`: the caller owns the template and holds `doc:write`, so the builder may link to its Field rules tab.
+- `GET /blueprints` entries gain `rulesCount`.
 
 ## 5. Frontend (FE)
 

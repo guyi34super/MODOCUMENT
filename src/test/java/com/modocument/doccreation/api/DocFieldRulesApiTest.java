@@ -389,6 +389,17 @@ class DocFieldRulesApiTest extends IsolatedStorageApiTestSupport {
                 .isEqualByComparingTo("1000");
         assertThat(rules(id, owner, 200)).isEqualTo(saved);
 
+        // ws33: the templates list shows how many rules each template has
+        MvcResult list = mvc.perform(as(get("/api/doccreation/blueprints"), owner)).andReturn();
+        JsonNode listed = null;
+        for (JsonNode entry : MAPPER.readTree(list.getResponse().getContentAsString())) {
+            if (entry.get("id").asInt() == id) {
+                listed = entry;
+            }
+        }
+        assertThat(listed).isNotNull();
+        assertThat(listed.get("rulesCount").asInt()).isEqualTo(6);
+
         // a stale revision is refused and changes nothing
         putRules(id, 1, "[]", 409);
         assertThat(rules(id, owner, 200).get("revision").asInt()).isEqualTo(2);
