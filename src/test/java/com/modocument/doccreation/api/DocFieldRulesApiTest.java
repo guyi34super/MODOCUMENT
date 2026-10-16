@@ -25,6 +25,16 @@ import com.modocument.infrastructure.persistence.TemplateJpaRepository;
 import com.modocument.infrastructure.persistence.ValidationRuleJpaRepository;
 import com.modocument.infrastructure.security.JwtService;
 import com.modocument.testsupport.FakePdfTemplateEngine;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget;
+import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
+import org.apache.pdfbox.pdmodel.interactive.form.PDComboBox;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +46,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.io.ByteArrayOutputStream;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -144,6 +155,12 @@ class DocFieldRulesApiTest extends IsolatedStorageApiTestSupport {
             jdbc.update("DELETE FROM DocBlueprint WHERE BankId = ?", bankId);
             jdbc.update("DELETE FROM ValidationRules WHERE BankId = ?", bankId);
             jdbc.update("DELETE FROM TemplateFields WHERE BankId = ?", bankId);
+            // The suite shares one H2 schema: a row another suite left behind may name a recycled
+            // template id; it would block deleting this suite's template.
+            jdbc.update("DELETE FROM ImportDetails WHERE ImportHistoryId IN (SELECT ImportHistoryId FROM "
+                    + "ImportHistory WHERE TemplateId IN (SELECT TemplateId FROM Template WHERE BankId = ?))", bankId);
+            jdbc.update("DELETE FROM ImportHistory WHERE TemplateId IN (SELECT TemplateId FROM Template "
+                    + "WHERE BankId = ?)", bankId);
             jdbc.update("DELETE FROM Template WHERE BankId = ?", bankId);
         }
         userIds.forEach(users::deleteById);
@@ -516,6 +533,55 @@ class DocFieldRulesApiTest extends IsolatedStorageApiTestSupport {
         ((ObjectNode) regionOf(v3, "notes")).set("props", MAPPER.readTree("{\"options\":[]}"));
         JsonNode error = saveOverlay(id, 3, (ArrayNode) v3.get("regions"), 400);
         assertThat(error.get("error").asText()).startsWith("Field \"notes\": ");
+    }
+
+    /** One page with an AcroForm dropdown {@code marital} (Single, Married). */
+    private static byte[] pdfWithDropdown() throws Exception {
+        try (PDDocument doc = new PDDocument()) {
+            PDPage page = new PDPage(PDRectangle.A4);
+            doc.addPage(page);
+            PDAcroForm form = new PDAcroForm(doc);
+            doc.getDocumentCatalog().setAcroForm(form);
+            PDResources resources = new PDResources();
+            resources.put(COSName.getPDFName("Helv"), new PDType1Font(Standard14Fonts.FontName.HELVETICA));
+            form.setDefaultResources(resources);
+            PDComboBox marital = new PDComboBox(form);
+            marital.setPartialName("marital");
+            marital.setDefaultAppearance("/Helv 10 Tf 0 g");
+            marital.setOptions(List.of("Single", "Married"));
+            PDAnnotationWidget widget = marital.getWidgets().get(0);
+            widget.setRectangle(new PDRectangle(100, 700, 200, 20));
+            widget.setPage(page);
+            page.getAnnotations().add(widget);
+            form.getFields().add(marital);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            doc.save(out);
+            return out.toByteArray();
+        }
+    }
+
+    @Test
+    void aDropdownProposedByTheEngineTakesItsOptionsFromThePdf() throws Exception {
+        TemplateRegion marital = new TemplateRegion("marital_status", "Marital status", null, RegionKind.CHOICE,
+                new PdfBox(0, 100, 700, 200, 20), "Helvetica", 0f, "#000000", Align.LEFT, 1, "marital", false, 0,
+                RegionSource.ACROFORM, 1.0, null);
+        TemplateRegion unknown = new TemplateRegion("plan", "Plan", null, RegionKind.CHOICE,
+                new PdfBox(0, 100, 600, 200, 20), "Helvetica", 0f, "#000000", Align.LEFT, 1, "nowhere", false, 1,
+                RegionSource.ACROFORM, 1.0, null);
+        engine.proposedRegions = List.of(marital, unknown);
+        MvcResult result = mvc.perform(as(multipart("/api/doccreation/blueprints")
+                        .file(new MockMultipartFile("file", "form.pdf", "application/pdf", pdfWithDropdown()))
+                        .param("flow", "BLANK"), owner))
+                .andExpect(status().isCreated()).andReturn();
+        JsonNode draft = MAPPER.readTree(result.getResponse().getContentAsString());
+        JsonNode dropdown = regionOf(draft, "marital_status");
+        assertThat(dropdown.get("kind").asText()).isEqualTo("CHOICE");
+        assertThat(dropdown.get("props").get("options")).extracting(JsonNode::asText)
+                .containsExactly("Single", "Married");
+        assertThat(regionOf(draft, "plan").get("kind").asText()).as("no options: a text field").isEqualTo("TEXT");
+        // the draft confirms as received: the options travel with the region
+        JsonNode ready = saveOverlay(draft.get("id").asInt(), 1, (ArrayNode) draft.get("regions"), 200);
+        assertThat(regionOf(ready, "marital_status").get("props")).isEqualTo(dropdown.get("props"));
     }
 
     @Test
