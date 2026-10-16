@@ -403,7 +403,8 @@ export default function BlueprintDetailPage() {
 
   const editorEnabled =
     Boolean(blueprint) &&
-    (blueprint.status !== 'READY' || tab === 'layout') &&
+    // The shortcuts listen only while the layout is on screen (a draft has the tabs too).
+    ((blueprint.status !== 'READY' && blueprint.status !== 'DRAFT') || tab === 'layout') &&
     view !== 'template' &&
     !(blueprint.status !== 'DRAFT' && requestedVersion != null && blueprint.version !== blueprint.currentVersion);
   const editor = useOverlayEditor({
@@ -483,8 +484,9 @@ export default function BlueprintDetailPage() {
   });
 
   const isDraft = blueprint?.status === 'DRAFT';
-  // Data sources belong to a confirmed template; an older version shows them read-only.
-  const showTabs = blueprint?.status === 'READY';
+  // Data sources and field rules belong to a confirmed template; an older version shows them
+  // read-only. A draft shows the tabs too (deep links land on them), each asking to confirm first.
+  const showTabs = blueprint?.status === 'READY' || isDraft;
   const activeTab = showTabs ? tab : 'layout';
   const savedRegions = useMemo(() => (blueprint?.regions || []).filter((r) => !r.suggested), [blueprint]);
   const readOnly = Boolean(
@@ -870,7 +872,25 @@ export default function BlueprintDetailPage() {
             </div>
           )}
 
-          {activeTab === 'sources' ? (
+          {isDraft && activeTab !== 'layout' ? (
+            <div role="tabpanel" id={`blueprint-panel-${activeTab}`} aria-labelledby={`blueprint-tab-${activeTab}`}>
+              <div data-testid="confirm-first">
+                <Callout variant="info" title="Not available on a draft">
+                  <p>Confirm the template first to add data sources and field rules.</p>
+                  <div className="mt-2">
+                    <Button
+                      size="sm"
+                      onClick={save}
+                      disabled={saving || keyBlocking}
+                      title={keyBlocking ? 'Fix the field keys first' : undefined}
+                    >
+                      {saving ? 'Saving…' : 'Confirm template'}
+                    </Button>
+                  </div>
+                </Callout>
+              </div>
+            </div>
+          ) : activeTab === 'sources' ? (
             <div role="tabpanel" id="blueprint-panel-sources" aria-labelledby="blueprint-tab-sources">
               {/* The saved fields: a mapping can only name regions the server knows. */}
               <DataSourcesTab blueprintId={id} regions={savedRegions} readOnly={readOnly} />

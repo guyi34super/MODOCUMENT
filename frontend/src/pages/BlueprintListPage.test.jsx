@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '../context/ToastContext';
@@ -121,8 +121,8 @@ describe('BlueprintListPage', () => {
 
   it('lists templates with status, version, pages and documents, and deletes one', async () => {
     listBlueprints.mockResolvedValue([
-      { id: 3, name: 'Loan form', status: 'READY', currentVersion: 3, pageCount: 4, documentCount: 2, flow: 'BLANK' },
-      { id: 4, name: 'KYC', status: 'DRAFT', currentVersion: 1, pageCount: 1, documentCount: 0, flow: 'WITH_DATA' },
+      { id: 3, name: 'Loan form', status: 'READY', currentVersion: 3, pageCount: 4, documentCount: 2, rulesCount: 5, flow: 'BLANK' },
+      { id: 4, name: 'KYC', status: 'DRAFT', currentVersion: 1, pageCount: 1, documentCount: 0, rulesCount: 0, flow: 'WITH_DATA' },
     ]);
     deleteBlueprint.mockResolvedValue(null);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -139,6 +139,27 @@ describe('BlueprintListPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Delete KYC' }));
     expect(deleteBlueprint).toHaveBeenCalledWith(4);
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('shows the number of field rules as a link to the Field rules tab, "None" without rules', async () => {
+    listBlueprints.mockResolvedValue([
+      { id: 3, name: 'Loan form', status: 'READY', currentVersion: 3, pageCount: 4, documentCount: 2, rulesCount: 5 },
+      { id: 4, name: 'KYC', status: 'DRAFT', currentVersion: 1, pageCount: 1, documentCount: 0, rulesCount: 0 },
+    ]);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'Document templates' });
+    expect(within(table).getByRole('columnheader', { name: 'Rules' })).toBeInTheDocument();
+    const five = within(table).getByRole('link', { name: 'Field rules of Loan form: 5' });
+    expect(five).toHaveTextContent('5');
+    expect(five).toHaveAttribute('href', '/creation/blueprints/3?tab=rules');
+    const none = within(table).getByRole('link', { name: 'Field rules of KYC: none' });
+    expect(none).toHaveTextContent('None');
+    expect(none).toHaveAttribute('href', '/creation/blueprints/4?tab=rules');
+
+    // The link is its own target: the row's click (open the template) does not also fire.
+    await userEvent.click(five);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

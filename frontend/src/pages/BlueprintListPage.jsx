@@ -262,6 +262,20 @@ export default function BlueprintListPage() {
             { key: 'pageCount', label: 'Pages', render: (row) => row.pageCount ?? '—' },
             { key: 'documentCount', label: 'Documents', render: (row) => row.documentCount ?? 0 },
             {
+              key: 'rulesCount',
+              label: 'Rules',
+              // The template's field rules: a link to its Field rules tab, also when there are none yet.
+              render: (row) => (
+                <Link
+                  to={`/creation/blueprints/${blueprintId(row)}?tab=rules`}
+                  className="text-accent hover:underline"
+                  aria-label={`Field rules of ${row.name}: ${row.rulesCount ? row.rulesCount : 'none'}`}
+                >
+                  {row.rulesCount ? row.rulesCount : 'None'}
+                </Link>
+              ),
+            },
+            {
               key: 'actions',
               label: '',
               render: (row) => (

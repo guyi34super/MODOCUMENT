@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   blueprintPagePath,
   deleteImage,
@@ -22,7 +22,8 @@ import PhotoBox, { startPhotoDrag } from '../components/doc/PhotoBox';
 import PreviewDialog from '../components/doc/PreviewDialog';
 import RegionInput from '../components/doc/RegionInput';
 import useAutosave from '../components/doc/useAutosave';
-import IssuesPanel from '../components/doc/IssuesPanel';
+import ValidationPanel from '../components/doc/ValidationPanel';
+import { FieldCheckChips, checksFor, checksId, compactText, rulesTitle, totalRules } from '../components/doc/fieldChecks';
 import { PHOTO_KINDS, fieldLabel } from '../components/doc/fields';
 import { NOT_VALIDATED_TEXT, isBlank, liveHints, serverIssues } from '../components/doc/validation';
 import { useToast } from '../context/ToastContext';
@@ -104,6 +105,8 @@ export default function DocBuilderPage() {
   // the status shows Draft at once and their server messages give way to live hints.
   const [edited, setEdited] = useState(() => new Set());
   const [validating, setValidating] = useState(false);
+  // The server refused the validate (403): this user may not edit the document.
+  const [forbidden, setForbidden] = useState(false);
   const [goTo, setGoTo] = useState(null);
 
   // Autosave (components/doc/useAutosave): changed keys wait until typing pauses.
@@ -225,7 +228,15 @@ export default function DocBuilderPage() {
     return list;
   }, [validation, regions]);
 
-  const requiredRegions = regions.filter((r) => r.required || (rulesByKey.get(r.key) || []).some((x) => x.ruleType === 'REQUIRED'));
+  // What each field is checked against (contract §4.4): its rules, built-in checks and data-source mapping.
+  const fieldChecks = doc?.fieldChecks;
+  const rulesTotal = totalRules(fieldChecks);
+  const requiredRegions = regions.filter(
+    (r) =>
+      r.required ||
+      (rulesByKey.get(r.key) || []).some((x) => x.ruleType === 'REQUIRED') ||
+      checksFor(fieldChecks, r.key).rules.some((x) => x.ruleType === 'REQUIRED')
+  );
   const requiredFilled = requiredRegions.filter((r) => !isBlank(r, values[r.key], imageByRegion.has(r.key))).length;
 
   /** "Go to field": shows its page, then focuses its input in the Fields panel. */
@@ -268,7 +279,8 @@ export default function DocBuilderPage() {
         toast.success(`Saved and validated${warnings ? ` with ${warnings} warning${warnings === 1 ? '' : 's'}` : ''}`);
       }
     } catch (err) {
-      setError(err.message);
+      if (err?.status === 403) setForbidden(true);
+      else setError(err.message);
     } finally {
       setValidating(false);
     }
@@ -612,7 +624,23 @@ export default function DocBuilderPage() {
         sticky
         crumbs={[{ label: 'My Documents', to: '/creation/documents' }, { label: doc?.title || `#${id}` }]}
         title={doc?.title || 'Document'}
-        subtitle={doc ? `Template: ${doc.blueprintName}` : undefined}
+        subtitle={
+          doc &&
+          (doc.canEditRules ? (
+            <>
+              Template:{' '}
+              <Link to={`/creation/blueprints/${doc.blueprintId}`} className="text-accent hover:underline">
+                {doc.blueprintName}
+              </Link>
+              {' · '}
+              <Link to={`/creation/blueprints/${doc.blueprintId}?tab=rules`} className="text-accent hover:underline">
+                Field rules ({rulesTotal})
+              </Link>
+            </>
+          ) : (
+            `Template: ${doc.blueprintName}`
+          ))
+        }
         actions={
           doc && (
             <>
@@ -620,9 +648,18 @@ export default function DocBuilderPage() {
                 {saveText}
               </span>
               {!locked && (
-                <Button onClick={saveAndValidate} disabled={validating || layoutMode}>
+                <Button
+                  onClick={saveAndValidate}
+                  disabled={validating || layoutMode || forbidden}
+                  aria-describedby={forbidden ? 'save-forbidden' : undefined}
+                >
                   {validating ? 'Saving…' : 'Save'}
                 </Button>
+              )}
+              {forbidden && !locked && (
+                <span id="save-forbidden" role="status" className="self-center text-xs text-danger-ink">
+                  You can&apos;t edit this document
+                </span>
               )}
               <Button variant="secondary" onClick={openPreview}>
                 Preview
@@ -673,23 +710,20 @@ export default function DocBuilderPage() {
         <>
           <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
             <Badge status={status} />
+            {['GENERATED', 'SUBMITTED', 'RELEASED'].includes(status) &&
+              validation?.checked &&
+              (validation.errors || []).length === 0 && (
+                <Tag tone="success" className="!text-xs" title="This document passed its checks">
+                  Validated
+                </Tag>
+              )}
             <span>
               Built on template version {version}
               {currentVersion > version && ` (newer available: version ${currentVersion})`}
             </span>
             {doc.lastGeneratedDate && <span>· last generated {new Date(doc.lastGeneratedDate).toLocaleString()}</span>}
             {doc.status === 'SUBMITTED' && <span>· awaiting release by an approver</span>}
-            {requiredRegions.length > 0 && (
-              <span data-testid="required-progress">
-                · {requiredFilled} of {requiredRegions.length} required field{requiredRegions.length === 1 ? '' : 's'} filled
-              </span>
-            )}
           </div>
-          {validation?.rulesChangedSinceValidation && !locked && (
-            <p className="mb-4 rounded bg-amber-100 px-3 py-2 text-sm text-amber-900" role="note">
-              Rules changed since this document was validated — save again to re-check.
-            </p>
-          )}
           {reviewerComment && doc.status !== 'SUBMITTED' && (
             <div className="mb-4">
               <Callout
@@ -878,6 +912,7 @@ export default function DocBuilderPage() {
                                 onFocus={() => setActiveKey(region.key)}
                                 invalid={info.invalid}
                                 describedBy={info.describedBy}
+                                title={rulesTitle(checksFor(fieldChecks, region.key))}
                                 style={{
                                   fontSize: `${fontPx(region, page, scale)}px`,
                                   textAlign: (region.align || 'LEFT').toLowerCase(),
@@ -968,6 +1003,17 @@ export default function DocBuilderPage() {
                 </>
               ) : (
               <>
+              <ValidationPanel
+                doc={doc}
+                status={status}
+                locked={locked}
+                regions={regions}
+                issues={issues}
+                onGoTo={goToField}
+                requiredFilled={requiredFilled}
+                requiredTotal={requiredRegions.length}
+              />
+
               <Card padding="compact">
                 <h2 className="mb-2 text-sm font-medium">Data from the flow</h2>
                 <Button size="sm" onClick={() => setFillOpen(true)} disabled={locked}>
@@ -1089,8 +1135,6 @@ export default function DocBuilderPage() {
                 )}
               </Card>
 
-              <IssuesPanel issues={issues} onGoTo={goToField} />
-
               <section aria-labelledby="fields-heading" className="rounded-lg border border-line bg-white p-3">
                 <h2 id="fields-heading" className="mb-2 text-sm font-medium">
                   Fields
@@ -1105,6 +1149,12 @@ export default function DocBuilderPage() {
                         const noteId = `overflow-note-${region.key}`;
                         const label = fieldLabel(region);
                         const info = describe(region);
+                        const checks = checksFor(fieldChecks, region.key);
+                        // The field's checks in short under it, read as part of its description.
+                        const panelDescribedBy =
+                          [info.describedBy, compactText(checks) ? checksId(region.key) : null].filter(Boolean).join(' ') ||
+                          undefined;
+                        const chips = <FieldCheckChips fieldKey={region.key} checks={checks} />;
                         if (PHOTO_KINDS.has(region.kind)) {
                           const image = imageByRegion.get(region.key);
                           return (
@@ -1112,7 +1162,7 @@ export default function DocBuilderPage() {
                               key={region.key}
                               id={`field-panel-${region.key}`}
                               tabIndex={-1}
-                              aria-describedby={info.describedBy}
+                              aria-describedby={panelDescribedBy}
                               className={`rounded p-1 text-sm outline-none ${activeKey === region.key ? 'bg-pill' : ''} ${
                                 info.invalid ? 'ring-1 ring-danger-ink' : ''
                               }`}
@@ -1151,6 +1201,7 @@ export default function DocBuilderPage() {
                               ) : (
                                 <p className="text-xs text-muted">No photo yet.</p>
                               )}
+                              {chips}
                               {fieldNotes(region, info)}
                             </div>
                           );
@@ -1163,7 +1214,7 @@ export default function DocBuilderPage() {
                             onChange={(value) => setValue(region.key, value)}
                             locked={locked}
                             onFocus={() => focusField(region)}
-                            describedBy={info.describedBy}
+                            describedBy={panelDescribedBy}
                             invalid={info.invalid}
                           />
                         );
@@ -1190,6 +1241,7 @@ export default function DocBuilderPage() {
                                 {input}
                               </label>
                             )}
+                            {chips}
                             {overflow && (
                               <p id={noteId} className="mt-0.5">
                                 <Tag tone="warning">{OVERFLOW_TEXT}</Tag>
