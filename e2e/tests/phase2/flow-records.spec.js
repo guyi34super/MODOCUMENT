@@ -19,7 +19,7 @@
 //          record with "Fill empty fields only" keeps the existing values
 //   REC-05 UI, builder -> "Edit layout": move Full name, draw "Reference",
 //          save to the template (new version, document moved, values kept)
-//          -> generate -> the PDF carries the values (REPORT-masked NIC and
+//          -> Save (validates, ws33) -> generate -> the PDF carries the values (REPORT-masked NIC and
 //          account number) and Full name is drawn in its NEW box
 //   REC-06 READ_ONLY sees masked NIC/phone and cannot fill (403); another
 //          bank cannot see the records (404)
@@ -48,7 +48,14 @@ import { onboardBank } from '../../lib/phase2.js';
 import { customerForm } from '../../fixtures/pdf-form.js';
 import { decodePng, inkInBox } from '../../fixtures/png.js';
 import { containsText, pageTexts } from '../../lib/pdf-inspect.js';
-import { confirmAsProposed, getBlueprint, getBytes, templatePage, uploadBlueprint } from '../../lib/doccreation.js';
+import {
+  confirmAsProposed,
+  getBlueprint,
+  getBytes,
+  saveAndValidate,
+  templatePage,
+  uploadBlueprint,
+} from '../../lib/doccreation.js';
 
 const RECORDS = '/api/doccreation/records';
 const DOCS = '/api/doccreation';
@@ -472,6 +479,10 @@ test.describe('flow records in document creation @phase2 @records', () => {
     await expect(page.getByTestId('save-state')).toHaveText('Saved');
     doc = await operatorApi.get(`${DOCS}/instances/${instanceId}`);
     expect(doc.values.reference).toBe(REFERENCE);
+
+    // ws33: moving to version 2 and typing made it a draft; Save validates it before Generate.
+    await expect(page.getByRole('button', { name: 'Generate', exact: true })).toBeDisabled();
+    await saveAndValidate(page);
 
     // Generate and download.
     const generated = page.waitForResponse((r) => r.url().endsWith(`/instances/${instanceId}/generate`));

@@ -17,7 +17,8 @@
 //          (draft template = original in its box); confirming unreviewed
 //          keeps it; Apply removes it
 //   PDF-03 document: type on the page (autosave), photos (auto-fill, drag
-//          onto the box = swap), long notes -> overflow -> generate (+1 page)
+//          onto the box = swap), long notes -> overflow -> Save (validates,
+//          ws33) -> generate (+1 page)
 //          -> download: typed values in the PDF, page count = template + 1
 //   PDF-04 release: submit -> a second (approver) user releases; the
 //          review file is the PDF
@@ -51,6 +52,7 @@ import {
   fakeDocx,
   getBlueprint,
   getBytes,
+  saveAndValidate,
   templatePage,
   uploadBlueprint,
 } from '../../lib/doccreation.js';
@@ -490,6 +492,10 @@ test.describe('exact PDF templates @phase2 @pdf', () => {
     await expect(page.getByTestId('overflow-notes')).toHaveText('Will continue on an added page');
     await expect(page.getByTestId('save-state')).toHaveText('Saved');
     expect((await operatorApi.get(`/api/doccreation/instances/${instanceId}`)).overflow).toEqual(['notes']);
+
+    // ws33: a document is a draft until Save validates it; Generate / Download wait for that.
+    await expect(page.getByRole('button', { name: 'Generate', exact: true })).toBeDisabled();
+    await saveAndValidate(page);
 
     // Generate: one page added for the notes, and the layout verified exact.
     const generated = page.waitForResponse((r) => r.url().endsWith(`/instances/${instanceId}/generate`));
