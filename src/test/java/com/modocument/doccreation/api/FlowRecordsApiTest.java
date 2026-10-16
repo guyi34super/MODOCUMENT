@@ -573,6 +573,15 @@ class FlowRecordsApiTest extends IsolatedStorageApiTestSupport {
                 + "\"overwrite\":\"EMPTY_ONLY\"}", 200);
         assertThat(filled.get("values").get("full_name").asText()).isEqualTo("Typed by hand");
         assertThat(filled.get("values").get("account_number").asText()).isEqualTo("00445566778899");
+
+        // ws33: the document shows which flow fields its data sources map onto each field.
+        JsonNode nameChecks = filled.get("fieldChecks").get("full_name").get("mappedFrom").get(0);
+        assertThat(nameChecks.get("templateName").asText()).isEqualTo(customers.getName());
+        assertThat(nameChecks.get("fieldName").asText()).isEqualTo("full_name");
+        assertThat(nameChecks.get("role").asText()).isEqualTo("PRIMARY");
+        JsonNode accountChecks = filled.get("fieldChecks").get("account_number").get("mappedFrom").get(0);
+        assertThat(accountChecks.get("templateId").asInt()).isEqualTo(accounts.getTemplateId());
+        assertThat(accountChecks.get("role").asText()).isEqualTo("LINKED");
         assertThat(filled.get("values").has("id_number")).as("not selected").isFalse();
         assertThat(filled.get("sourceRecords")).extracting(r -> r.get("recordId").asLong())
                 .containsExactlyInAnyOrder(jane, older);

@@ -20,6 +20,7 @@ const A11Y_GATED = new Set([
   'BlueprintListPage.test.jsx',
   'ConfirmDialog.test.jsx',
   'DocBuilderPage.test.jsx',
+  'DocBuilderPage.checks.test.jsx',
   'DocBuilderPage.fill.test.jsx',
   'DocBuilderPage.layout.test.jsx',
   'DocBuilderPage.validation.test.jsx',
@@ -46,6 +47,7 @@ const A11Y_GATED = new Set([
   'PlatformOverviewPage.test.jsx',
   'SettingField.test.jsx',
   'SettingsPage.test.jsx',
+  'ValidationPanel.test.jsx',
 ]);
 
 beforeEach(() => {

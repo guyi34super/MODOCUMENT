@@ -142,6 +142,7 @@ public class DocInstanceUseCase {
     /** ws33: the template's field rules. */
     private final DocFieldRuleJpaRepository fieldRules;
     private final DocRuleEvaluator evaluator;
+    private final FieldChecksBuilder fieldChecks;
 
     public DocInstanceUseCase(DocInstanceRepository instances,
                               DocBlueprintRepository blueprints,
@@ -158,7 +159,9 @@ public class DocInstanceUseCase {
                               TemplateRepository templateRepository,
                               DocTemplateRegionRepository regionRows,
                               DocFieldRuleJpaRepository fieldRules,
-                              DocRuleEvaluator evaluator) {
+                              DocRuleEvaluator evaluator,
+                              FieldChecksBuilder fieldChecks) {
+        this.fieldChecks = fieldChecks;
         this.templateRepository = templateRepository;
         this.regionRows = regionRows;
         this.fieldRules = fieldRules;
@@ -979,7 +982,9 @@ public class DocInstanceUseCase {
         List<PageInfo> pages = TemplateVersions.pages(blueprint);
         List<TemplateRegion> regionList = templates.regions(blueprint, instance.getBlueprintVersion());
         Map<String, FieldProps> props = propsOf(blueprint, instance.getBlueprintVersion());
-        Set<String> requiredKeys = requiredKeys(blueprint);
+        List<DocFieldRule> rules = fieldRules.findByBankIdAndBlueprintIdOrderByRegionKeyAscSortOrderAscDocFieldRuleIdAsc(
+                blueprint.getBankId(), blueprint.getDocBlueprintId());
+        Set<String> requiredKeys = requiredKeys(rules);
         List<RegionDto> regionDtos = regionList.stream()
                 .map(r -> OverlayMapper.toDto(r, pages, null, null, props.get(r.key()),
                         requiredKeys.contains(r.key())))
@@ -1003,14 +1008,14 @@ public class DocInstanceUseCase {
                 currentVersion, pages, regionDtos, values, imageDtos, overflow,
                 instance.getLastGeneratedDate(), instance.getGeneratedPdfKey() != null,
                 instance.getReviewComment(), sourceRecordDtos(instance), canEditLayout, blueprintEdits, null,
-                validationOf(instance, blueprint), regionProps, BundledFonts.names());
+                validationOf(instance, blueprint), regionProps, BundledFonts.names(),
+                fieldChecks.build(blueprint, regionList, props, rules), blueprint.getRulesRevision(), canEditLayout);
     }
 
     /** The region keys with a REQUIRED field rule: {@code RegionDto.required} (contract §3). */
-    private Set<String> requiredKeys(DocBlueprint blueprint) {
+    private static Set<String> requiredKeys(List<DocFieldRule> rules) {
         Set<String> keys = new HashSet<>();
-        for (DocFieldRule rule : fieldRules.findByBankIdAndBlueprintIdOrderByRegionKeyAscSortOrderAscDocFieldRuleIdAsc(
-                blueprint.getBankId(), blueprint.getDocBlueprintId())) {
+        for (DocFieldRule rule : rules) {
             if (DocRuleType.REQUIRED.name().equals(rule.getRuleType())) {
                 keys.add(rule.getRegionKey());
             }

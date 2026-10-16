@@ -1,5 +1,6 @@
 package com.modocument.doccreation.usecase;
 
+import com.modocument.doccreation.repo.DocFieldRuleJpaRepository;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.doccreation.dto.BlueprintDto;
@@ -98,6 +99,7 @@ public class DocBlueprintUseCase {
     private final DocCreationSettings settings;
     private final AuditRecorder audit;
     private final TransactionTemplate transaction;
+    private final DocFieldRuleJpaRepository ruleRows;
 
     public DocBlueprintUseCase(DocBlueprintRepository blueprints,
                                DocBlueprintVersionRepository versions,
@@ -109,7 +111,9 @@ public class DocBlueprintUseCase {
                                PdfTemplateStore store,
                                DocCreationSettings settings,
                                AuditRecorder audit,
-                               PlatformTransactionManager transactionManager) {
+                               PlatformTransactionManager transactionManager,
+                               DocFieldRuleJpaRepository ruleRows) {
+        this.ruleRows = ruleRows;
         this.blueprints = blueprints;
         this.versions = versions;
         this.regions = regions;
@@ -280,13 +284,18 @@ public class DocBlueprintUseCase {
         if (owned.isEmpty()) {
             return List.of();
         }
-        Map<Integer, Long> documentCounts = instances.countByBlueprints(
-                owned.stream().map(DocBlueprint::getDocBlueprintId).toList());
+        List<Integer> ids = owned.stream().map(DocBlueprint::getDocBlueprintId).toList();
+        Map<Integer, Long> documentCounts = instances.countByBlueprints(ids);
+        Map<Integer, Long> ruleCounts = new java.util.HashMap<>();
+        for (Object[] row : ruleRows.countByBlueprints(ownership.requireBankId(), ids)) {
+            ruleCounts.put(((Number) row[0]).intValue(), ((Number) row[1]).longValue());
+        }
         return owned.stream()
                 .map(b -> new BlueprintSummaryDto(b.getDocBlueprintId(), b.getName(), TemplateVersions.status(b),
                         TemplateVersions.effectiveVersion(b), b.getPageCount() == null ? 0 : b.getPageCount(),
                         b.getUploadFlow(), documentCounts.getOrDefault(b.getDocBlueprintId(), 0L).intValue(),
-                        b.getCompanyId(), b.getCreatedDate()))
+                        b.getCompanyId(), b.getCreatedDate(),
+                        ruleCounts.getOrDefault(b.getDocBlueprintId(), 0L).intValue()))
                 .toList();
     }
 

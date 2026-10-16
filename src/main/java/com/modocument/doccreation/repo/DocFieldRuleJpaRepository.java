@@ -14,6 +14,12 @@ public interface DocFieldRuleJpaRepository extends JpaRepository<DocFieldRule, L
     List<DocFieldRule> findByBankIdAndBlueprintIdOrderByRegionKeyAscSortOrderAscDocFieldRuleIdAsc(
             int bankId, int blueprintId);
 
+    /** Rows of (blueprintId, rule count) for the given templates of the bank (the templates list). */
+    @Query("select r.blueprintId, count(r) from DocFieldRule r where r.bankId = :bankId "
+            + "and r.blueprintId in :blueprintIds group by r.blueprintId")
+    List<Object[]> countByBlueprints(@Param("bankId") int bankId,
+                                     @Param("blueprintIds") java.util.Collection<Integer> blueprintIds);
+
     @Modifying(flushAutomatically = true, clearAutomatically = false)
     @Query("delete from DocFieldRule r where r.bankId = :bankId and r.blueprintId = :blueprintId")
     int deleteBlueprint(@Param("bankId") int bankId, @Param("blueprintId") int blueprintId);

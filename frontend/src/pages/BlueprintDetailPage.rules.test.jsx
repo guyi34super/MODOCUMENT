@@ -590,3 +590,56 @@ describe('BlueprintDetailPage — editor tools with rules', () => {
     await waitFor(() => expect(screen.getByTestId('region-dob')).toHaveFocus());
   });
 });
+
+describe('BlueprintDetailPage — deep links and a draft template', () => {
+  beforeAll(installPointerEvents);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLayout();
+    getBlueprint.mockResolvedValue(blueprint());
+    getRules.mockResolvedValue(rulesDto());
+    getTemplates.mockResolvedValue([]);
+  });
+
+  it.each([
+    ['rules', 'Field rules', 'field-rules'],
+    ['sources', 'Data sources', 'data-sources'],
+  ])('selects the tab of ?tab=%s on a confirmed template', async (tab, name, testId) => {
+    renderPage(`/creation/blueprints/4?tab=${tab}`);
+    expect(await screen.findByTestId(testId)).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
+    expectAccessible();
+  });
+
+  it('shows the tabs on a draft, where Data sources and Field rules ask to confirm the template first', async () => {
+    getBlueprint.mockResolvedValue(blueprint({ status: 'DRAFT', version: 1, currentVersion: 1 }));
+    saveOverlay.mockImplementation(async (id, body) => blueprint({ version: 1, currentVersion: 1, regions: body.regions }));
+    renderPage('/creation/blueprints/4?tab=rules');
+
+    const rulesTab = await screen.findByRole('tab', { name: 'Field rules' });
+    expect(rulesTab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('confirm-first')).toHaveTextContent(
+      'Confirm the template first to add data sources and field rules.'
+    );
+    // Only a confirmed template loads its rules.
+    expect(getRules).not.toHaveBeenCalled();
+    expectAccessible();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Data sources' }));
+    expect(screen.getByTestId('confirm-first')).toHaveTextContent('Confirm the template first');
+    await userEvent.click(screen.getByRole('tab', { name: 'Layout' }));
+    expect(screen.queryByTestId('confirm-first')).not.toBeInTheDocument();
+    expect(screen.getByTestId('region-dob')).toBeInTheDocument();
+
+    // The callout's button is the template's own Confirm action.
+    await userEvent.click(screen.getByRole('tab', { name: 'Field rules' }));
+    await userEvent.click(within(screen.getByTestId('confirm-first')).getByRole('button', { name: 'Confirm template' }));
+    expect(saveOverlay).toHaveBeenCalledTimes(1);
+    expect(saveOverlay.mock.calls[0][1]).toMatchObject({ confirm: true, baseVersion: 1 });
+    expect(saveOverlay.mock.calls[0][1].regions.map((r) => r.key)).toEqual(['full_name', 'dob', 'email']);
+    // Confirmed: the Field rules tab now shows (and loads) the rules.
+    expect(await screen.findByTestId('field-rules')).toBeInTheDocument();
+    expect(getRules).toHaveBeenCalledWith('4');
+  });
+});

@@ -28,7 +28,11 @@ import java.util.Map;
  * ({@code checked} false while never validated); {@code props} — the field
  * properties of every region key of the document's version; {@code fonts} —
  * the bundled font names the builder's layout mode may pick (as
- * {@code GET /blueprints/{id}} returns them).
+ * {@code GET /blueprints/{id}} returns them); {@code fieldChecks} — per
+ * region key, the template's rules (with a plain summary), the built-in
+ * checks and the data-source fields mapped onto it; {@code rulesRevision}
+ * the template's rules revision; {@code canEditRules} — the caller owns the
+ * template and holds {@code doc:write} (may open its Field rules tab).
  */
 public record InstanceDto(int id,
                           String title,
@@ -51,7 +55,10 @@ public record InstanceDto(int id,
                           @JsonInclude(JsonInclude.Include.NON_NULL) List<String> droppedKeys,
                           ValidationResultDto validation,
                           Map<String, FieldProps> props,
-                          List<String> fonts) {
+                          List<String> fonts,
+                          Map<String, FieldChecksDto> fieldChecks,
+                          int rulesRevision,
+                          boolean canEditRules) {
 
     /** A photo of the document: placed in {@code regionKey}, or in the tray when null. */
     public record ImageDto(int id, String regionKey, String originalName) {
@@ -65,6 +72,7 @@ public record InstanceDto(int id,
     public InstanceDto withDroppedKeys(List<String> keys) {
         return new InstanceDto(id, title, status, blueprintId, blueprintName, blueprintVersion,
                 blueprintCurrentVersion, pages, regions, values, images, overflow, lastGeneratedDate, pdfAvailable,
-                reviewerComment, sourceRecords, canEditLayout, blueprintEdits, List.copyOf(keys), validation, props, fonts);
+                reviewerComment, sourceRecords, canEditLayout, blueprintEdits, List.copyOf(keys), validation, props, fonts,
+                fieldChecks, rulesRevision, canEditRules);
     }
 }

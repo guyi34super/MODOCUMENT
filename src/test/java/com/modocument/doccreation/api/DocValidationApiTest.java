@@ -362,6 +362,47 @@ class DocValidationApiTest extends IsolatedStorageApiTestSupport {
         assertThat(failed.get("props").get("dob").has("empty")).isFalse();
     }
 
+    @Test
+    void theDocumentCarriesEachFieldsChecksInPlainWords() throws Exception {
+        int blueprintId = readyTemplate();
+        setProps(blueprintId, 1, "full_name", "{\"maxLength\":40}");
+        addRule(blueprintId, "full_name", "REQUIRED", "{}", "ERROR");
+        addRule(blueprintId, "dob", "DATE_RANGE", "{\"Max\":\"-18y\"}", "ERROR");
+        addRule(blueprintId, "amount", "COMPARE", "{\"Field\":\"dob\",\"Op\":\">=\"}", "WARNING");
+        DocFieldRule imported = addRule(blueprintId, "amount", "RANGE", "{\"Min\":0,\"Max\":100}", "ERROR");
+        imported.setOrigin("IMPORTED");
+        imported.setSourceTemplateId(987_654);
+        imported.setSourceFieldName("loan_amount");
+        rules.save(imported);
+        // A rule that does not fit its field (RANGE on a photo) is not shown, as the checks skip it.
+        addRule(blueprintId, "passport_photo", "RANGE", "{\"Min\":1}", "ERROR");
+        int instanceId = document(blueprintId);
+        putValues(instanceId, "{\"full_name\":\"Jane Citizen\"}");
+
+        JsonNode doc = getDoc(instanceId);
+
+        JsonNode checks = doc.get("fieldChecks");
+        assertThat(checks.has("house_front")).as("every field has an entry").isTrue();
+        assertThat(checks.get("full_name").get("rules").get(0).get("summary").asText()).isEqualTo("Required");
+        assertThat(checks.get("full_name").get("builtIn")).extracting(JsonNode::asText)
+                .containsExactly("At most 40 characters");
+        assertThat(checks.get("dob").get("rules").get(0).get("summary").asText())
+                .isEqualTo("On or before 18 years ago");
+        assertThat(checks.get("dob").get("builtIn")).extracting(JsonNode::asText).containsExactly("A date");
+        List<String> amountRules = new ArrayList<>();
+        checks.get("amount").get("rules").forEach(r -> amountRules.add(r.get("summary").asText()
+                + "|" + r.get("severity").asText() + "|" + r.path("sourceFieldName").asText("-")));
+        assertThat(amountRules).containsExactly("Must be ≥ Date of birth|WARNING|-",
+                "Between 0 and 100|ERROR|loan_amount");
+        assertThat(checks.get("amount").get("rules").get(1).get("sourceTemplateName").asText())
+                .isEqualTo("a removed flow template");
+        assertThat(checks.get("passport_photo").get("rules")).isEmpty();
+        assertThat(checks.get("full_name").get("mappedFrom")).isEmpty();
+        assertThat(doc.get("rulesRevision").asInt()).isZero();
+        assertThat(doc.get("canEditRules").asBoolean()).isTrue();
+        assertThat(checks.toString()).as("template data only").doesNotContain("Jane Citizen");
+    }
+
     // ---------------------------------------------------------------- gates
 
     @Test
