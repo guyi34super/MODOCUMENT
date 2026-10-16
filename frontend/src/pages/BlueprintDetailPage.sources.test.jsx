@@ -155,11 +155,16 @@ describe('BlueprintDetailPage — Data sources tab', () => {
     getAllFields.mockResolvedValue([{ fieldName: 'national_id' }, { fieldName: 'balance' }]);
   });
 
-  it('is a tab of a confirmed template, and absent from a draft', async () => {
+  it('is a tab of a confirmed template; a draft shows it but asks to confirm first', async () => {
     getBlueprint.mockResolvedValue(blueprint({ status: 'DRAFT', version: 1, currentVersion: 1 }));
     const { unmount } = renderPage();
     await screen.findByRole('button', { name: 'Confirm template' });
-    expect(screen.queryByRole('tab', { name: 'Data sources' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Data sources' }));
+    expect(screen.queryByTestId('data-sources')).not.toBeInTheDocument();
+    expect(screen.getByTestId('confirm-first')).toHaveTextContent(
+      'Confirm the template first to add data sources and field rules.'
+    );
+    expect(listBlueprintSources).not.toHaveBeenCalled();
     unmount();
 
     getBlueprint.mockResolvedValue(blueprint());
