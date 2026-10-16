@@ -11,6 +11,7 @@ import java.util.List;
  * documents use. {@code status} is DRAFT while the uploaded proposal (version
  * 1) is under review, READY once confirmed. {@code warnings} and the sample
  * values / removed texts are review data: only present while DRAFT.
+ * {@code fonts} (ws33) are the bundled font names a region may use.
  */
 public record BlueprintDto(int id,
                            String name,
@@ -26,5 +27,6 @@ public record BlueprintDto(int id,
                            int documentCount,
                            String companyId,
                            String originalFileName,
-                           LocalDateTime createdDate) {
+                           LocalDateTime createdDate,
+                           List<String> fonts) {
 }

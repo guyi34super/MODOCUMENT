@@ -1,5 +1,6 @@
 package com.modocument.doccreation.fields;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.List;
@@ -42,6 +43,8 @@ public record FieldProps(String placeholder,
     public record NumberFormatSpec(Integer decimals, Boolean thousands, String prefix, String suffix) {
     }
 
+    /** No property set. Not a JSON property ({@code @JsonIgnore}: it would serialize as "empty"). */
+    @JsonIgnore
     public boolean isEmpty() {
         return NONE.equals(this);
     }
