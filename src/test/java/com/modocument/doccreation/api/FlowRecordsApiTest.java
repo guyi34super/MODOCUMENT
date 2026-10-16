@@ -165,6 +165,7 @@ class FlowRecordsApiTest extends IsolatedStorageApiTestSupport {
 
     @AfterEach
     void cleanUp() {
+        engine.reset();
         for (Bank b : List.of(bank, otherBank)) {
             int bankId = b.getBankId();
             jdbc.update("DELETE FROM TemplateRecordKey WHERE BankId = ?", bankId);

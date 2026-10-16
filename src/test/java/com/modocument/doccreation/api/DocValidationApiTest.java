@@ -110,6 +110,7 @@ class DocValidationApiTest extends IsolatedStorageApiTestSupport {
 
     @AfterEach
     void cleanUp() {
+        engine.reset();
         SecurityContextHolder.clearContext();
         engine.onFill = null;
         int bankId = bank.getBankId();

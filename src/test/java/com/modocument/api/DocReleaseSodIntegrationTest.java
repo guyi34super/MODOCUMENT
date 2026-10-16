@@ -61,6 +61,8 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
     private JdbcTemplate jdbc;
     @Autowired
     private JwtService jwtService;
+    @Autowired
+    private FakePdfTemplateEngine engine;
 
     private Bank bankA;
     private Bank bankB;
@@ -73,6 +75,9 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
 
     @BeforeEach
     void seedBankWithAuthorApproverAdminAndBystanders() {
+        // The fake engine is one bean for the whole context: start from its default regions
+        // ("notes" among them) whatever an earlier suite left set.
+        engine.reset();
         String tag = UUID.randomUUID().toString().substring(0, 8);
         bankA = banks.save(new Bank("RLA" + tag.substring(0, 4).toUpperCase(), "Release Bank A"));
         bankB = banks.save(new Bank("RLB" + tag.substring(4).toUpperCase(), "Release Bank B"));

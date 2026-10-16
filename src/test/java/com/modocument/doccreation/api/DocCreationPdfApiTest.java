@@ -104,6 +104,7 @@ class DocCreationPdfApiTest extends IsolatedStorageApiTestSupport {
 
     @AfterEach
     void cleanUp() {
+        engine.reset();
         int bankId = bank.getBankId();
         jdbc.update("DELETE FROM DocInstanceImage WHERE BankId = ?", bankId);
         jdbc.update("DELETE FROM DocImageAsset WHERE BankId = ?", bankId);
