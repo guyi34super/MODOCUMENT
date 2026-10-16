@@ -17,9 +17,15 @@ import PageView from '../components/pdf/PageView';
 import RegionBox from '../components/pdf/RegionBox';
 import DrawLayer from '../components/pdf/DrawLayer';
 import EditBox, { SUGGESTED_LABEL, describeEdit, isSuggestion } from '../components/pdf/EditBox';
-import RegionPropertiesPanel, { keyProblem } from '../components/pdf/RegionPropertiesPanel';
+import RegionPropertiesPanel, { cleanProps, fieldProblem } from '../components/pdf/RegionPropertiesPanel';
 import ThumbnailStrip from '../components/pdf/ThumbnailStrip';
+import EditorToolbar, { DeleteFieldsDialog, MarqueeLayer, SnapGuides } from '../components/pdf/EditorToolbar';
+import FieldList, { reorderPage } from '../components/pdf/FieldList';
+import useOverlayEditor from '../components/pdf/useOverlayEditor';
 import DataSourcesTab from '../components/records/DataSourcesTab';
+import FieldRulesTab from '../components/rules/FieldRulesTab';
+import useFieldRules from '../components/rules/useFieldRules';
+import useRequiredToggle from '../components/rules/useRequiredToggle';
 import {
   EDIT_LABELS,
   KIND_COLORS,
@@ -42,6 +48,7 @@ const TOOLS = [
 const TABS = [
   { value: 'layout', label: 'Layout' },
   { value: 'sources', label: 'Data sources' },
+  { value: 'rules', label: 'Field rules' },
 ];
 
 const VIEWS = [
@@ -52,7 +59,7 @@ const VIEWS = [
 
 const REGION_FIELDS = [
   'key', 'label', 'group', 'kind', 'page', 'fx', 'fy', 'fw', 'fh', 'fontName', 'fontSize', 'color',
-  'align', 'maxLines', 'acroFieldName', 'required', 'sortOrder', 'source', 'confidence',
+  'align', 'maxLines', 'acroFieldName', 'required', 'sortOrder', 'source', 'confidence', 'props',
 ];
 const EDIT_FIELDS = [
   'id', 'kind', 'page', 'fx', 'fy', 'fw', 'fh', 'text', 'fontName', 'fontSize', 'color', 'imageKey',
@@ -60,6 +67,8 @@ const EDIT_FIELDS = [
 ];
 
 const pick = (object, fields) => Object.fromEntries(fields.map((f) => [f, object[f] ?? null]));
+const toRegionDto = (region) => ({ ...pick(region, REGION_FIELDS), props: cleanProps(region.props) });
+const markEdited = (region) => ({ ...region, _edited: true });
 
 let uidCounter = 0;
 const withUid = (region) => ({ ...region, _uid: `r${(uidCounter += 1)}` });
@@ -367,7 +376,6 @@ export default function BlueprintDetailPage() {
   const requestedVersion = searchParams.get('version') ? Number(searchParams.get('version')) : undefined;
 
   const [blueprint, setBlueprint] = useState(null);
-  const [regions, setRegions] = useState([]);
   const [edits, setEdits] = useState([]);
   // BUG-PDF-01: low-confidence removals proposed but NOT applied, and the fields that belong to them.
   // Neither is sent on save unless applied (then they move to `edits` / `regions`).
@@ -386,12 +394,46 @@ export default function BlueprintDetailPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [error, setError] = useState('');
   const [focusTarget, setFocusTarget] = useState(null);
-  const [tab, setTab] = useState('layout');
+  // ?tab=rules&field=<key> opens the Field rules tab on a field (the builder's "Edit rules").
+  const [tab, setTab] = useState(() =>
+    TABS.some((t) => t.value === searchParams.get('tab')) ? searchParams.get('tab') : 'layout'
+  );
+  const [rulesFocus, setRulesFocus] = useState(() => searchParams.get('field'));
   const propertiesRef = useRef(null);
+
+  const editorEnabled =
+    Boolean(blueprint) &&
+    (blueprint.status !== 'READY' || tab === 'layout') &&
+    view !== 'template' &&
+    !(blueprint.status !== 'DRAFT' && requestedVersion != null && blueprint.version !== blueprint.currentVersion);
+  const editor = useOverlayEditor({
+    page: pageIndex,
+    enabled: editorEnabled,
+    onChange: () => setDirty(true),
+    touch: markEdited,
+    withUid,
+  });
+  const regions = editor.items;
+  const rulesEnabled = blueprint?.status === 'READY';
+  const fieldRules = useFieldRules(id, { enabled: rulesEnabled });
+  const required = useRequiredToggle({
+    editor,
+    fieldRules,
+    blueprintId: id,
+    enabled: rulesEnabled,
+    readOnly: Boolean(blueprint && requestedVersion != null && blueprint.version !== blueprint.currentVersion),
+    onEditRules: (region) => {
+      setRulesFocus(region.key);
+      setTab('rules');
+    },
+    onError: (err) => setError(err.message),
+    onToggled: (region, on) =>
+      toast.success(on ? `“${regionName(region)}” is now required` : `“${regionName(region)}” is no longer required`),
+  });
 
   const adopt = useCallback((bp) => {
     setBlueprint(bp);
-    setRegions((bp.regions || []).filter((r) => !r.suggested).map(withUid));
+    editor.reset((bp.regions || []).filter((r) => !r.suggested).map(withUid));
     setSuggestedRegions((bp.regions || []).filter((r) => r.suggested));
     setEdits((bp.edits || []).filter((e) => !isSuggestion(e)));
     setSuggestions((bp.edits || []).filter(isSuggestion));
@@ -399,6 +441,7 @@ export default function BlueprintDetailPage() {
     setSelection(null);
     setTool('select');
     setPageIndex((index) => Math.min(index, Math.max(0, (bp.pages?.length || 1) - 1)));
+    // editor.reset is stable (useCallback without dependencies); waiting Required toggles are dropped by save().
   }, []);
 
   const load = useCallback(async () => {
@@ -455,10 +498,10 @@ export default function BlueprintDetailPage() {
   useUnsavedGuard(dirty && !readOnly, 'You have unsaved template changes. Leave without saving them?');
 
   const checklist = useMemo(() => buildChecklist(regions, edits, suggestions), [regions, edits, suggestions]);
-  const keyBlocking = regions.some((r) => keyProblem(r.key, regions, r));
+  const keyBlocking = regions.some((r) => fieldProblem(r, regions));
 
-  const selectedRegion =
-    selection?.type === 'region' ? regions.find((r) => r._uid === selection.uid) : null;
+  const selectedRegion = editor.selectedItems.length === 1 ? editor.selectedItems[0] : null;
+  const multiSelection = editor.selectedItems.length > 1 ? editor.selectedItems : null;
   const selectedEdit = selection?.type === 'edit' ? edits.find((e) => e.id === selection.id) : null;
   const selectedSuggestion =
     selection?.type === 'suggestion' ? suggestions.find((s) => s.id === selection.id) : null;
@@ -468,11 +511,16 @@ export default function BlueprintDetailPage() {
   const select = (target, { focus = false } = {}) => {
     if (!target) {
       setSelection(null);
+      editor.clearSelection();
       return;
     }
-    setSelection(
-      target.type === 'region' ? { type: 'region', uid: target.uid } : { type: target.type, id: target.id }
-    );
+    if (target.type === 'region') {
+      setSelection(null);
+      editor.setSelection([target.uid]);
+    } else {
+      setSelection({ type: target.type, id: target.id });
+      editor.clearSelection();
+    }
     if (target.page != null) setPageIndex(target.page);
     if (focus) {
       if (!overlayVisible) setView('overlay');
@@ -480,16 +528,16 @@ export default function BlueprintDetailPage() {
     }
   };
 
-  // `_edited` marks a field the user changed by hand: restoring its removal then keeps it.
-  const updateRegion = (uid, patch) => {
-    setRegions((list) => list.map((r) => (r._uid === uid ? { ...r, ...patch, _edited: true } : r)));
-    setDirty(true);
-  };
-  const deleteRegion = (uid) => {
-    setRegions((list) => list.filter((r) => r._uid !== uid));
+  /** A field pressed on the page or in the list: Shift adds it to the selection. */
+  const selectRegion = (uid, event) => {
     setSelection(null);
-    setDirty(true);
+    editor.select(uid, { additive: Boolean(event?.shiftKey), keep: event?.type === 'pointerdown' });
   };
+
+  // `_edited` (useOverlayEditor's `touch`) marks a field the user changed by hand: restoring its removal then keeps it.
+  const updateRegion = (uid, patch) => editor.update(uid, patch, { chain: true });
+  const deleteRegions = (uids) => editor.requestDelete(uids);
+
   const updateEdit = (editId, patch) => {
     setEdits((list) => list.map((e) => (e.id === editId ? { ...e, ...patch } : e)));
     setDirty(true);
@@ -505,17 +553,12 @@ export default function BlueprintDetailPage() {
       edit?.kind === 'REMOVE' && edit.regionKey ? regions.find((r) => r.key === edit.regionKey) : null;
     setEdits((list) => list.filter((e) => e.id !== editId));
     if (field && !field._edited) {
-      setRegions((list) => list.filter((r) => r._uid !== field._uid));
+      editor.apply((list) => list.filter((r) => r._uid !== field._uid));
       toast.success(`Content restored — its field “${regionName(field)}” was removed too`);
     } else if (field) {
       toast.success(`Content restored — its field “${regionName(field)}” was kept because you changed it`);
     }
-    setSelection((current) =>
-      (current?.type === 'edit' && current.id === editId) ||
-      (field && !field._edited && current?.type === 'region' && current.uid === field._uid)
-        ? null
-        : current
-    );
+    setSelection((current) => (current?.type === 'edit' && current.id === editId ? null : current));
     setDirty(true);
   };
 
@@ -530,7 +573,7 @@ export default function BlueprintDetailPage() {
       regionKey = taken.has(field.key) ? uniqueKey(field.key, taken) : field.key;
       const kept = { ...field, key: regionKey };
       delete kept.suggested;
-      setRegions((list) => [...list, withUid(kept)]);
+      editor.apply((list) => [...list, withUid(kept)]);
       setSuggestedRegions((list) => list.filter((r) => r !== field));
     }
     setEdits((list) => [...list, { ...suggestion, applied: true, regionKey }]);
@@ -591,9 +634,8 @@ export default function BlueprintDetailPage() {
         confidence: 1,
         sampleValue: null,
       });
-      setRegions((list) => [...list, region]);
-      setSelection({ type: 'region', uid: region._uid });
-      setDirty(true);
+      editor.add(region);
+      setSelection(null);
       setTool('select');
       setFocusTarget('properties');
       return;
@@ -618,11 +660,13 @@ export default function BlueprintDetailPage() {
     if (!blueprint) return;
     setSaving(true);
     setError('');
+    // Required toggles to write as rules once the fields exist: every required field of a confirmed draft.
+    const requiredChanges = required.takeChanges(regions, { allRequired: isDraft });
     try {
       const saved = await saveOverlay(id, {
         baseVersion: blueprint.currentVersion ?? blueprint.version,
         // Only applied edits and kept fields: suggestions that were not applied are never sent.
-        regions: regions.map((r) => pick(r, REGION_FIELDS)),
+        regions: regions.map(toRegionDto),
         edits: edits.map((e) => ({ ...pick(e, EDIT_FIELDS), applied: true })),
         note: note.trim() || undefined,
         confirm: true,
@@ -635,11 +679,24 @@ export default function BlueprintDetailPage() {
       if (requestedVersion != null) setSearchParams({});
       if (historyOpen) loadVersions();
       else setVersions(null);
+      if (requiredChanges.size) await syncRequired(requiredChanges);
+      else if (rulesEnabled) fieldRules.load();
     } catch (err) {
       if (err.status === 409) setConflict(true);
       else setError(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** After a save: writes the Required toggles of fields the rules did not know as REQUIRED rules. */
+  const syncRequired = async (changes) => {
+    try {
+      const result = await required.sync(changes);
+      const keys = new Set((result?.rules || []).filter((r) => r.ruleType === 'REQUIRED').map((r) => r.regionKey));
+      editor.quietly((list) => list.map((r) => (changes.has(r.key) ? { ...r, required: keys.has(r.key) } : r)));
+    } catch (err) {
+      setError(`The template was saved, but the Required settings could not be saved as rules: ${err.message}`);
     }
   };
 
@@ -680,18 +737,6 @@ export default function BlueprintDetailPage() {
     for (const r of regions) if (counts[r.page] != null) counts[r.page] += 1;
     return counts.map((n) => (n ? `${n} field${n === 1 ? '' : 's'}` : ''));
   }, [pages, regions]);
-
-  const groupedFields = useMemo(() => {
-    const byPage = new Map();
-    const sorted = [...regions].sort(
-      (a, b) => a.page - b.page || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.fy - b.fy || a.fx - b.fx
-    );
-    for (const r of sorted) {
-      if (!byPage.has(r.page)) byPage.set(r.page, []);
-      byPage.get(r.page).push(r);
-    }
-    return [...byPage.entries()];
-  }, [regions]);
 
   const activeTool = TOOLS.find((t) => t.value === tool);
   const versionLabel = blueprint
@@ -830,6 +875,21 @@ export default function BlueprintDetailPage() {
               {/* The saved fields: a mapping can only name regions the server knows. */}
               <DataSourcesTab blueprintId={id} regions={savedRegions} readOnly={readOnly} />
             </div>
+          ) : activeTab === 'rules' ? (
+            <div role="tabpanel" id="blueprint-panel-rules" aria-labelledby="blueprint-tab-rules">
+              <FieldRulesTab
+                blueprintId={id}
+                fieldRules={fieldRules}
+                readOnly={readOnly}
+                focusKey={rulesFocus}
+                onFocused={() => setRulesFocus(null)}
+                onShowField={(key) => {
+                  const region = regions.find((r) => r.key === key);
+                  setTab('layout');
+                  if (region) select({ type: 'region', uid: region._uid, page: region.page }, { focus: true });
+                }}
+              />
+            </div>
           ) : (
           <div
             className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]"
@@ -885,6 +945,7 @@ export default function BlueprintDetailPage() {
                   {activeTool.draw}.
                 </p>
               )}
+              {overlayVisible && <EditorToolbar editor={editor} readOnly={!canEdit} />}
               <ThumbnailStrip
                 pages={pages}
                 current={pageIndex}
@@ -896,11 +957,21 @@ export default function BlueprintDetailPage() {
                 <PageView
                   path={pagePath}
                   page={page}
+                  zoom={editor.zoom}
                   alt={`Page ${pageIndex + 1} of ${pages.length} (${view === 'original' ? 'original' : 'template'})`}
                 >
                   {({ scale }) =>
                     overlayVisible && (
                       <>
+                        {canEdit && tool === 'select' && (
+                          <MarqueeLayer
+                            onSelectRect={(rect, options) => {
+                              setSelection(null);
+                              editor.selectInRect(rect, options);
+                            }}
+                            onClear={() => select(null)}
+                          />
+                        )}
                         {edits
                           .filter((e) => e.page === pageIndex)
                           .map((edit) => (
@@ -944,12 +1015,18 @@ export default function BlueprintDetailPage() {
                                 label={`${regionName(region)}, ${KIND_LABELS[region.kind] || region.kind}${
                                   low ? ', low confidence' : ''
                                 }`}
-                                selected={selectedRegion?._uid === region._uid}
+                                selected={editor.isSelected(region._uid)}
+                                handles={editor.selected.length <= 1}
                                 highlight={low}
                                 editable={canEdit}
-                                onSelect={() => select({ type: 'region', uid: region._uid })}
-                                onChange={(box) => updateRegion(region._uid, box)}
-                                onDelete={() => deleteRegion(region._uid)}
+                                onSelect={(event) => selectRegion(region._uid, event)}
+                                onChange={(box) => editor.dragEnd(region._uid, box)}
+                                onDelete={() =>
+                                  deleteRegions(editor.isSelected(region._uid) ? editor.selected : [region._uid])
+                                }
+                                onNudge={(event) => editor.nudgeKey(event, region._uid)}
+                                snap={editor.snapFor(region._uid)}
+                                onGuides={editor.setGuides}
                                 data-testid={`region-${region.key}`}
                                 data-kind={region.kind}
                                 data-low-confidence={low ? 'true' : undefined}
@@ -963,6 +1040,7 @@ export default function BlueprintDetailPage() {
                               </RegionBox>
                             );
                           })}
+                        <SnapGuides guides={editor.guides} />
                         {canEdit && activeTool?.draw && (
                           <DrawLayer
                             label={activeTool.draw}
@@ -1003,10 +1081,12 @@ export default function BlueprintDetailPage() {
                 )}
               </Card>
 
-              {(selectedRegion || selectedEdit || selectedSuggestion) && (
+              {(selectedRegion || multiSelection || selectedEdit || selectedSuggestion) && (
                 <Card padding="compact">
                   <h2 className="mb-2 text-sm font-medium">
-                    {selectedRegion
+                    {multiSelection
+                      ? 'Several fields'
+                      : selectedRegion
                       ? `Field: ${regionName(selectedRegion)}`
                       : selectedSuggestion
                         ? 'Suggested removal'
@@ -1021,14 +1101,18 @@ export default function BlueprintDetailPage() {
                         onApply={() => applySuggestion(selectedSuggestion.id)}
                         onDismiss={() => dismissSuggestion(selectedSuggestion.id)}
                       />
-                    ) : selectedRegion ? (
+                    ) : selectedRegion || multiSelection ? (
                       <RegionPropertiesPanel
                         region={selectedRegion}
                         regions={regions}
+                        selection={multiSelection}
+                        onChangeMany={(patchFor) => editor.updateMany(editor.selected, patchFor)}
+                        fonts={blueprint.fonts || []}
+                        rules={selectedRegion ? required.rulesFor(selectedRegion) : null}
                         draft={isDraft}
                         readOnly={readOnly}
                         onChange={(patch) => updateRegion(selectedRegion._uid, patch)}
-                        onDelete={() => deleteRegion(selectedRegion._uid)}
+                        onDelete={() => deleteRegions([selectedRegion._uid])}
                       />
                     ) : (
                       <EditProperties
@@ -1045,40 +1129,21 @@ export default function BlueprintDetailPage() {
 
               <Card padding="compact">
                 <h2 className="mb-2 text-sm font-medium">Fields ({regions.length})</h2>
-                {regions.length === 0 ? (
-                  <p className="text-xs text-muted">No fields yet — use “Add field” and draw on the page.</p>
-                ) : (
-                  <div className="max-h-96 space-y-2 overflow-y-auto">
-                    {groupedFields.map(([pageNo, list]) => (
-                      <div key={pageNo}>
-                        <h3 className="text-xs font-medium text-muted">Page {pageNo + 1}</h3>
-                        <ul className="space-y-0.5" data-testid="field-list">
-                          {list.map((region) => (
-                            <li key={region._uid}>
-                              <button
-                                type="button"
-                                aria-pressed={selectedRegion?._uid === region._uid}
-                                onClick={() => select({ type: 'region', uid: region._uid, page: region.page })}
-                                className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-pill/50 ${
-                                  selectedRegion?._uid === region._uid ? 'bg-pill' : ''
-                                } ${isLow(region) ? 'ring-1 ring-amber-500' : ''}`}
-                              >
-                                <span
-                                  aria-hidden="true"
-                                  className="inline-block size-2.5 shrink-0 rounded-sm"
-                                  style={{ background: KIND_COLORS[region.kind] }}
-                                />
-                                <span className="flex-1 truncate">{regionName(region)}</span>
-                                <span className="text-muted">{KIND_LABELS[region.kind]}</span>
-                                {isLow(region) && <Tag tone="warning">check</Tag>}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <FieldList
+                  regions={regions}
+                  isSelected={editor.isSelected}
+                  onSelect={(region, event) =>
+                    event?.shiftKey
+                      ? selectRegion(region._uid, event)
+                      : select({ type: 'region', uid: region._uid, page: region.page })
+                  }
+                  onReorder={(pageNo, uids) => editor.apply((list) => reorderPage(list, pageNo, uids))}
+                  rulesCount={rulesEnabled && fieldRules.data ? fieldRules.countFor : undefined}
+                  isRequired={required.isRequired}
+                  isLow={isLow}
+                  readOnly={readOnly}
+                  emptyText="No fields yet — use “Add field” and draw on the page."
+                />
               </Card>
 
               <Card padding="compact">
@@ -1186,6 +1251,8 @@ export default function BlueprintDetailPage() {
         </>
       )}
 
+      <DeleteFieldsDialog editor={editor} nameOf={regionName} />
+
       <EditContentDialog
         pending={pending}
         blueprintId={id}
@@ -1213,6 +1280,33 @@ export default function BlueprintDetailPage() {
           Someone saved a newer version while you were editing, so your changes were not saved.
           Reload to see the latest version (your unsaved changes are discarded), or keep editing to
           copy what you need first.
+        </p>
+      </Modal>
+
+      <Modal
+        open={fieldRules.conflict}
+        onClose={() => fieldRules.setConflict(false)}
+        title="The field rules were changed elsewhere"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => fieldRules.setConflict(false)}>
+              Keep editing
+            </Button>
+            <Button
+              onClick={async () => {
+                fieldRules.setConflict(false);
+                await fieldRules.load();
+                toast.success('Loaded the latest rules — your unsaved rule changes were discarded');
+              }}
+            >
+              Reload the rules
+            </Button>
+          </>
+        }
+      >
+        <p>
+          Someone saved the rules of this template after you opened them, so your rule changes were not saved.
+          Reload to see the latest rules (your unsaved rule changes are discarded), then make your changes again.
         </p>
       </Modal>
     </div>

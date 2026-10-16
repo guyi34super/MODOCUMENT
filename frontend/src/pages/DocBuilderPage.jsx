@@ -28,7 +28,12 @@ import PageView from '../components/pdf/PageView';
 import ThumbnailStrip from '../components/pdf/ThumbnailStrip';
 import RegionBox, { boxStyle } from '../components/pdf/RegionBox';
 import DrawLayer from '../components/pdf/DrawLayer';
-import RegionPropertiesPanel, { keyProblem } from '../components/pdf/RegionPropertiesPanel';
+import RegionPropertiesPanel, { fieldProblem } from '../components/pdf/RegionPropertiesPanel';
+import EditorToolbar, { DeleteFieldsDialog, MarqueeLayer, SnapGuides } from '../components/pdf/EditorToolbar';
+import FieldList, { reorderPage } from '../components/pdf/FieldList';
+import useOverlayEditor from '../components/pdf/useOverlayEditor';
+import useFieldRules from '../components/rules/useFieldRules';
+import useRequiredToggle from '../components/rules/useRequiredToggle';
 import { KIND_COLORS, KIND_LABELS, displaySize, estimateOverflow } from '../components/pdf/geometry';
 import FillFromDataDialog from '../components/records/FillFromDataDialog';
 import { newRegion, toRegionDto, withUid } from '../components/records/layoutDraft';
@@ -61,15 +66,29 @@ export default function DocBuilderPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [fillOpen, setFillOpen] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
-  // "Edit layout" mode: a draft copy of the regions (null when not editing).
-  const [layoutRegions, setLayoutRegions] = useState(null);
-  const [layoutSelected, setLayoutSelected] = useState(null);
+  // "Edit layout" mode: a draft copy of the regions in the shared overlay editor.
+  const [layoutMode, setLayoutMode] = useState(false);
   const [layoutTool, setLayoutTool] = useState('select');
   const [layoutDirty, setLayoutDirty] = useState(false);
   const [layoutSaving, setLayoutSaving] = useState(false);
   const [layoutConflict, setLayoutConflict] = useState(false);
   const [focusProperties, setFocusProperties] = useState(false);
   const propertiesRef = useRef(null);
+  const layout = useOverlayEditor({
+    page: pageIndex,
+    enabled: layoutMode,
+    onChange: () => setLayoutDirty(true),
+    withUid,
+  });
+  const layoutRegions = layout.items;
+  const fieldRules = useFieldRules(doc?.blueprintId, { enabled: layoutMode && Boolean(doc?.blueprintId) });
+  const required = useRequiredToggle({
+    editor: layout,
+    fieldRules,
+    blueprintId: doc?.blueprintId,
+    enabled: layoutMode,
+    onError: (err) => setError(err.message),
+  });
 
   // Autosave (components/doc/useAutosave): changed keys wait until typing pauses.
   const pendingRef = useRef(() => ({}));
@@ -295,36 +314,26 @@ export default function DocBuilderPage() {
 
   const startLayout = async () => {
     await flush();
-    setLayoutRegions(regions.map(withUid));
-    setLayoutSelected(null);
+    layout.reset(regions.map(withUid));
+    required.reset();
+    setLayoutMode(true);
     setLayoutTool('select');
     setLayoutDirty(false);
   };
 
   const endLayout = () => {
-    setLayoutRegions(null);
-    setLayoutSelected(null);
+    layout.reset([]);
+    setLayoutMode(false);
     setLayoutTool('select');
     setLayoutDirty(false);
   };
 
-  const updateLayoutRegion = (uid, patch) => {
-    setLayoutRegions((list) => list.map((r) => (r._uid === uid ? { ...r, ...patch } : r)));
-    setLayoutDirty(true);
-  };
-
-  const deleteLayoutRegion = (uid) => {
-    setLayoutRegions((list) => list.filter((r) => r._uid !== uid));
-    setLayoutSelected(null);
-    setLayoutDirty(true);
-  };
+  const updateLayoutRegion = (uid, patch) => layout.update(uid, patch, { chain: true });
 
   const drawLayoutRegion = (box) => {
     const region = newRegion(box, pageIndex, layoutRegions);
-    setLayoutRegions((list) => [...list, region]);
-    setLayoutSelected(region._uid);
+    layout.add(region);
     setLayoutTool('select');
-    setLayoutDirty(true);
     setFocusProperties(true);
   };
 
@@ -333,9 +342,10 @@ export default function DocBuilderPage() {
    * edits are resent unchanged), then moves this document onto it.
    */
   const saveLayout = async () => {
-    if (!doc || !layoutRegions) return;
+    if (!doc || !layoutMode) return;
     setLayoutSaving(true);
     setError('');
+    const requiredChanges = required.takeChanges(layoutRegions);
     let saved;
     try {
       await flush();
@@ -351,6 +361,13 @@ export default function DocBuilderPage() {
       else setError(err.message);
       setLayoutSaving(false);
       return;
+    }
+    if (requiredChanges.size) {
+      try {
+        await required.sync(requiredChanges);
+      } catch (err) {
+        setError(`The layout was saved, but the Required settings could not be saved as rules: ${err.message}`);
+      }
     }
     try {
       const dto = await upgradeInstance(id);
@@ -402,9 +419,9 @@ export default function DocBuilderPage() {
   const outdated = currentVersion > version;
   // The layout tools need the blueprint's edits to resend them unchanged.
   const canLayout = Boolean(doc?.canEditLayout) && !locked && Array.isArray(doc?.blueprintEdits);
-  const layoutMode = layoutRegions != null;
-  const layoutSelectedRegion = layoutMode ? layoutRegions.find((r) => r._uid === layoutSelected) : null;
-  const layoutKeyProblem = layoutMode && layoutRegions.some((r) => keyProblem(r.key, layoutRegions, r));
+  const layoutSelectedRegion = layout.selectedItems.length === 1 ? layout.selectedItems[0] : null;
+  const layoutMulti = layout.selectedItems.length > 1 ? layout.selectedItems : null;
+  const layoutKeyProblem = layoutMode && layoutRegions.some((r) => fieldProblem(r, layoutRegions));
   const sourceRecords = useMemo(() => {
     const seen = new Set();
     return (doc?.sourceRecords || []).filter((r) => {
@@ -535,7 +552,7 @@ export default function DocBuilderPage() {
                         size="sm"
                         onClick={saveLayout}
                         disabled={layoutSaving || !layoutDirty || layoutKeyProblem}
-                        title={layoutKeyProblem ? 'Fix the field keys first' : undefined}
+                        title={layoutKeyProblem ? 'Fix the field problems first (keys, dropdown options)' : undefined}
                       >
                         {layoutSaving ? 'Saving layout…' : 'Save layout to template'}
                       </Button>
@@ -550,9 +567,10 @@ export default function DocBuilderPage() {
                 <p className="mb-2 text-xs text-muted" aria-live="polite">
                   {layoutTool === 'field'
                     ? `${DRAW_HINT}.`
-                    : 'Drag a field to move it or its corners to resize it; with the keyboard, select it and use the arrow keys to move or Shift+arrows to resize.'}
+                    : 'Drag a field to move it or its corners to resize it; Shift+click or drag on empty space selects several. With the keyboard, select a field and use the arrow keys to move it (Alt finer, Shift coarser) or Ctrl+arrows to resize it.'}
                 </p>
               )}
+              {layoutMode && <EditorToolbar editor={layout} />}
               <ThumbnailStrip
                 pages={pages}
                 current={pageIndex}
@@ -565,11 +583,15 @@ export default function DocBuilderPage() {
                 <PageView
                   path={blueprintPagePath(doc.blueprintId, pageIndex, { variant: 'template', version })}
                   page={page}
+                  zoom={layoutMode ? layout.zoom : 1}
                   alt={`Page ${pageIndex + 1} of ${pages.length}`}
                 >
                   {({ scale }) =>
                     layoutMode ? (
                       <>
+                        {layoutTool === 'select' && (
+                          <MarqueeLayer onSelectRect={layout.selectInRect} onClear={layout.clearSelection} />
+                        )}
                         {layoutRegions
                           .filter((region) => region.page === pageIndex)
                           .map((region) => {
@@ -582,16 +604,28 @@ export default function DocBuilderPage() {
                                 color={color}
                                 tabText={fieldLabel(region)}
                                 label={`${fieldLabel(region)}, ${KIND_LABELS[region.kind] || region.kind}`}
-                                selected={layoutSelected === region._uid}
+                                selected={layout.isSelected(region._uid)}
+                                handles={layout.selected.length <= 1}
                                 editable
-                                onSelect={() => setLayoutSelected(region._uid)}
-                                onChange={(box) => updateLayoutRegion(region._uid, box)}
-                                onDelete={() => deleteLayoutRegion(region._uid)}
+                                onSelect={(event) =>
+                                  layout.select(region._uid, {
+                                    additive: Boolean(event?.shiftKey),
+                                    keep: event?.type === 'pointerdown',
+                                  })
+                                }
+                                onChange={(box) => layout.dragEnd(region._uid, box)}
+                                onDelete={() =>
+                                  layout.requestDelete(layout.isSelected(region._uid) ? layout.selected : [region._uid])
+                                }
+                                onNudge={(event) => layout.nudgeKey(event, region._uid)}
+                                snap={layout.snapFor(region._uid)}
+                                onGuides={layout.setGuides}
                                 data-testid={`layout-region-${region.key}`}
                                 style={{ background: `${color}1f` }}
                               />
                             );
                           })}
+                        <SnapGuides guides={layout.guides} />
                         {layoutTool === 'field' && (
                           <DrawLayer label={DRAW_HINT} onDraw={drawLayoutRegion} color={KIND_COLORS.TEXT} />
                         )}
@@ -656,15 +690,23 @@ export default function DocBuilderPage() {
                 <>
                   <Card padding="compact">
                     <h2 className="mb-2 text-sm font-medium">
-                      {layoutSelectedRegion ? `Field: ${fieldLabel(layoutSelectedRegion)}` : 'Field properties'}
+                      {layoutMulti
+                        ? 'Several fields'
+                        : layoutSelectedRegion
+                          ? `Field: ${fieldLabel(layoutSelectedRegion)}`
+                          : 'Field properties'}
                     </h2>
                     <div ref={propertiesRef}>
-                      {layoutSelectedRegion ? (
+                      {layoutSelectedRegion || layoutMulti ? (
                         <RegionPropertiesPanel
                           region={layoutSelectedRegion}
                           regions={layoutRegions}
+                          selection={layoutMulti}
+                          onChangeMany={(patchFor) => layout.updateMany(layout.selected, patchFor)}
+                          fonts={doc.fonts || []}
+                          rules={layoutSelectedRegion ? required.rulesFor(layoutSelectedRegion) : null}
                           onChange={(patch) => updateLayoutRegion(layoutSelectedRegion._uid, patch)}
-                          onDelete={() => deleteLayoutRegion(layoutSelectedRegion._uid)}
+                          onDelete={() => layout.requestDelete([layoutSelectedRegion._uid])}
                         />
                       ) : (
                         <p className="text-xs text-muted">
@@ -676,26 +718,18 @@ export default function DocBuilderPage() {
                   </Card>
                   <Card padding="compact">
                     <h2 className="mb-2 text-sm font-medium">Layout fields ({layoutRegions.length})</h2>
-                    <ul className="max-h-96 space-y-0.5 overflow-y-auto" data-testid="layout-field-list">
-                      {layoutRegions.map((region) => (
-                        <li key={region._uid}>
-                          <button
-                            type="button"
-                            aria-pressed={layoutSelected === region._uid}
-                            onClick={() => {
-                              setLayoutSelected(region._uid);
-                              if (region.page !== pageIndex) setPageIndex(region.page);
-                            }}
-                            className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-pill/50 ${
-                              layoutSelected === region._uid ? 'bg-pill' : ''
-                            }`}
-                          >
-                            <span className="flex-1 truncate">{fieldLabel(region)}</span>
-                            <span className="text-muted">page {region.page + 1}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                    <FieldList
+                      regions={layoutRegions}
+                      testId="layout-field-list"
+                      isSelected={layout.isSelected}
+                      onSelect={(region, event) => {
+                        layout.select(region._uid, { additive: Boolean(event?.shiftKey) });
+                        if (region.page !== pageIndex) setPageIndex(region.page);
+                      }}
+                      onReorder={(pageNo, uids) => layout.apply((list) => reorderPage(list, pageNo, uids))}
+                      rulesCount={fieldRules.data ? fieldRules.countFor : undefined}
+                      isRequired={required.isRequired}
+                    />
                   </Card>
                   {layoutDirty && (
                     <p className="text-xs text-amber-800" role="status">
@@ -946,6 +980,8 @@ export default function DocBuilderPage() {
           onFilled={adopt}
         />
       )}
+
+      <DeleteFieldsDialog editor={layout} nameOf={fieldLabel} />
 
       <Modal
         open={layoutConflict}

@@ -10,8 +10,11 @@ import { displaySize } from './geometry';
  *
  * `children` is a node or a function receiving `{ scale }`: CSS pixels per
  * PDF point at the current size, for scaling font sizes to the page.
+ *
+ * `zoom` (0.5–2, default 1 = the available width) scales the frame; a page
+ * wider than its container scrolls. Boxes stay page fractions at any zoom.
  */
-export default function PageView({ path, page, alt, children, className = '', testId = 'page-view' }) {
+export default function PageView({ path, page, alt, children, className = '', testId = 'page-view', zoom = 1 }) {
   const frameRef = useRef(null);
   const [widthPx, setWidthPx] = useState(0);
   const size = displaySize(page);
@@ -29,12 +32,14 @@ export default function PageView({ path, page, alt, children, className = '', te
 
   const scale = widthPx > 0 ? widthPx / size.width : 1;
 
-  return (
+  const frame = (
     <div
       ref={frameRef}
       data-testid={testId}
-      className={`relative w-full select-none overflow-hidden border border-line bg-white shadow-sm ${className}`}
-      style={{ aspectRatio: `${size.width} / ${size.height}` }}
+      className={`relative select-none overflow-hidden border border-line bg-white shadow-sm ${
+        zoom === 1 ? 'w-full' : 'mx-auto shrink-0'
+      } ${className}`}
+      style={{ aspectRatio: `${size.width} / ${size.height}`, ...(zoom === 1 ? {} : { width: `${zoom * 100}%` }) }}
     >
       {path && (
         <AuthedImage
@@ -48,4 +53,6 @@ export default function PageView({ path, page, alt, children, className = '', te
       </div>
     </div>
   );
+  // Always the same wrapper, so changing the zoom keeps the measured frame.
+  return <div className={`w-full ${zoom > 1 ? 'max-h-[85vh] overflow-auto' : ''}`}>{frame}</div>;
 }

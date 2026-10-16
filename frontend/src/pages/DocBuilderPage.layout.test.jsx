@@ -182,8 +182,9 @@ describe('DocBuilderPage — Edit layout', () => {
     });
     expect(body.edits).toEqual(EDITS);
     expect(body.regions).toHaveLength(3);
-    expect(body.regions[0]).toEqual({ ...region('full_name', 'Full name', 'TEXT'), fx: 0.195, fy: 0.25 });
-    expect(body.regions[1]).toEqual(doc().regions[1]);
+    // The field properties (contract §2) go out with every region; none are set here.
+    expect(body.regions[0]).toEqual({ ...region('full_name', 'Full name', 'TEXT'), fx: 0.195, fy: 0.25, props: null });
+    expect(body.regions[1]).toEqual({ ...doc().regions[1], props: null });
     expect(body.regions[2]).toEqual({
       key: 'employer',
       label: 'Employer',
@@ -204,6 +205,7 @@ describe('DocBuilderPage — Edit layout', () => {
       sortOrder: 2,
       source: 'MANUAL',
       confidence: 1,
+      props: null,
     });
 
     await waitFor(() => expect(upgradeInstance).toHaveBeenCalledWith('5'));

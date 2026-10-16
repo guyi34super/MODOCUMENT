@@ -30,6 +30,11 @@ export function boxStyle(box) {
  * by dragging its body, resizes from its corners (pointer events, clamped
  * to the page) and moves 0.5 % per arrow key (Shift+arrow resizes).
  * Changes are reported once, on release, through `onChange(box)`.
+ *
+ * `onSelect(event)` receives the pointer or key event (Shift adds to a
+ * selection). An editor can take over the arrow keys with `onNudge(event)`,
+ * and snap a drag with `snap(box, mode) → { box, guides }`: the guides go to
+ * `onGuides(guides)` while dragging and `onGuides([])` on release.
  */
 export default function RegionBox({
   id,
@@ -41,9 +46,13 @@ export default function RegionBox({
   highlight = false,
   editable = false,
   selectable = true,
+  handles = true,
   onSelect,
   onChange,
   onDelete,
+  onNudge,
+  snap,
+  onGuides,
   className = '',
   style,
   children,
@@ -60,7 +69,7 @@ export default function RegionBox({
 
   const startDrag = (event, mode) => {
     if (event.button !== 0) return;
-    onSelect?.();
+    onSelect?.(event);
     if (!editable) return;
     event.preventDefault();
     event.stopPropagation();
@@ -76,11 +85,16 @@ export default function RegionBox({
     const point = pointToFraction(event, current.overlay);
     const dx = point.x - current.start.x;
     const dy = point.y - current.start.y;
-    setPreview(
+    let next =
       current.mode === 'move'
         ? moveBox(current.startBox, dx, dy)
-        : resizeBox(current.startBox, current.mode, dx, dy)
-    );
+        : resizeBox(current.startBox, current.mode, dx, dy);
+    if (snap) {
+      const snapped = snap(next, current.mode);
+      next = { fx: snapped.box.fx, fy: snapped.box.fy, fw: snapped.box.fw, fh: snapped.box.fh };
+      onGuides?.(snapped.guides);
+    }
+    setPreview(next);
   };
 
   const endDrag = () => {
@@ -89,6 +103,7 @@ export default function RegionBox({
     if (!current) return;
     const last = previewRef.current;
     setPreview(null);
+    if (snap) onGuides?.([]);
     if (
       last &&
       (last.fx !== box.fx || last.fy !== box.fy || last.fw !== box.fw || last.fh !== box.fh)
@@ -101,7 +116,7 @@ export default function RegionBox({
     if (event.target !== event.currentTarget) return;
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      onSelect?.();
+      onSelect?.(event);
       return;
     }
     if (!editable) return;
@@ -113,6 +128,10 @@ export default function RegionBox({
     const arrow = ARROWS[event.key];
     if (!arrow) return;
     event.preventDefault();
+    if (onNudge) {
+      onNudge(event);
+      return;
+    }
     const [x, y] = arrow;
     onChange?.(
       event.shiftKey
@@ -157,6 +176,7 @@ export default function RegionBox({
       {children}
       {selected &&
         editable &&
+        handles &&
         CORNERS.map(({ corner, className: position }) => (
           <span
             key={corner}
