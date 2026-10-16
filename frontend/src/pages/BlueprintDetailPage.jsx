@@ -1020,6 +1020,7 @@ export default function BlueprintDetailPage() {
                                 highlight={low}
                                 editable={canEdit}
                                 onSelect={(event) => selectRegion(region._uid, event)}
+                                onTap={(event) => !event?.shiftKey && editor.select(region._uid)}
                                 onChange={(box) => editor.dragEnd(region._uid, box)}
                                 onDelete={() =>
                                   deleteRegions(editor.isSelected(region._uid) ? editor.selected : [region._uid])

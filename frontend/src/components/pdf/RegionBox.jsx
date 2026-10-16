@@ -35,6 +35,7 @@ export function boxStyle(box) {
  * selection). An editor can take over the arrow keys with `onNudge(event)`,
  * and snap a drag with `snap(box, mode) → { box, guides }`: the guides go to
  * `onGuides(guides)` while dragging and `onGuides([])` on release.
+ * `onTap(event)` reports a press released without moving (a plain click).
  */
 export default function RegionBox({
   id,
@@ -51,6 +52,7 @@ export default function RegionBox({
   onChange,
   onDelete,
   onNudge,
+  onTap,
   snap,
   onGuides,
   className = '',
@@ -97,7 +99,7 @@ export default function RegionBox({
     setPreview(next);
   };
 
-  const endDrag = () => {
+  const endDrag = (event) => {
     const current = drag.current;
     drag.current = null;
     if (!current) return;
@@ -109,6 +111,8 @@ export default function RegionBox({
       (last.fx !== box.fx || last.fy !== box.fy || last.fw !== box.fw || last.fh !== box.fh)
     ) {
       onChange?.(last);
+    } else {
+      onTap?.(event);
     }
   };
 
