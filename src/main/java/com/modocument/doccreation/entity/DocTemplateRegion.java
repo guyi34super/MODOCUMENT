@@ -89,6 +89,10 @@ public class DocTemplateRegion {
     @Column(name = "Confidence", nullable = false)
     private double confidence = 1;
 
+    /** V320 (ws33): the field's extra properties as JSON (FieldProps), null = none. */
+    @Column(name = "FieldPropsJson", columnDefinition = "text")
+    private String fieldPropsJson;
+
     public DocTemplateRegion() {
     }
 
@@ -274,5 +278,13 @@ public class DocTemplateRegion {
 
     public void setConfidence(double confidence) {
         this.confidence = confidence;
+    }
+
+    public String getFieldPropsJson() {
+        return fieldPropsJson;
+    }
+
+    public void setFieldPropsJson(String fieldPropsJson) {
+        this.fieldPropsJson = fieldPropsJson;
     }
 }

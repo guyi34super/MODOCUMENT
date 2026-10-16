@@ -20,6 +20,8 @@ import java.time.LocalDateTime;
 public class DocInstance {
 
     public static final String STATUS_DRAFT = "DRAFT";
+    /** ws33: the values passed the template's checks; it may be generated. */
+    public static final String STATUS_VALIDATED = "VALIDATED";
     public static final String STATUS_GENERATED = "GENERATED";
     /** ws11: the owner sent the generated document for release review. */
     public static final String STATUS_SUBMITTED = "SUBMITTED";
@@ -130,6 +132,25 @@ public class DocInstance {
      */
     @Column(name = "SourceRecordsJson", columnDefinition = "text")
     private String sourceRecordsJson;
+
+    /** V322 (ws33): when the document last passed validation (null while a DRAFT). */
+    @Column(name = "ValidatedAt")
+    private LocalDateTime validatedAt;
+
+    @Column(name = "ValidatedByUserId")
+    private Integer validatedByUserId;
+
+    /** V322: sha256 of the validated content; generate/download require it to match. */
+    @Column(name = "ValidatedHash", length = 64)
+    private String validatedHash;
+
+    /** V322: DocBlueprint.RulesRevision when the document was validated. */
+    @Column(name = "ValidatedRulesRevision")
+    private Integer validatedRulesRevision;
+
+    /** V322: the last validation result (rule ids, codes, messages; never values). */
+    @Column(name = "ValidationJson", columnDefinition = "text")
+    private String validationJson;
 
     public DocInstance() {
     }
@@ -323,5 +344,45 @@ public class DocInstance {
 
     public void setAiComposed(boolean aiComposed) {
         this.aiComposed = aiComposed;
+    }
+
+    public LocalDateTime getValidatedAt() {
+        return validatedAt;
+    }
+
+    public void setValidatedAt(LocalDateTime validatedAt) {
+        this.validatedAt = validatedAt;
+    }
+
+    public Integer getValidatedByUserId() {
+        return validatedByUserId;
+    }
+
+    public void setValidatedByUserId(Integer validatedByUserId) {
+        this.validatedByUserId = validatedByUserId;
+    }
+
+    public String getValidatedHash() {
+        return validatedHash;
+    }
+
+    public void setValidatedHash(String validatedHash) {
+        this.validatedHash = validatedHash;
+    }
+
+    public Integer getValidatedRulesRevision() {
+        return validatedRulesRevision;
+    }
+
+    public void setValidatedRulesRevision(Integer validatedRulesRevision) {
+        this.validatedRulesRevision = validatedRulesRevision;
+    }
+
+    public String getValidationJson() {
+        return validationJson;
+    }
+
+    public void setValidationJson(String validationJson) {
+        this.validationJson = validationJson;
     }
 }

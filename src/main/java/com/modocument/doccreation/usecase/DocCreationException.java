@@ -15,6 +15,8 @@ public class DocCreationException extends RuntimeException {
     public static final String EXACTNESS_FAILED = "EXACTNESS_FAILED";
     /** No PdfTemplateEngine bean is wired (never in a complete build). */
     public static final String ENGINE_UNAVAILABLE = "ENGINE_UNAVAILABLE";
+    /** ws33: generate/download of a document that has not passed validation since its last change. */
+    public static final String NOT_VALIDATED = "NOT_VALIDATED";
 
     private final int status;
     private final String code;
@@ -42,6 +44,12 @@ public class DocCreationException extends RuntimeException {
     /** 400 with the engine's code (NOT_A_PDF, ENCRYPTED, TOO_MANY_PAGES, UNREADABLE). */
     public static DocCreationException badPdf(String code, String message) {
         return new DocCreationException(400, code, message);
+    }
+
+    /** 409: the document must be saved and validated first (field-validation-contract §4). */
+    public static DocCreationException notValidated() {
+        return new DocCreationException(409, NOT_VALIDATED,
+                "Save and validate the document first: it has changes that have not passed its checks.");
     }
 
     public int status() {

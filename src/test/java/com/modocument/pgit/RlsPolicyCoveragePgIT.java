@@ -87,7 +87,8 @@ class RlsPolicyCoveragePgIT extends PgItSupport {
                     "doctemplateregion", "doctemplateedit", "docinstanceimage",
                     // V310/V311 (ws32): the flow record index and the
                     // saved data sources of PDF templates.
-                    "templaterecord", "templaterecordkey", "docblueprintsource");
+                    "templaterecord", "templaterecordkey", "docblueprintsource",
+                    "docfieldrule");
 
             for (String table : tenantTables) {
                 assertThat(rowSecurityEnabled(owner, table))
