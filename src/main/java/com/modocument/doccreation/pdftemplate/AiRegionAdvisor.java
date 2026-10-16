@@ -205,6 +205,10 @@ final class AiRegionAdvisor {
     }
 
     private static boolean kindFits(Candidate c, RegionKind k) {
+        if (k == RegionKind.CHOICE || c.kind == RegionKind.CHOICE) {
+            // ws33: a dropdown comes only from an AcroForm choice field (it carries the options)
+            return k == c.kind;
+        }
         if (c.origin == Candidate.Origin.ACRO) {
             boolean box = c.kind == RegionKind.CHECKBOX;
             return box == (k == RegionKind.CHECKBOX) && (k != RegionKind.IMAGE);

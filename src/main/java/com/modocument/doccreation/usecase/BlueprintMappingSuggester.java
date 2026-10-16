@@ -38,7 +38,7 @@ import java.util.Set;
  *       {@code mapping.aliases}.</li>
  *   <li>Only compatible pairs count: a DATE region takes a date-like or Text
  *       field, a NUMBER region a numeric or Text field, CHECKBOX, TEXT and
- *       MULTILINE any field; IMAGE and SIGNATURE are never mapped.</li>
+ *       MULTILINE (and ws33 CHOICE) any field; IMAGE and SIGNATURE are never mapped.</li>
  *   <li>Assignment is one-to-one, best score first, at the bank's
  *       {@code mapping.confidenceThreshold} (0.7 shipped).</li>
  * </ul>
@@ -194,7 +194,7 @@ public class BlueprintMappingSuggester {
         }
         return switch (kind) {
             case IMAGE, SIGNATURE -> false;
-            case CHECKBOX, TEXT, MULTILINE -> true;
+            case CHECKBOX, TEXT, MULTILINE, CHOICE -> true;
             case DATE -> isDateLike(dataType) || isText(dataType);
             case NUMBER -> isNumeric(dataType) || isText(dataType);
         };

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.modocument.doccreation.entity.DocBlueprint;
 import com.modocument.doccreation.entity.DocBlueprintVersion;
+import com.modocument.doccreation.entity.DocTemplateRegion;
+import com.modocument.doccreation.fields.FieldProps;
+import com.modocument.doccreation.fields.FieldPropsCodec;
 import com.modocument.doccreation.pdftemplate.PageInfo;
 import com.modocument.doccreation.pdftemplate.TemplateEdit;
 import com.modocument.doccreation.pdftemplate.TemplateRegion;
@@ -13,7 +16,9 @@ import com.modocument.doccreation.repo.DocTemplateRegionRepository;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 /**
@@ -97,6 +102,22 @@ public class TemplateVersions {
     public List<TemplateRegion> regions(DocBlueprint blueprint, int version) {
         return regions.listByBlueprintVersion(blueprint.getBankId(), blueprint.getDocBlueprintId(), version)
                 .stream().map(OverlayMapper::toRegion).toList();
+    }
+
+    /**
+     * ws33: the field properties of one version's regions, by region key
+     * (regions without properties are absent).
+     */
+    public Map<String, FieldProps> fieldProps(DocBlueprint blueprint, int version) {
+        Map<String, FieldProps> out = new LinkedHashMap<>();
+        for (DocTemplateRegion row : regions.listByBlueprintVersion(blueprint.getBankId(),
+                blueprint.getDocBlueprintId(), version)) {
+            FieldProps props = FieldPropsCodec.read(row.getFieldPropsJson());
+            if (!props.isEmpty()) {
+                out.put(row.getRegionKey(), props);
+            }
+        }
+        return out;
     }
 
     public List<TemplateEdit> edits(DocBlueprint blueprint, int version) {

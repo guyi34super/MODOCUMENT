@@ -17,6 +17,26 @@ All notable changes to MoDocument are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- Field properties for PDF template fields: placeholder, help text, default value, maximum
+  length, a date output format for DATE fields and a number format (decimals, thousands
+  separator, prefix, suffix) for NUMBER fields, sent and returned as `props` on each region of
+  `PUT|GET /api/doccreation/blueprints/{id}`. A new **Dropdown** kind (`CHOICE`) takes its
+  options from `props.options`; AcroForm combo and list boxes are detected as dropdowns with
+  their options. `GET /blueprints/{id}` lists the bundled `fonts` a field may use.
+- Field rules per PDF template: `GET|PUT /api/doccreation/blueprints/{id}/rules` reads and
+  replaces them (required, pattern, e-mail, length, number range, allowed values, date format,
+  date range, expiry date, required-if and compare with another field; ERROR or WARNING, an own
+  message; optimistic `baseRevision`, 409 when stale), `POST …/rules/test` checks sample values
+  without saving. `GET …/rules/import-preview` and `POST …/rules/import` copy the field rules of
+  a flow template (the template's data sources or a chosen template, auto-matched by name) with
+  `MERGE` or `REPLACE`; unsupported flow rule types are listed as skipped. Importing also needs
+  `validation:read`. Audited `DOC_FIELD_RULES_SAVED` / `DOC_FIELD_RULES_IMPORTED`, counts only.
+- Validate before saving: `POST /api/doccreation/instances/{id}/validate` checks a document
+  against its fields and rules; a document that passes is `VALIDATED`, otherwise it stays a
+  `DRAFT` with the errors listed per field (audited `DOC_VALIDATED`).
+- Database (ws33): V320 `DocTemplateRegion.FieldPropsJson`, V321 `DocFieldRule` (bank-scoped
+  under row level security) and `DocBlueprint.RulesRevision`, V322 the validation columns of
+  `DocInstance` and the `VALIDATED` status.
 - Fill a document from the data flow: every valid row of a validated or exported ingestion job is
   indexed as a searchable record (`TemplateRecord`, re-indexed on remap, row edit and
   re-validation, deleted with the job, by the retention purge and by a DSR erase; existing jobs
@@ -69,6 +89,15 @@ All notable changes to MoDocument are recorded here. The format follows
   also clears values, photos and the generated PDF of idle documents.
 
 ### Changed
+- Documents must be validated before they are generated, downloaded or submitted
+  (`409 NOT_VALIDATED`); any real change sends a validated or generated document back to
+  `DRAFT`. Documents generated before this release stay downloadable until they change.
+- A field's Required flag is now enforced: it is a `REQUIRED` field rule (existing required
+  fields of each template's current version get one, origin `REGION_FLAG`), and `required` on
+  the template's regions is derived from the rules. The overlay save still writes the flag and
+  adds or removes the matching rule.
+- Downgrade note: the previous release does not know `VALIDATED` documents (V322 widens the
+  status check). Generate those documents, or change them back to `DRAFT`, before rolling back.
 - Document creation outputs PDF only: `download` and the approver's `review-file` always return
   `application/pdf` (`format` is ignored). The release queue lists the document's values and
   photos per region group.

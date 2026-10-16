@@ -1,6 +1,7 @@
 package com.modocument.doccreation.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.modocument.doccreation.fields.FieldProps;
 import jakarta.validation.constraints.Size;
 
 /**
@@ -16,6 +17,11 @@ import jakarta.validation.constraints.Size;
  * the template unless the client keeps it (sends it with
  * {@code suggested:false} or null). A region sent with
  * {@code suggested:true} is ignored.
+ *
+ * <p>ws33 (field-validation-contract §2): {@code props} holds the field's
+ * extra properties (placeholder, help text, default value, CHOICE options,
+ * output formats, max length), null when none are set. In responses
+ * {@code required} is derived from the template's REQUIRED field rules.
  */
 public record RegionDto(
         @Size(max = 64) String key,
@@ -38,7 +44,8 @@ public record RegionDto(
         String source,
         Double confidence,
         @JsonInclude(JsonInclude.Include.NON_NULL) String sampleValue,
-        Boolean suggested) {
+        Boolean suggested,
+        FieldProps props) {
 
     /** True only for a suggested region sent back unkept ({@code suggested:true}). */
     public boolean treatedAsSuggested() {

@@ -10,7 +10,11 @@ import com.modocument.doccreation.dto.RegionDto;
 import com.modocument.doccreation.dto.SaveOverlayRequest;
 import com.modocument.doccreation.entity.DocBlueprint;
 import com.modocument.doccreation.entity.DocBlueprintVersion;
+import com.modocument.doccreation.fields.FieldProps;
+import com.modocument.doccreation.pdftemplate.AcroChoiceOptions;
 import com.modocument.doccreation.pdftemplate.AnalysisOptions;
+import com.modocument.doccreation.pdftemplate.BundledFonts;
+import com.modocument.doccreation.pdftemplate.RegionKind;
 import com.modocument.doccreation.pdftemplate.AnalysisResult;
 import com.modocument.doccreation.pdftemplate.EditKind;
 import com.modocument.doccreation.pdftemplate.PageInfo;
@@ -75,6 +79,9 @@ public class DocBlueprintUseCase {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.modocument.doccreation.repo.DocBlueprintSourceJpaRepository sources;
 
+    /** ws33: the field rules (null in unit wiring: regions then keep their stored Required flag). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private DocFieldRuleUseCase fieldRules;
 
     private static final Logger log = LoggerFactory.getLogger(DocBlueprintUseCase.class);
     private static final String PDF = "application/pdf";
@@ -168,7 +175,9 @@ public class DocBlueprintUseCase {
             throw DocCreationException.badPdf("UNREADABLE", "The PDF has no readable pages.");
         }
         UploadFlow flow = analysis.flowUsed() == UploadFlow.WITH_DATA ? UploadFlow.WITH_DATA : UploadFlow.BLANK;
-        List<TemplateRegion> allRegions = OverlayMapper.normalizeProposed(analysis.regions(), pages.size());
+        Map<String, FieldProps> proposedProps = new HashMap<>();
+        List<TemplateRegion> allRegions = choiceOptions(pdf,
+                OverlayMapper.normalizeProposed(analysis.regions(), pages.size()), proposedProps);
         List<TemplateEdit> allRemovals = flow == UploadFlow.WITH_DATA
                 ? linked(OverlayMapper.normalizeProposedEdits(analysis.removals(), pages.size()), allRegions)
                 : List.of();
@@ -196,7 +205,7 @@ public class DocBlueprintUseCase {
 
         String finalName = blueprintName;
         DocBlueprint created = transaction.execute(status -> persistDraft(pdf, draftTemplate, finalName,
-                originalName, cleanCompany, flow, pages, proposed, removals, review));
+                originalName, cleanCompany, flow, pages, proposed, proposedProps, removals, review));
         log.info("PDF template {} '{}' uploaded: {} page(s), flow {}, {} region(s), {} removal(s), "
                         + "{} suggested removal(s), {}", created.getDocBlueprintId(), finalName, pages.size(), flow,
                 proposed.size(), removals.size(), suggestions.size(), detectedBy);
@@ -205,8 +214,8 @@ public class DocBlueprintUseCase {
 
     private DocBlueprint persistDraft(byte[] pdf, byte[] draftTemplate, String name, String originalName,
                                       String companyId, UploadFlow flow, List<PageInfo> pages,
-                                      List<TemplateRegion> proposed, List<TemplateEdit> removals,
-                                      DraftReview review) {
+                                      List<TemplateRegion> proposed, Map<String, FieldProps> proposedProps,
+                                      List<TemplateEdit> removals, DraftReview review) {
         DocBlueprint blueprint = new DocBlueprint();
         blueprint.setOwnerUserId(ownership.requireUserId());
         blueprint.setBankId(ownership.requireBankId());
@@ -238,8 +247,14 @@ public class DocBlueprintUseCase {
         blueprint = blueprints.save(blueprint);
 
         saveVersionRow(blueprint, 1, review.detectedBy(), null, templateKey);
-        regions.saveAll(proposed.stream().map(r -> OverlayMapper.toRow(r, bankId, id, 1)).toList());
+        regions.saveAll(proposed.stream()
+                .map(r -> OverlayMapper.toRow(r, bankId, id, 1, proposedProps.get(r.key()))).toList());
         edits.saveAll(removals.stream().map(e -> OverlayMapper.toRow(e, bankId, id, 1)).toList());
+        // ws33: a proposed region the analysis marked required gets its REQUIRED rule
+        if (fieldRules != null && fieldRules.syncRequiredFlags(blueprint, proposed,
+                DocFieldRuleUseCase.ORIGIN_REGION_FLAG)) {
+            blueprint = blueprints.save(blueprint);
+        }
 
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("flow", flow.name());
@@ -354,12 +369,17 @@ public class DocBlueprintUseCase {
     @Transactional
     public BlueprintDto saveOverlay(int blueprintId, SaveOverlayRequest request) {
         DocBlueprint blueprint = ownership.requireTemplate(blueprintId);
+        if (fieldRules != null) {
+            // ws33: one writer at a time, so the Required flags' rules and RulesRevision stay consistent
+            fieldRules.lock(blueprint);
+        }
         boolean draft = TemplateVersions.isDraft(blueprint);
         requireCurrentBase(blueprint, request.baseVersion(), draft);
         List<PageInfo> pages = TemplateVersions.pages(blueprint);
         int bankId = blueprint.getBankId();
         Set<String> imageKeys = editImageKeys(blueprint);
-        List<TemplateRegion> regionList = OverlayMapper.fromDtos(request.regions(), pages);
+        OverlayMapper.Overlay overlay = OverlayMapper.overlayFromDtos(request.regions(), pages);
+        List<TemplateRegion> regionList = overlay.regions();
         List<TemplateEdit> editList = OverlayMapper.editsFromDtos(request.edits(), pages, imageKeys);
 
         Map<String, byte[]> images = new HashMap<>();
@@ -412,8 +432,13 @@ public class DocBlueprintUseCase {
                         + "your edits again.", e);
             }
         }
-        regions.saveAll(regionList.stream().map(r -> OverlayMapper.toRow(r, bankId, blueprintId, version)).toList());
+        regions.saveAll(regionList.stream()
+                .map(r -> OverlayMapper.toRow(r, bankId, blueprintId, version, overlay.propsOf(r.key()))).toList());
         edits.saveAll(editList.stream().map(e -> OverlayMapper.toRow(e, bankId, blueprintId, version)).toList());
+        if (fieldRules != null) {
+            // ws33: the Required column is still written (rollback); the REQUIRED rules follow it
+            fieldRules.syncRequiredFlags(blueprint, regionList, DocFieldRuleUseCase.ORIGIN_MANUAL);
+        }
         blueprint.setUpdatedDate(LocalDateTime.now());
         blueprint = blueprints.save(blueprint);
 
@@ -475,6 +500,9 @@ public class DocBlueprintUseCase {
         if (sources != null) { // ws32: the template's saved data sources
             sources.deleteBlueprint(bankId, blueprintId);
         }
+        if (fieldRules != null) { // ws33: its field rules (the FK cascades too; explicit for H2 and clarity)
+            fieldRules.deleteBlueprint(bankId, blueprintId);
+        }
         versions.deleteByBlueprint(blueprintId);
         blueprints.delete(blueprintId);
         // Only after commit: a rollback (e.g. a racing document create hitting
@@ -491,9 +519,14 @@ public class DocBlueprintUseCase {
         Map<String, String> suggestedSamples = new HashMap<>();
         review.suggestedRegions().stream().filter(r -> r.sampleValue() != null)
                 .forEach(r -> suggestedSamples.put(r.key(), r.sampleValue()));
+        // ws33: required is derived from the REQUIRED field rules; props come with each region
+        Set<String> requiredKeys = fieldRules == null ? null
+                : fieldRules.requiredKeys(blueprint.getBankId(), blueprint.getDocBlueprintId());
+        Map<String, FieldProps> props = templates.fieldProps(blueprint, version);
         List<RegionDto> regionDtos = new ArrayList<>(templates.regions(blueprint, version).stream()
                 .map(r -> OverlayMapper.toDto(r, pages, draft
-                        ? review.samples().getOrDefault(r.key(), suggestedSamples.get(r.key())) : null, false))
+                                ? review.samples().getOrDefault(r.key(), suggestedSamples.get(r.key())) : null, false,
+                        props.get(r.key()), requiredKeys == null ? r.required() : requiredKeys.contains(r.key())))
                 .toList());
         // A suggestion the client applied in a draft save is a stored edit now; its review data stays here.
         Map<String, EditDto> suggestionById = new HashMap<>();
@@ -521,7 +554,37 @@ public class DocBlueprintUseCase {
                 blueprint.getUploadFlow(), version, TemplateVersions.effectiveVersion(blueprint), pages, regionDtos,
                 editDtos, draft ? review.warnings() : List.of(), detectedBy,
                 instances.countByBlueprint(blueprint.getDocBlueprintId()), blueprint.getCompanyId(),
-                blueprint.getOriginalFileName(), blueprint.getCreatedDate());
+                blueprint.getOriginalFileName(), blueprint.getCreatedDate(), BundledFonts.names());
+    }
+
+    /**
+     * ws33: the options of the proposed CHOICE regions (AcroForm dropdowns
+     * and list boxes), read from the uploaded PDF into {@code props}. A
+     * CHOICE region whose field has no usable options becomes TEXT (a
+     * dropdown needs at least one option).
+     */
+    private static List<TemplateRegion> choiceOptions(byte[] pdf, List<TemplateRegion> proposed,
+                                                      Map<String, FieldProps> props) {
+        if (proposed.stream().noneMatch(r -> r.kind() == RegionKind.CHOICE)) {
+            return proposed;
+        }
+        Map<String, List<String>> options = AcroChoiceOptions.read(pdf);
+        List<TemplateRegion> out = new ArrayList<>();
+        for (TemplateRegion r : proposed) {
+            List<String> choices = r.kind() == RegionKind.CHOICE && r.acroFieldName() != null
+                    ? options.getOrDefault(r.acroFieldName(), List.of()) : List.of();
+            if (r.kind() != RegionKind.CHOICE) {
+                out.add(r);
+            } else if (choices.isEmpty()) {
+                out.add(new TemplateRegion(r.key(), r.label(), r.group(), RegionKind.TEXT, r.box(), r.fontName(),
+                        r.fontSize(), r.color(), r.align(), r.maxLines(), r.acroFieldName(), r.required(),
+                        r.sortOrder(), r.source(), r.confidence(), r.sampleValue()));
+            } else {
+                props.put(r.key(), new FieldProps(null, null, null, List.copyOf(choices), null, null, null));
+                out.add(r);
+            }
+        }
+        return out;
     }
 
     private DraftReview loadDraft(DocBlueprint blueprint) {

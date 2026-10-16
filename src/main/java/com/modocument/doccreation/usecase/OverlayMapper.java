@@ -4,6 +4,9 @@ import com.modocument.doccreation.dto.EditDto;
 import com.modocument.doccreation.dto.RegionDto;
 import com.modocument.doccreation.entity.DocTemplateEdit;
 import com.modocument.doccreation.entity.DocTemplateRegion;
+import com.modocument.doccreation.fields.FieldProps;
+import com.modocument.doccreation.fields.FieldPropsCodec;
+import com.modocument.doccreation.fields.FieldPropsRules;
 import com.modocument.doccreation.pdftemplate.Align;
 import com.modocument.doccreation.pdftemplate.EditKind;
 import com.modocument.doccreation.pdftemplate.EditSource;
@@ -17,8 +20,10 @@ import com.modocument.doccreation.pdftemplate.TemplateRegion;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -59,6 +64,12 @@ public final class OverlayMapper {
     }
 
     public static DocTemplateRegion toRow(TemplateRegion region, int bankId, int blueprintId, int version) {
+        return toRow(region, bankId, blueprintId, version, null);
+    }
+
+    /** A region row with its field properties (ws33; null or empty = none). */
+    public static DocTemplateRegion toRow(TemplateRegion region, int bankId, int blueprintId, int version,
+                                          FieldProps props) {
         DocTemplateRegion row = new DocTemplateRegion();
         row.setBankId(bankId);
         row.setBlueprintId(blueprintId);
@@ -82,6 +93,7 @@ public final class OverlayMapper {
         row.setSortOrder(region.sortOrder());
         row.setSource(region.source().name());
         row.setConfidence(region.confidence());
+        row.setFieldPropsJson(FieldPropsCodec.write(props));
         return row;
     }
 
@@ -117,7 +129,7 @@ public final class OverlayMapper {
 
     // ------------------------------------------------------------ engine → API
 
-    /** A region for a document (instance): no review flags. */
+    /** A region for a document (instance): no review flags, no properties, the stored required flag. */
     public static RegionDto toDto(TemplateRegion region, List<PageInfo> pages, String sampleValue) {
         return toDto(region, pages, sampleValue, null);
     }
@@ -125,12 +137,22 @@ public final class OverlayMapper {
     /** A template's region; {@code suggested} marks the region of a suggested (unapplied) removal. */
     public static RegionDto toDto(TemplateRegion region, List<PageInfo> pages, String sampleValue,
                                   Boolean suggested) {
+        return toDto(region, pages, sampleValue, suggested, null, region.required());
+    }
+
+    /**
+     * A region with its field properties (ws33; null or empty = none) and
+     * its {@code required} flag as derived from the template's REQUIRED
+     * field rules (field-validation-contract §3).
+     */
+    public static RegionDto toDto(TemplateRegion region, List<PageInfo> pages, String sampleValue,
+                                  Boolean suggested, FieldProps props, boolean required) {
         PageFractions.Fractions f = PageFractions.toFractions(region.box(), page(pages, region.box().page()));
         return new RegionDto(region.key(), region.label(), region.group(), region.kind().name(),
                 region.box().page(), f.fx(), f.fy(), f.fw(), f.fh(), region.fontName(), region.fontSize(),
                 region.color(), region.align().name(), region.maxLines(), region.acroFieldName(),
-                region.required(), region.sortOrder(), region.source().name(), region.confidence(),
-                sampleValue, suggested);
+                required, region.sortOrder(), region.source().name(), region.confidence(),
+                sampleValue, suggested, props == null || props.isEmpty() ? null : props);
     }
 
     /**
@@ -155,7 +177,28 @@ public final class OverlayMapper {
      * removal the client did not keep) is ignored (BUG-PDF-01).
      */
     public static List<TemplateRegion> fromDtos(List<RegionDto> dtos, List<PageInfo> pages) {
+        return overlayFromDtos(dtos, pages).regions();
+    }
+
+    /** The editor's regions with their checked field properties (ws33). */
+    public record Overlay(List<TemplateRegion> regions, Map<String, FieldProps> props) {
+
+        /** The properties of one region ({@link FieldProps#NONE} when none). */
+        public FieldProps propsOf(String key) {
+            return props.getOrDefault(key, FieldProps.NONE);
+        }
+    }
+
+    /**
+     * {@link #fromDtos} with the field properties (field-validation-contract
+     * §2), each checked against its region's kind by {@link FieldPropsRules}:
+     * limits are refused (400, {@code Field "<key>": ...}), a property that
+     * does not fit the kind is dropped, a CHOICE field needs at least one
+     * option and a default value must pass the built-in checks of its kind.
+     */
+    public static Overlay overlayFromDtos(List<RegionDto> dtos, List<PageInfo> pages) {
         List<TemplateRegion> out = new ArrayList<>();
+        Map<String, FieldProps> props = new LinkedHashMap<>();
         Set<String> keys = new HashSet<>();
         int index = 0;
         for (RegionDto dto : dtos == null ? List.<RegionDto>of() : dtos) {
@@ -188,12 +231,16 @@ public final class OverlayMapper {
             RegionSource source = parse(RegionSource.class, dto.source(), "region source", RegionSource.MANUAL);
             double confidence = dto.confidence() == null ? 1.0 : clamp01(dto.confidence());
             int sortOrder = dto.sortOrder() == null ? index : dto.sortOrder();
+            FieldProps fieldProps = FieldPropsRules.check(key, kind, dto.props());
+            if (!fieldProps.isEmpty()) {
+                props.put(key, fieldProps);
+            }
             out.add(new TemplateRegion(key, label, group, kind, box, blankToNull(dto.fontName()), fontSize,
                     color(dto.color()), align, maxLines(kind, dto.maxLines()), blankToNull(dto.acroFieldName()),
                     dto.required(), sortOrder, source, confidence, null));
             index++;
         }
-        return out;
+        return new Overlay(out, props);
     }
 
     /**
@@ -354,7 +401,7 @@ public final class OverlayMapper {
 
     private static int maxLines(RegionKind kind, Integer requested) {
         return switch (kind) {
-            case TEXT, DATE, NUMBER -> 1;
+            case TEXT, DATE, NUMBER, CHOICE -> 1;
             case MULTILINE -> requested == null || requested < 1 ? 1 : Math.min(requested, 500);
             case CHECKBOX, IMAGE, SIGNATURE -> 0;
         };

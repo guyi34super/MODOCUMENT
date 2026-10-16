@@ -116,7 +116,7 @@ public class FakePdfTemplateEngine implements PdfTemplateEngine {
                                         int sortOrder, String sample) {
         int maxLines = switch (kind) {
             case MULTILINE -> 3;
-            case TEXT, DATE, NUMBER -> 1;
+            case TEXT, DATE, NUMBER, CHOICE -> 1;
             default -> 0;
         };
         return new TemplateRegion(key, label, group, kind, box, "Helvetica", 0f, "#000000", Align.LEFT, maxLines,

@@ -242,7 +242,8 @@ final class PdfTemplateFiller {
     }
 
     static boolean isText(RegionKind k) {
-        return k == RegionKind.TEXT || k == RegionKind.MULTILINE || k == RegionKind.DATE || k == RegionKind.NUMBER;
+        return k == RegionKind.TEXT || k == RegionKind.MULTILINE || k == RegionKind.DATE || k == RegionKind.NUMBER
+                || k == RegionKind.CHOICE;
     }
 
     static boolean truthy(String v) {
@@ -334,7 +335,14 @@ final class PdfTemplateFiller {
                     }
                 } else if (field instanceof PDChoice ch) {
                     if (v != null && !v.isBlank()) {
-                        ch.setValue(v);
+                        String option = choiceOption(ch, v);
+                        if (option == null) {
+                            // ws33: not one of the field's options: cleared and drawn as text instead
+                            clear(ch);
+                            rest.add(drawnInstead(r));
+                        } else {
+                            ch.setValue(option);
+                        }
                     }
                 } else {
                     rest.add(r);
@@ -345,13 +353,13 @@ final class PdfTemplateFiller {
                 try {
                     if (field instanceof PDTextField tf) {
                         tf.setValue("");
+                    } else if (field instanceof PDChoice ch) {
+                        clear(ch);
                     }
                 } catch (IOException | RuntimeException ignored) {
                     // leave the field as it is
                 }
-                rest.add(new TemplateRegion(r.key(), r.label(), r.group(), r.kind(), r.box(), r.fontName(),
-                        r.fontSize(), r.color(), r.align(), r.maxLines(), null, r.required(), r.sortOrder(),
-                        r.source(), r.confidence(), r.sampleValue()));
+                rest.add(drawnInstead(r));
             }
         }
         try {
@@ -360,6 +368,40 @@ final class PdfTemplateFiller {
             log.warn("AcroForm flatten failed: {}", e.getMessage());
         }
         return rest;
+    }
+
+    /** The region without its AcroForm link, so it is drawn like any other region. */
+    private static TemplateRegion drawnInstead(TemplateRegion r) {
+        return new TemplateRegion(r.key(), r.label(), r.group(), r.kind(), r.box(), r.fontName(), r.fontSize(),
+                r.color(), r.align(), r.maxLines(), null, r.required(), r.sortOrder(), r.source(), r.confidence(),
+                r.sampleValue());
+    }
+
+    /**
+     * The export value of {@code value} among a choice field's options (an
+     * export value itself, or the export value of a matching display text);
+     * null when it is none of them.
+     */
+    static String choiceOption(PDChoice field, String value) {
+        String wanted = value.strip();
+        List<String> exports = field.getOptionsExportValues();
+        List<String> displays = field.getOptionsDisplayValues();
+        for (String export : exports) {
+            if (wanted.equals(export)) {
+                return export;
+            }
+        }
+        for (int i = 0; i < displays.size() && i < exports.size(); i++) {
+            if (wanted.equals(displays.get(i))) {
+                return exports.get(i);
+            }
+        }
+        return null;
+    }
+
+    /** Removes a choice field's value (V and I), so only the drawn text shows. */
+    private static void clear(PDChoice field) throws IOException {
+        field.setValue(List.of());
     }
 
     private static String onValue(PDAnnotationWidget widget) {
