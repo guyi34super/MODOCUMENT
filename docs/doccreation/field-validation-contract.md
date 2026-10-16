@@ -317,4 +317,4 @@ ValidationResultDto evaluate(List<RegionView> regions, Map<String,String> values
 // RegionView = (key, label, kind, FieldProps props)
 ```
 
-BE-A publishes this signature first (a stub is fine). BE-B's `/rules/test` calls it, with no placed images.
+Wave 0 put the interface `doccreation/rules/DocRuleEvaluator`, `RegionView` and `dto/ValidationResultDto` on the branch. BE-A writes the implementation (a `@Component`). BE-B's `/rules/test` calls it, with no placed images.
