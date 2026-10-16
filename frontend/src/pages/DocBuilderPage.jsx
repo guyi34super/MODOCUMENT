@@ -7,10 +7,8 @@ import {
   generateInstance,
   getInstance,
   imageContentPath,
-  instancePagePath,
   placeImage,
   saveOverlay,
-  saveValues,
   submitInstance,
   upgradeInstance,
   uploadImages,
@@ -19,6 +17,11 @@ import PageHeader from '../components/PageHeader';
 import AuthedImage from '../components/AuthedImage';
 import Modal from '../components/Modal';
 import { Badge, Button, Callout, Card, ErrorBanner, Spinner, Tag, inputClass } from '../components/ui';
+import PhotoBox, { startPhotoDrag } from '../components/doc/PhotoBox';
+import PreviewDialog from '../components/doc/PreviewDialog';
+import RegionInput from '../components/doc/RegionInput';
+import useAutosave from '../components/doc/useAutosave';
+import { PHOTO_KINDS, fieldLabel } from '../components/doc/fields';
 import { useToast } from '../context/ToastContext';
 import useUnsavedGuard from '../hooks/useUnsavedGuard';
 import PageView from '../components/pdf/PageView';
@@ -30,15 +33,10 @@ import { KIND_COLORS, KIND_LABELS, displaySize, estimateOverflow } from '../comp
 import FillFromDataDialog from '../components/records/FillFromDataDialog';
 import { newRegion, toRegionDto, withUid } from '../components/records/layoutDraft';
 
-/** How long typing pauses before the values are saved. */
-export const AUTOSAVE_MS = 600;
-const PHOTO_MIME = 'application/x-modoc-image';
+export { AUTOSAVE_MS } from '../components/doc/useAutosave';
 const PHOTO_EXT = /\.(png|jpe?g|gif|bmp)$/i;
-const PHOTO_KINDS = new Set(['IMAGE', 'SIGNATURE']);
 const OVERFLOW_TEXT = 'Will continue on an added page';
 const DRAW_HINT = 'Draw a new field: drag on the page, or press Enter to add one in the centre';
-
-const fieldLabel = (region) => region.label?.trim() || region.key;
 
 /** CSS px for a region's text: its own size, or a fit to the box ("auto"), scaled to the page. */
 function fontPx(region, page, scale) {
@@ -47,166 +45,12 @@ function fontPx(region, page, scale) {
   return Math.max(7, (region.fontSize > 0 ? region.fontSize : auto) * scale);
 }
 
-function photoIdFrom(event) {
-  const data = event.dataTransfer;
-  if (!data) return null;
-  const raw = data.getData(PHOTO_MIME) || data.getData('text/plain');
-  const idValue = Number(raw);
-  return Number.isFinite(idValue) && raw !== '' ? idValue : null;
-}
-
-function startPhotoDrag(event, image) {
-  event.dataTransfer.setData(PHOTO_MIME, String(image.id));
-  event.dataTransfer.setData('text/plain', String(image.id));
-  event.dataTransfer.effectAllowed = 'move';
-}
-
-/** A drop target for a photo: the photo placed in the box, or a hint. */
-function PhotoBox({ instanceId, region, image, locked, onPlace, onFocus, active }) {
-  const [over, setOver] = useState(false);
-  const label = fieldLabel(region);
-  return (
-    <div
-      role="group"
-      aria-label={`${label} — photo box`}
-      data-testid={`photo-box-${region.key}`}
-      className={`flex h-full w-full items-center justify-center overflow-hidden border-2 border-dashed text-center ${
-        over ? 'border-accent bg-pill/70' : 'border-orange-500/70 bg-orange-50/40'
-      } ${active ? 'ring-2 ring-accent' : ''}`}
-      onDragOver={(event) => {
-        if (locked) return;
-        event.preventDefault();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setOver(false);
-        if (locked) return;
-        const imageId = photoIdFrom(event);
-        if (imageId != null && imageId !== image?.id) onPlace(imageId, region.key);
-      }}
-      onFocus={onFocus}
-    >
-      {image ? (
-        <div
-          draggable={!locked}
-          onDragStart={(event) => startPhotoDrag(event, image)}
-          className="h-full w-full"
-          title={`${image.originalName} — drag onto another photo box to swap`}
-        >
-          <AuthedImage
-            path={imageContentPath(instanceId, image.id)}
-            alt={`${label}: ${image.originalName}`}
-            className="h-full w-full object-contain"
-          />
-        </div>
-      ) : (
-        <span className="px-1 text-[10px] leading-tight text-orange-900">Drop a photo here</span>
-      )}
-    </div>
-  );
-}
-
-/**
- * The input for one region — used on the page (positioned, sized to the
- * box) and in the Fields panel (labelled, full width). Both edit the same
- * value, so they always agree.
- */
-function RegionInput({ region, value, onChange, locked, onPage, style, onFocus, describedBy }) {
-  const label = fieldLabel(region);
-  const common = {
-    disabled: locked,
-    onFocus,
-    'aria-describedby': describedBy,
-    'aria-required': region.required || undefined,
-  };
-  const pageClass = onPage
-    ? 'h-full w-full border border-sky-500/50 bg-sky-50/50 px-0.5 py-0 leading-none text-black outline-none focus:border-accent focus:bg-white/90 focus:ring-2 focus:ring-accent'
-    : inputClass;
-  const ariaLabel = onPage ? label : undefined;
-  if (region.kind === 'CHECKBOX') {
-    return (
-      <input
-        type="checkbox"
-        aria-label={ariaLabel}
-        checked={value === 'true' || value === 'x' || value === true}
-        onChange={(e) => onChange(e.target.checked ? 'true' : '')}
-        className={onPage ? 'h-full w-full cursor-pointer accent-accent' : 'size-4'}
-        {...common}
-      />
-    );
-  }
-  if (region.kind === 'MULTILINE') {
-    return (
-      <textarea
-        aria-label={ariaLabel}
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value)}
-        className={`${pageClass} resize-none`}
-        rows={onPage ? undefined : Math.min(8, Math.max(2, region.maxLines || 3))}
-        style={style}
-        {...common}
-      />
-    );
-  }
-  const type = region.kind === 'DATE' ? 'date' : region.kind === 'NUMBER' ? 'number' : 'text';
-  return (
-    <input
-      type={type}
-      aria-label={ariaLabel}
-      inputMode={region.kind === 'NUMBER' ? 'decimal' : undefined}
-      value={value ?? ''}
-      onChange={(e) => onChange(e.target.value)}
-      className={pageClass}
-      style={style}
-      {...common}
-    />
-  );
-}
-
-/** The preview: the server's rendering of each page with the values in place. */
-function PreviewDialog({ open, onClose, instanceId, pages }) {
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    if (open) setIndex(0);
-  }, [open]);
-  const count = pages.length;
-  return (
-    <Modal open={open} onClose={onClose} title="Preview" size="lg" description="The pages exactly as they will be generated.">
-      {open && count > 0 && (
-        <div>
-          <div className="mb-2 flex items-center justify-center gap-3">
-            <Button size="sm" variant="secondary" onClick={() => setIndex(index - 1)} disabled={index === 0}>
-              Previous page
-            </Button>
-            <span aria-live="polite">
-              Page {index + 1} of {count}
-            </span>
-            <Button size="sm" variant="secondary" onClick={() => setIndex(index + 1)} disabled={index >= count - 1}>
-              Next page
-            </Button>
-          </div>
-          <AuthedImage
-            key={index}
-            path={instancePagePath(instanceId, index, 110)}
-            alt={`Preview of page ${index + 1}`}
-            className="mx-auto max-h-[70vh] w-auto border border-line"
-          />
-        </div>
-      )}
-    </Modal>
-  );
-}
-
 export default function DocBuilderPage() {
   const { id } = useParams();
   const toast = useToast();
   const fileInputRef = useRef(null);
   const [doc, setDoc] = useState(null);
   const [values, setValues] = useState({});
-  const [saveState, setSaveState] = useState('idle');
   const [error, setError] = useState('');
   const [pageIndex, setPageIndex] = useState(0);
   const [activeKey, setActiveKey] = useState(null);
@@ -227,17 +71,20 @@ export default function DocBuilderPage() {
   const [focusProperties, setFocusProperties] = useState(false);
   const propertiesRef = useRef(null);
 
-  // Autosave: changed keys wait here until typing pauses, then go out as
-  // one merge (PUT values merges server-side). One request at a time.
-  const pending = useRef({});
-  const timer = useRef(null);
-  const inflight = useRef(null);
+  // Autosave (components/doc/useAutosave): changed keys wait until typing pauses.
+  const pendingRef = useRef(() => ({}));
 
   const adopt = useCallback((dto) => {
     if (!dto) return;
     setDoc(dto);
-    setValues({ ...(dto.values || {}), ...pending.current });
+    setValues({ ...(dto.values || {}), ...pendingRef.current() });
   }, []);
+
+  const { queue, flush, saveState, pendingValues } = useAutosave(id, {
+    onSaved: adopt,
+    onError: (err) => setError(err.message),
+  });
+  pendingRef.current = pendingValues;
 
   const load = useCallback(async () => {
     try {
@@ -252,48 +99,9 @@ export default function DocBuilderPage() {
     load();
   }, [load]);
 
-  const flush = useCallback(async () => {
-    clearTimeout(timer.current);
-    timer.current = null;
-    if (inflight.current) await inflight.current;
-    const batch = pending.current;
-    if (Object.keys(batch).length === 0) return;
-    pending.current = {};
-    setSaveState('saving');
-    const request = saveValues(id, batch)
-      .then((dto) => {
-        adopt(dto);
-        setSaveState(Object.keys(pending.current).length ? 'pending' : 'saved');
-      })
-      .catch((err) => {
-        pending.current = { ...batch, ...pending.current };
-        setSaveState('error');
-        setError(err.message);
-      })
-      .finally(() => {
-        inflight.current = null;
-      });
-    inflight.current = request;
-    await request;
-  }, [id, adopt]);
-
-  // Leaving the page: send whatever is still waiting.
-  useEffect(
-    () => () => {
-      clearTimeout(timer.current);
-      const batch = pending.current;
-      if (Object.keys(batch).length) saveValues(id, batch).catch(() => {});
-      pending.current = {};
-    },
-    [id]
-  );
-
   const setValue = (key, value) => {
     setValues((current) => ({ ...current, [key]: value }));
-    pending.current = { ...pending.current, [key]: value };
-    setSaveState('pending');
-    clearTimeout(timer.current);
-    timer.current = setTimeout(flush, AUTOSAVE_MS);
+    queue(key, value);
   };
 
   const pages = doc?.pages || [];
