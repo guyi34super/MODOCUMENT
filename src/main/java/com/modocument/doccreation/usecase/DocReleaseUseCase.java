@@ -105,6 +105,8 @@ public class DocReleaseUseCase {
         switch (instance.getStatus()) {
             case DocInstance.STATUS_GENERATED -> { /* the one submittable state */ }
             case DocInstance.STATUS_DRAFT -> throw new IllegalStateException(
+                    "Save and validate the document, then generate it, before submitting it for release.");
+            case DocInstance.STATUS_VALIDATED -> throw new IllegalStateException(
                     "Generate the document before submitting it for release.");
             case DocInstance.STATUS_SUBMITTED -> throw new IllegalStateException(
                     "This document is already submitted for release.");
@@ -231,7 +233,9 @@ public class DocReleaseUseCase {
      * (a rejection is a transition, not a stored status) for the author to
      * rework and resubmit; the reason lives in ReviewComment and the
      * DOC_RELEASE_REJECTED audit row. The same B8 check applies: a party to
-     * the document cannot decide on it, not even to reject.
+     * the document cannot decide on it, not even to reject. ws33: the
+     * validation (ValidatedHash) is kept — a SUBMITTED document cannot change
+     * — so the returned document can be downloaded and regenerated as is.
      */
     @Transactional
     public InstanceSummaryDto reject(int instanceId, String comment) {

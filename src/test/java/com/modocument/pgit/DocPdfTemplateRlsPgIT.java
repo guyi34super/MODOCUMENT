@@ -266,6 +266,14 @@ class DocPdfTemplateRlsPgIT extends PgSpringItSupport {
                         .header("Authorization", token))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.assigned[0].regionKey").value("passport_photo"));
+        // ws33: validated (the row lock and the DocFieldRule read run under RLS) before it generates.
+        mvc.perform(post("/api/doccreation/instances/" + instanceId + "/generate").header("Authorization", token))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("NOT_VALIDATED"));
+        mvc.perform(post("/api/doccreation/instances/" + instanceId + "/validate").header("Authorization", token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALIDATED"))
+                .andExpect(jsonPath("$.validation.checked").value(true));
         mvc.perform(post("/api/doccreation/instances/" + instanceId + "/generate").header("Authorization", token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.exact").value(true));

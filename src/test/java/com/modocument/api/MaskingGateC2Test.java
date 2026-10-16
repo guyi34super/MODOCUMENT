@@ -284,6 +284,7 @@ class MaskingGateC2Test extends IsolatedStorageApiTestSupport {
         instances.updateValues(instanceId, Map.of("notes", "Issued to " + RAW_NIC + ", account " + RAW_ACCOUNT
                 + ", contact " + RAW_EMAIL + ", of Curepipe."));
 
+        instances.validate(instanceId);
         instances.generate(instanceId);
         Path pdf = STORAGE.resolve("exports").resolve("doccreation-instance" + instanceId + ".pdf");
         assertThat(pdf).exists();

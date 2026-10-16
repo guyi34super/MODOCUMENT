@@ -21,6 +21,11 @@ public class DocInstanceRepositoryImpl implements DocInstanceRepository {
     }
 
     @Override
+    public Optional<DocInstance> getByIdAndOwnerForUpdate(int id, int ownerUserId) {
+        return jpa.findForUpdate(id, ownerUserId);
+    }
+
+    @Override
     public Optional<DocInstance> getByIdAndBank(int id, int bankId) {
         return jpa.findByDocInstanceIdAndBankId(id, bankId);
     }
