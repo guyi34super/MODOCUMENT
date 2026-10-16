@@ -1,7 +1,11 @@
 package com.modocument.doccreation.repo;
 
 import com.modocument.doccreation.entity.DocInstance;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -9,6 +13,15 @@ import java.util.Optional;
 public interface DocInstanceJpaRepository extends JpaRepository<DocInstance, Integer> {
 
     Optional<DocInstance> findByDocInstanceIdAndOwnerUserId(int id, int ownerUserId);
+
+    /**
+     * ws33 (field-validation-contract §4.1): the owner's document with its row
+     * locked ({@code SELECT ... FOR UPDATE}) until the transaction ends, so a
+     * validate and a content change cannot interleave.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select d from DocInstance d where d.docInstanceId = :id and d.ownerUserId = :ownerUserId")
+    Optional<DocInstance> findForUpdate(@Param("id") int id, @Param("ownerUserId") int ownerUserId);
 
     /** ws11 release workflow: bank-scoped (not owner-scoped) lookup for approvers. */
     Optional<DocInstance> findByDocInstanceIdAndBankId(int id, int bankId);

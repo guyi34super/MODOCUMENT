@@ -176,10 +176,19 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
                         .content(values.toString()))
                 .andExpect(status().isOk());
 
+        validate(owner, instanceId);
         mvc.perform(post("/api/doccreation/instances/" + instanceId + "/generate")
                         .header("Authorization", bearer(owner)))
                 .andExpect(status().isOk());
         return instanceId;
+    }
+
+    /** ws33: a document is validated before it can be generated. */
+    private void validate(AppUser owner, int instanceId) throws Exception {
+        mvc.perform(post("/api/doccreation/instances/" + instanceId + "/validate")
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("VALIDATED"));
     }
 
     private void submit(AppUser owner, int instanceId) throws Exception {
@@ -414,6 +423,13 @@ class DocReleaseSodIntegrationTest extends IsolatedStorageApiTestSupport {
         mvc.perform(post("/api/doccreation/instances/" + instanceId + "/submit")
                         .header("Authorization", bearer(author)))
                 .andExpect(status().isConflict());
+        // ws33: the change made it a DRAFT again; it is validated before it generates.
+        assertThat(statusInDb(instanceId)).isEqualTo("DRAFT");
+        mvc.perform(post("/api/doccreation/instances/" + instanceId + "/generate")
+                        .header("Authorization", bearer(author)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("NOT_VALIDATED"));
+        validate(author, instanceId);
         mvc.perform(post("/api/doccreation/instances/" + instanceId + "/generate")
                         .header("Authorization", bearer(author)))
                 .andExpect(status().isOk());

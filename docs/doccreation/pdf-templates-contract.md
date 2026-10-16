@@ -181,16 +181,20 @@ All routes are under `/api/doccreation` and use the existing `DOC_READ` / `DOC_W
 ### Documents (instances)
 
 - **`POST /instances`** with `{blueprintId, title}` → `201 {id}`. A `DRAFT` blueprint gets `409`.
-- **`GET /instances`** and **`GET /instances?blueprintId=`**: same summary list as today, plus `pageCount`.
+- **`GET /instances`** and **`GET /instances?blueprintId=`**: same summary list as today, plus `pageCount`. ws33: an optional `status=` (DRAFT, VALIDATED, GENERATED, SUBMITTED or RELEASED) keeps one status; any other value is a `400`.
 - **`GET /instances/{id}`** returns `InstanceDto`:
 
 ```json
-{ "id":7,"title":"…","status":"DRAFT|GENERATED|SUBMITTED|RELEASED","blueprintId":1,"blueprintName":"…",
+{ "id":7,"title":"…","status":"DRAFT|VALIDATED|GENERATED|SUBMITTED|RELEASED","blueprintId":1,"blueprintName":"…",
   "blueprintVersion":2,"blueprintCurrentVersion":3,
   "pages":[…PageInfo…], "regions":[…region shape, no sampleValue…],
   "values":{"full_name":"Jane"}, "images":[{"id":3,"regionKey":"photo_1"|null,"originalName":"a.jpg"}],
-  "overflow":["notes"], "lastGeneratedDate":null, "pdfAvailable":false, "reviewerComment":null }
+  "overflow":["notes"], "lastGeneratedDate":null, "pdfAvailable":false, "reviewerComment":null,
+  "validation":{…ValidationResultDto…}, "props":{"full_name":{…FieldProps…}} }
 ```
+
+- **Statuses (ws33, [field-validation-contract.md](field-validation-contract.md) §4):** `DRAFT → VALIDATED → GENERATED → SUBMITTED → RELEASED`. A real change of the values or placed photos (or an upgrade to a new version) sends a `VALIDATED` or `GENERATED` document back to `DRAFT`; renaming and tray photos do not. A new document starts with its fields' default values.
+- **`POST /instances/{id}/validate`** (`doc:write`, owner only) checks the document against its fields and the template's rules. Without errors it becomes `VALIDATED` (a `GENERATED` one stays `GENERATED`); with errors it stays (or becomes) `DRAFT`. Returns `InstanceDto` with `validation` filled in; warnings never block. `SUBMITTED` and `RELEASED` documents get `409`. Audited `DOC_VALIDATED`.
 
 - **`PUT /instances/{id}/values`** with `{values:{key:value,…}}` **merges** the values. An empty string clears a key; unknown keys get `400`. Returns `InstanceDto`.
 - **`POST /instances/{id}/images`**: multipart `files[]`, `autoFill=true|false`.
@@ -202,7 +206,9 @@ All routes are under `/api/doccreation` and use the existing `DOC_READ` / `DOC_W
 - **`GET /instances/{id}/pages/{page}?dpi=110`** returns a PNG preview with the values filled in (not stored).
 - **`POST /instances/{id}/generate`** returns `{pdfReady:true, addedPages, continuedKeys, exact:true, generatedDate}`.
   - When the exactness check fails, it returns `500 EXACTNESS_FAILED` and writes an audit row.
-- **`GET /instances/{id}/download`** returns `application/pdf`, regenerating first if the output is stale.
+  - ws33: a document that is not validated, or whose content changed since it was validated, gets `409 NOT_VALIDATED` (`{error, code}`). A `VALIDATED` document becomes `GENERATED`; if it changed while rendering, `409` ("generate again").
+- **`GET /instances/{id}/download`** returns `application/pdf`, regenerating first if the output is stale. ws33: the same `409 NOT_VALIDATED` gate, checked before the stale check.
+- **Drawing (ws33):** DATE values (stored ISO) and NUMBER values are drawn with their field's `dateFormat` / `numberFormat` in previews, generate and download alike.
 - **Release:** unchanged (submit, pending, release, reject, review-file), now serving the PDF.
 
 ### Removed routes

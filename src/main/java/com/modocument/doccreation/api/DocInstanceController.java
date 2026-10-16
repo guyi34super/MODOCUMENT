@@ -2,15 +2,19 @@ package com.modocument.doccreation.api;
 
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.application.audit.AuditActions;
+import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.doccreation.dto.CreateDocInstanceRequest;
 import com.modocument.doccreation.dto.CreatedInstanceDto;
 import com.modocument.doccreation.dto.GenerationResultDto;
+import com.modocument.doccreation.dto.InstanceDto;
 import com.modocument.doccreation.dto.PlaceImageRequest;
 import com.modocument.doccreation.dto.UpdateDocInstanceRequest;
 import com.modocument.doccreation.dto.UpdateValuesRequest;
+import com.modocument.doccreation.dto.ValidationResultDto;
 import com.modocument.doccreation.usecase.DocCreationException;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
+import com.modocument.domain.model.AuditOutcome;
 import com.modocument.domain.model.Permission;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -31,15 +35,19 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.stream.Collectors;
 
 /**
  * Documents built on a PDF template (docs/doccreation/pdf-templates-contract.md
  * §5): values (merged), photos (tray, auto-fill, drag and drop with swap),
- * live page previews, and generation/download of the PDF.
+ * live page previews, validation (ws33, docs/doccreation/field-validation-contract.md
+ * §4) and generation/download of the PDF.
  */
 @RestController
 @Tag(name = "Doc Creation: Instances", description = "Document values, photos, previews and PDF generation")
@@ -68,10 +76,12 @@ public class DocInstanceController {
         return ResponseEntity.created(URI.create("/api/doccreation/instances/" + created.id())).body(created);
     }
 
+    /** The caller's documents; {@code status} (optional) keeps one status, an unknown one is a 400. */
     @RequiresPermission(Permission.DOC_READ)
     @GetMapping("/api/doccreation/instances")
-    public ResponseEntity<?> list(@RequestParam(value = "blueprintId", required = false) Integer blueprintId) {
-        return ResponseEntity.ok(useCase.list(blueprintId));
+    public ResponseEntity<?> list(@RequestParam(value = "blueprintId", required = false) Integer blueprintId,
+                                  @RequestParam(value = "status", required = false) String status) {
+        return ResponseEntity.ok(useCase.list(blueprintId, status));
     }
 
     @RequiresPermission(Permission.DOC_READ)
@@ -100,6 +110,38 @@ public class DocInstanceController {
     @PutMapping("/api/doccreation/instances/{id}/values")
     public ResponseEntity<?> updateValues(@PathVariable int id, @Valid @RequestBody UpdateValuesRequest request) {
         return ResponseEntity.ok(useCase.updateValues(id, request.values()));
+    }
+
+    // ------------------------------------------------------------ validation
+
+    /**
+     * ws33: checks the document against its fields and the template's rules;
+     * VALIDATED without errors, DRAFT with them (both 200, the result in
+     * {@code validation}); SUBMITTED/RELEASED 409. Audited DOC_VALIDATED
+     * (SUCCESS / FAILED) with counts, the keys with errors and the rules
+     * revision, never values.
+     */
+    @RequiresPermission(Permission.DOC_WRITE)
+    @PostMapping("/api/doccreation/instances/{id}/validate")
+    public ResponseEntity<?> validate(@PathVariable int id) {
+        InstanceDto result = useCase.validate(id);
+        ValidationResultDto validation = result.validation();
+        boolean passed = validation == null || validation.passed();
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("status", result.status());
+        values.put("errors", validation == null ? 0 : validation.errors().size());
+        values.put("warnings", validation == null ? 0 : validation.warnings().size());
+        values.put("setupWarnings", validation == null ? 0 : validation.setupWarnings().size());
+        values.put("errorKeys", validation == null ? List.of() : new ArrayList<>(
+                validation.errors().stream().map(ValidationResultDto.Issue::regionKey)
+                        .collect(Collectors.toCollection(LinkedHashSet::new))));
+        values.put("rulesRevision", validation == null ? null : validation.rulesRevision());
+        audit.record(AuditEventSpec.builder(AuditActions.DOC_VALIDATED,
+                        passed ? AuditOutcome.SUCCESS : AuditOutcome.FAILED)
+                .entity("DocInstance", String.valueOf(id))
+                .newValues(values)
+                .build());
+        return ResponseEntity.ok(result);
     }
 
     // ---------------------------------------------------------------- photos

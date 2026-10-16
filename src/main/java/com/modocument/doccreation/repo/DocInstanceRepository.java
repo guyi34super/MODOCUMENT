@@ -11,6 +11,14 @@ public interface DocInstanceRepository {
     Optional<DocInstance> getByIdAndOwner(int id, int ownerUserId);
 
     /**
+     * ws33: {@link #getByIdAndOwner} with the row locked for the rest of the
+     * transaction (PESSIMISTIC_WRITE); validate and every content change use it.
+     */
+    default Optional<DocInstance> getByIdAndOwnerForUpdate(int id, int ownerUserId) {
+        return getByIdAndOwner(id, ownerUserId);
+    }
+
+    /**
      * Bank-wide read (ws11 release workflow): approvers review OTHER users'
      * submitted documents, so the owner filter does not apply — the bank
      * filter is the boundary (RLS-covered on PostgreSQL; this explicit

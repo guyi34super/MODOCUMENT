@@ -1,6 +1,7 @@
 package com.modocument.doccreation.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.modocument.doccreation.fields.FieldProps;
 import com.modocument.doccreation.pdftemplate.PageInfo;
 
 import java.time.LocalDateTime;
@@ -21,6 +22,11 @@ import java.util.Map;
  * editor's shape) for the builder to resend unchanged with a layout save;
  * {@code droppedKeys} — only in the answer of {@code POST /upgrade}: the
  * region keys whose values (or photos) the new version no longer has.
+ *
+ * <p>ws33 (docs/doccreation/field-validation-contract.md §4.4):
+ * {@code validation} — the last validation's result with the current state
+ * ({@code checked} false while never validated); {@code props} — the field
+ * properties of every region key of the document's version.
  */
 public record InstanceDto(int id,
                           String title,
@@ -40,7 +46,9 @@ public record InstanceDto(int id,
                           List<SourceRecordDto> sourceRecords,
                           boolean canEditLayout,
                           List<EditDto> blueprintEdits,
-                          @JsonInclude(JsonInclude.Include.NON_NULL) List<String> droppedKeys) {
+                          @JsonInclude(JsonInclude.Include.NON_NULL) List<String> droppedKeys,
+                          ValidationResultDto validation,
+                          Map<String, FieldProps> props) {
 
     /** A photo of the document: placed in {@code regionKey}, or in the tray when null. */
     public record ImageDto(int id, String regionKey, String originalName) {
@@ -54,6 +62,6 @@ public record InstanceDto(int id,
     public InstanceDto withDroppedKeys(List<String> keys) {
         return new InstanceDto(id, title, status, blueprintId, blueprintName, blueprintVersion,
                 blueprintCurrentVersion, pages, regions, values, images, overflow, lastGeneratedDate, pdfAvailable,
-                reviewerComment, sourceRecords, canEditLayout, blueprintEdits, List.copyOf(keys));
+                reviewerComment, sourceRecords, canEditLayout, blueprintEdits, List.copyOf(keys), validation, props);
     }
 }
