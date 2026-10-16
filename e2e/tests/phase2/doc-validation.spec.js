@@ -25,6 +25,18 @@
 //          Ctrl+D duplicates a field; saved as a new version
 //   VAL-07 permissions: READ_ONLY cannot PUT rules (403); another bank gets
 //          404 for the rules of this template
+//   VAL-08 checks made visible (contract §4.4 fieldChecks): a second form
+//          with a flow template as its data source (same-name fields), a
+//          hand-written REQUIRED and imported flow rules. A new document
+//          shows the Checks panel ("Not checked yet", counts, "Rules for
+//          each field" with "Required", "· from T.field" and "Filled from
+//          T.field"), the chips under the side-list inputs, header links;
+//          "Edit rules" / "Map from data sources" land on their tabs; a
+//          missing required value -> "1 error …", fixed -> "Validated on",
+//          Generate -> "Validated" chip; the Blueprints list counts the rules
+//   VAL-09 a freshly uploaded (draft) template has the Field rules / Data
+//          sources tabs asking to confirm first; their "Confirm template"
+//          confirms it and the Field rules tab then loads
 //
 // UI contract (frontend/src/components/rules/*, components/doc/*,
 // components/pdf/*): tab "Field rules" (role=tab) -> data-testid
@@ -37,6 +49,12 @@
 // field-messages-<key>, #gate-reason "Save and validate first". Editor:
 // region-properties (Kind, Options, "Add option", "Date format in the
 // PDF"), toolbar "Arrange fields" (Undo, Duplicate, Align left, …).
+// Checks (components/doc/ValidationPanel, fieldChecks): data-testid
+// validation-panel with checks-state, required-progress, the disclosure
+// "Rules for each field" (field-rules-<key>), links "Edit rules" / "Map from
+// data sources"; side list: input #field-input-<key>, chips
+// field-checks-<key> (text in #field-checks-text-<key>); a draft template's
+// other tabs: data-testid confirm-first.
 import fs from 'node:fs/promises';
 import { test, expect, openAs } from '../../lib/fixtures.js';
 import { createTemplate, sessionFor } from '../../lib/api.js';
@@ -113,6 +131,39 @@ function regionOf(field, index) {
 
 /** The Generate / Download PDF / Save buttons of the builder header. */
 const button = (page, name) => page.getByRole('button', { name, exact: true });
+
+/** A confirmed one-page contract form with the five FIELDS (API). Returns {id, name}. */
+async function confirmedContractForm(api, prefix) {
+  const name = uniqueName(prefix);
+  const uploaded = await uploadBlueprint(api, { bytes: contractForm(), fileName: 'contract-form.pdf', flow: 'BLANK', name });
+  expect([200, 201]).toContain(uploaded.status);
+  const id = uploaded.body.id;
+  const draft = await getBlueprint(api, id);
+  await api.put(`${DOCS}/blueprints/${id}/overlay`, {
+    baseVersion: draft.currentVersion ?? draft.version,
+    regions: FIELDS.map(regionOf),
+    edits: [],
+    confirm: true,
+  });
+  expect(await getBlueprint(api, id)).toMatchObject({ status: 'READY', currentVersion: 1 });
+  return { id, name };
+}
+
+/** "New document" on My Documents: picks the template, names it, creates it. Returns the document id. */
+async function createDocument(page, templateName, title) {
+  await openAs(page, OPERATOR(), '/creation/documents');
+  const heading = page.getByRole('heading', { name: 'New document', level: 2 });
+  await expect(async () => {
+    if (!(await heading.isVisible())) await page.getByRole('button', { name: 'New document' }).click({ timeout: 2000 });
+    await expect(heading).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 30_000 });
+  await page.getByLabel('Template').selectOption({ label: `${templateName} (1 page)` });
+  await page.getByPlaceholder(/Survey/).fill(title);
+  await page.getByRole('button', { name: 'Create document' }).click();
+  await expect(page).toHaveURL(/\/creation\/documents\/\d+$/);
+  await expect(page.getByRole('heading', { name: title })).toBeVisible();
+  return Number(new URL(page.url()).pathname.split('/').pop());
+}
 
 test.describe.configure({ mode: 'serial' });
 
@@ -564,5 +615,227 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     }
     const stillThere = await getBytes(operatorApi, `${DOCS}/blueprints/${blueprintId}/rules`);
     expect(stillThere.status).toBe(200);
+  });
+
+  test('VAL-08 the Checks panel shows each field\'s rules and data source before the first Save', async ({
+    page,
+    operatorApi,
+  }) => {
+    // Setup (API): a form, a flow template with the same field names as its
+    // primary data source, a hand-written REQUIRED on Name and the flow rules
+    // (REQUIRED on email, REGEX on name) imported from that template.
+    const form = await confirmedContractForm(operatorApi, 'E2E Checks form');
+    const source = await createTemplate(operatorApi, { name: uniqueName('Checks source'), fields: ['name', 'email', 'status'] });
+    await operatorApi.put('/ValidationRules/Upsert', {
+      templateId: source.templateId,
+      fieldName: 'email',
+      ruleType: 'REQUIRED',
+      config: {},
+    });
+    await operatorApi.put('/ValidationRules/Upsert', {
+      templateId: source.templateId,
+      fieldName: 'name',
+      ruleType: 'REGEX',
+      config: { Pattern: NAME_PATTERN },
+    });
+    const added = await operatorApi.request('POST', `${DOCS}/blueprints/${form.id}/sources`, {
+      json: { templateId: source.templateId, role: 'PRIMARY' },
+    });
+    expect([200, 201]).toContain(added.status);
+    const sources = await operatorApi.get(`${DOCS}/blueprints/${form.id}/sources`);
+    expect(sources).toHaveLength(1);
+    expect(sources[0].mapping).toEqual({ name: 'name', email: 'email', status: 'status' });
+    const manual = await operatorApi.put(`${DOCS}/blueprints/${form.id}/rules`, {
+      baseRevision: 0,
+      rules: [{ regionKey: 'name', ruleType: 'REQUIRED', config: {} }],
+    });
+    expect(manual.revision).toBe(1);
+    const imported = await operatorApi.post(`${DOCS}/blueprints/${form.id}/rules/import`, {
+      baseRevision: 1,
+      templateId: source.templateId,
+      mapping: { name: 'name', email: 'email', status: 'status' },
+      mode: 'MERGE',
+    });
+    expect(imported.revision).toBe(2);
+    expect(imported.rules.map((r) => [r.regionKey, r.ruleType, r.origin]).sort()).toEqual(
+      [
+        ['email', 'REQUIRED', 'IMPORTED'],
+        ['name', 'REGEX', 'IMPORTED'],
+        ['name', 'REQUIRED', 'MANUAL'],
+      ].sort()
+    );
+    const from = (field) => `${source.name}.${field}`;
+
+    // A new document: the panel is there before anything is saved.
+    const title = uniqueName('E2E Checked contract');
+    const docId = await createDocument(page, form.name, title);
+    const dto = await operatorApi.get(`${DOCS}/instances/${docId}`);
+    expect(dto.fieldChecks.email.rules).toEqual([
+      expect.objectContaining({ ruleType: 'REQUIRED', origin: 'IMPORTED', sourceTemplateName: source.name, sourceFieldName: 'email' }),
+    ]);
+    expect(dto.fieldChecks.email.mappedFrom).toEqual([
+      expect.objectContaining({ templateId: source.templateId, templateName: source.name, fieldName: 'email', role: 'PRIMARY' }),
+    ]);
+    expect(dto.canEditRules).toBe(true);
+
+    const panel = page.getByTestId('validation-panel');
+    await expect(panel.getByRole('heading', { name: 'Checks' })).toBeVisible();
+    await expect(panel.getByTestId('checks-state')).toHaveText('Not checked yet — press Save to check this document.');
+    await expect(panel.getByTestId('required-progress')).toHaveText('0 of 2 required fields filled · 3 rules on this template');
+    const rulesToggle = panel.getByRole('button', { name: 'Rules for each field' });
+    await expect(rulesToggle).toHaveAttribute('aria-expanded', 'true');
+    const nameChecks = panel.getByTestId('field-rules-name');
+    await expect(nameChecks.getByText('Required', { exact: true })).toBeVisible();
+    await expect(nameChecks).toContainText(`· from ${from('name')}`);
+    await expect(nameChecks.getByText(`Filled from ${from('name')}`)).toBeVisible();
+    const emailChecks = panel.getByTestId('field-rules-email');
+    await expect(emailChecks.getByRole('listitem')).toHaveText([`Required · from ${from('email')}`]);
+    await expect(emailChecks.getByText(`Filled from ${from('email')}`)).toBeVisible();
+    // A mapped field without rules is listed for its mapping alone.
+    await expect(panel.getByTestId('field-rules-status').getByText(`Filled from ${from('status')}`)).toBeVisible();
+    // The disclosure closes and opens again.
+    await rulesToggle.click();
+    await expect(rulesToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(panel.getByTestId('field-rules-list')).toHaveCount(0);
+    await rulesToggle.click();
+    await expect(panel.getByTestId('field-rules-email')).toBeVisible();
+
+    // The side list: the chips under the mapped inputs, read as their description.
+    const emailChips = page.getByTestId('field-checks-email');
+    await expect(emailChips).toContainText('Required · imported');
+    await expect(emailChips).toContainText(`from ${from('email')}`);
+    await expect(page.locator('#field-input-email')).toHaveAttribute('aria-describedby', /field-checks-text-email/);
+    await expect(page.locator('#field-checks-text-email')).toHaveText(
+      `Rules: Required (imported from ${from('email')}). From ${from('email')}.`
+    );
+    const nameChips = page.getByTestId('field-checks-name');
+    await expect(nameChips).toContainText('Required');
+    await expect(nameChips).toContainText(`from ${from('name')}`);
+    await expect(page.getByTestId('field-checks-status')).toContainText(`from ${from('status')}`);
+
+    // The header links the template and its field rules.
+    await expect(page.getByRole('link', { name: form.name, exact: true })).toHaveAttribute(
+      'href',
+      `/creation/blueprints/${form.id}`
+    );
+    await expect(page.getByRole('link', { name: 'Field rules (3)' })).toHaveAttribute(
+      'href',
+      `/creation/blueprints/${form.id}?tab=rules`
+    );
+
+    // "Edit rules" -> the template on its Field rules tab.
+    await panel.getByRole('link', { name: 'Edit rules' }).click();
+    await expect(page).toHaveURL(new RegExp(`/creation/blueprints/${form.id}\\?tab=rules$`));
+    await expect(page.getByRole('heading', { name: form.name })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Field rules' })).toHaveAttribute('aria-selected', 'true');
+    const rulesTab = page.getByTestId('field-rules');
+    await expect(rulesTab.getByText('revision 2')).toBeVisible();
+    await expect(rulesTab.getByTestId('rules-field-email').getByText(`Imported from ${from('email')}`)).toBeVisible();
+    await expect(rulesTab.getByTestId('rules-field-name').getByText('Manual')).toBeVisible();
+
+    // Back in the document, "Map from data sources" -> the Data sources tab.
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: title })).toBeVisible();
+    await panel.getByRole('link', { name: 'Map from data sources' }).click();
+    await expect(page).toHaveURL(new RegExp(`/creation/blueprints/${form.id}\\?tab=sources$`));
+    await expect(page.getByRole('tab', { name: 'Data sources' })).toHaveAttribute('aria-selected', 'true');
+    const sourceCard = page.getByTestId('data-sources').getByTestId(`source-${source.templateId}`);
+    await expect(sourceCard.getByText('Primary', { exact: true })).toBeVisible();
+    await expect(sourceCard.getByTestId('mapping-row-email').getByRole('combobox')).toHaveValue('email');
+
+    // Back in the document: a missing required value is reported in the panel.
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: title })).toBeVisible();
+    await page.locator('#field-input-email').fill(GOOD.email);
+    await expect(page.getByTestId('save-state')).toHaveText('Saved');
+    await expect(panel.getByTestId('required-progress')).toHaveText('1 of 2 required fields filled · 3 rules on this template');
+    const failed = await saveAndValidate(page, { expectValidated: false });
+    expect(failed.status).toBe('DRAFT');
+    expect(failed.validation.errors.map((e) => [e.regionKey, e.code])).toEqual([['name', 'REQUIRED']]);
+    await expect(panel.getByTestId('checks-state')).toHaveText('1 error, 0 warnings — fix them and press Save again.');
+    await expect(panel.getByText('Name is required.')).toBeVisible();
+    await expect(button(page, 'Generate')).toBeDisabled();
+
+    // Fixed -> validated.
+    await page.locator('#field-input-name').fill(GOOD.name);
+    await expect(page.getByTestId('save-state')).toHaveText('Saved');
+    await saveAndValidate(page);
+    await expect(panel.getByTestId('checks-state')).toHaveText(/^Validated on \S/);
+    await expect(panel.getByTestId('required-progress')).toHaveText('2 of 2 required fields filled · 3 rules on this template');
+
+    // Generate -> the GENERATED badge with a "Validated" chip next to it.
+    const generated = page.waitForResponse((r) => r.url().endsWith(`/instances/${docId}/generate`));
+    await button(page, 'Generate').click();
+    expect((await generated).status()).toBe(200);
+    await expect(page.getByText('GENERATED', { exact: true })).toBeVisible();
+    const chip = page.getByTitle('This document passed its checks');
+    await expect(chip).toHaveText('Validated');
+    await expect(panel.getByTestId('checks-state')).toHaveText('Generated · validated');
+    expect((await operatorApi.get(`${DOCS}/instances/${docId}`)).status).toBe('GENERATED');
+
+    // The templates list ("Blueprints") counts the template's rules and links to them.
+    await page.getByRole('link', { name: 'Blueprints', exact: true }).click();
+    await expect(page).toHaveURL(/\/creation\/blueprints$/);
+    const rulesLink = page.getByRole('link', { name: `Field rules of ${form.name}: 3` });
+    await expect(rulesLink).toHaveText('3');
+    await expect(rulesLink).toHaveAttribute('href', `/creation/blueprints/${form.id}?tab=rules`);
+    const listed = (await operatorApi.get(`${DOCS}/blueprints`)).find((b) => b.id === form.id);
+    expect(listed).toMatchObject({ name: form.name, rulesCount: 3 });
+  });
+
+  test('VAL-09 a draft template\'s Field rules tab asks to confirm first; confirming there loads the rules', async ({
+    page,
+    operatorApi,
+  }) => {
+    const name = uniqueName('E2E Draft form');
+    await openAs(page, OPERATOR(), '/creation/blueprints');
+    const uploadHeading = page.getByRole('heading', { name: 'Upload a template', level: 2 });
+    await expect(async () => {
+      if (!(await uploadHeading.isVisible())) {
+        await page.getByRole('button', { name: 'Upload a template' }).click({ timeout: 2000 });
+      }
+      await expect(uploadHeading).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 30_000 });
+    await page
+      .getByLabel('PDF file')
+      .setInputFiles({ name: 'draft-form.pdf', mimeType: 'application/pdf', buffer: contractForm() });
+    await page.getByPlaceholder('e.g. Loan application').fill(name);
+    await page.getByRole('radio', { name: /Blank template/ }).check();
+    await page.getByRole('button', { name: 'Upload and review' }).click();
+    await expect(page).toHaveURL(/\/creation\/blueprints\/\d+$/, { timeout: 60_000 });
+    const id = Number(new URL(page.url()).pathname.split('/').pop());
+    await expect(page.getByRole('heading', { name })).toBeVisible();
+    const draft = await getBlueprint(operatorApi, id);
+    expect(draft.status).toBe('DRAFT');
+    expect(draft.regions.length).toBeGreaterThan(0);
+
+    // The draft has the tabs; Field rules asks to confirm first (no rules are loaded for a draft).
+    const rulesTabButton = page.getByRole('tab', { name: 'Field rules' });
+    await expect(rulesTabButton).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Data sources' })).toBeVisible();
+    await rulesTabButton.click();
+    await expect(rulesTabButton).toHaveAttribute('aria-selected', 'true');
+    const confirmFirst = page.getByTestId('confirm-first');
+    await expect(confirmFirst.getByText('Confirm the template first to add data sources and field rules.')).toBeVisible();
+    await expect(page.getByTestId('field-rules')).toHaveCount(0);
+    // ... and so does Data sources.
+    await page.getByRole('tab', { name: 'Data sources' }).click();
+    await expect(confirmFirst.getByText('Confirm the template first to add data sources and field rules.')).toBeVisible();
+    await expect(page.getByTestId('data-sources')).toHaveCount(0);
+    // Still a draft on the server.
+    expect((await getBlueprint(operatorApi, id)).status).toBe('DRAFT');
+
+    // "Confirm template" from the Field rules tab confirms it; the tab then loads the rules.
+    await rulesTabButton.click();
+    await confirmFirst.getByRole('button', { name: 'Confirm template' }).click();
+    await expect(page.getByText('Template confirmed — it is ready for new documents')).toBeVisible();
+    await expect(page.getByTestId('confirm-first')).toHaveCount(0);
+    await expect(rulesTabButton).toHaveAttribute('aria-selected', 'true');
+    const rulesTab = page.getByTestId('field-rules');
+    await expect(rulesTab.getByText('revision 0')).toBeVisible();
+    await expect(rulesTab.locator('[data-testid^="rules-field-"]')).toHaveCount(draft.regions.filter((r) => !r.suggested).length);
+    const ready = await getBlueprint(operatorApi, id);
+    expect(ready).toMatchObject({ status: 'READY', currentVersion: 1 });
+    expect((await operatorApi.get(`${DOCS}/blueprints/${id}/rules`)).rules).toEqual([]);
   });
 });
