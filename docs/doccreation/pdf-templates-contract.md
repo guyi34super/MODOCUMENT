@@ -45,7 +45,7 @@ public record PdfBox(int page, float x, float y, float w, float h) {}
 public record PageInfo(int index, float width, float height, int rotation) {}
 
 public enum UploadFlow { BLANK, WITH_DATA, AUTO }          // AUTO: engine decides (looksFilled)
-public enum RegionKind { TEXT, MULTILINE, DATE, NUMBER, CHECKBOX, IMAGE, SIGNATURE }
+public enum RegionKind { TEXT, MULTILINE, DATE, NUMBER, CHECKBOX, IMAGE, SIGNATURE, CHOICE }  // ws33: CHOICE = dropdown
 public enum RegionSource { ACROFORM, DETECTED, DATA_REMOVED, AI, MANUAL }
 public enum Align { LEFT, CENTER, RIGHT }
 public enum EditKind { REMOVE, REPLACE_TEXT, ADD_TEXT, ADD_IMAGE }
@@ -148,12 +148,21 @@ All routes are under `/api/doccreation` and use the existing `DOC_READ` / `DOC_W
                "page":0,"fx":0.1,"fy":0.2,"fw":0.3,"fh":0.02,
                "fontName":"Helvetica","fontSize":10,"color":"#000000","align":"LEFT","maxLines":1,
                "acroFieldName":null,"required":false,"sortOrder":0,"source":"DETECTED","confidence":0.9,
-               "sampleValue":"John Doe", "suggested":false }],
+               "sampleValue":"John Doe", "suggested":false,
+               "props":{"placeholder":"e.g. Jane Doe","maxLength":40} }],
   "edits":[{ "id":"…","kind":"REMOVE","page":0,"fx":…,"fy":…,"fw":…,"fh":…,"text":null,"fontName":null,"fontSize":null,
              "color":null,"source":"DATA_REMOVAL","confidence":0.8,"removedText":"John Doe",
              "applied":true, "regionKey":"full_name" }],
-  "warnings":["…"], "detectedBy":"CODE|CODE+AI", "documentCount":0 }
+  "warnings":["…"], "detectedBy":"CODE|CODE+AI", "documentCount":0,
+  "fonts":["LiberationSans","LiberationSans-Bold","…"] }
 ```
+
+- **ws33 (field-validation-contract.md §2/§3).** Each region carries `props` (placeholder, help text, default
+  value, CHOICE options, date/number output formats, max length; null when none), also accepted by
+  `PUT /overlay` and stored as `DocTemplateRegion.FieldPropsJson`. Kind `CHOICE` is a one-line dropdown whose
+  options are `props.options` (required); AcroForm combo and list boxes are proposed as CHOICE with their options.
+  `required` is derived from the template's REQUIRED field rules; the overlay save keeps those rules in step with
+  it. `fonts` lists the bundled font names a region may use.
 
 - `sampleValue` and `removedText` are only returned while the blueprint is `DRAFT`. They are cleared once it is confirmed.
 - **Low-confidence guesses are suggested, not applied (BUG-PDF-01).** On upload (WITH_DATA), only proposed removals with `confidence ≥ 0.6` (`RemovalPolicy.APPLY_THRESHOLD`) are applied to the draft's template PDF and stored as edits.
