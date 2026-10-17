@@ -31,7 +31,8 @@ e2e/
   tests/                  00-harness, 01-auth, 02-templates-ingestion, 03-session (@smoke)
                           04-known-bugs (@bug), phase2/* (@phase2 @waveN; all live
                           since Wave 4 except AC-EXT-13); phase2/pdf-templates (@pdf);
-                          phase2/flow-records (@records)
+                          phase2/flow-records (@records); phase2/doc-validation
+                          (@validation); phase2/doc-creation-flow (@datatemplates)
 ```
 
 Phase-2 status (Wave 4 QA round): every phase-2 spec is **live**, including
@@ -55,6 +56,24 @@ preview; REPORT masking of NIC / account number in the PDF); REC-06 a
 READ_ONLY user gets masked NIC/phone and 403 on fill, a second bank 404;
 REC-07 deleting the ingestion job removes its records. `createTemplate()`
 takes `visibility: 'BANK'` (bank admin only).
+Since ws34 the template's tabs are steps ("Upload", "Validation", "Map
+fields", "Documents"): the data sources sit under "Map fields" → "Data from
+the flow (advanced)", and a new document opens on the builder's "Choose
+data" step (`?step=data`).
+
+The document creation flow (`tests/phase2/doc-creation-flow.spec.js`,
+`@phase2 @datatemplates`, [contract](../docs/doccreation/data-templates-contract.md)),
+in the user's order through the sidebar steps: DCF-01 upload and confirm a
+PDF (lands on Validation); DCF-02 "Copy from a flow template" into a data
+template (imported rules), a LENGTH rule added by hand, chosen on the PDF
+template ("Inherited from …"); DCF-03 the field matcher ("same name",
+"x of y mapped", a change saved, "Accept all suggestions", the managed data
+source); DCF-04 a document through Choose data (⚠ on a value that breaks a
+rule) → Save & validate ("Go to field") → Download unlocked → the PDF;
+DCF-05 an edit re-locks Download, My documents' Validation column and
+Download only for validated documents; DCF-06 a changed data-template rule
+→ "The rules changed — save again" and 409 NOT_VALIDATED until saved again;
+DCF-07 READ_ONLY 403, another bank 404.
 
 ## Run it locally (no Docker)
 
