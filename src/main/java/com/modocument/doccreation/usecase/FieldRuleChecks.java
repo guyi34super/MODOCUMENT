@@ -8,7 +8,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.modocument.application.validation.RegexPatternChecker;
 import com.modocument.doccreation.dto.RuleInput;
 import com.modocument.doccreation.entity.DocFieldRule;
+import com.modocument.doccreation.pdftemplate.RegionKind;
 import com.modocument.doccreation.rules.DocRuleType;
+import com.modocument.doccreation.rules.RuleTypeCatalog;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -30,7 +32,8 @@ import java.util.regex.Pattern;
 /**
  * The checks a template's field rules must pass when they are saved
  * (docs/doccreation/field-validation-contract.md §3, "Checks when rules are
- * saved"). Every refusal is an {@link IllegalArgumentException} (400) that
+ * saved"), for a PDF template (region keys) and, through a {@link Scope},
+ * for a data template (field names and kinds, data-templates-contract.md §2). Every refusal is an {@link IllegalArgumentException} (400) that
  * names the rule; messages never contain a document value. The config of a
  * rule is normalised: only the keys of its type are kept (case-sensitive),
  * numbers and dates are checked and written in one form.
@@ -50,6 +53,9 @@ final class FieldRuleChecks {
     static final Set<String> SEVERITIES = Set.of("ERROR", "WARNING");
     static final Set<String> ORIGINS = Set.of(DocFieldRuleUseCase.ORIGIN_MANUAL, DocFieldRuleUseCase.ORIGIN_IMPORTED,
             DocFieldRuleUseCase.ORIGIN_REGION_FLAG);
+    /** A data template's rules are written by hand or copied from a flow template (the V330 CHECK). */
+    static final Set<String> DATA_ORIGINS = Set.of(DocFieldRuleUseCase.ORIGIN_MANUAL,
+            DocFieldRuleUseCase.ORIGIN_IMPORTED);
 
     /** ISO dates, {@code today}, or a relative date such as {@code -18y}, {@code +30d}, {@code +2w}, {@code -1m}. */
     private static final Pattern RELATIVE_DATE = Pattern.compile("([+-])(\\d{1,4})([dwmy])");
@@ -60,57 +66,123 @@ final class FieldRuleChecks {
     }
 
     /**
+     * A rule to check, whichever store it is for: a PDF template's rule
+     * ({@code key} = region key) or a data template's ({@code key} = field
+     * name, data-templates-contract §2).
+     */
+    record Input(String key, String ruleType, JsonNode config, String message, String severity, String origin,
+                 Integer sourceTemplateId, String sourceFieldName) {
+
+        static Input of(RuleInput input) {
+            return input == null ? null : new Input(input.regionKey(), input.ruleType(), input.config(),
+                    input.message(), input.severity(), input.origin(), input.sourceTemplateId(),
+                    input.sourceFieldName());
+        }
+    }
+
+    /** One checked rule, not yet stored; {@code sortOrder} = position among the rules of the same field. */
+    record Checked(String key, String ruleType, String configJson, String message, String severity, String origin,
+                   Integer sourceTemplateId, String sourceFieldName, int sortOrder) {
+    }
+
+    /**
+     * What a rule set is checked against: the field keys, their kinds (null
+     * = kinds are not checked, as for a PDF template, whose rules on a kind
+     * they do not fit stay as setup warnings), the origins it may hold and
+     * the wording of the refusals.
+     */
+    record Scope(Set<String> keys, Map<String, RegionKind> kinds, Set<String> origins, String originWords,
+                 String owner, String place) {
+
+        /** A PDF template: the region keys of its current version (field-validation-contract §3). */
+        static Scope blueprint(Set<String> keys) {
+            return new Scope(keys, null, ORIGINS, "MANUAL, IMPORTED or REGION_FLAG", "A template",
+                    "the template's current version");
+        }
+
+        /** A data template: its field names and their kinds (data-templates-contract §2). */
+        static Scope dataTemplate(Map<String, RegionKind> kinds) {
+            return new Scope(kinds.keySet(), kinds, DATA_ORIGINS, "MANUAL or IMPORTED", "A data template",
+                    "the data template");
+        }
+    }
+
+    /**
      * The checked rules (not yet stored: no id, bank or blueprint), sort
      * order = position among the rules of the same field.
      *
      * @param keys the region keys of the blueprint's current version
      */
     static List<DocFieldRule> check(List<RuleInput> inputs, Set<String> keys) {
-        List<RuleInput> list = inputs == null ? List.of() : inputs;
-        if (list.size() > MAX_RULES) {
-            throw new IllegalArgumentException("A template has at most " + MAX_RULES + " field rules.");
-        }
+        List<Input> list = inputs == null ? null : inputs.stream().map(Input::of).toList();
         List<DocFieldRule> out = new ArrayList<>();
+        for (Checked checked : checkAll(list, Scope.blueprint(keys))) {
+            DocFieldRule rule = toRule(checked);
+            rule.setSortOrder(checked.sortOrder());
+            out.add(rule);
+        }
+        return out;
+    }
+
+    /** {@link #check} for any {@link Scope}. */
+    static List<Checked> checkAll(List<Input> inputs, Scope scope) {
+        List<Input> list = inputs == null ? List.of() : inputs;
+        if (list.size() > MAX_RULES) {
+            throw new IllegalArgumentException(scope.owner() + " has at most " + MAX_RULES + " field rules.");
+        }
+        List<Checked> out = new ArrayList<>();
         Map<String, Integer> perField = new HashMap<>();
         for (int i = 0; i < list.size(); i++) {
-            DocFieldRule rule = checkOne(i + 1, list.get(i), keys);
-            int position = perField.merge(rule.getRegionKey(), 1, Integer::sum);
+            Checked rule = checkOne(i + 1, list.get(i), scope);
+            int position = perField.merge(rule.key(), 1, Integer::sum);
             if (position > MAX_RULES_PER_FIELD) {
-                throw new IllegalArgumentException("Field \"" + rule.getRegionKey() + "\" has more than "
+                throw new IllegalArgumentException("Field \"" + rule.key() + "\" has more than "
                         + MAX_RULES_PER_FIELD + " rules.");
             }
-            rule.setSortOrder(position - 1);
-            out.add(rule);
+            out.add(new Checked(rule.key(), rule.ruleType(), rule.configJson(), rule.message(), rule.severity(),
+                    rule.origin(), rule.sourceTemplateId(), rule.sourceFieldName(), position - 1));
         }
         return out;
     }
 
     /** The per-field and per-template limits of a rule set built elsewhere (an import). */
     static void checkLimits(List<DocFieldRule> rules) {
-        if (rules.size() > MAX_RULES) {
-            throw new IllegalArgumentException("A template has at most " + MAX_RULES + " field rules.");
+        checkLimits(rules.stream().map(DocFieldRule::getRegionKey).toList(), "A template");
+    }
+
+    /** The per-field and per-template limits, given the field key of every rule. */
+    static void checkLimits(List<String> ruleKeys, String owner) {
+        if (ruleKeys.size() > MAX_RULES) {
+            throw new IllegalArgumentException(owner + " has at most " + MAX_RULES + " field rules.");
         }
         Map<String, Integer> perField = new HashMap<>();
-        for (DocFieldRule rule : rules) {
-            if (perField.merge(rule.getRegionKey(), 1, Integer::sum) > MAX_RULES_PER_FIELD) {
-                throw new IllegalArgumentException("Field \"" + rule.getRegionKey() + "\" would have more than "
+        for (String key : ruleKeys) {
+            if (perField.merge(key, 1, Integer::sum) > MAX_RULES_PER_FIELD) {
+                throw new IllegalArgumentException("Field \"" + key + "\" would have more than "
                         + MAX_RULES_PER_FIELD + " rules.");
             }
         }
     }
 
-    static DocFieldRule checkOne(int number, RuleInput input, Set<String> keys) {
+    static Checked checkOne(int number, Input input, Scope scope) {
         if (input == null) {
             throw new IllegalArgumentException("Rule " + number + " is empty.");
         }
-        String key = input.regionKey() == null ? "" : input.regionKey().strip();
+        String key = input.key() == null ? "" : input.key().strip();
         DocRuleType type = DocRuleType.parse(input.ruleType()).orElseThrow(() -> new IllegalArgumentException(
                 "Rule " + number + ": unknown rule type \"" + truncate(input.ruleType(), 40) + "\"."));
         String where = "Rule " + number + " (field \"" + truncate(key, 64) + "\", " + type.name() + "): ";
-        if (!keys.contains(key)) {
-            throw new IllegalArgumentException(where + "the field is not in the template's current version.");
+        if (!scope.keys().contains(key)) {
+            throw new IllegalArgumentException(where + "the field is not in " + scope.place() + ".");
         }
-        ObjectNode config = config(type, input.config(), key, keys, where);
+        if (scope.kinds() != null) {
+            RegionKind kind = scope.kinds().get(key);
+            if (!RuleTypeCatalog.fits(type, kind)) {
+                throw new IllegalArgumentException(where + "this rule does not apply to " + kindWords(kind)
+                        + " field.");
+            }
+        }
+        ObjectNode config = config(type, input.config(), key, scope, where);
         String configJson = config.toString();
         if (configJson.getBytes(StandardCharsets.UTF_8).length > MAX_CONFIG_BYTES) {
             throw new IllegalArgumentException(where + "the settings are larger than 4 kB.");
@@ -126,28 +198,39 @@ final class FieldRuleChecks {
         }
         String origin = input.origin() == null || input.origin().isBlank() ? DocFieldRuleUseCase.ORIGIN_MANUAL
                 : input.origin().strip().toUpperCase(Locale.ROOT);
-        if (!ORIGINS.contains(origin)) {
-            throw new IllegalArgumentException(where + "the origin must be MANUAL, IMPORTED or REGION_FLAG.");
+        if (!scope.origins().contains(origin)) {
+            throw new IllegalArgumentException(where + "the origin must be " + scope.originWords() + ".");
         }
         String sourceField = input.sourceFieldName() == null || input.sourceFieldName().isBlank() ? null
                 : input.sourceFieldName().strip();
         if (sourceField != null && sourceField.length() > MAX_SOURCE_FIELD) {
             throw new IllegalArgumentException(where + "the source field name is too long.");
         }
+        return new Checked(key, type.name(), configJson, message, severity, origin, input.sourceTemplateId(),
+                sourceField, 0);
+    }
+
+    private static DocFieldRule toRule(Checked checked) {
         DocFieldRule rule = new DocFieldRule();
-        rule.setRegionKey(key);
-        rule.setRuleType(type.name());
-        rule.setConfigJson(configJson);
-        rule.setMessage(message);
-        rule.setSeverity(severity);
-        rule.setOrigin(origin);
-        rule.setSourceTemplateId(input.sourceTemplateId());
-        rule.setSourceFieldName(sourceField);
+        rule.setRegionKey(checked.key());
+        rule.setRuleType(checked.ruleType());
+        rule.setConfigJson(checked.configJson());
+        rule.setMessage(checked.message());
+        rule.setSeverity(checked.severity());
+        rule.setOrigin(checked.origin());
+        rule.setSourceTemplateId(checked.sourceTemplateId());
+        rule.setSourceFieldName(checked.sourceFieldName());
         return rule;
     }
 
+    /** A kind in words with its article: "a number", "an image". */
+    static String kindWords(RegionKind kind) {
+        String name = kind == null ? "unknown" : kind.name().toLowerCase(Locale.ROOT);
+        return ("aeiou".indexOf(name.charAt(0)) >= 0 ? "an " : "a ") + name;
+    }
+
     /** The normalised config of one rule; only the keys of its type are kept. */
-    static ObjectNode config(DocRuleType type, JsonNode raw, String key, Set<String> keys, String where) {
+    static ObjectNode config(DocRuleType type, JsonNode raw, String key, Scope scope, String where) {
         JsonNode in = raw == null || raw.isNull() ? NODES.objectNode() : raw;
         if (!in.isObject()) {
             throw new IllegalArgumentException(where + "the settings must be a JSON object.");
@@ -251,7 +334,7 @@ final class FieldRuleChecks {
                 putIfSet(out, "Max", max);
             }
             case REQUIRED_IF -> {
-                out.put("Field", otherField(in.get("Field"), key, keys, where));
+                out.put("Field", otherField(in.get("Field"), key, scope, where));
                 JsonNode equals = in.get("Equals");
                 if (equals != null && !equals.isNull()) {
                     if (!equals.isValueNode()) {
@@ -266,7 +349,7 @@ final class FieldRuleChecks {
                 }
             }
             case COMPARE -> {
-                out.put("Field", otherField(in.get("Field"), key, keys, where));
+                out.put("Field", otherField(in.get("Field"), key, scope, where));
                 String op = text(in.get("Op"));
                 if (op == null || !OPERATORS.contains(op.strip())) {
                     throw new IllegalArgumentException(where + "Op must be one of " + String.join(" ", OPERATORS)
@@ -294,7 +377,7 @@ final class FieldRuleChecks {
 
     // ------------------------------------------------------------ helpers
 
-    private static String otherField(JsonNode node, String key, Set<String> keys, String where) {
+    private static String otherField(JsonNode node, String key, Scope scope, String where) {
         String other = text(node);
         other = other == null ? null : other.strip();
         if (other == null || other.isEmpty()) {
@@ -303,9 +386,9 @@ final class FieldRuleChecks {
         if (other.equals(key)) {
             throw new IllegalArgumentException(where + "Field must name another field, not the field itself.");
         }
-        if (!keys.contains(other)) {
+        if (!scope.keys().contains(other)) {
             throw new IllegalArgumentException(where + "Field \"" + truncate(other, 64)
-                    + "\" is not in the template's current version.");
+                    + "\" is not in " + scope.place() + ".");
         }
         return other;
     }
