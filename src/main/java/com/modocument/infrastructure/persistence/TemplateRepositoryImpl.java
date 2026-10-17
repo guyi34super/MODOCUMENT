@@ -4,6 +4,7 @@ import com.modocument.application.port.TemplateRepository;
 import com.modocument.domain.entity.Template;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,6 +35,11 @@ public class TemplateRepositoryImpl implements TemplateRepository {
     @Override
     public List<Template> listAccessible(int userId, int bankId) {
         return jpa.findAccessible(userId, bankId);
+    }
+
+    @Override
+    public List<Template> listAccessible(Collection<Integer> ids, int userId, int bankId) {
+        return ids.isEmpty() ? List.of() : jpa.findAccessibleIn(ids, userId, bankId);
     }
 
     @Override

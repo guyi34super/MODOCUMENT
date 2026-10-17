@@ -364,7 +364,10 @@ public class BlueprintDataMappingUseCase {
         mapping.forEach((regionKey, fieldName) -> {
             DocDataField field = byName.get(fieldName);
             String flowField = field == null ? null : field.getSourceFieldName();
-            if (flowField != null && !flowField.isBlank() && flowFields.contains(flowField)) {
+            // V333: a field copied from another flow template is not a field of the main one
+            boolean fromMain = field != null
+                    && (field.getSourceTemplateId() == null || field.getSourceTemplateId() == flowTemplateId);
+            if (fromMain && flowField != null && !flowField.isBlank() && flowFields.contains(flowField)) {
                 out.put(regionKey, flowField);
             }
         });

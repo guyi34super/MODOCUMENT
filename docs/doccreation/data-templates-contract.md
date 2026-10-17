@@ -165,6 +165,13 @@ These pin down what the table above leaves open. The shapes are unchanged.
   - Fields keep the flow template's order.
   - A converted rule that doesn't fit the field's kind is skipped with the reason "<TYPE> does not apply to a <kind> field".
   - Names are `OverlayMapper.slug` of the flow name ("field" when empty), made unique with `_2`, `_3` and so on.
+- **Several flow templates (follow-up):**
+  - The single `from-flow-template` is the one-source case of the same code; its audit keeps `templateId` next to `templates` and `added`, and an empty `fields` list there still makes an empty template.
+  - Naming (so the frontend preview matches): base = slug of the flow field name; when it is taken (by an existing field, an earlier source or an earlier field of the same flow template) it becomes `base_<slug of the flow template's name>`, then `base_<slug>_2`, `_3`… (e.g. `email`, `email_accounts`, `email_accounts_2`). The base is cut so the whole name, suffix included, fits 64 characters. Only the single `from-flow-template` keeps its old `_2`, `_3`.
+  - A flow template listed twice, or more than 50 sources, is a 400. A source the caller can't read is a 404 (as in copy-preview); nothing is created or added.
+  - `add-from-flow-templates` puts the new fields after the existing ones; `fields` must still fit 500 and the rule limits together with what is there.
+  - `PUT /{id}/fields` keeps a field's `sourceTemplateId` when the field keeps its name and `sourceFieldName` (`FieldInput` has no `sourceTemplateId`).
+  - The managed data source maps only fields whose `sourceTemplateId` is the main template (or null).
 
 ## 3. PDF template ↔ data template (BE-B)
 

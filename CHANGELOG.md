@@ -105,8 +105,10 @@ All notable changes to MoDocument are recorded here. The format follows
   and `DOC_GENERATED` now carry the region/edit counts and the exactness result.
 - Data subject requests find and erase document values (`docValues` store); the retention purge
   also clears values, photos and the generated PDF of idle documents.
+- Build a Document Creation validation template from several Document Flow templates.
 
 ### Changed
+- Validation page uses the Set Field Rules controls.
 - Download and generate are also refused (`409 NOT_VALIDATED`, "The rules changed since this
   document was validated; save it again to re-check.") when the template's rules, data template
   or mapping changed since the document was validated. Submitted and released documents, and

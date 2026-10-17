@@ -24,14 +24,21 @@ public record DataTemplateDto(int id,
                               List<UsedBy> usedBy,
                               List<RulesDto.RuleType> ruleTypes) {
 
-    /** A data field; {@code props} is null when no properties are set. */
+    /**
+     * A data field; {@code props} is null when no properties are set.
+     * {@code sourceTemplateId} is the flow template it was copied from (V333;
+     * null = made by hand), {@code sourceTemplateName} that template's name,
+     * null when it is gone or not readable by the caller.
+     */
     public record Field(String name,
                         String label,
                         String kind,
                         String piiKind,
                         FieldProps props,
                         String sourceFieldName,
-                        int sortOrder) {
+                        int sortOrder,
+                        Integer sourceTemplateId,
+                        String sourceTemplateName) {
     }
 
     /**
