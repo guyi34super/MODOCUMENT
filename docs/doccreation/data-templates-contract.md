@@ -123,6 +123,30 @@ For each chosen flow field:
 - Everything stays editable.
 - Audit `DOC_DATA_TEMPLATE_COPIED` (`{templateId, fields, rules, skipped}`).
 
+### Implementation notes (BE-A)
+These pin down what the table above leaves open. The shapes are unchanged.
+- **Code:** `DataTemplateController` and `DataTemplateUseCase`. The Java records are `DataFieldInput` and `DataRuleInput` (the JSON `FieldInput` and `RuleInput`), because ws33 already has a `RuleInput` keyed by `regionKey`. The conversion lives in `FlowRuleConverter`, which the ws33 import uses too.
+- **`DataTemplateSummaryDto.usedBy`** is a count. `DataTemplateDto.usedBy` lists the PDF templates.
+- **Revision:** creating, copying or renaming doesn't change `revision`. A new or copied data template starts at 0. A missing `baseRevision` skips the check, as in ws33.
+- **Field checks:**
+  - The label and the kind are required.
+  - `piiKind` must be a `PiiKind` name.
+  - The props errors are the region ones (`Field "<name>": …`).
+  - `fields` must be present: send `[]` to remove every field.
+- **Rule checks:**
+  - A rule that doesn't fit its field's kind is refused (400), for example EMAIL on a NUMBER field. ws33 keeps it as a setup warning instead.
+  - The origin is `MANUAL` or `IMPORTED`. `REGION_FLAG` is refused.
+- **Saving fields:**
+  - Removing a field deletes its rules, and also the `REQUIRED_IF`/`COMPARE` rules that name it.
+  - Changing a kept field's kind so that one of its rules no longer fits is refused (400). Remove the rule first.
+- **`rules/test`:** an IMAGE field counts as holding a photo when its sample value is not blank.
+- **Copying:**
+  - `copy-preview` needs `DOC_READ`, and `from-flow-template` needs `DOC_WRITE`. Both also need `TEMPLATE_READ` and `VALIDATION_READ` (403).
+  - In `from-flow-template`, `fields` omitted copies every field. An unknown flow field name is a 400.
+  - Fields keep the flow template's order.
+  - A converted rule that doesn't fit the field's kind is skipped with the reason "<TYPE> does not apply to a <kind> field".
+  - Names are `OverlayMapper.slug` of the flow name ("field" when empty), made unique with `_2`, `_3` and so on.
+
 ## 3. PDF template ↔ data template (BE-B)
 
 All routes are under `/api/doccreation/blueprints/{id}`. The template must be owned by the caller (`DocCreationOwnership.requireTemplate`); reading needs `DOC_READ` and changing needs `DOC_WRITE`. The chosen data template must be readable by the caller (owner-scoped, same bank), otherwise 404.
