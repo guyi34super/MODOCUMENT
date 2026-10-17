@@ -906,14 +906,14 @@ test.describe('document creation flow: data templates, mapping, validated downlo
     for (const [name, from] of expected) {
       await expect(page.getByTestId(`data-field-${name}`).getByText(`From ${from}`, { exact: true })).toBeVisible();
     }
-    await expect(page.getByTestId(`data-field-${renamed}`).getByLabel(`Label of ${renamed}`)).toHaveValue('email');
+    await expect(page.getByTestId(`data-field-${renamed}`).getByLabel(`Label of ${renamed}`)).toHaveValue(`email (${contacts.name})`);
 
     const built = await operatorApi.get(`${DATA_TEMPLATES}/${builtId}`);
     expect(built).toMatchObject({ name: builtName, revision: 0, sourceTemplateId: accounts.templateId });
     expect(built.fields.map((f) => [f.name, f.label, f.sourceTemplateId, f.sourceTemplateName, f.sourceFieldName])).toEqual([
       ['email', 'email', accounts.templateId, accounts.name, 'email'],
       ['account_no', 'account_no', accounts.templateId, accounts.name, 'account_no'],
-      [renamed, 'email', contacts.templateId, contacts.name, 'email'],
+      [renamed, `email (${contacts.name})`, contacts.templateId, contacts.name, 'email'],
       ['phone', 'phone', contacts.templateId, contacts.name, 'phone'],
     ]);
     expect(built.rules.map((r) => [r.fieldName, r.ruleType, r.origin, r.sourceTemplateId, r.sourceFieldName])).toEqual(
@@ -1008,19 +1008,21 @@ test.describe('document creation flow: data templates, mapping, validated downlo
     );
     expect(ruled.rules).toHaveLength(4);
 
-    // Test a sample row: errors first, then it passes. Both e-mail fields are labelled "email" (their flow names).
+    // Test a sample row: errors first, then it passes. The renamed e-mail field's label names its flow template.
     await expect(page.getByRole('heading', { name: 'Test a sample row' })).toBeVisible();
     const sample = (label) => v.testPanel.getByLabel(`Sample value for ${label}`, { exact: true });
-    await expect(sample('email')).toHaveCount(2);
-    await sample('email').nth(0).fill('not-an-email');
+    const contactEmail = sample(`email (${contacts.name})`);
+    await expect(sample('email')).toHaveCount(1);
+    await expect(contactEmail).toHaveCount(1);
+    await sample('email').fill('not-an-email');
     await sample('phone').fill('');
     await v.testPanel.getByRole('button', { name: 'Run the rules' }).click();
     await expect(v.testPanel.getByRole('status')).toHaveText('2 errors, 0 warnings');
-    await expect(sample('email').nth(0)).toHaveAttribute('aria-invalid', 'true');
+    await expect(sample('email')).toHaveAttribute('aria-invalid', 'true');
     await expect(sample('phone')).toHaveAttribute('aria-invalid', 'true');
     await expect(sample('account_no')).not.toHaveAttribute('aria-invalid', 'true'); // its Required rule was deleted
-    await sample('email').nth(0).fill('jane@acme.com');
-    await sample('email').nth(1).fill('jane.contact@acme.com');
+    await sample('email').fill('jane@acme.com');
+    await contactEmail.fill('jane.contact@acme.com');
     await sample('phone').fill('+1 416 555-0199'); // passes the updated pattern, not "Whole number"
     await v.testPanel.getByRole('button', { name: 'Run the rules' }).click();
     await expect(v.testPanel.getByRole('status')).toHaveText('No errors or warnings');

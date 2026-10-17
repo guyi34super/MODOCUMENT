@@ -542,7 +542,11 @@ public class DataTemplateUseCase {
                 String flowName = FieldRuleChecks.truncate(field.flowName(), MAX_SOURCE_FIELD);
                 DocDataField row = new DocDataField();
                 row.setFieldName(fieldName);
-                row.setLabel(FieldRuleChecks.truncate(field.flowName(), MAX_LABEL));
+                // A renamed duplicate (two flow templates with the same field) gets a label naming its
+                // template, so the two fields read differently on the Validation page.
+                boolean renamed = !fieldName.equals(base);
+                row.setLabel(FieldRuleChecks.truncate(renamed && !singleCopy
+                        ? field.flowName() + " (" + template.getName() + ")" : field.flowName(), MAX_LABEL));
                 row.setKind(field.kind().name());
                 row.setPiiKind(field.piiKind());
                 row.setSourceFieldName(flowName);

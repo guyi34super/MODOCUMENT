@@ -296,12 +296,12 @@ class DataTemplateMultiSourceApiTest extends IsolatedStorageApiTestSupport {
                         "email/Email/" + c + "/Email",
                         "amount/Amount/" + c + "/Amount",
                         "notes/Notes/" + c + "/Notes",
-                        "email_" + ordersSlug + "/Email/" + o + "/Email",
-                        "amount_" + ordersSlug + "/Amount/" + o + "/Amount",
+                        "email_" + ordersSlug + "/Email (" + orders.getName() + ")/" + o + "/Email",
+                        "amount_" + ordersSlug + "/Amount (" + orders.getName() + ")/" + o + "/Amount",
                         "order_id/Order Id/" + o + "/Order Id",
                         "ship_date/Ship date/" + o + "/Ship date",
                         // a clash inside one flow template gets the suffix too
-                        "ship_date_" + ordersSlug + "/Ship-date/" + o + "/Ship-date");
+                        "ship_date_" + ordersSlug + "/Ship-date (" + orders.getName() + ")/" + o + "/Ship-date");
         assertThat(built.get("fields")).extracting(f -> f.get("sortOrder").asInt())
                 .containsExactly(0, 1, 2, 3, 4, 5, 6, 7, 8);
         assertThat(named(built.get("fields"), "email").get("sourceTemplateName").asText())
@@ -360,7 +360,7 @@ class DataTemplateMultiSourceApiTest extends IsolatedStorageApiTestSupport {
                 .containsExactly(
                         "firstname/FirstName/" + customers.getTemplateId() + "/FirstName",
                         "email/Email/" + customers.getTemplateId() + "/Email",
-                        "email_" + ordersSlug + "/Email/" + orders.getTemplateId() + "/Email",
+                        "email_" + ordersSlug + "/Email (" + orders.getName() + ")/" + orders.getTemplateId() + "/Email",
                         "order_id/Order Id/" + orders.getTemplateId() + "/Order Id");
         assertThat(partial.get("sourceTemplateId").asInt()).as("2 and 2: the first source wins")
                 .isEqualTo(customers.getTemplateId());
@@ -401,7 +401,7 @@ class DataTemplateMultiSourceApiTest extends IsolatedStorageApiTestSupport {
         assertThat(blueprintRevision(unrelated)).isZero();
         assertThat(fieldLines(added)).containsExactly(
                 "email/E-mail/-/-",
-                "email_" + ordersSlug + "/Email/" + orders.getTemplateId() + "/Email",
+                "email_" + ordersSlug + "/Email (" + orders.getName() + ")/" + orders.getTemplateId() + "/Email",
                 "ship_date/Ship date/" + orders.getTemplateId() + "/Ship date");
         assertThat(added.get("fields")).extracting(f -> f.get("sortOrder").asInt()).containsExactly(0, 1, 2);
         assertThat(named(added.get("fields"), "email").get("sourceTemplateName").isNull()).isTrue();

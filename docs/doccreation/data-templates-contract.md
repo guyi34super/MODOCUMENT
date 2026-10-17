@@ -113,7 +113,7 @@ CopyPreviewDto = { "templateId", "templateName",
 **Merging the fields**
 - `from-flow-templates` and `add-from-flow-templates` copy fields and rules exactly as the single copy below does.
 - **Name clashes:** a field name that already exists (from an earlier source, or in the template you add to) is given the suffix `_` + the slug of its flow template's name. If that name is also taken, a number is added: `_2`, `_3` and so on.
-- **Labels** stay as the flow field names.
+- **Labels** are the flow field names. A **renamed** field's label also names its flow template, e.g. "email (Contacts)", so two same-named fields read differently on the Validation page. The single copy is unchanged.
 - **Each field's origin:** `DocDataField.SourceTemplateId` (V333) records the flow template the field came from.
 
 **The main flow template**
