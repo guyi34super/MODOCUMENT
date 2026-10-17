@@ -17,6 +17,24 @@ All notable changes to MoDocument are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- The document creation flow (Upload document → Validation → Map fields → Fix documents).
+  **Data templates** (`/api/doccreation/data-templates`) are reusable validations: the fields a
+  document collects and their rules, made from scratch or copied from a flow template's fields
+  and rules. Bank-scoped under row level security (V330); audited `DOC_DATA_TEMPLATE_SAVED`,
+  `DOC_DATA_TEMPLATE_DELETED` and `DOC_DATA_TEMPLATE_COPIED`.
+- **Mapping** a PDF template onto a data template: `PUT /api/doccreation/blueprints/{id}/data-template`
+  chooses one (the mapping is pre-filled by same name and suggestions, one-to-one, by kind) or
+  clears it; `GET|PUT …/data-mapping` reads and saves the mapping (400 for unknown fields or
+  kinds that don't fit). `GET /blueprints` shows each template's data template and "x of y
+  mapped". When the data template was copied from a flow template, a **managed** primary data
+  source follows the mapping (a data source set up by hand is never changed; sources show
+  `managed`). Audited `DOC_BLUEPRINT_DATA_MAPPING_SAVED`, counts only.
+- The data template's rules apply to the mapped fields of every document, together with the
+  PDF's own extra rules: validation, the builder's checks (named after the data template), the
+  Required flag, `POST …/rules/test`, and the read-only `inherited` list of `GET …/rules`.
+- The guided flow: `GET /instances` gives each document's `validationState` (`NOT_CHECKED`,
+  `ERRORS`, `VALIDATED`, `RULES_CHANGED`) and `errorCount`; the fill preview marks the values
+  that would fail a check (`wouldFail`, messages without values).
 - Field properties for PDF template fields: placeholder, help text, default value, maximum
   length, a date output format for DATE fields and a number format (decimals, thousands
   separator, prefix, suffix) for NUMBER fields, sent and returned as `props` on each region of
@@ -89,6 +107,10 @@ All notable changes to MoDocument are recorded here. The format follows
   also clears values, photos and the generated PDF of idle documents.
 
 ### Changed
+- Download and generate are also refused (`409 NOT_VALIDATED`, "The rules changed since this
+  document was validated; save it again to re-check.") when the template's rules, data template
+  or mapping changed since the document was validated. Submitted and released documents, and
+  documents generated before field validation existed, are not affected.
 - Documents must be validated before they are generated, downloaded or submitted
   (`409 NOT_VALIDATED`); any real change sends a validated or generated document back to
   `DRAFT`. Documents generated before this release stay downloadable until they change.

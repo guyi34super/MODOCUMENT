@@ -379,7 +379,8 @@ public class DocReleaseUseCase {
         // is by id (access was authorized through the bank-scoped instance).
         Optional<DocBlueprint> blueprint = blueprints.getById(instance.getBlueprintId());
         return InstanceSummaryDto.from(instance, blueprint.map(DocBlueprint::getName).orElse(""),
-                blueprint.map(DocReleaseUseCase::pageCount).orElse(0));
+                blueprint.map(DocReleaseUseCase::pageCount).orElse(0),
+                blueprint.map(DocBlueprint::getRulesRevision).orElse(null));
     }
 
     private static int pageCount(DocBlueprint blueprint) {

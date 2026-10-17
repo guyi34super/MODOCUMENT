@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiPredicate;
 
 /**
  * Auto-mapping of a PDF template's regions to a flow template's fields
@@ -61,6 +62,10 @@ public class BlueprintMappingSuggester {
         this.templateFields = templateFields;
         this.dataTypes = dataTypes;
     }
+
+    /** The flow-template compatibility ({@link #compatible(RegionKind, String)} on the data type name). */
+    private static final BiPredicate<RegionKind, Field> FLOW_FIELDS = (kind, field) -> compatible(kind,
+            field.dataType());
 
     /** A flow template field as the suggester sees it. */
     public record Field(String name, String dataType, List<String> aliases) {
@@ -112,9 +117,20 @@ public class BlueprintMappingSuggester {
     /** Suggestions for the regions not in {@code mappedRegionKeys} (one-to-one among them). */
     public List<Candidate> suggestions(List<TemplateRegion> regions, List<Field> fields,
                                        Set<String> mappedRegionKeys) {
+        return suggestions(regions, fields, mappedRegionKeys, FLOW_FIELDS);
+    }
+
+    /**
+     * {@link #suggestions(List, List, Set)} with another kind compatibility
+     * — ws34: a data template's fields ({@code dataType} = the data field's
+     * kind, aliases = its label), matched by the data-templates contract §3
+     * table.
+     */
+    public List<Candidate> suggestions(List<TemplateRegion> regions, List<Field> fields,
+                                       Set<String> mappedRegionKeys, BiPredicate<RegionKind, Field> compatible) {
         Settings settings = settings();
         List<TemplateRegion> open = regions.stream().filter(r -> !mappedRegionKeys.contains(r.key())).toList();
-        List<Candidate> all = candidates(open, fields, settings.aliases());
+        List<Candidate> all = candidates(open, fields, settings.aliases(), compatible);
         Map<String, String> assigned = assign(open, all, settings.threshold());
         Map<String, Candidate> byPair = new HashMap<>();
         for (Candidate candidate : all) {
@@ -130,10 +146,16 @@ public class BlueprintMappingSuggester {
     /** Every compatible pair with a positive score. */
     static List<Candidate> candidates(List<TemplateRegion> regions, List<Field> fields,
                                       Map<String, String> bankAliases) {
+        return candidates(regions, fields, bankAliases, FLOW_FIELDS);
+    }
+
+    /** {@link #candidates(List, List, Map)} with the given kind compatibility. */
+    static List<Candidate> candidates(List<TemplateRegion> regions, List<Field> fields,
+                                      Map<String, String> bankAliases, BiPredicate<RegionKind, Field> compatible) {
         List<Candidate> candidates = new ArrayList<>();
         for (TemplateRegion region : regions) {
             for (Field field : fields) {
-                if (field.name() == null || !compatible(region.kind(), field.dataType())) {
+                if (field.name() == null || !compatible.test(region.kind(), field)) {
                     continue;
                 }
                 if (RecordText.sameName(field.name(), region.key(), region.label())) {

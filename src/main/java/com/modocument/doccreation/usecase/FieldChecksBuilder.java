@@ -50,6 +50,18 @@ public class FieldChecksBuilder {
 
     public Map<String, FieldChecksDto> build(DocBlueprint blueprint, List<TemplateRegion> regions,
                                              Map<String, FieldProps> props, List<DocFieldRule> rules) {
+        return build(blueprint, regions, props, rules, null);
+    }
+
+    /**
+     * ws34 (data-templates-contract §4): {@code rules} are the effective
+     * rules; an inherited rule (origin DATA_TEMPLATE) shows the data
+     * template's name ({@code dataTemplateName}) as its
+     * {@code sourceTemplateName}, with the data rule's source flow field.
+     */
+    public Map<String, FieldChecksDto> build(DocBlueprint blueprint, List<TemplateRegion> regions,
+                                             Map<String, FieldProps> props, List<DocFieldRule> rules,
+                                             String dataTemplateName) {
         Map<Integer, String> names = new HashMap<>();
         Map<String, String> labels = new HashMap<>();
         Map<String, RegionKind> kinds = new HashMap<>();
@@ -65,14 +77,16 @@ public class FieldChecksBuilder {
             if (kind == null || type.isEmpty() || !RuleTypeCatalog.fits(type.get(), kind)) {
                 continue;
             }
-            String sourceTemplate = rule.getSourceTemplateId() == null ? null
-                    : templateName(rule.getSourceTemplateId(), names);
             boolean imported = "IMPORTED".equals(rule.getOrigin());
+            boolean inherited = EffectiveRules.ORIGIN_DATA_TEMPLATE.equals(rule.getOrigin());
+            String sourceTemplate = inherited ? dataTemplateName
+                    : imported && rule.getSourceTemplateId() != null ? templateName(rule.getSourceTemplateId(), names)
+                    : null;
             ruleViews.computeIfAbsent(rule.getRegionKey(), k -> new ArrayList<>())
                     .add(new FieldChecksDto.RuleView(rule.getDocFieldRuleId(), type.get().name(),
                             RuleSummaries.summary(type.get(), config(rule.getConfigJson()), labels),
-                            rule.getSeverity(), rule.getOrigin(),
-                            imported ? sourceTemplate : null, imported ? rule.getSourceFieldName() : null));
+                            rule.getSeverity(), rule.getOrigin(), sourceTemplate,
+                            imported || inherited ? rule.getSourceFieldName() : null));
         }
 
         Map<String, List<FieldChecksDto.MappedFrom>> mapped = new HashMap<>();
