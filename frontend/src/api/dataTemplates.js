@@ -46,7 +46,7 @@ export function createDataTemplate({ name, description }) {
 
 /**
  * DataTemplateDto: { id, name, description, revision, sourceTemplateId, sourceTemplateName,
- * fields: [{ name, label, kind, piiKind, props, sourceFieldName, sortOrder }],
+ * fields: [{ name, label, kind, piiKind, props, sourceFieldName, sourceTemplateId, sourceTemplateName, sortOrder }],
  * rules: [{ id, fieldName, ruleType, config, message, severity, origin, sourceTemplateId,
  * sourceTemplateName, sourceFieldName, sortOrder }], usedBy: [{ blueprintId, name }], ruleTypes }.
  */
@@ -98,6 +98,30 @@ export function copyPreview(templateId) {
 /** `{ templateId, name, fields: [flowFieldName] }` → 201 with the new DataTemplateDto. */
 export function copyFromFlowTemplate({ templateId, name, fields }) {
   return api.post(`${BASE}/from-flow-template`, { templateId: Number(templateId), name, fields });
+}
+
+/** A source of the multi-template copy: `{ templateId, fields: [flowFieldName] }` (fields omitted = all). */
+function toSource({ templateId, fields }) {
+  const source = { templateId: Number(templateId) };
+  if (fields) source.fields = fields;
+  return source;
+}
+
+/**
+ * Builds one new data template from the chosen fields of several flow templates (contract §2,
+ * follow-up): `{ name, sources: [{ templateId, fields }] }` → 201 with the DataTemplateDto.
+ * A clashing field name gets `_` + the slug of its flow template's name (then `_2`, `_3`…).
+ */
+export function buildFromFlowTemplates({ name, sources }) {
+  return api.post(`${BASE}/from-flow-templates`, { name, sources: sources.map(toSource) });
+}
+
+/**
+ * Adds the chosen flow fields (and their rules) to an existing data template:
+ * `{ baseRevision, sources: [{ templateId, fields }] }` → the DataTemplateDto. A stale revision answers 409.
+ */
+export function addFromFlowTemplates(id, { baseRevision, sources }) {
+  return api.post(`${BASE}/${id}/add-from-flow-templates`, { baseRevision, sources: sources.map(toSource) });
 }
 
 /** RuleInput of a data template rule as received (what PUT /rules takes back). */

@@ -80,7 +80,7 @@ function Section({ title, children }) {
 }
 
 /** The CHOICE options: add, remove, reorder, with a duplicate check. */
-function OptionsEditor({ options, onChange, readOnly }) {
+export function OptionsEditor({ options, onChange, readOnly }) {
   const problemId = useId();
   const set = (list) => onChange(list.slice(0, LIMITS.options.count));
   const counts = new Map();

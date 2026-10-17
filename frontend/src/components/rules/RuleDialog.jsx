@@ -47,7 +47,7 @@ export function configProblem(type, c) {
 }
 
 /** The config as sent: numbers as numbers, empty entries dropped. */
-function cleanConfig(type, c) {
+export function cleanConfig(type, c) {
   const out = {};
   for (const key of Object.keys(c)) {
     const v = c[key];
