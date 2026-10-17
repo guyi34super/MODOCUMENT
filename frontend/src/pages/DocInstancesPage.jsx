@@ -4,6 +4,7 @@ import {
   blueprintPagePath,
   createInstance,
   deleteInstance,
+  downloadInstance,
   listBlueprints,
   listInstances,
 } from '../api/doccreation';
@@ -11,6 +12,7 @@ import AuthedImage from '../components/AuthedImage';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Badge, Button, Card, ErrorBanner, Field, Spinner, inputClass } from '../components/ui';
+import { ValidationStateTag, downloadBlockReason } from '../components/doc/validationState';
 import { useToast } from '../context/ToastContext';
 
 const blueprintIdOf = (b) => b.id ?? b.blueprintId;
@@ -71,11 +73,26 @@ export default function DocInstancesPage() {
         success: 'Document created',
         error: (err) => err.message,
       });
-      navigate(`/creation/documents/${instanceIdOf(created)}`);
+      // A new document opens on the builder's first step, Choose data.
+      navigate(`/creation/documents/${instanceIdOf(created)}?step=data`);
     } catch {
       // The error toast is already shown.
     } finally {
       setCreating(false);
+    }
+  };
+
+  /** Download is only offered for a document whose data passed the validation (contract §5, §6). */
+  const download = async (instance) => {
+    try {
+      await toast.promise(() => downloadInstance(instanceIdOf(instance), `${instance.title || 'document'}.pdf`), {
+        loading: 'Preparing the PDF…',
+        success: 'Download started',
+        error: (err) => err.message,
+      });
+    } catch {
+      // The error toast is already shown; the list is read again (the state may have changed).
+      load();
     }
   };
 
@@ -212,6 +229,11 @@ export default function DocInstancesPage() {
             { key: 'pageCount', label: 'Pages', render: (row) => row.pageCount ?? '—' },
             { key: 'status', label: 'Status', render: (row) => <Badge status={row.status} /> },
             {
+              key: 'validation',
+              label: 'Validation',
+              render: (row) => <ValidationStateTag row={row} />,
+            },
+            {
               key: 'lastGeneratedDate',
               label: 'Last generated',
               render: (row) =>
@@ -220,19 +242,54 @@ export default function DocInstancesPage() {
             {
               key: 'actions',
               label: '',
-              render: (row) => (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  aria-label={`Delete ${row.title}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(row);
-                  }}
-                >
-                  Delete
-                </Button>
-              ),
+              render: (row) => {
+                const reason = downloadBlockReason(row);
+                const reasonId = `download-reason-${instanceIdOf(row)}`;
+                return (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {reason && (
+                      <Link
+                        to={`/creation/documents/${instanceIdOf(row)}?step=fix`}
+                        className="text-xs font-medium text-accent hover:underline"
+                        aria-label={`Open to fix: ${row.title}`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Open to fix
+                      </Link>
+                    )}
+                    <Button
+                      size="sm"
+                      variant={reason ? 'secondary' : 'primary'}
+                      aria-label={`Download ${row.title}`}
+                      disabled={Boolean(reason)}
+                      title={reason || undefined}
+                      aria-describedby={reason ? reasonId : undefined}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        download(row);
+                      }}
+                    >
+                      Download
+                    </Button>
+                    {reason && (
+                      <span id={reasonId} className="sr-only">
+                        {reason}
+                      </span>
+                    )}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      aria-label={`Delete ${row.title}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        remove(row);
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                );
+              },
             },
           ]}
           rows={instances}

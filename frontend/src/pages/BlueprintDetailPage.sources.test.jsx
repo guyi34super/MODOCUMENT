@@ -38,6 +38,17 @@ vi.mock('../api/docRules', async (importOriginal) => ({
   saveRules: vi.fn(),
 }));
 
+// ws34: the Validation and Map fields steps read the data template and the mapping; none here.
+vi.mock('../api/dataTemplates', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getDataMapping: vi.fn(() =>
+    Promise.resolve({ dataTemplateId: null, dataTemplateName: null, revision: 0, mappedCount: 0, mappableCount: 0, rows: [], fields: [] })
+  ),
+  listDataTemplates: vi.fn(() => Promise.resolve([])),
+  setBlueprintDataTemplate: vi.fn(),
+  saveDataMapping: vi.fn(),
+}));
+
 vi.mock('../api/cache', () => ({ getTemplates: vi.fn() }));
 vi.mock('../api/templates', () => ({ getAllFields: vi.fn() }));
 
@@ -139,7 +150,9 @@ function renderPage(path = '/creation/blueprints/4') {
 }
 
 async function openTab() {
-  await userEvent.click(await screen.findByRole('tab', { name: 'Data sources' }));
+  // ws34: the data sources sit on the Map fields step, under "Data from the flow (advanced)".
+  await userEvent.click(await screen.findByRole('tab', { name: 'Map fields' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Data from the flow (advanced)' }));
   return screen.findByTestId('data-sources');
 }
 
@@ -155,11 +168,11 @@ describe('BlueprintDetailPage — Data sources tab', () => {
     getAllFields.mockResolvedValue([{ fieldName: 'national_id' }, { fieldName: 'balance' }]);
   });
 
-  it('is a tab of a confirmed template; a draft shows it but asks to confirm first', async () => {
+  it('is on the Map fields step of a confirmed template; a draft shows it but asks to confirm first', async () => {
     getBlueprint.mockResolvedValue(blueprint({ status: 'DRAFT', version: 1, currentVersion: 1 }));
     const { unmount } = renderPage();
     await screen.findByRole('button', { name: 'Confirm template' });
-    await userEvent.click(screen.getByRole('tab', { name: 'Data sources' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Map fields' }));
     expect(screen.queryByTestId('data-sources')).not.toBeInTheDocument();
     expect(screen.getByTestId('confirm-first')).toHaveTextContent(
       'Confirm the template first to add data sources and field rules.'
@@ -169,11 +182,11 @@ describe('BlueprintDetailPage — Data sources tab', () => {
 
     getBlueprint.mockResolvedValue(blueprint());
     renderPage();
-    expect(await screen.findByRole('tab', { name: 'Layout' })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('tab', { name: 'Upload' })).toHaveAttribute('aria-selected', 'true');
     expect(listBlueprintSources).not.toHaveBeenCalled();
     await openTab();
     expect(listBlueprintSources).toHaveBeenCalledWith('4');
-    expect(screen.getByRole('tab', { name: 'Data sources' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Map fields' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('No data sources yet.')).toBeInTheDocument();
   });
 

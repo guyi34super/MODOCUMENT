@@ -209,6 +209,143 @@ function DefaultValueInput({ region, value, onChange, readOnly }) {
   );
 }
 
+/**
+ * The "Input" properties of a field (field-validation contract §2):
+ * placeholder, help text, dropdown options, default value, date and number
+ * formats, max length — whichever fit `field.kind`. Shared by a PDF
+ * template's region panel and a data template's field properties.
+ * `onChange({ props })` receives the cleaned properties.
+ */
+export function FieldInputProperties({ field, onChange, readOnly = false }) {
+  const region = field;
+  const props = field.props || {};
+  const photo = PHOTO.has(field.kind);
+  const choiceProblem = optionsProblem(field);
+  const setProp = (name, value) => {
+    const next = { ...props, [name]: value };
+    // A dropdown keeps its (possibly empty) option list while it is being edited.
+    const cleaned = cleanProps(next);
+    onChange({ props: name === 'options' ? { ...(cleaned || {}), options: value } : cleaned });
+  };
+  const numberFormat = props.numberFormat || {};
+  const setNumberFormat = (name, value) => setProp('numberFormat', { ...numberFormat, [name]: value });
+  return (
+    <>
+      {!photo && region.kind !== 'CHECKBOX' && (
+        <Field label="Placeholder" hint={region.kind === 'CHOICE' ? 'Shown as the empty choice' : undefined}>
+          <input
+            className={inputClass}
+            value={props.placeholder || ''}
+            maxLength={LIMITS.placeholder}
+            readOnly={readOnly}
+            onChange={(e) => setProp('placeholder', e.target.value)}
+          />
+        </Field>
+      )}
+      <Field label="Help text" hint="Shown under the input">
+        <textarea
+          className={inputClass}
+          rows={2}
+          value={props.helpText || ''}
+          maxLength={LIMITS.helpText}
+          readOnly={readOnly}
+          onChange={(e) => setProp('helpText', e.target.value)}
+        />
+      </Field>
+      {region.kind === 'CHOICE' && (
+        <>
+          <OptionsEditor options={props.options || []} readOnly={readOnly} onChange={(list) => setProp('options', list)} />
+          {choiceProblem && (
+            <p className="text-xs text-danger-ink" role="alert">
+              {choiceProblem}
+            </p>
+          )}
+        </>
+      )}
+      {!photo && (
+        <DefaultValueInput region={region} value={props.defaultValue} readOnly={readOnly} onChange={(v) => setProp('defaultValue', v)} />
+      )}
+      {region.kind === 'DATE' && (
+        <Field label="Date format in the PDF" hint="The value is stored as a date and drawn in this format">
+          <select
+            className={inputClass}
+            value={props.dateFormat || ''}
+            disabled={readOnly}
+            onChange={(e) => setProp('dateFormat', e.target.value)}
+          >
+            <option value="">Default (yyyy-MM-dd)</option>
+            {DATE_FORMATS.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      {region.kind === 'NUMBER' && (
+        <fieldset className="grid grid-cols-2 gap-3">
+          <legend className="mb-1 text-sm font-medium text-ink">Number format in the PDF</legend>
+          <Field label="Decimals" hint="Empty = as typed">
+            <input
+              type="number"
+              min={LIMITS.decimals.min}
+              max={LIMITS.decimals.max}
+              className={inputClass}
+              value={numberFormat.decimals ?? ''}
+              readOnly={readOnly}
+              onChange={(e) =>
+                setNumberFormat('decimals', e.target.value === '' ? null : Math.floor(clampNumber(e.target.value, LIMITS.decimals)))
+              }
+            />
+          </Field>
+          <label className="flex items-center gap-2 self-end pb-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(numberFormat.thousands)}
+              disabled={readOnly}
+              onChange={(e) => setNumberFormat('thousands', e.target.checked)}
+            />
+            Thousands separator
+          </label>
+          <Field label="Prefix">
+            <input
+              className={inputClass}
+              value={numberFormat.prefix || ''}
+              maxLength={LIMITS.affix}
+              readOnly={readOnly}
+              onChange={(e) => setNumberFormat('prefix', e.target.value)}
+            />
+          </Field>
+          <Field label="Suffix">
+            <input
+              className={inputClass}
+              value={numberFormat.suffix || ''}
+              maxLength={LIMITS.affix}
+              readOnly={readOnly}
+              onChange={(e) => setNumberFormat('suffix', e.target.value)}
+            />
+          </Field>
+        </fieldset>
+      )}
+      {TEXT_KINDS.has(region.kind) && (
+        <Field label="Max length" hint="Characters; empty = no limit">
+          <input
+            type="number"
+            min={LIMITS.maxLength.min}
+            max={LIMITS.maxLength.max}
+            className={inputClass}
+            value={props.maxLength ?? ''}
+            readOnly={readOnly}
+            onChange={(e) =>
+              setProp('maxLength', e.target.value === '' ? null : Math.floor(clampNumber(e.target.value, LIMITS.maxLength)))
+            }
+          />
+        </Field>
+      )}
+    </>
+  );
+}
+
 /** The value all `items` share for `name`, or '' when they differ. */
 function shared(items, name, fallback = '') {
   const first = items[0]?.[name] ?? fallback;
@@ -365,7 +502,6 @@ export default function RegionPropertiesPanel({
 
   const taken = new Set(regions.filter((r) => r !== region).map((r) => r.key));
   const problem = keyProblem(region.key, regions, region);
-  const choiceProblem = optionsProblem(region);
   const lowConfidence = region.confidence != null && region.confidence < LOW_CONFIDENCE;
   const props = region.props || {};
   const photo = PHOTO.has(region.kind);
@@ -381,15 +517,6 @@ export default function RegionPropertiesPanel({
     if (kind === 'CHOICE' && !props.options) patch.props = { ...props, options: [] };
     onChange(patch);
   };
-
-  const setProp = (name, value) => {
-    const next = { ...props, [name]: value };
-    // A dropdown keeps its (possibly empty) option list while it is being edited.
-    const cleaned = cleanProps(next);
-    onChange({ props: name === 'options' ? { ...(cleaned || {}), options: value } : cleaned });
-  };
-  const numberFormat = props.numberFormat || {};
-  const setNumberFormat = (name, value) => setProp('numberFormat', { ...numberFormat, [name]: value });
 
   const fontList = fontChoices(fonts, [region.fontName || 'Helvetica']);
   const requiredOn = rules ? Boolean(rules.required) : Boolean(region.required);
@@ -527,117 +654,7 @@ export default function RegionPropertiesPanel({
       )}
 
       <Section title="Input">
-        {!photo && region.kind !== 'CHECKBOX' && (
-          <Field label="Placeholder" hint={region.kind === 'CHOICE' ? 'Shown as the empty choice' : undefined}>
-            <input
-              className={inputClass}
-              value={props.placeholder || ''}
-              maxLength={LIMITS.placeholder}
-              readOnly={readOnly}
-              onChange={(e) => setProp('placeholder', e.target.value)}
-            />
-          </Field>
-        )}
-        <Field label="Help text" hint="Shown under the input">
-          <textarea
-            className={inputClass}
-            rows={2}
-            value={props.helpText || ''}
-            maxLength={LIMITS.helpText}
-            readOnly={readOnly}
-            onChange={(e) => setProp('helpText', e.target.value)}
-          />
-        </Field>
-        {region.kind === 'CHOICE' && (
-          <>
-            <OptionsEditor options={props.options || []} readOnly={readOnly} onChange={(list) => setProp('options', list)} />
-            {choiceProblem && (
-              <p className="text-xs text-danger-ink" role="alert">
-                {choiceProblem}
-              </p>
-            )}
-          </>
-        )}
-        {!photo && (
-          <DefaultValueInput region={region} value={props.defaultValue} readOnly={readOnly} onChange={(v) => setProp('defaultValue', v)} />
-        )}
-        {region.kind === 'DATE' && (
-          <Field label="Date format in the PDF" hint="The value is stored as a date and drawn in this format">
-            <select
-              className={inputClass}
-              value={props.dateFormat || ''}
-              disabled={readOnly}
-              onChange={(e) => setProp('dateFormat', e.target.value)}
-            >
-              <option value="">Default (yyyy-MM-dd)</option>
-              {DATE_FORMATS.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-        {region.kind === 'NUMBER' && (
-          <fieldset className="grid grid-cols-2 gap-3">
-            <legend className="mb-1 text-sm font-medium text-ink">Number format in the PDF</legend>
-            <Field label="Decimals" hint="Empty = as typed">
-              <input
-                type="number"
-                min={LIMITS.decimals.min}
-                max={LIMITS.decimals.max}
-                className={inputClass}
-                value={numberFormat.decimals ?? ''}
-                readOnly={readOnly}
-                onChange={(e) =>
-                  setNumberFormat('decimals', e.target.value === '' ? null : Math.floor(clampNumber(e.target.value, LIMITS.decimals)))
-                }
-              />
-            </Field>
-            <label className="flex items-center gap-2 self-end pb-2 text-sm">
-              <input
-                type="checkbox"
-                checked={Boolean(numberFormat.thousands)}
-                disabled={readOnly}
-                onChange={(e) => setNumberFormat('thousands', e.target.checked)}
-              />
-              Thousands separator
-            </label>
-            <Field label="Prefix">
-              <input
-                className={inputClass}
-                value={numberFormat.prefix || ''}
-                maxLength={LIMITS.affix}
-                readOnly={readOnly}
-                onChange={(e) => setNumberFormat('prefix', e.target.value)}
-              />
-            </Field>
-            <Field label="Suffix">
-              <input
-                className={inputClass}
-                value={numberFormat.suffix || ''}
-                maxLength={LIMITS.affix}
-                readOnly={readOnly}
-                onChange={(e) => setNumberFormat('suffix', e.target.value)}
-              />
-            </Field>
-          </fieldset>
-        )}
-        {TEXT_KINDS.has(region.kind) && (
-          <Field label="Max length" hint="Characters; empty = no limit">
-            <input
-              type="number"
-              min={LIMITS.maxLength.min}
-              max={LIMITS.maxLength.max}
-              className={inputClass}
-              value={props.maxLength ?? ''}
-              readOnly={readOnly}
-              onChange={(e) =>
-                setProp('maxLength', e.target.value === '' ? null : Math.floor(clampNumber(e.target.value, LIMITS.maxLength)))
-              }
-            />
-          </Field>
-        )}
+        <FieldInputProperties field={region} onChange={onChange} readOnly={readOnly} />
       </Section>
 
       <Section title="Rules">

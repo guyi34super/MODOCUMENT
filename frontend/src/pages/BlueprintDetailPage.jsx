@@ -23,6 +23,11 @@ import EditorToolbar, { DeleteFieldsDialog, MarqueeLayer, SnapGuides } from '../
 import FieldList, { reorderPage } from '../components/pdf/FieldList';
 import useOverlayEditor from '../components/pdf/useOverlayEditor';
 import DataSourcesTab from '../components/records/DataSourcesTab';
+import Stepper from '../components/Stepper';
+import DataTemplateChooser from '../components/blueprint/DataTemplateChooser';
+import DocumentsStep from '../components/blueprint/DocumentsStep';
+import FieldMatcher from '../components/mapping/FieldMatcher';
+import { getDataMapping } from '../api/dataTemplates';
 import FieldRulesTab from '../components/rules/FieldRulesTab';
 import useFieldRules from '../components/rules/useFieldRules';
 import useRequiredToggle from '../components/rules/useRequiredToggle';
@@ -45,11 +50,22 @@ const TOOLS = [
   { value: 'image', label: 'Add image/logo', draw: 'Draw where the image goes: drag on the page, or press Enter' },
 ];
 
-const TABS = [
-  { value: 'layout', label: 'Layout' },
-  { value: 'sources', label: 'Data sources' },
-  { value: 'rules', label: 'Field rules' },
+// ws34: the template's steps (data-templates contract §6). `?step=` opens one; the older
+// `?tab=` links still work: layout → Upload, rules → Validation, sources → Map fields.
+const STEPS = [
+  { value: 'upload', label: 'Upload' },
+  { value: 'validation', label: 'Validation' },
+  { value: 'mapping', label: 'Map fields' },
+  { value: 'documents', label: 'Documents' },
 ];
+const TAB_TO_STEP = { layout: 'upload', rules: 'validation', sources: 'mapping' };
+
+/** The step a URL asks for: `?step=`, else the older `?tab=`, else Upload. */
+export function stepFromParams(params) {
+  const step = params.get('step');
+  if (STEPS.some((s) => s.value === step)) return step;
+  return TAB_TO_STEP[params.get('tab')] || 'upload';
+}
 
 const VIEWS = [
   { value: 'original', label: 'Original' },
@@ -394,17 +410,19 @@ export default function BlueprintDetailPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [error, setError] = useState('');
   const [focusTarget, setFocusTarget] = useState(null);
-  // ?tab=rules&field=<key> opens the Field rules tab on a field (the builder's "Edit rules").
-  const [tab, setTab] = useState(() =>
-    TABS.some((t) => t.value === searchParams.get('tab')) ? searchParams.get('tab') : 'layout'
-  );
+  // ?tab=rules&field=<key> opens the Validation step's rules on a field (the builder's "Edit rules").
+  const [step, setStep] = useState(() => stepFromParams(searchParams));
+  // ?tab=sources lands on the data sources, under "Data from the flow (advanced)".
+  const [advancedOpen, setAdvancedOpen] = useState(() => searchParams.get('tab') === 'sources');
   const [rulesFocus, setRulesFocus] = useState(() => searchParams.get('field'));
+  const [mapping, setMapping] = useState(null);
+  const [mappingError, setMappingError] = useState('');
   const propertiesRef = useRef(null);
 
   const editorEnabled =
     Boolean(blueprint) &&
     // The shortcuts listen only while the layout is on screen (a draft has the tabs too).
-    ((blueprint.status !== 'READY' && blueprint.status !== 'DRAFT') || tab === 'layout') &&
+    ((blueprint.status !== 'READY' && blueprint.status !== 'DRAFT') || step === 'upload') &&
     view !== 'template' &&
     !(blueprint.status !== 'DRAFT' && requestedVersion != null && blueprint.version !== blueprint.currentVersion);
   const editor = useOverlayEditor({
@@ -425,7 +443,7 @@ export default function BlueprintDetailPage() {
     readOnly: Boolean(blueprint && requestedVersion != null && blueprint.version !== blueprint.currentVersion),
     onEditRules: (region) => {
       setRulesFocus(region.key);
-      setTab('rules');
+      selectStep('validation');
     },
     onError: (err) => setError(err.message),
     onToggled: (region, on) =>
@@ -453,6 +471,38 @@ export default function BlueprintDetailPage() {
       setError(err.message);
     }
   }, [id, requestedVersion, adopt]);
+
+  /** The data template and the mapping of a confirmed template (DataMappingDto). */
+  const loadMapping = useCallback(async () => {
+    try {
+      setMapping(await getDataMapping(id));
+      setMappingError('');
+    } catch (err) {
+      setMappingError(err.message);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (rulesEnabled) loadMapping();
+  }, [rulesEnabled, loadMapping]);
+
+  /** Shows a step and keeps it in the URL (`?step=`), so a reload or a shared link lands there. */
+  const selectStep = useCallback(
+    (next) => {
+      setStep(next);
+      setSearchParams(
+        (params) => {
+          const out = new URLSearchParams(params);
+          out.set('step', next);
+          out.delete('tab');
+          out.delete('field');
+          return out;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
 
   const loadVersions = useCallback(async () => {
     try {
@@ -487,7 +537,7 @@ export default function BlueprintDetailPage() {
   // Data sources and field rules belong to a confirmed template; an older version shows them
   // read-only. A draft shows the tabs too (deep links land on them), each asking to confirm first.
   const showTabs = blueprint?.status === 'READY' || isDraft;
-  const activeTab = showTabs ? tab : 'layout';
+  const activeTab = showTabs ? step : 'upload';
   const savedRegions = useMemo(() => (blueprint?.regions || []).filter((r) => !r.suggested), [blueprint]);
   const readOnly = Boolean(
     blueprint && !isDraft && requestedVersion != null && blueprint.version !== blueprint.currentVersion
@@ -679,6 +729,9 @@ export default function BlueprintDetailPage() {
       adopt(saved);
       setNote('');
       if (requestedVersion != null) setSearchParams({});
+      // Confirming the upload moves on to the next step of the flow.
+      if (isDraft && step === 'upload') selectStep('validation');
+      if (!isDraft && saved?.status === 'READY') loadMapping();
       if (historyOpen) loadVersions();
       else setVersions(null);
       if (requiredChanges.size) await syncRequired(requiredChanges);
@@ -832,47 +885,31 @@ export default function BlueprintDetailPage() {
           </div>
 
           {showTabs && (
-            <div role="tablist" aria-label="Template sections" className="mb-4 flex flex-wrap gap-1 border-b border-line">
-              {TABS.map((option, index) => {
-                const selected = activeTab === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="tab"
-                    id={`blueprint-tab-${option.value}`}
-                    aria-selected={selected}
-                    aria-controls={selected ? `blueprint-panel-${option.value}` : undefined}
-                    tabIndex={selected ? 0 : -1}
-                    onClick={() => setTab(option.value)}
-                    onKeyDown={(event) => {
-                      let target = null;
-                      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
-                        const step = event.key === 'ArrowRight' ? 1 : -1;
-                        target = TABS[(index + step + TABS.length) % TABS.length];
-                      } else if (event.key === 'Home') {
-                        target = TABS[0];
-                      } else if (event.key === 'End') {
-                        target = TABS[TABS.length - 1];
-                      }
-                      if (target) {
-                        event.preventDefault();
-                        setTab(target.value);
-                        document.getElementById(`blueprint-tab-${target.value}`)?.focus();
-                      }
-                    }}
-                    className={`-mb-px cursor-pointer rounded-t border-b-2 px-3 py-2 text-sm ${
-                      selected ? 'border-accent font-medium text-accent' : 'border-transparent text-muted hover:text-ink'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
+            <Stepper
+              tabs
+              label="Template steps"
+              idPrefix="blueprint"
+              current={activeTab}
+              onSelect={selectStep}
+              panelId={(value) => `blueprint-panel-${value}`}
+              steps={STEPS.map((option) => ({
+                id: option.value,
+                label: option.label,
+                done:
+                  option.value === 'upload'
+                    ? !isDraft
+                    : option.value === 'validation'
+                      ? mapping?.dataTemplateId != null
+                      : option.value === 'mapping'
+                        ? mapping?.dataTemplateId != null &&
+                          (mapping.mappableCount ?? 0) > 0 &&
+                          (mapping.mappedCount ?? 0) >= mapping.mappableCount
+                        : false,
+              }))}
+            />
           )}
 
-          {isDraft && activeTab !== 'layout' ? (
+          {isDraft && activeTab !== 'upload' ? (
             <div role="tabpanel" id={`blueprint-panel-${activeTab}`} aria-labelledby={`blueprint-tab-${activeTab}`}>
               <div data-testid="confirm-first">
                 <Callout variant="info" title="Not available on a draft">
@@ -890,31 +927,103 @@ export default function BlueprintDetailPage() {
                 </Callout>
               </div>
             </div>
-          ) : activeTab === 'sources' ? (
-            <div role="tabpanel" id="blueprint-panel-sources" aria-labelledby="blueprint-tab-sources">
-              {/* The saved fields: a mapping can only name regions the server knows. */}
-              <DataSourcesTab blueprintId={id} regions={savedRegions} readOnly={readOnly} />
-            </div>
-          ) : activeTab === 'rules' ? (
-            <div role="tabpanel" id="blueprint-panel-rules" aria-labelledby="blueprint-tab-rules">
+          ) : activeTab === 'validation' ? (
+            <div
+              role="tabpanel"
+              id="blueprint-panel-validation"
+              aria-labelledby="blueprint-tab-validation"
+              className="space-y-4"
+            >
+              <ErrorBanner message={mappingError} onDismiss={() => setMappingError('')} />
+              <DataTemplateChooser
+                blueprintId={id}
+                mapping={mapping}
+                readOnly={readOnly}
+                onChanged={(dto) => {
+                  setMapping(dto);
+                  fieldRules.load();
+                }}
+                onNext={() => selectStep('mapping')}
+              />
               <FieldRulesTab
                 blueprintId={id}
                 fieldRules={fieldRules}
                 readOnly={readOnly}
                 focusKey={rulesFocus}
                 onFocused={() => setRulesFocus(null)}
+                dataTemplateName={mapping?.dataTemplateName}
                 onShowField={(key) => {
                   const region = regions.find((r) => r.key === key);
-                  setTab('layout');
+                  selectStep('upload');
                   if (region) select({ type: 'region', uid: region._uid, page: region.page }, { focus: true });
                 }}
               />
+            </div>
+          ) : activeTab === 'mapping' ? (
+            <div role="tabpanel" id="blueprint-panel-mapping" aria-labelledby="blueprint-tab-mapping" className="space-y-4">
+              <ErrorBanner message={mappingError} onDismiss={() => setMappingError('')} />
+              {!mapping ? (
+                mappingError ? null : <Spinner label="Loading the mapping…" />
+              ) : mapping.dataTemplateId == null ? (
+                <Callout variant="info" title="Choose a data template first">
+                  <p>The PDF fields are mapped onto the fields of a data template, chosen on the Validation step.</p>
+                  <div className="mt-2">
+                    <Button size="sm" onClick={() => selectStep('validation')}>
+                      Go to Validation
+                    </Button>
+                  </div>
+                </Callout>
+              ) : (
+                <Card padding="compact">
+                  <FieldMatcher
+                    blueprintId={id}
+                    mapping={mapping}
+                    pages={pages}
+                    readOnly={readOnly}
+                    pagePath={(index) => blueprintPagePath(id, index, { variant: 'template', version: blueprint.version, dpi: 50 })}
+                    onSaved={(dto) => {
+                      setMapping(dto);
+                      fieldRules.load();
+                    }}
+                  />
+                </Card>
+              )}
+              <div className="rounded-lg border border-line bg-white p-3">
+                <h2 className="text-sm font-medium">
+                  <button
+                    type="button"
+                    aria-expanded={advancedOpen}
+                    aria-controls={advancedOpen ? 'blueprint-advanced-sources' : undefined}
+                    onClick={() => setAdvancedOpen((open) => !open)}
+                    className="flex w-full items-center gap-1 text-left hover:text-accent"
+                  >
+                    <span aria-hidden="true" className="inline-block w-3 text-muted">
+                      {advancedOpen ? '▾' : '▸'}
+                    </span>
+                    Data from the flow (advanced)
+                  </button>
+                </h2>
+                {advancedOpen && (
+                  <div id="blueprint-advanced-sources" className="mt-3">
+                    <p className="mb-3 text-xs text-muted">
+                      Flow templates whose validated records can fill documents. A data template copied from a flow
+                      template keeps its source here automatically.
+                    </p>
+                    {/* The saved fields: a mapping can only name regions the server knows. */}
+                    <DataSourcesTab blueprintId={id} regions={savedRegions} readOnly={readOnly} />
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : activeTab === 'documents' ? (
+            <div role="tabpanel" id="blueprint-panel-documents" aria-labelledby="blueprint-tab-documents">
+              <DocumentsStep blueprintId={id} blueprintName={blueprint.name} readOnly={readOnly} />
             </div>
           ) : (
           <div
             className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]"
             {...(showTabs
-              ? { role: 'tabpanel', id: 'blueprint-panel-layout', 'aria-labelledby': 'blueprint-tab-layout' }
+              ? { role: 'tabpanel', id: 'blueprint-panel-upload', 'aria-labelledby': 'blueprint-tab-upload' }
               : {})}
           >
             <div className="min-w-0">

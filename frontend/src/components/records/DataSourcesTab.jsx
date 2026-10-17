@@ -252,6 +252,12 @@ function SourceCard({ source, primary, regions, draft, dirty, readOnly, saving, 
             {source.templateName}
           </h2>
           <Tag tone={source.role === 'PRIMARY' ? 'info' : 'neutral'}>{ROLE_LABELS[source.role] || source.role}</Tag>
+          {/* ws34: kept by the server from the data template's mapping. */}
+          {source.managed && (
+            <Tag tone="success" title="Updated each time the data template or the mapping is saved">
+              kept in step with the data template
+            </Tag>
+          )}
           <span className="text-xs text-muted">
             {mappedCount} of {regions.length} field{regions.length === 1 ? '' : 's'} mapped
           </span>
