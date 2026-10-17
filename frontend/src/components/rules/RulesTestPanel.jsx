@@ -10,7 +10,7 @@ const PHOTO = new Set(['IMAGE', 'SIGNATURE']);
  * the field's key — a region key or a data field name). Nothing is stored.
  * `dirty` says the unsaved rules are the ones tested.
  */
-export default function RulesTestPanel({ fields, onTest, dirty = false }) {
+export default function RulesTestPanel({ fields, onTest, dirty = false, photoAsCheckbox = false }) {
   const [values, setValues] = useState({});
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -46,7 +46,8 @@ export default function RulesTestPanel({ fields, onTest, dirty = false }) {
       </p>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {fields
-          .filter((f) => !PHOTO.has(f.kind))
+          // A photo field has no sample value, unless the server reads a non-blank value as "a photo is placed".
+          .filter((f) => photoAsCheckbox || !PHOTO.has(f.kind))
           .map((f) => {
             const { errors, warnings } = issuesFor(f.key);
             const messageId = `${ids}-${f.key}`;
@@ -54,7 +55,17 @@ export default function RulesTestPanel({ fields, onTest, dirty = false }) {
             const name = `Sample value for ${f.label || f.key}`;
             return (
               <div key={f.key}>
-                {f.kind === 'CHECKBOX' ? (
+                {PHOTO.has(f.kind) ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(values[f.key])}
+                      aria-describedby={described}
+                      onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.checked ? 'photo' : '' }))}
+                    />
+                    {f.label || f.key}: a photo is placed
+                  </label>
+                ) : f.kind === 'CHECKBOX' ? (
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"

@@ -262,6 +262,85 @@ describe('DataTemplateEditorPage', () => {
     expect(screen.getByText(/revision 6/)).toBeInTheDocument();
   });
 
+  it('flags rules that no longer fit after a kind change and saves the rules before the fields when the server asks', async () => {
+    renderPage();
+    await screen.findByTestId('data-field-dob');
+    await userEvent.selectOptions(row('dob').getByLabelText('Kind of Date of birth'), 'NUMBER');
+    expect(row('dob').getByRole('alert')).toHaveTextContent('A rule does not fit a Number field — remove it with Edit rules');
+    await userEvent.click(button('Save fields'));
+    expect(saveDataTemplateFields).not.toHaveBeenCalled();
+    expect(screen.getByText('Fix the problems shown in the fields table first.')).toBeInTheDocument();
+
+    // Remove the unfitting rule in the drawer, then Save rules: the server still holds it, so it refuses the
+    // fields first (400); the rules of the saved fields go first, then the fields, then the rest of the rules.
+    await userEvent.click(row('dob').getByRole('button', { name: 'Edit rules of Date of birth' }));
+    const drawer = await screen.findByRole('dialog', { name: 'Rules — Date of birth' });
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Delete Date range rule of Date of birth' }));
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Done' }));
+    expect(row('dob').queryByRole('alert')).not.toBeInTheDocument();
+
+    saveDataTemplateFields
+      .mockRejectedValueOnce(Object.assign(new Error('Field "dob": the rule DATE_RANGE does not fit a NUMBER field.'), { status: 400 }));
+    await userEvent.click(button('Save rules'));
+    await waitFor(() => expect(saveDataTemplateRules).toHaveBeenCalledTimes(2));
+    expect(saveDataTemplateRules.mock.calls[0][1]).toEqual({
+      baseRevision: 4,
+      rules: [{ fieldName: 'full_name', ruleType: 'REQUIRED', config: {}, message: null, severity: 'ERROR', origin: 'IMPORTED', sourceTemplateId: 9, sourceFieldName: 'full_name' }],
+    });
+    expect(saveDataTemplateFields).toHaveBeenCalledTimes(2);
+    expect(saveDataTemplateFields.mock.calls[1][1].baseRevision).toBe(5);
+    expect(saveDataTemplateFields.mock.calls[1][1].fields[1]).toMatchObject({ name: 'dob', kind: 'NUMBER' });
+    expect(await screen.findByText('Fields and rules saved')).toBeInTheDocument();
+  });
+
+  it('explains a refused field save (400) and how to get past it', async () => {
+    saveDataTemplateFields.mockRejectedValue(Object.assign(new Error('Field "dob": a rule does not fit.'), { status: 400 }));
+    renderPage();
+    await screen.findByTestId('data-field-dob');
+    await userEvent.type(row('dob').getByLabelText('Label of dob'), '!');
+    await userEvent.click(button('Save fields'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Field "dob": a rule does not fit. Remove the rules that no longer fit (Edit rules), save the rules, then save the fields again.'
+    );
+  });
+
+  it('warns that deleting a field also removes the rules of other fields naming it', async () => {
+    getDataTemplate.mockResolvedValue(
+      dto({
+        rules: [
+          ...RULES,
+          { id: 3, fieldName: 'full_name', ruleType: 'REQUIRED_IF', config: { Field: 'dob' }, message: null, severity: 'ERROR', origin: 'MANUAL', sortOrder: 1 },
+        ],
+      })
+    );
+    renderPage();
+    await screen.findByTestId('data-field-dob');
+    await userEvent.click(row('dob').getByRole('button', { name: 'Delete Date of birth' }));
+    const confirm = await screen.findByRole('dialog', { name: 'Delete this field?' });
+    expect(confirm).toHaveTextContent('Rules of other fields that compare with it or depend on it (Full name) go too.');
+    await userEvent.click(within(confirm).getByRole('button', { name: 'Delete field' }));
+    expect(row('full_name').getByRole('list', { name: 'Rules of Full name' })).not.toHaveTextContent('Required when');
+
+    await userEvent.click(button('Save rules'));
+    await waitFor(() => expect(saveDataTemplateRules).toHaveBeenCalled());
+    expect(saveDataTemplateRules.mock.calls[0][1].rules.map((r) => [r.fieldName, r.ruleType])).toEqual([['full_name', 'REQUIRED']]);
+  });
+
+  it('tests a photo field with "a photo is placed"', async () => {
+    getDataTemplate.mockResolvedValue(
+      dto({ fields: [...FIELDS, { name: 'photo', label: 'Photo', kind: 'IMAGE', piiKind: null, props: null, sortOrder: 2 }] })
+    );
+    testDataTemplateRules.mockResolvedValue({ state: 'VALIDATED', checked: true, errors: [], warnings: [], setupWarnings: [] });
+    renderPage();
+    await screen.findByTestId('data-field-photo');
+    await userEvent.click(button('Test with sample values'));
+    const panel = screen.getByTestId('rules-test');
+    await userEvent.click(within(panel).getByRole('checkbox', { name: 'Photo: a photo is placed' }));
+    await userEvent.click(within(panel).getByRole('button', { name: 'Run the rules' }));
+    expect(testDataTemplateRules).toHaveBeenCalledWith('3', { values: { photo: 'photo' }, rules: undefined });
+    expect(await within(panel).findByText('No errors or warnings')).toBeInTheDocument();
+  });
+
   it('renames the data template', async () => {
     updateDataTemplate.mockResolvedValue({ ...dto(), name: 'Client' });
     renderPage();

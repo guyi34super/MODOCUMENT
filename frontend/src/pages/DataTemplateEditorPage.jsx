@@ -46,10 +46,21 @@ const withRuleId = (rule) => {
 };
 
 /** The problem with one field of the draft, or ''. */
-export function dataFieldProblem(field, fields) {
+export function dataFieldProblem(field, fields, { rules = [], ruleTypes = [] } = {}) {
   if (!KEY_PATTERN.test(field.name || '')) return 'Use 1–64 lower-case letters, digits or _ for the name';
   if (fields.some((f) => f !== field && f.name === field.name)) return 'Another field already uses this name';
   if (!field.label?.trim()) return 'Give the field a label';
+  // The server refuses a rule that does not fit its field's kind (e.g. after a kind change).
+  const unfit = rules.filter((r) => {
+    const type = ruleTypes.find((t) => t.type === r.ruleType);
+    return r.fieldName === field.name && type?.kinds?.length && !type.kinds.includes(field.kind);
+  });
+  if (unfit.length) {
+    const kind = KIND_LABELS[field.kind] || field.kind;
+    return `${unfit.length === 1 ? 'A rule does' : `${unfit.length} rules do`} not fit a ${kind} field — remove ${
+      unfit.length === 1 ? 'it' : 'them'
+    } with Edit rules`;
+  }
   return optionsProblem(field);
 }
 
@@ -121,7 +132,7 @@ export default function DataTemplateEditorPage() {
   const asRuleFields = useMemo(() => fields.map((f) => ({ key: f.name, label: f.label, kind: f.kind })), [fields]);
   const nameOf = (key) => fields.find((f) => f.name === key)?.label || key;
   const rulesOf = (name) => rules.filter((r) => r.fieldName === name);
-  const problems = fields.map((f) => dataFieldProblem(f, fields));
+  const problems = fields.map((f) => dataFieldProblem(f, fields, { rules, ruleTypes }));
   const blocking = problems.some(Boolean);
   const detailsDirty = dto && (details.name !== (dto.name || '') || details.description !== (dto.description || ''));
 
@@ -157,11 +168,18 @@ export default function DataTemplateEditorPage() {
     setFocusUid(field._uid);
   };
 
+  /** Rules that go with a field: its own, and REQUIRED_IF / COMPARE rules of other fields naming it. */
+  const rulesGoingWith = (name) =>
+    rules.filter(
+      (r) => r.fieldName === name || ((r.ruleType === 'REQUIRED_IF' || r.ruleType === 'COMPARE') && r.config?.Field === name)
+    );
+
   const removeField = () => {
     const field = deleting;
     changeFields((list) => list.filter((f) => f._uid !== field._uid));
-    if (rules.some((r) => r.fieldName === field.name)) {
-      setRules((list) => list.filter((r) => r.fieldName !== field.name));
+    const going = new Set(rulesGoingWith(field.name).map((r) => r._id));
+    if (going.size) {
+      setRules((list) => list.filter((r) => !going.has(r._id)));
       setRulesDirty(true);
     }
     if (selected === field._uid) setSelected(null);
@@ -199,15 +217,18 @@ export default function DataTemplateEditorPage() {
     setDrawer(null);
   };
 
-  const failed = (err) => {
+  const failed = (err, { fields: savingFields = false } = {}) => {
     if (err.status === 409) setConflict(true);
-    else setError(err.message);
+    // A kind change that a field's rules no longer fit is refused (400): say how to get past it.
+    else if (savingFields && err.status === 400 && /rule/i.test(err.message || '')) {
+      setError(`${err.message} Remove the rules that no longer fit (Edit rules), save the rules, then save the fields again.`);
+    } else setError(err.message);
   };
 
   /** PUT /fields; resolves to the new DTO (rules of the draft kept when `keepRules`). */
-  const writeFields = async ({ keepRules }) => {
+  const writeFields = async ({ keepRules, baseRevision = dto.revision }) => {
     const next = await saveDataTemplateFields(id, {
-      baseRevision: dto.revision,
+      baseRevision,
       fields: fields.map((f) => toFieldInput(f)),
     });
     adopt(next, { keepRules });
@@ -216,14 +237,17 @@ export default function DataTemplateEditorPage() {
 
   const saveFields = async () => {
     setTried(true);
-    if (blocking) return;
+    if (blocking) {
+      setError('Fix the problems shown in the fields table first.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
       await writeFields({ keepRules: rulesDirty });
       toast.success('Fields saved');
     } catch (err) {
-      failed(err);
+      failed(err, { fields: true });
     } finally {
       setSaving(false);
     }
@@ -231,11 +255,36 @@ export default function DataTemplateEditorPage() {
 
   const saveRules = async () => {
     setTried(true);
-    if (blocking) return;
+    if (blocking) {
+      setError('Fix the problems shown in the fields table first.');
+      return;
+    }
     setSaving(true);
     setError('');
+    let base = dto;
     try {
-      const base = fieldsDirty ? await writeFields({ keepRules: true }) : dto;
+      if (fieldsDirty) {
+        try {
+          base = await writeFields({ keepRules: true });
+        } catch (err) {
+          if (err.status !== 400) {
+            failed(err, { fields: true });
+            return;
+          }
+          // The saved rules may block a kind change: save the rules of the saved fields first, then the fields.
+          try {
+            const saved = new Set((dto.fields || []).map((f) => f.name));
+            const first = await saveDataTemplateRules(id, {
+              baseRevision: dto.revision,
+              rules: rules.filter((r) => saved.has(r.fieldName)).map(toDataRuleInput),
+            });
+            base = await writeFields({ keepRules: true, baseRevision: first.revision });
+          } catch (again) {
+            failed(again, { fields: true });
+            return;
+          }
+        }
+      }
       const known = new Set((base.fields || []).map((f) => f.name));
       const next = await saveDataTemplateRules(id, {
         baseRevision: base.revision,
@@ -364,6 +413,7 @@ export default function DataTemplateEditorPage() {
           {testOpen && (
             <Card padding="compact">
               <RulesTestPanel
+                photoAsCheckbox
                 fields={asRuleFields.filter((f) => (dto.fields || []).some((s) => s.name === f.key))}
                 dirty={rulesDirty}
                 onTest={(values) =>
@@ -559,8 +609,19 @@ export default function DataTemplateEditorPage() {
         onConfirm={removeField}
         onCancel={() => setDeleting(null)}
       >
-        Delete “{deleting?.label || deleting?.name}” and its rules? PDF fields mapped to it lose their mapping when you
-        save the fields.
+        Delete “{deleting?.label || deleting?.name}” and its rules?
+        {deleting && rulesGoingWith(deleting.name).some((r) => r.fieldName !== deleting.name) && (
+          <>
+            {' '}
+            Rules of other fields that compare with it or depend on it (
+            {rulesGoingWith(deleting.name)
+              .filter((r) => r.fieldName !== deleting.name)
+              .map((r) => nameOf(r.fieldName))
+              .join(', ')}
+            ) go too.
+          </>
+        )}{' '}
+        PDF fields mapped to it lose their mapping when you save the fields.
       </ConfirmDialog>
 
       <Modal
