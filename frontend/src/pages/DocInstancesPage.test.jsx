@@ -6,13 +6,15 @@ import { ToastProvider } from '../context/ToastContext';
 import DocInstancesPage from './DocInstancesPage';
 import { stubImageFetch } from '../test/pdfTestUtils';
 
-import { createInstance, deleteInstance, listBlueprints, listInstances } from '../api/doccreation';
+import { createInstance, deleteInstance, downloadInstance, listBlueprints, listInstances } from '../api/doccreation';
+import { expectAccessible } from '../test/a11y';
 
 vi.mock('../api/doccreation', () => ({
   blueprintPagePath: (id, page, { variant, version, dpi } = {}) =>
     `/api/doccreation/blueprints/${id}/pages/${page}?variant=${variant}&version=${version}&dpi=${dpi}`,
   createInstance: vi.fn(),
   deleteInstance: vi.fn(),
+  downloadInstance: vi.fn(),
   listBlueprints: vi.fn(),
   listInstances: vi.fn(),
 }));
@@ -74,7 +76,8 @@ describe('DocInstancesPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Create document' }));
 
     expect(createInstance).toHaveBeenCalledWith(3, 'Welcome letter — J. Doe');
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/creation/documents/12'));
+    // ws34: a new document opens on the builder's first step, Choose data.
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/creation/documents/12?step=data'));
   });
 
   it('lists documents with their template and page count', async () => {
@@ -141,5 +144,51 @@ describe('DocInstancesPage', () => {
     expect(await screen.findByText('No validated documents.')).toBeInTheDocument();
     // An empty filtered list does not open the "New document" form.
     expect(screen.queryByRole('heading', { name: 'New document' })).not.toBeInTheDocument();
+  });
+
+  it('shows the validation of each document and offers Download only for validated ones', async () => {
+    listInstances.mockResolvedValue([
+      { instanceId: 7, title: 'Loan — Jane', blueprintName: 'Loan form', status: 'VALIDATED', validationState: 'VALIDATED', errorCount: 0, pageCount: 4 },
+      { instanceId: 8, title: 'Loan — Joe', blueprintName: 'Loan form', status: 'DRAFT', validationState: 'ERRORS', errorCount: 3, pageCount: 4 },
+      { instanceId: 9, title: 'Loan — Ann', blueprintName: 'Loan form', status: 'DRAFT', validationState: 'NOT_CHECKED', errorCount: 0, pageCount: 4 },
+      { instanceId: 10, title: 'Loan — Bob', blueprintName: 'Loan form', status: 'GENERATED', validationState: 'RULES_CHANGED', errorCount: 0, pageCount: 4 },
+      { instanceId: 11, title: 'Loan — Eve', blueprintName: 'Loan form', status: 'DRAFT', validationState: 'ERRORS', errorCount: 1, pageCount: 4 },
+    ]);
+    downloadInstance.mockResolvedValue(undefined);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'My documents' });
+    expect(within(table).getByRole('columnheader', { name: 'Validation' })).toBeInTheDocument();
+    expect(within(table).getAllByTestId('validation-state').map((n) => n.textContent)).toEqual([
+      'Validated',
+      '3 errors',
+      'Not checked',
+      'Rules changed — save again',
+      '1 error',
+    ]);
+
+    const jane = within(table).getByRole('button', { name: 'Download Loan — Jane' });
+    expect(jane).toBeEnabled();
+    expect(within(table).queryByRole('link', { name: 'Open to fix: Loan — Jane' })).not.toBeInTheDocument();
+    for (const [title, reason] of [
+      ['Loan — Joe', 'Fix its errors and save it first'],
+      ['Loan — Ann', 'Save and validate it first'],
+      ['Loan — Bob', 'The rules changed — open it and save again'],
+    ]) {
+      const button = within(table).getByRole('button', { name: `Download ${title}` });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAccessibleDescription(reason);
+      expect(button).toHaveAttribute('title', reason);
+    }
+    expect(within(table).getByRole('link', { name: 'Open to fix: Loan — Joe' })).toHaveAttribute(
+      'href',
+      '/creation/documents/8?step=fix'
+    );
+    expectAccessible();
+
+    await userEvent.click(jane);
+    expect(downloadInstance).toHaveBeenCalledWith(7, 'Loan — Jane.pdf');
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(await screen.findByText('Download started')).toBeInTheDocument();
   });
 });
