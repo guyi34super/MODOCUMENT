@@ -99,5 +99,9 @@ export function originText(rule) {
     return rule.sourceFieldName ? `Imported from ${template}.${rule.sourceFieldName}` : `Imported from ${template}`;
   }
   if (rule.origin === 'REGION_FLAG') return 'From the Required flag';
+  if (rule.origin === 'DATA_TEMPLATE') {
+    const name = rule.dataTemplateName || rule.sourceTemplateName;
+    return name ? `From the data template ${name}` : 'From the data template';
+  }
   return 'Manual';
 }
