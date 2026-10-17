@@ -10,30 +10,43 @@ import { DATA_KIND_LABELS } from './dataFieldKinds';
 
 const NAME_MAX = 200;
 const KEY_MAX = 64;
+/** The server's slugs (OverlayMapper.slug) are cut to 56 characters. */
+const SLUG_MAX = 56;
 
-/** `root` + `suffix`, cut so the whole stays within 64 characters. */
-const withSuffix = (root, suffix) => `${root.slice(0, KEY_MAX - suffix.length)}${suffix}`;
+/** OverlayMapper.slug: `[a-z0-9_]`, at most 56 characters; '' when nothing is left. */
+export const serverSlug = (text) =>
+  String(text ?? '')
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, SLUG_MAX)
+    .replace(/_+$/g, '');
 
 /**
  * The field names the server will give (contract §2, "Building from several
- * flow templates"): the flow field name slugged; when that is taken (by an
- * earlier source, or by `existing` — the template being added to) it gets
- * `_` + the slug of its flow template's name, then `_2`, `_3`… on top.
+ * flow templates"; DataTemplateUseCase.clashName): the flow field name
+ * slugged ("field" when empty); when that is taken (by an earlier source, or
+ * by `existing` — the template being added to) it becomes `base_<slug of its
+ * flow template's name>` ("template_<id>" when that slug is empty), then
+ * `base_<slug>_2`, `_3`…; the base is cut so the whole name, suffix
+ * included, fits 64 characters.
  *
- * `sources`: [{ templateName, fields: [flowFieldName] }] in request order.
+ * `sources`: [{ templateId, templateName, fields: [flowFieldName] }] in request order.
  * Returns one entry per field: { source, flowName, name, renamed }.
  */
 export function predictFieldNames(sources, existing = []) {
   const taken = new Set(existing);
   const out = [];
   sources.forEach((source, index) => {
+    const templateSlug = serverSlug(source.templateName) || `template_${source.templateId}`;
     for (const flowName of source.fields) {
-      const base = slugify(flowName);
+      const base = serverSlug(flowName) || 'field';
       let name = base;
-      if (taken.has(name)) {
-        const suffixed = withSuffix(base, `_${slugify(source.templateName)}`);
-        name = suffixed;
-        for (let n = 2; taken.has(name); n += 1) name = withSuffix(suffixed, `_${n}`);
+      for (let n = 1; taken.has(name); n += 1) {
+        const suffix = `_${templateSlug}${n === 1 ? '' : `_${n}`}`;
+        name = `${base.slice(0, Math.max(1, Math.min(base.length, KEY_MAX - suffix.length)))}${suffix}`;
       }
       taken.add(name);
       out.push({ source: index, flowName, name, renamed: name !== base });
