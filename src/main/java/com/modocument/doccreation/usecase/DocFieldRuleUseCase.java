@@ -1,16 +1,11 @@
 package com.modocument.doccreation.usecase;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.modocument.application.audit.AuditActions;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.CurrentUserProvider;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.port.ValidationRuleRepository;
 import com.modocument.application.usecase.TemplateOwnership;
-import com.modocument.application.validation.RegexPatternChecker;
-import com.modocument.application.validation.RegexValidationErrorMessages;
 import com.modocument.doccreation.dto.ImportPreviewDto;
 import com.modocument.doccreation.dto.ImportRulesRequest;
 import com.modocument.doccreation.dto.RulesDto;
@@ -28,10 +23,10 @@ import com.modocument.doccreation.rules.DocRuleEvaluator;
 import com.modocument.doccreation.rules.DocRuleType;
 import com.modocument.doccreation.rules.RegionView;
 import com.modocument.doccreation.rules.RuleTypeCatalog;
+import com.modocument.doccreation.usecase.FlowRuleConverter.Converted;
 import com.modocument.domain.entity.Template;
 import com.modocument.domain.entity.ValidationRule;
 import com.modocument.domain.model.Permission;
-import com.modocument.domain.model.RuleType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
@@ -40,7 +35,6 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -83,20 +77,10 @@ public class DocFieldRuleUseCase {
     public static final String ORIGIN_IMPORTED = "IMPORTED";
     public static final String ORIGIN_REGION_FLAG = "REGION_FLAG";
 
-    /**
-     * The flow UI's EMAIL preset ({@code EMAIL_PATTERN} in
-     * frontend/src/api/validationRules.js): a flow REGEX rule with exactly
-     * this pattern is imported as an EMAIL rule.
-     */
-    public static final String FLOW_EMAIL_PATTERN = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
-
     static final String SOURCE_DATA_SOURCES = "DATA_SOURCES";
     static final String SOURCE_TEMPLATE = "TEMPLATE";
-    static final String CANNOT_IMPORT = "can't be imported";
     static final int MAX_TEST_VALUES = 2000;
     static final int MAX_TEST_VALUE_LENGTH = 20000;
-
-    private static final JsonNodeFactory NODES = JsonNodeFactory.instance;
 
     private final DocCreationOwnership ownership;
     private final DocFieldRuleJpaRepository rules;
@@ -112,6 +96,13 @@ public class DocFieldRuleUseCase {
 
     @PersistenceContext
     private EntityManager entityManager;
+
+    /**
+     * ws34 (data-templates-contract §4): the data template's rules re-keyed
+     * onto the mapped regions; null in unit wiring (the PDF's own rules only).
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private EffectiveRules effectiveRules;
 
     public DocFieldRuleUseCase(DocCreationOwnership ownership,
                                DocFieldRuleJpaRepository rules,
@@ -139,7 +130,11 @@ public class DocFieldRuleUseCase {
 
     // ---------------------------------------------------------------- API
 
-    /** {@code GET /blueprints/{id}/rules}. */
+    /**
+     * {@code GET /blueprints/{id}/rules}: the PDF's own rules, plus (ws34)
+     * the data template's rules re-keyed onto the mapped regions as
+     * {@code inherited} (read-only; never part of a save).
+     */
     @Transactional(readOnly = true)
     public RulesDto get(int blueprintId) {
         DocBlueprint blueprint = ownership.requireTemplate(blueprintId);
@@ -180,7 +175,9 @@ public class DocFieldRuleUseCase {
 
     /**
      * {@code POST /blueprints/{id}/rules/test}: checks sample values against
-     * the given (unsaved) rules or the saved ones. Nothing is stored.
+     * the given (unsaved) rules or the saved ones — ws34: together with the
+     * data template's rules re-keyed onto the mapped regions (the effective
+     * rules). Nothing is stored.
      */
     @Transactional(readOnly = true)
     public ValidationResultDto test(int blueprintId, TestRulesRequest request) {
@@ -192,6 +189,9 @@ public class DocFieldRuleUseCase {
             checkedRules.forEach(rule -> stamp(rule, blueprint, null));
         } else {
             checkedRules = rulesOf(blueprint);
+        }
+        if (effectiveRules != null) {
+            checkedRules = effectiveRules.resolve(blueprint, checkedRules).rules();
         }
         DocRuleEvaluator checker = evaluator.getIfAvailable();
         if (checker == null) {
@@ -326,16 +326,14 @@ public class DocFieldRuleUseCase {
 
     // ------------------------------------------------- shared with templates
 
-    /** The region keys with a REQUIRED rule: {@code RegionDto.required} (contract §3). */
-    public Set<String> requiredKeys(int bankId, int blueprintId) {
-        Set<String> keys = new HashSet<>();
-        for (DocFieldRule rule : rules.findByBankIdAndBlueprintIdOrderByRegionKeyAscSortOrderAscDocFieldRuleIdAsc(
-                bankId, blueprintId)) {
-            if (DocRuleType.REQUIRED.name().equals(rule.getRuleType())) {
-                keys.add(rule.getRegionKey());
-            }
-        }
-        return keys;
+    /**
+     * The region keys with a REQUIRED rule: {@code RegionDto.required}
+     * (contract §3) — ws34: among the effective rules, so a field the data
+     * template requires is shown required too.
+     */
+    public Set<String> requiredKeys(DocBlueprint blueprint) {
+        return EffectiveRules.requiredKeys(effectiveRules == null ? rulesOf(blueprint)
+                : effectiveRules.resolve(blueprint, rulesOf(blueprint)).rules());
     }
 
     /**
@@ -345,6 +343,8 @@ public class DocFieldRuleUseCase {
      * MANUAL and REGION_FLAG REQUIRED rules of that key (IMPORTED ones stay).
      * When anything changed, the blueprint's RulesRevision goes up by one on
      * the entity; the caller saves it (and should hold {@link #lock}).
+     * ws34: a key the data template already requires (an inherited REQUIRED
+     * rule, shown as {@code required:true}) gets no PDF rule of its own.
      *
      * @return whether a rule was added or removed
      */
@@ -358,13 +358,15 @@ public class DocFieldRuleUseCase {
                 requiredByKey.computeIfAbsent(rule.getRegionKey(), k -> new ArrayList<>()).add(rule);
             }
         }
+        Set<String> inheritedRequired = effectiveRules == null ? Set.of()
+                : EffectiveRules.requiredKeys(effectiveRules.resolve(blueprint, List.of()).inherited());
         List<DocFieldRule> added = new ArrayList<>();
         List<DocFieldRule> removed = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
         for (TemplateRegion region : regions) {
             List<DocFieldRule> required = requiredByKey.getOrDefault(region.key(), List.of());
             if (region.required()) {
-                if (required.isEmpty()) {
+                if (required.isEmpty() && !inheritedRequired.contains(region.key())) {
                     DocFieldRule rule = new DocFieldRule();
                     rule.setRegionKey(region.key());
                     rule.setRuleType(DocRuleType.REQUIRED.name());
@@ -410,10 +412,6 @@ public class DocFieldRuleUseCase {
     }
 
     // ------------------------------------------------------------- import
-
-    /** One flow rule converted to a field rule. */
-    record Converted(DocRuleType type, ObjectNode config, String message) {
-    }
 
     /** One region and the flow field it takes rules from. */
     record PlannedField(String regionKey, String label, RegionKind kind, String fieldName, Double score,
@@ -513,7 +511,7 @@ public class DocFieldRuleUseCase {
             String flowType = flowRule.getRuleType() == null ? "UNKNOWN" : flowRule.getRuleType().name();
             Converted rule;
             try {
-                rule = convert(flowRule);
+                rule = FlowRuleConverter.convert(flowRule);
             } catch (IllegalArgumentException e) {
                 skipped.add(new ImportPreviewDto.Skipped(flowType, e.getMessage()));
                 continue;
@@ -527,90 +525,6 @@ public class DocFieldRuleUseCase {
         }
         return new PlannedField(region.key(), region.label(), region.kind(), fieldName, score, sameName,
                 template.getTemplateId(), template.getName(), converted, skipped);
-    }
-
-    /**
-     * One flow rule as a field rule (contract §3 conversion table).
-     *
-     * @throws IllegalArgumentException with the reason it is skipped
-     */
-    static Converted convert(ValidationRule flowRule) {
-        RuleType type = flowRule.getRuleType();
-        if (type == null) {
-            throw new IllegalArgumentException(CANNOT_IMPORT);
-        }
-        ObjectNode config = FieldRuleChecks.readConfig(flowRule.getConfigJson());
-        return switch (type) {
-            case REQUIRED -> new Converted(DocRuleType.REQUIRED, NODES.objectNode(), null);
-            case EXPIRY_DATE -> new Converted(DocRuleType.EXPIRY_DATE, NODES.objectNode(), null);
-            case DATE_FORMAT -> {
-                ObjectNode out = NODES.objectNode();
-                out.putArray("Formats").add("yyyy-MM-dd");
-                yield new Converted(DocRuleType.DATE_FORMAT, out, null);
-            }
-            case REGEX -> {
-                JsonNode patternNode = config.get("Pattern");
-                String pattern = patternNode == null || !patternNode.isValueNode() ? null : patternNode.asText();
-                if (RegexPatternChecker.check(pattern) != null) {
-                    throw new IllegalArgumentException("its pattern is not valid");
-                }
-                if (FLOW_EMAIL_PATTERN.equals(pattern)) {
-                    yield new Converted(DocRuleType.EMAIL, NODES.objectNode(), null);
-                }
-                ObjectNode out = NODES.objectNode();
-                out.put("Pattern", pattern);
-                yield new Converted(DocRuleType.REGEX, out, regexMessage(flowRule.getFieldName(), pattern));
-            }
-            case RANGE -> {
-                BigDecimal min = decimal(config.get("Min"));
-                BigDecimal max = decimal(config.get("Max"));
-                if (min == null && max == null || min != null && max != null && min.compareTo(max) > 0) {
-                    throw new IllegalArgumentException("its range is not valid");
-                }
-                ObjectNode out = NODES.objectNode();
-                if (min != null) {
-                    out.put("Min", min);
-                }
-                if (max != null) {
-                    out.put("Max", max);
-                }
-                yield new Converted(DocRuleType.RANGE, out, null);
-            }
-            case CONDITIONAL_REQUIREMENT, TYPE, CUSTOM -> throw new IllegalArgumentException(CANNOT_IMPORT);
-        };
-    }
-
-    /**
-     * The flow's own message for a REGEX rule of {@code sourceFieldName}
-     * (the Dayforce/PowerPay wording), or null when it would only be the
-     * generic "Validation error for X." text.
-     */
-    static String regexMessage(String sourceFieldName, String pattern) {
-        if (sourceFieldName == null) {
-            return null;
-        }
-        String message = RegexValidationErrorMessages
-                .getRegexValidationErrorMessage(0, sourceFieldName, null, pattern).errorMessage();
-        if (message == null || message.startsWith("Validation error for " + sourceFieldName + ".")) {
-            return null;
-        }
-        String clean = message.strip();
-        return clean.length() <= FieldRuleChecks.MAX_MESSAGE ? clean
-                : clean.substring(0, FieldRuleChecks.MAX_MESSAGE - 1).strip() + "…";
-    }
-
-    private static BigDecimal decimal(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return null;
-        }
-        if (node.isNumber()) {
-            return node.decimalValue();
-        }
-        try {
-            return new BigDecimal(node.asText().strip());
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("its range is not valid");
-        }
     }
 
     private Map<String, List<ValidationRule>> flowRulesByField(int templateId) {
@@ -688,7 +602,7 @@ public class DocFieldRuleUseCase {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
-    private static Map<String, String> testValues(Map<String, String> values) {
+    static Map<String, String> testValues(Map<String, String> values) {
         if (values == null) {
             return Map.of();
         }
@@ -741,7 +655,32 @@ public class DocFieldRuleUseCase {
         List<RulesDto.Field> fields = regions.stream()
                 .map(r -> new RulesDto.Field(r.key(), r.label(), r.kind().name(), r.box().page()))
                 .toList();
-        return new RulesDto(blueprint.getRulesRevision(), ruleDtos, fields, ruleTypes());
+        return new RulesDto(blueprint.getRulesRevision(), ruleDtos, fields, ruleTypes(),
+                inheritedViews(blueprint, regionOrder));
+    }
+
+    /**
+     * ws34: the data template's rules re-keyed onto the mapped regions
+     * (origin DATA_TEMPLATE, negative ids), in region order, with the data
+     * template's name as {@code sourceTemplateName}.
+     */
+    private List<RulesDto.Rule> inheritedViews(DocBlueprint blueprint, Map<String, Integer> regionOrder) {
+        if (effectiveRules == null) {
+            return List.of();
+        }
+        EffectiveRules.Resolved resolved = effectiveRules.resolve(blueprint, List.of());
+        List<DocFieldRule> sorted = new ArrayList<>(resolved.inherited());
+        sorted.sort(Comparator.<DocFieldRule>comparingInt(r -> regionOrder.getOrDefault(r.getRegionKey(),
+                        Integer.MAX_VALUE))
+                .thenComparing(DocFieldRule::getRegionKey)
+                .thenComparingInt(DocFieldRule::getSortOrder)
+                .thenComparing(r -> r.getDocFieldRuleId() == null ? 0L : -r.getDocFieldRuleId()));
+        return sorted.stream()
+                .map(r -> new RulesDto.Rule(r.getDocFieldRuleId(), r.getRegionKey(), r.getRuleType(),
+                        FieldRuleChecks.readConfig(r.getConfigJson()), r.getMessage(), r.getSeverity(),
+                        r.getOrigin(), r.getSourceTemplateId(), resolved.dataTemplateName(),
+                        r.getSourceFieldName(), r.getSortOrder(), !regionOrder.containsKey(r.getRegionKey())))
+                .toList();
     }
 
     /** The {@code ruleTypes} metadata of {@link RulesDto}. */

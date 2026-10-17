@@ -48,6 +48,7 @@ per new workstream:
 | ws31       | V300–V309 | BE-2 | Exact PDF templates (docs/doccreation/pdf-templates-contract.md §4): V300 DocBlueprint Kind/OriginalFileKey/PageCount/UploadFlow/PagesJson + DocBlueprintVersion.TemplatePdfKey, V301 DocTemplateRegion, V302 DocTemplateEdit, DocInstance ValuesJson/GeneratedPdfKey, DocInstanceImage |
 | ws32       | V310–V319 | BE | Flow records in document creation (docs/doccreation/flow-records-contract.md §1): V310 TemplateRecord + TemplateRecordKey (the searchable record index), DocInstance.SourceRecordsJson; V311 DocBlueprintSource (saved data sources, one PRIMARY per blueprint) |
 | ws33       | V320–V329 | BE-A/BE-B | Field rules and validation in document creation (docs/doccreation/field-validation-contract.md §1): V320 DocTemplateRegion.FieldPropsJson; V321 DocFieldRule + DocBlueprint.RulesRevision (+ REQUIRED backfill from region flags); V322 DocInstance validation columns + VALIDATED status |
+| ws34       | V330–V339 | BE-A/BE-B | Document creation flow (docs/doccreation/data-templates-contract.md §1): V330 DocDataTemplate + DocDataField + DocDataFieldRule (reusable validation templates); V331 DocBlueprint.DataTemplateId/DataMappingJson; V332 DocBlueprintSource.Managed |
 
 Phase-2 migrations must also follow docs/release/migration-policy.md
 (expand/contract: a release only adds; drops/renames/SET NOT NULL ship one

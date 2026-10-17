@@ -57,6 +57,10 @@ public class DocBlueprintSource {
     @Column(name = "UpdatedAt")
     private LocalDateTime updatedAt;
 
+    /** V332 (ws34): kept in step from the data-field mapping; a hand-made source is never Managed. */
+    @Column(name = "Managed", nullable = false)
+    private boolean managed;
+
     public DocBlueprintSource() {
     }
 
@@ -142,5 +146,13 @@ public class DocBlueprintSource {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public boolean isManaged() {
+        return managed;
+    }
+
+    public void setManaged(boolean managed) {
+        this.managed = managed;
     }
 }

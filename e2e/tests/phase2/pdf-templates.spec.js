@@ -438,11 +438,13 @@ test.describe('exact PDF templates @phase2 @pdf', () => {
     await expect(page.getByRole('img', { name: `Page 1 of ${blankName}` })).toBeVisible();
     await page.getByPlaceholder(/Survey/).fill(instanceTitle);
     await page.getByRole('button', { name: 'Create document' }).click();
-    await expect(page).toHaveURL(/\/creation\/documents\/\d+$/);
+    // ws34: a new document opens on the builder's first step, Choose data; the page is on Fix fields.
+    await expect(page).toHaveURL(/\/creation\/documents\/\d+\?step=data$/);
     instanceId = Number(new URL(page.url()).pathname.split('/').pop());
 
     // The template page, exactly, with inputs on its regions.
     await expect(page.getByRole('heading', { name: instanceTitle })).toBeVisible();
+    await page.getByRole('tab', { name: 'Fix fields' }).click();
     await expectPageImageLoaded(page);
     const onPage = (key, tag = 'input') => page.getByTestId(`field-${key}`).locator(tag);
     await onPage('full_name').fill(DOC.fullName);

@@ -78,3 +78,25 @@ export function serverIssues(validation) {
   }
   return byKey;
 }
+
+export const RULES_CHANGED_TEXT = 'The rules changed — save again';
+
+/**
+ * Whether the builder's Download step (and the Generate / Download PDF /
+ * Submit shortcuts) is open (data-templates contract §5, §6): only for a
+ * document validated with the current rules. `status` is the status as
+ * shown (an edit already made it DRAFT). Submitted and released documents
+ * stay downloadable; a generated document from before validation existed
+ * (never checked) is allowed, as the server allows it.
+ * Returns { locked, reason }.
+ */
+export function downloadGate({ status, validation }) {
+  if (status === 'SUBMITTED' || status === 'RELEASED') return { locked: false, reason: '' };
+  if (status !== 'VALIDATED' && status !== 'GENERATED') return { locked: true, reason: NOT_VALIDATED_TEXT };
+  if (validation?.rulesChangedSinceValidation) return { locked: true, reason: RULES_CHANGED_TEXT };
+  if (validation?.checked && (validation.errors || []).length > 0) return { locked: true, reason: NOT_VALIDATED_TEXT };
+  if (status === 'VALIDATED' && validation != null && validation.checked === false) {
+    return { locked: true, reason: NOT_VALIDATED_TEXT };
+  }
+  return { locked: false, reason: '' };
+}

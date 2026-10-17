@@ -81,6 +81,14 @@ public class DocBlueprint {
     @Column(name = "RulesRevision", nullable = false)
     private int rulesRevision;
 
+    /** V331 (ws34): the chosen data template (validation), null = none yet. */
+    @Column(name = "DataTemplateId")
+    private Integer dataTemplateId;
+
+    /** V331: region key -> data field name, JSON (null = nothing mapped). */
+    @Column(name = "DataMappingJson", columnDefinition = "text")
+    private String dataMappingJson;
+
     /** PDF_OVERLAY or DOCX_LEGACY (V300; existing rows default to DOCX_LEGACY). */
     @Column(name = "Kind", nullable = false, length = 16)
     private String kind = KIND_DOCX_LEGACY;
@@ -244,5 +252,21 @@ public class DocBlueprint {
 
     public void setRulesRevision(int rulesRevision) {
         this.rulesRevision = rulesRevision;
+    }
+
+    public Integer getDataTemplateId() {
+        return dataTemplateId;
+    }
+
+    public void setDataTemplateId(Integer dataTemplateId) {
+        this.dataTemplateId = dataTemplateId;
+    }
+
+    public String getDataMappingJson() {
+        return dataMappingJson;
+    }
+
+    public void setDataMappingJson(String dataMappingJson) {
+        this.dataMappingJson = dataMappingJson;
     }
 }

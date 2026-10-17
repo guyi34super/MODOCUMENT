@@ -84,6 +84,10 @@ public class DocBlueprintUseCase {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private DocFieldRuleUseCase fieldRules;
 
+    /** ws34: the data template and mapping counts of the list (null in unit wiring). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private BlueprintDataMappingUseCase dataMapping;
+
     private static final Logger log = LoggerFactory.getLogger(DocBlueprintUseCase.class);
     private static final String PDF = "application/pdf";
     private static final int MAX_NAME_LENGTH = 255;
@@ -290,12 +294,21 @@ public class DocBlueprintUseCase {
         for (Object[] row : ruleRows.countByBlueprints(ownership.requireBankId(), ids)) {
             ruleCounts.put(((Number) row[0]).intValue(), ((Number) row[1]).longValue());
         }
+        // ws34: the data template and mapping counts, batched (no query per template)
+        Map<Integer, BlueprintDataMappingUseCase.Counts> mappingCounts = dataMapping == null ? Map.of()
+                : dataMapping.counts(owned);
         return owned.stream()
-                .map(b -> new BlueprintSummaryDto(b.getDocBlueprintId(), b.getName(), TemplateVersions.status(b),
-                        TemplateVersions.effectiveVersion(b), b.getPageCount() == null ? 0 : b.getPageCount(),
-                        b.getUploadFlow(), documentCounts.getOrDefault(b.getDocBlueprintId(), 0L).intValue(),
-                        b.getCompanyId(), b.getCreatedDate(),
-                        ruleCounts.getOrDefault(b.getDocBlueprintId(), 0L).intValue()))
+                .map(b -> {
+                    BlueprintDataMappingUseCase.Counts counts = mappingCounts.getOrDefault(b.getDocBlueprintId(),
+                            BlueprintDataMappingUseCase.Counts.NONE);
+                    return new BlueprintSummaryDto(b.getDocBlueprintId(), b.getName(), TemplateVersions.status(b),
+                            TemplateVersions.effectiveVersion(b), b.getPageCount() == null ? 0 : b.getPageCount(),
+                            b.getUploadFlow(), documentCounts.getOrDefault(b.getDocBlueprintId(), 0L).intValue(),
+                            b.getCompanyId(), b.getCreatedDate(),
+                            ruleCounts.getOrDefault(b.getDocBlueprintId(), 0L).intValue(),
+                            counts.dataTemplateId(), counts.dataTemplateName(), counts.mappedCount(),
+                            counts.mappableCount());
+                })
                 .toList();
     }
 
@@ -529,8 +542,8 @@ public class DocBlueprintUseCase {
         review.suggestedRegions().stream().filter(r -> r.sampleValue() != null)
                 .forEach(r -> suggestedSamples.put(r.key(), r.sampleValue()));
         // ws33: required is derived from the REQUIRED field rules; props come with each region
-        Set<String> requiredKeys = fieldRules == null ? null
-                : fieldRules.requiredKeys(blueprint.getBankId(), blueprint.getDocBlueprintId());
+        // ws34: the effective rules (the data template's, re-keyed, and the PDF's own)
+        Set<String> requiredKeys = fieldRules == null ? null : fieldRules.requiredKeys(blueprint);
         Map<String, FieldProps> props = templates.fieldProps(blueprint, version);
         List<RegionDto> regionDtos = new ArrayList<>(templates.regions(blueprint, version).stream()
                 .map(r -> OverlayMapper.toDto(r, pages, draft

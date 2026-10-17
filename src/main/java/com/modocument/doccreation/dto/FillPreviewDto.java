@@ -22,8 +22,19 @@ public record FillPreviewDto(long recordId,
                             List<Long> alternatives) {
     }
 
-    /** A region that receives a value. */
+    /**
+     * A region that receives a value. ws34 (data-templates-contract §5):
+     * {@code wouldFail} lists the checks (errors) that value would fail —
+     * the effective rules and the built-in checks, evaluated on the
+     * document's values with that one value applied. Messages never contain
+     * values.
+     */
     public record FieldDto(String regionKey, String label, String value, String currentValue,
-                           int sourceTemplateId, String sourceField, boolean willOverwrite, boolean sameName) {
+                           int sourceTemplateId, String sourceField, boolean willOverwrite, boolean sameName,
+                           List<CheckDto> wouldFail) {
+    }
+
+    /** A failed check: the rule type or built-in code and its message. */
+    public record CheckDto(String code, String message) {
     }
 }

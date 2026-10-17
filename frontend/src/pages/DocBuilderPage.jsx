@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   blueprintPagePath,
   deleteImage,
@@ -15,6 +15,8 @@ import {
   validateInstance,
 } from '../api/doccreation';
 import PageHeader from '../components/PageHeader';
+import Stepper from '../components/Stepper';
+import { DownloadStep, SaveStep } from '../components/doc/BuilderSteps';
 import AuthedImage from '../components/AuthedImage';
 import Modal from '../components/Modal';
 import { Badge, Button, Callout, Card, ErrorBanner, Spinner, Tag, inputClass } from '../components/ui';
@@ -25,7 +27,7 @@ import useAutosave from '../components/doc/useAutosave';
 import ValidationPanel from '../components/doc/ValidationPanel';
 import { FieldCheckChips, checksFor, checksId, compactText, rulesTitle, totalRules } from '../components/doc/fieldChecks';
 import { PHOTO_KINDS, fieldLabel } from '../components/doc/fields';
-import { NOT_VALIDATED_TEXT, isBlank, liveHints, serverIssues } from '../components/doc/validation';
+import { NOT_VALIDATED_TEXT, downloadGate, isBlank, liveHints, serverIssues } from '../components/doc/validation';
 import { useToast } from '../context/ToastContext';
 import useUnsavedGuard from '../hooks/useUnsavedGuard';
 import PageView from '../components/pdf/PageView';
@@ -39,13 +41,26 @@ import useOverlayEditor from '../components/pdf/useOverlayEditor';
 import useFieldRules from '../components/rules/useFieldRules';
 import useRequiredToggle from '../components/rules/useRequiredToggle';
 import { KIND_COLORS, KIND_LABELS, displaySize, estimateOverflow } from '../components/pdf/geometry';
-import FillFromDataDialog from '../components/records/FillFromDataDialog';
+import FillFromDataDialog, { FillFromDataPanel } from '../components/records/FillFromDataDialog';
 import { newRegion, toRegionDto, withUid } from '../components/records/layoutDraft';
 
 export { AUTOSAVE_MS } from '../components/doc/useAutosave';
 const PHOTO_EXT = /\.(png|jpe?g|gif|bmp)$/i;
 const OVERFLOW_TEXT = 'Will continue on an added page';
 const DRAW_HINT = 'Draw a new field: drag on the page, or press Enter to add one in the centre';
+
+/**
+ * ws34: the builder's guided steps (data-templates contract §6), kept in
+ * `?step=`. Without one the builder opens on Fix fields; a new document
+ * opens on Choose data.
+ */
+export const BUILDER_STEPS = [
+  { id: 'data', label: 'Choose data' },
+  { id: 'fix', label: 'Fix fields' },
+  { id: 'save', label: 'Save & validate' },
+  { id: 'download', label: 'Download' },
+];
+const stepOf = (value) => (BUILDER_STEPS.some((s) => s.id === value) ? value : 'fix');
 
 /** CSS px for a region's text: its own size, or a fit to the box ("auto"), scaled to the page. */
 function fontPx(region, page, scale) {
@@ -58,6 +73,8 @@ export default function DocBuilderPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [step, setStep] = useState(() => stepOf(searchParams.get('step')));
   const fileInputRef = useRef(null);
   const [doc, setDoc] = useState(null);
   const [values, setValues] = useState({});
@@ -188,7 +205,10 @@ export default function DocBuilderPage() {
   // Any edit makes the document a draft again (the server resets it too).
   const status = edited.size && (serverStatus === 'VALIDATED' || serverStatus === 'GENERATED') ? 'DRAFT' : serverStatus;
   const validation = doc?.validation || null;
-  const notValidated = status === 'DRAFT' || (status === 'VALIDATED' && validation != null && validation.checked === false);
+  // Step 4 (and the Generate / Download / Submit shortcuts) open only for a document validated with the
+  // current rules; an edit re-locks it at once (the status above is already DRAFT).
+  const gate = downloadGate({ status, validation });
+  const notValidated = gate.locked;
   const issuesByKey = useMemo(() => serverIssues(validation), [validation]);
   const rulesByKey = useMemo(() => {
     const map = new Map();
@@ -239,10 +259,24 @@ export default function DocBuilderPage() {
   );
   const requiredFilled = requiredRegions.filter((r) => !isBlank(r, values[r.key], imageByRegion.has(r.key))).length;
 
-  /** "Go to field": shows its page, then focuses its input in the Fields panel. */
+  /** Shows a builder step and keeps it in the URL (`?step=`). */
+  const selectStep = (next) => {
+    setStep(next);
+    setSearchParams(
+      (params) => {
+        const out = new URLSearchParams(params);
+        out.set('step', next);
+        return out;
+      },
+      { replace: true }
+    );
+  };
+
+  /** "Go to field": shows its page (on the Fix fields step), then focuses its input in the Fields panel. */
   const goToField = (key) => {
     const region = regions.find((r) => r.key === key);
     if (!region) return;
+    if (step !== 'fix') selectStep('fix');
     focusField(region);
     setGoTo(key);
   };
@@ -290,7 +324,8 @@ export default function DocBuilderPage() {
   const failure = (err) => {
     if (err?.code === 'NOT_VALIDATED') {
       load();
-      return NOT_VALIDATED_TEXT;
+      // ws34: the server says when the rules (or the mapping) changed since the validation.
+      return /rules changed/i.test(err.message || '') ? err.message : NOT_VALIDATED_TEXT;
     }
     return err.message;
   };
@@ -598,6 +633,9 @@ export default function DocBuilderPage() {
     error: 'Not saved — will retry on your next change',
   }[saveState];
 
+  // A locked Download step (a deep link, or the rules changed under it) shows Save & validate instead.
+  const current = step === 'download' && (gate.locked || layoutMode) ? 'save' : step;
+
   const page = pages[pageIndex];
   const version = doc?.blueprintVersion ?? 1;
   const currentVersion = doc?.blueprintCurrentVersion ?? version;
@@ -669,7 +707,7 @@ export default function DocBuilderPage() {
                 onClick={generate}
                 disabled={generating || locked || notValidated}
                 aria-describedby={notValidated && !locked ? 'gate-reason' : undefined}
-                title={notValidated && !locked ? NOT_VALIDATED_TEXT : undefined}
+                title={notValidated && !locked ? gate.reason : undefined}
               >
                 {generating ? 'Generating…' : 'Generate'}
               </Button>
@@ -679,7 +717,7 @@ export default function DocBuilderPage() {
                   onClick={submitForRelease}
                   disabled={submitting || notValidated}
                   aria-describedby={notValidated ? 'gate-reason' : undefined}
-                  title={notValidated ? NOT_VALIDATED_TEXT : undefined}
+                  title={notValidated ? gate.reason : undefined}
                 >
                   {submitting ? 'Submitting…' : 'Submit for release'}
                 </Button>
@@ -689,13 +727,13 @@ export default function DocBuilderPage() {
                 onClick={download}
                 disabled={notValidated && !locked}
                 aria-describedby={notValidated && !locked ? 'gate-reason' : undefined}
-                title={notValidated && !locked ? NOT_VALIDATED_TEXT : undefined}
+                title={notValidated && !locked ? gate.reason : undefined}
               >
                 Download PDF
               </Button>
               {notValidated && !locked && (
                 <span id="gate-reason" className="text-xs text-amber-800">
-                  {NOT_VALIDATED_TEXT}
+                  {gate.reason}
                 </span>
               )}
             </>
@@ -750,7 +788,79 @@ export default function DocBuilderPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+          <Stepper
+            tabs
+            label="Document steps"
+            idPrefix="builder"
+            current={current}
+            onSelect={selectStep}
+            panelId={(value) => `builder-panel-${value}`}
+            steps={BUILDER_STEPS.map((s) => ({
+              ...s,
+              done:
+                s.id === 'data'
+                  ? sourceRecords.length > 0
+                  : s.id === 'fix'
+                    ? !gate.locked || (requiredRegions.length > 0 && requiredFilled === requiredRegions.length)
+                    : s.id === 'save'
+                      ? !gate.locked
+                      : ['GENERATED', 'SUBMITTED', 'RELEASED'].includes(status) && !gate.locked,
+              locked: s.id === 'download' && (gate.locked || layoutMode),
+              reason: s.id === 'download' ? (layoutMode ? 'Finish editing the layout first' : gate.reason) : '',
+              describedBy: s.id === 'download' && gate.locked && !layoutMode && !locked ? 'gate-reason' : undefined,
+            }))}
+          />
+
+          {current === 'data' ? (
+            <div role="tabpanel" id="builder-panel-data" aria-labelledby="builder-tab-data">
+              {locked ? (
+                <Callout variant="info" title="Locked">
+                  This document is {String(doc.status).toLowerCase()}; its values can no longer change.
+                </Callout>
+              ) : (
+                <FillFromDataPanel
+                  instance={doc}
+                  onBeforeFill={flush}
+                  onFilled={adopt}
+                  onApplied={() => selectStep('fix')}
+                  onSkip={() => selectStep('fix')}
+                />
+              )}
+            </div>
+          ) : current === 'save' ? (
+            <div role="tabpanel" id="builder-panel-save" aria-labelledby="builder-tab-save">
+              <SaveStep
+                validation={validation}
+                checkedNow={edited.size === 0}
+                validating={validating}
+                disabled={locked || layoutMode || forbidden}
+                gate={gate}
+                issues={issues}
+                onSave={saveAndValidate}
+                onGoTo={goToField}
+                onNext={() => selectStep('download')}
+              />
+            </div>
+          ) : current === 'download' ? (
+            <div role="tabpanel" id="builder-panel-download" aria-labelledby="builder-tab-download">
+              <DownloadStep
+                status={status}
+                docLocked={locked}
+                generating={generating}
+                submitting={submitting}
+                onGenerate={generate}
+                onDownload={download}
+                onSubmit={submitForRelease}
+                onPreview={openPreview}
+              />
+            </div>
+          ) : (
+          <div
+            className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]"
+            role="tabpanel"
+            id="builder-panel-fix"
+            aria-labelledby="builder-tab-fix"
+          >
             <div className="min-w-0">
               {canLayout && (
                 <div className="mb-3 flex flex-wrap items-center gap-2" data-testid="layout-bar">
@@ -1259,6 +1369,7 @@ export default function DocBuilderPage() {
               )}
             </div>
           </div>
+          )}
         </>
       )}
 

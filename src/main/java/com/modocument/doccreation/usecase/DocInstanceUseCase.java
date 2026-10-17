@@ -1,7 +1,5 @@
 package com.modocument.doccreation.usecase;
 
-import java.util.HashSet;
-import com.modocument.doccreation.rules.DocRuleType;
 import com.modocument.doccreation.pdftemplate.BundledFonts;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -14,6 +12,7 @@ import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.FileStore;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.doccreation.dto.EditDto;
+import com.modocument.doccreation.dto.FillPreviewDto;
 import com.modocument.domain.entity.Template;
 import com.modocument.domain.model.Permission;
 import com.modocument.application.privacy.PiiMaskingService;
@@ -41,7 +40,6 @@ import com.modocument.doccreation.pdftemplate.PdfTemplateException;
 import com.modocument.doccreation.pdftemplate.RegionKind;
 import com.modocument.doccreation.pdftemplate.TemplateRegion;
 import com.modocument.doccreation.repo.DocBlueprintRepository;
-import com.modocument.doccreation.repo.DocFieldRuleJpaRepository;
 import com.modocument.doccreation.repo.DocImageAssetRepository;
 import com.modocument.doccreation.repo.DocInstanceImageRepository;
 import com.modocument.doccreation.repo.DocInstanceRepository;
@@ -139,8 +137,8 @@ public class DocInstanceUseCase {
     private final TemplateRepository templateRepository;
     /** ws33: the field properties of a version's regions. */
     private final DocTemplateRegionRepository regionRows;
-    /** ws33: the template's field rules. */
-    private final DocFieldRuleJpaRepository fieldRules;
+    /** ws33/ws34: the template's effective field rules (the data template's, re-keyed, and its own). */
+    private final EffectiveRules effectiveRules;
     private final DocRuleEvaluator evaluator;
     private final FieldChecksBuilder fieldChecks;
 
@@ -158,13 +156,13 @@ public class DocInstanceUseCase {
                               AuditRecorder audit,
                               TemplateRepository templateRepository,
                               DocTemplateRegionRepository regionRows,
-                              DocFieldRuleJpaRepository fieldRules,
+                              EffectiveRules effectiveRules,
                               DocRuleEvaluator evaluator,
                               FieldChecksBuilder fieldChecks) {
         this.fieldChecks = fieldChecks;
         this.templateRepository = templateRepository;
         this.regionRows = regionRows;
-        this.fieldRules = fieldRules;
+        this.effectiveRules = effectiveRules;
         this.evaluator = evaluator;
         this.instances = instances;
         this.blueprints = blueprints;
@@ -246,7 +244,8 @@ public class DocInstanceUseCase {
                 })
                 .map(i -> {
                     DocBlueprint b = byId.get(i.getBlueprintId());
-                    return InstanceSummaryDto.from(i, b.getName(), b.getPageCount() == null ? 0 : b.getPageCount());
+                    return InstanceSummaryDto.from(i, b.getName(), b.getPageCount() == null ? 0 : b.getPageCount(),
+                            b.getRulesRevision());
                 })
                 .toList();
     }
@@ -266,7 +265,7 @@ public class DocInstanceUseCase {
         // validation and the generated PDF stay current.
         instance.setTitle(title.strip());
         return InstanceSummaryDto.from(instances.save(instance), blueprint.getName(),
-                blueprint.getPageCount() == null ? 0 : blueprint.getPageCount());
+                blueprint.getPageCount() == null ? 0 : blueprint.getPageCount(), blueprint.getRulesRevision());
     }
 
     @Transactional
@@ -625,8 +624,8 @@ public class DocInstanceUseCase {
                 .map(TemplateRegion::key).collect(Collectors.toSet());
         Set<String> placed = imageRows.stream().map(DocInstanceImage::getRegionKey)
                 .filter(k -> k != null && photoKeys.contains(k)).collect(Collectors.toSet());
-        List<DocFieldRule> rules = fieldRules.findByBankIdAndBlueprintIdOrderByRegionKeyAscSortOrderAscDocFieldRuleIdAsc(
-                instance.getBankId(), blueprint.getDocBlueprintId());
+        // ws34: the data template's rules on the mapped fields, then the PDF's own
+        List<DocFieldRule> rules = effectiveRules.of(blueprint);
         ValidationResultDto result = evaluator.evaluate(views, values, placed, rules, blueprint.getRulesRevision());
 
         LocalDateTime now = LocalDateTime.now();
@@ -651,18 +650,77 @@ public class DocInstanceUseCase {
     }
 
     /**
+     * ws34 fill preview (data-templates-contract §5): per key of
+     * {@code proposed}, the errors that value would cause — the built-in
+     * checks and the effective rules, evaluated on a copy of the document's
+     * values with that one value applied (normalised as a fill stores it).
+     * Nothing is stored; messages never contain values. Keys of photo fields
+     * or unknown keys get an empty list.
+     */
+    public Map<String, List<FillPreviewDto.CheckDto>> wouldFail(DocInstance instance, DocBlueprint blueprint,
+                                                                Map<String, String> proposed) {
+        if (proposed.isEmpty()) {
+            return Map.of();
+        }
+        int version = instance.getBlueprintVersion();
+        List<TemplateRegion> regionList = templates.regions(blueprint, version);
+        Map<String, FieldProps> props = propsOf(blueprint, version);
+        List<RegionView> views = regionList.stream()
+                .map(r -> new RegionView(r.key(), r.label(), r.kind(), props.get(r.key())))
+                .toList();
+        Map<String, TemplateRegion> byKey = regionList.stream()
+                .collect(Collectors.toMap(TemplateRegion::key, Function.identity(), (a, b) -> a));
+        Set<String> placed = images.listByInstance(instance.getBankId(), instance.getDocInstanceId()).stream()
+                .map(DocInstanceImage::getRegionKey)
+                .filter(k -> k != null && byKey.containsKey(k) && isPhoto(byKey.get(k).kind()))
+                .collect(Collectors.toSet());
+        Map<String, String> values = readValues(instance);
+        List<DocFieldRule> rules = effectiveRules.of(blueprint);
+        Map<String, List<FillPreviewDto.CheckDto>> out = new LinkedHashMap<>();
+        proposed.forEach((key, value) -> {
+            TemplateRegion region = byKey.get(key);
+            if (region == null || isPhoto(region.kind())) {
+                out.put(key, List.of());
+                return;
+            }
+            Map<String, String> candidate = new LinkedHashMap<>(values);
+            String stored = FieldValueFormatter.normalize(region.kind(), value);
+            if (stored == null || stored.isEmpty()) {
+                candidate.remove(key);
+            } else {
+                candidate.put(key, stored);
+            }
+            ValidationResultDto result = evaluator.evaluate(views, candidate, placed, rules,
+                    blueprint.getRulesRevision());
+            out.put(key, result.errors().stream()
+                    .filter(issue -> key.equals(issue.regionKey()))
+                    .map(issue -> new FillPreviewDto.CheckDto(issue.code(), issue.message()))
+                    .toList());
+        });
+        return out;
+    }
+
+    /**
      * The generate/download gate (contract §4.3): VALIDATED and GENERATED
      * documents must still hold the content they were validated with;
      * SUBMITTED and RELEASED ones are frozen. A GENERATED document from
      * before ws33 (never validated, no hash) is let through.
+     *
+     * <p>ws34 (data-templates-contract §5): a VALIDATED or GENERATED
+     * document validated with an older rules revision than the template's
+     * (its rules, data template or mapping changed since) is refused too.
      */
-    private void requireValidated(DocInstance instance) {
+    private void requireValidated(DocInstance instance, DocBlueprint blueprint) {
         String status = instance.getStatus();
         if (DocInstance.STATUS_SUBMITTED.equals(status) || DocInstance.STATUS_RELEASED.equals(status)) {
             return;
         }
         if (!DocInstance.STATUS_VALIDATED.equals(status) && !DocInstance.STATUS_GENERATED.equals(status)) {
             throw DocCreationException.notValidated();
+        }
+        if (instance.getValidatedRulesRevision() != null
+                && instance.getValidatedRulesRevision() != blueprint.getRulesRevision()) {
+            throw DocCreationException.rulesChanged();
         }
         if (instance.getValidatedHash() == null) {
             if (DocInstance.STATUS_GENERATED.equals(status) && instance.getValidatedAt() == null) {
@@ -790,7 +848,7 @@ public class DocInstanceUseCase {
     public GenerationResultDto generate(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
         DocBlueprint blueprint = templateOf(instance);
-        requireValidated(instance);
+        requireValidated(instance, blueprint);
         // REPORT channel (gate C2, PRIV-005): PII value shapes the user typed
         // are masked in the generated document when the policy says so; the
         // stored values (and the owner's preview) stay raw.
@@ -846,8 +904,7 @@ public class DocInstanceUseCase {
      */
     public PdfDownload download(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
-        templateOf(instance);
-        requireValidated(instance);
+        requireValidated(instance, templateOf(instance));
         if (isStale(instance)) {
             generate(instanceId);
             instance = ownership.requireInstance(instanceId);
@@ -982,9 +1039,9 @@ public class DocInstanceUseCase {
         List<PageInfo> pages = TemplateVersions.pages(blueprint);
         List<TemplateRegion> regionList = templates.regions(blueprint, instance.getBlueprintVersion());
         Map<String, FieldProps> props = propsOf(blueprint, instance.getBlueprintVersion());
-        List<DocFieldRule> rules = fieldRules.findByBankIdAndBlueprintIdOrderByRegionKeyAscSortOrderAscDocFieldRuleIdAsc(
-                blueprint.getBankId(), blueprint.getDocBlueprintId());
-        Set<String> requiredKeys = requiredKeys(rules);
+        EffectiveRules.Resolved effective = effectiveRules.resolve(blueprint);
+        List<DocFieldRule> rules = effective.rules();
+        Set<String> requiredKeys = EffectiveRules.requiredKeys(rules);
         List<RegionDto> regionDtos = regionList.stream()
                 .map(r -> OverlayMapper.toDto(r, pages, null, null, props.get(r.key()),
                         requiredKeys.contains(r.key())))
@@ -1009,18 +1066,8 @@ public class DocInstanceUseCase {
                 instance.getLastGeneratedDate(), instance.getGeneratedPdfKey() != null,
                 instance.getReviewComment(), sourceRecordDtos(instance), canEditLayout, blueprintEdits, null,
                 validationOf(instance, blueprint), regionProps, BundledFonts.names(),
-                fieldChecks.build(blueprint, regionList, props, rules), blueprint.getRulesRevision(), canEditLayout);
-    }
-
-    /** The region keys with a REQUIRED field rule: {@code RegionDto.required} (contract §3). */
-    private static Set<String> requiredKeys(List<DocFieldRule> rules) {
-        Set<String> keys = new HashSet<>();
-        for (DocFieldRule rule : rules) {
-            if (DocRuleType.REQUIRED.name().equals(rule.getRuleType())) {
-                keys.add(rule.getRegionKey());
-            }
-        }
-        return keys;
+                fieldChecks.build(blueprint, regionList, props, rules, effective.dataTemplateName()),
+                blueprint.getRulesRevision(), canEditLayout);
     }
 
     /** The records the document was filled from, with their template's name (null when it is gone). */

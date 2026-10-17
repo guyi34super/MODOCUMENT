@@ -303,7 +303,7 @@ public class BlueprintSourceUseCase {
         if (template.isEmpty()) {
             return new BlueprintSourceDto(source.getDocBlueprintSourceId(), source.getTemplateId(), null,
                     source.getRole(), source.getLinkFieldPrimary(), source.getLinkFieldThis(), mapping,
-                    List.of(), List.of(), false);
+                    List.of(), List.of(), false, source.isManaged());
         }
         List<BlueprintMappingSuggester.Field> fields = suggester.fields(source.getTemplateId());
         List<BlueprintSourceDto.SuggestionDto> suggestions = suggester.suggestions(regions, fields, mapping.keySet())
@@ -314,7 +314,7 @@ public class BlueprintSourceUseCase {
                 template.get().getName(), source.getRole(), source.getLinkFieldPrimary(), source.getLinkFieldThis(),
                 mapping,
                 fields.stream().map(f -> new BlueprintSourceDto.FieldDto(f.name(), f.dataType())).toList(),
-                suggestions, true);
+                suggestions, true, source.isManaged());
     }
 
     private void auditSaved(int blueprintId, DocBlueprintSource source, int mappedRegions, String change) {
@@ -327,6 +327,11 @@ public class BlueprintSourceUseCase {
         values.put("linked", !source.isPrimary());
         audit.success(AuditActions.DOC_BLUEPRINT_MAPPING_SAVED, "DocBlueprint", String.valueOf(blueprintId), null,
                 values);
+    }
+
+    /** A source's mapping as stored ({@code MappingJson}, never null). */
+    static String writeMappingJson(Map<String, String> mapping) {
+        return writeMapping(mapping);
     }
 
     private static String writeMapping(Map<String, String> mapping) {

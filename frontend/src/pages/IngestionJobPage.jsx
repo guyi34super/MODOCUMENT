@@ -22,6 +22,7 @@ import {
   needsIngestionWait,
 } from '../api/ingestion';
 import PageHeader from '../components/PageHeader';
+import Stepper from '../components/Stepper';
 import DataTable from '../components/DataTable';
 import ValidationChatDrawer from '../components/ValidationChatDrawer';
 import { Badge, Button, Callout, Card, ErrorBanner, Field, inputClass, Spinner } from '../components/ui';
@@ -97,45 +98,20 @@ function restoredWizardStep(job) {
 
 function WizardStepIndicator({ activeStep, job, onSelect }) {
   const labels = { mapping: 'Mapping', validation: 'Validation', export: 'Export' };
-  return (
-    <ol className="flex flex-wrap items-center gap-1 text-sm">
-      {WIZARD_STEPS.map((step, i) => {
-        // The step being worked on stays enabled even when an edit reset the
-        // job's stage — otherwise a chat edit greys out the pane you are in.
-        const enabled = step === activeStep || canVisitStep(step, job);
-        const blockedReason = stepBlockReason(step, job);
-        const isActive = step === activeStep;
-        const isDone =
-          (step === 'mapping' && job?.mappedRows) ||
-          (step === 'validation' && job?.validationResults) ||
-          (step === 'export' && job?.exportInfo && Object.keys(job.exportInfo).length > 0);
-        return (
-          <li key={step} className="flex items-center gap-1">
-            {i > 0 && <span className="text-muted">›</span>}
-            <button
-              type="button"
-              disabled={!enabled}
-              onClick={() => enabled && onSelect(step)}
-              // A locked pill that says nothing is just a dead end.
-              title={blockedReason || undefined}
-              className={`rounded-full px-3 py-1.5 font-medium ${
-                isActive
-                  ? 'bg-accent text-white'
-                  : isDone
-                    ? 'bg-success-bg text-success-ink'
-                    : enabled
-                      ? 'bg-neutral-100 text-ink hover:bg-pill'
-                      : 'bg-neutral-100 text-muted'
-              } ${enabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
-            >
-              {isDone && !isActive ? '✓ ' : ''}
-              {labels[step]}
-            </button>
-          </li>
-        );
-      })}
-    </ol>
-  );
+  const steps = WIZARD_STEPS.map((step) => ({
+    id: step,
+    label: labels[step],
+    // The step being worked on stays enabled even when an edit reset the
+    // job's stage — otherwise a chat edit greys out the pane you are in.
+    locked: !(step === activeStep || canVisitStep(step, job)),
+    reason: stepBlockReason(step, job),
+    done: Boolean(
+      (step === 'mapping' && job?.mappedRows) ||
+        (step === 'validation' && job?.validationResults) ||
+        (step === 'export' && job?.exportInfo && Object.keys(job.exportInfo).length > 0)
+    ),
+  }));
+  return <Stepper steps={steps} current={activeStep} onSelect={onSelect} />;
 }
 
 /**

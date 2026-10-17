@@ -44,9 +44,12 @@ const sections = [
   {
     label: 'Document Creation',
     hideFor: PLATFORM_ONLY,
+    // ws34: the document creation flow, in the order the user works.
     links: [
-      { to: '/creation/blueprints', label: 'Blueprints' },
-      { to: '/creation/documents', label: 'My Documents' },
+      { to: '/creation/blueprints', label: 'Upload document', step: 1 },
+      { to: '/creation/data-templates', label: 'Validation', step: 2 },
+      { to: '/creation/mapping', label: 'Map fields', step: 3 },
+      { to: '/creation/documents', label: 'Fix documents', step: 4 },
     ],
   },
   {

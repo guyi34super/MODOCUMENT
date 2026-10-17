@@ -29,16 +29,17 @@ function columnKeys(items, fields) {
 }
 
 /**
- * "Fill from data" (flow-records contract §4): pick a data source (the
- * blueprint's saved sources first, then any readable template), search its
- * validated records, preview what one record fills, choose the fields and
- * the linked records, then apply. `onBeforeFill` runs before the preview
- * and the apply (the builder saves pending typing there, so current values
- * are accurate); `onFilled(dto)` receives the updated document.
+ * The state and actions of "Fill from data" (flow-records contract §4):
+ * pick a data source (the blueprint's saved sources first, then any
+ * readable template), search its validated records, preview what one
+ * record fills, choose the fields and the linked records, then apply.
+ * `onBeforeFill` runs before the preview and the apply (the builder saves
+ * pending typing there, so current values are accurate); `onFilled(dto)`
+ * receives the updated document and `onApplied()` runs after it.
+ * `open` false keeps it idle; turning it on starts over.
  */
-export default function FillFromDataDialog({ open, onClose, instance, onBeforeFill, onFilled }) {
+export function useFillFromData({ open, instance, onBeforeFill, onFilled, onApplied }) {
   const toast = useToast();
-  const ids = useId();
   const [sources, setSources] = useState(null);
   const [choice, setChoice] = useState('');
   const [templates, setTemplates] = useState(null);
@@ -245,7 +246,7 @@ export default function FillFromDataDialog({ open, onClose, instance, onBeforeFi
         error: (err) => err.message,
       });
       onFilled?.(dto);
-      onClose();
+      onApplied?.();
     } catch {
       // The error toast is already shown.
     } finally {
@@ -254,34 +255,407 @@ export default function FillFromDataDialog({ open, onClose, instance, onBeforeFi
   };
 
   const keys = useMemo(() => columnKeys(results?.items || [], fields), [results, fields]);
+
+  const backToResults = () => {
+    setPreview(null);
+    setRecord(null);
+  };
+
+  return {
+    sources,
+    choice,
+    setChoice,
+    templates,
+    otherTemplateId,
+    setOtherTemplateId,
+    fields,
+    field,
+    setField,
+    q,
+    setQ,
+    debouncedQ,
+    setPage,
+    results,
+    searching,
+    error,
+    record,
+    preview,
+    checked,
+    setChecked,
+    emptyOnly,
+    toggleEmptyOnly,
+    linkedChoice,
+    setLinkedChoice,
+    linkedRecords,
+    busy,
+    templateId,
+    templateName,
+    use,
+    valueOf,
+    previewFields,
+    selectedKeys,
+    primaryName,
+    apply,
+    keys,
+    backToResults,
+  };
+}
+
+/** The ⚠ notes of a value that would fail the document's checks (data-templates contract §5, `wouldFail`). */
+function WouldFail({ field }) {
+  const fails = field.wouldFail || [];
+  if (fails.length === 0) return null;
+  return (
+    <span className="mt-0.5 block text-xs text-amber-800" data-testid={`would-fail-${field.regionKey}`}>
+      {fails.map((f, i) => (
+        <span key={`${f.code}${i}`} className="block">
+          <span aria-hidden="true">⚠ </span>
+          <span className="sr-only">Would fail: </span>
+          {f.message}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Data source, template, search and the record table. */
+function FillSearch({ fill }) {
+  const { sources, choice, templates, templateId, results, searching, debouncedQ, busy } = fill;
   const columns = [
-    ...keys.map((key) => ({ key, label: key, render: (row) => String(row.values?.[key] ?? '') })),
+    ...fill.keys.map((key) => ({ key, label: key, render: (row) => String(row.values?.[key] ?? '') })),
     {
       key: '__use',
       label: '',
       srLabel: 'Use',
       render: (row) => (
-        <Button size="sm" variant="secondary" onClick={() => use(row)} disabled={busy} aria-label={`Use ${recordLabel(row)}`}>
+        <Button size="sm" variant="secondary" onClick={() => fill.use(row)} disabled={busy} aria-label={`Use ${recordLabel(row)}`}>
           Use
         </Button>
       ),
     },
   ];
+  return (
+    <div className="space-y-3" data-testid="fill-search">
+      {sources == null ? (
+        <Spinner label="Loading data sources…" />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Data source</span>
+              <select
+                className={inputClass}
+                value={choice}
+                onChange={(e) => {
+                  fill.setChoice(e.target.value);
+                  fill.setPage(0);
+                }}
+              >
+                {sources.map((s) => (
+                  <option key={s.id} value={sourceValue(s.templateId)}>
+                    {s.templateName} ({s.role === 'PRIMARY' ? 'primary' : 'linked'})
+                  </option>
+                ))}
+                <option value={OTHER}>Other templates…</option>
+              </select>
+            </label>
+            {choice === OTHER && (
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium">Template</span>
+                <select
+                  className={inputClass}
+                  value={fill.otherTemplateId}
+                  onChange={(e) => {
+                    fill.setOtherTemplateId(e.target.value);
+                    fill.setPage(0);
+                  }}
+                  disabled={!templates}
+                >
+                  <option value="">Choose a template…</option>
+                  {(templates || [])
+                    .filter((t) => !sources.some((s) => String(s.templateId) === String(t.templateId)))
+                    .map((t) => (
+                      <option key={t.templateId} value={t.templateId}>
+                        {t.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            )}
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Search records</span>
+              <input
+                type="search"
+                className={inputClass}
+                value={fill.q}
+                placeholder="Name, ID number…"
+                disabled={!templateId}
+                onChange={(e) => fill.setQ(e.target.value)}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium">Search in</span>
+              <select
+                className={inputClass}
+                value={fill.field}
+                disabled={!templateId}
+                onChange={(e) => {
+                  fill.setField(e.target.value);
+                  fill.setPage(0);
+                }}
+              >
+                <option value="">All fields</option>
+                {fill.fields.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {!templateId ? (
+            <p className="text-sm text-muted">Choose a template to search its records.</p>
+          ) : results == null ? (
+            <Spinner label="Searching…" />
+          ) : (
+            <div aria-busy={searching || undefined}>
+              <DataTable
+                caption="Records"
+                columns={columns}
+                rows={results.items}
+                emptyMessage={debouncedQ ? 'No records match this search.' : 'No records yet for this template.'}
+                maxHeight="22rem"
+              />
+              <Pager
+                page={results.page}
+                size={results.size}
+                total={results.total}
+                onPage={fill.setPage}
+                label="Records"
+                disabled={searching}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
-  const inPreview = Boolean(preview);
+/** The record's header, the AUTO mapping note, "Fill empty fields only" and the linked matches. */
+function FillPreviewHead({ fill, idPrefix }) {
+  const { preview, linkedChoice, linkedRecords } = fill;
+  return (
+    <>
+      <p className="text-sm">
+        From <strong>{fill.primaryName}</strong>: {recordLabel(fill.record)}
+      </p>
+      {preview.mappingSource === 'AUTO' && (
+        <Callout variant="info">This template has no saved mapping for the document: fields were matched by name.</Callout>
+      )}
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={fill.emptyOnly} onChange={(e) => fill.toggleEmptyOnly(e.target.checked)} />
+        Fill empty fields only
+      </label>
+      {(preview.linked || []).map((link) => {
+        const alternatives = link.alternatives || [];
+        const selectId = `${idPrefix}-linked-${link.templateId}`;
+        return (
+          <div key={link.templateId} className="rounded border border-line p-2 text-sm" data-testid={`linked-${link.templateId}`}>
+            <p>
+              Also from <strong>{link.templateName}</strong> matched by <code>{link.matchedBy}</code>
+            </p>
+            {alternatives.length > 0 && (
+              <div className="mt-1">
+                <label htmlFor={selectId} className="mb-1 block text-xs text-muted">
+                  Record from {link.templateName} ({alternatives.length + 1} matches)
+                </label>
+                <select
+                  id={selectId}
+                  className={inputClass}
+                  value={String(linkedChoice[link.templateId] ?? link.recordId)}
+                  onChange={(e) =>
+                    fill.setLinkedChoice((current) => ({ ...current, [link.templateId]: Number(e.target.value) }))
+                  }
+                >
+                  {[link.recordId, ...alternatives].map((rid) => (
+                    <option key={rid} value={String(rid)}>
+                      {linkedRecords[rid] ? recordLabel(linkedRecords[rid]) : `Record ${rid}`}
+                      {rid === link.recordId ? ' (newest)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function FillBox({ fill, field }) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={`Fill ${field.label || field.regionKey}`}
+      checked={Boolean(fill.checked[field.regionKey])}
+      disabled={fill.emptyOnly && filled(field.currentValue)}
+      onChange={(e) => fill.setChecked((current) => ({ ...current, [field.regionKey]: e.target.checked }))}
+    />
+  );
+}
+
+const selectedText = (fill) =>
+  `${fill.selectedKeys.length} of ${fill.previewFields.length} field${fill.previewFields.length === 1 ? '' : 's'} selected`;
+
+/** The dialog's preview: a table of every value with its source and the current value. */
+function FillPreviewTable({ fill, idPrefix }) {
+  const { previewFields, checked } = fill;
+  return (
+    <div className="space-y-3" data-testid="fill-preview">
+      <FillPreviewHead fill={fill} idPrefix={idPrefix} />
+      {previewFields.length === 0 ? (
+        <p className="text-sm text-muted">This record has no values for this document’s fields.</p>
+      ) : (
+        <>
+          <DataTable
+            caption="Values to fill"
+            maxHeight="22rem"
+            rows={previewFields}
+            columns={[
+              { key: 'use', label: '', srLabel: 'Fill', render: (f) => <FillBox fill={fill} field={f} /> },
+              { key: 'label', label: 'Field', render: (f) => f.label || f.regionKey },
+              {
+                key: 'value',
+                label: 'Value',
+                render: (f) => (
+                  <>
+                    <span data-testid={`fill-value-${f.regionKey}`}>{fill.valueOf(f)}</span>
+                    <WouldFail field={f} />
+                  </>
+                ),
+              },
+              {
+                key: 'from',
+                label: 'From',
+                render: (f) => (
+                  <span className="text-muted">
+                    {fill.templateName(f.sourceTemplateId)}.{f.sourceField}
+                    {f.sameName && (
+                      <>
+                        {' '}
+                        <Tag tone="success">same name</Tag>
+                      </>
+                    )}
+                  </span>
+                ),
+              },
+              {
+                key: 'current',
+                label: 'Current value',
+                render: (f) =>
+                  filled(f.currentValue) ? (
+                    <span>
+                      {f.currentValue}
+                      {checked[f.regionKey] && (
+                        <>
+                          {' '}
+                          <Tag tone="warning">will be replaced</Tag>
+                        </>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-muted">empty</span>
+                  ),
+              },
+            ]}
+          />
+          <p className="text-xs text-muted" aria-live="polite">
+            {selectedText(fill)}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The inline preview: one row per value, "document field ← flow field: value", ⚠ for values that would fail. */
+function FillPreviewList({ fill, idPrefix }) {
+  const { previewFields, checked } = fill;
+  return (
+    <div className="space-y-3" data-testid="fill-preview">
+      <FillPreviewHead fill={fill} idPrefix={idPrefix} />
+      {previewFields.length === 0 ? (
+        <p className="text-sm text-muted">This record has no values for this document’s fields.</p>
+      ) : (
+        <>
+          <ul className="max-h-[28rem] space-y-1 overflow-y-auto rounded border border-line p-2" aria-label="Values to fill">
+            {previewFields.map((f) => {
+              const fails = (f.wouldFail || []).length > 0;
+              return (
+                <li
+                  key={f.regionKey}
+                  data-testid={`fill-row-${f.regionKey}`}
+                  data-would-fail={fails ? 'true' : undefined}
+                  className={`rounded px-1 py-0.5 text-sm ${fails ? 'bg-amber-50' : ''}`}
+                >
+                  <label className="flex items-start gap-2">
+                    <span className="pt-0.5">
+                      <FillBox fill={fill} field={f} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="font-medium">{f.label || f.regionKey}</span>
+                      <span className="text-muted">
+                        {' ← '}
+                        {fill.templateName(f.sourceTemplateId)}.{f.sourceField}:{' '}
+                      </span>
+                      <span data-testid={`fill-value-${f.regionKey}`}>{fill.valueOf(f)}</span>
+                      {filled(f.currentValue) && checked[f.regionKey] && (
+                        <span className="ml-1 text-xs text-amber-800">(replaces “{f.currentValue}”)</span>
+                      )}
+                    </span>
+                  </label>
+                  <span className="ml-6 block">
+                    <WouldFail field={f} />
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-xs text-muted" aria-live="polite">
+            {selectedText(fill)}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The search / preview error line. */
+function FillError({ message }) {
+  if (!message) return null;
+  return (
+    <p role="alert" className="mb-3 rounded bg-danger-bg px-3 py-2 text-sm text-danger-ink">
+      {message}
+    </p>
+  );
+}
+
+/**
+ * "Fill from data" as a dialog (the builder's "Fill from data" button):
+ * search, then preview and Apply in the dialog.
+ */
+export default function FillFromDataDialog({ open, onClose, instance, onBeforeFill, onFilled }) {
+  const ids = useId();
+  const fill = useFillFromData({ open, instance, onBeforeFill, onFilled, onApplied: onClose });
+  const inPreview = Boolean(fill.preview);
   const footer = inPreview ? (
     <>
-      <Button
-        variant="secondary"
-        onClick={() => {
-          setPreview(null);
-          setRecord(null);
-        }}
-        disabled={busy}
-      >
+      <Button variant="secondary" onClick={fill.backToResults} disabled={fill.busy}>
         Back to results
       </Button>
-      <Button onClick={apply} disabled={busy || selectedKeys.length === 0}>
+      <Button onClick={fill.apply} disabled={fill.busy || fill.selectedKeys.length === 0}>
         Apply
       </Button>
     </>
@@ -300,234 +674,59 @@ export default function FillFromDataDialog({ open, onClose, instance, onBeforeFi
       description="Find a person (a validated record) in the data flow; their values fill this document's fields."
       footer={footer}
     >
-      {error && (
-        <p role="alert" className="mb-3 rounded bg-danger-bg px-3 py-2 text-sm text-danger-ink">
-          {error}
-        </p>
-      )}
-      {!inPreview ? (
-        <div className="space-y-3" data-testid="fill-search">
-          {sources == null ? (
-            <Spinner label="Loading data sources…" />
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium">Data source</span>
-                  <select
-                    className={inputClass}
-                    value={choice}
-                    onChange={(e) => {
-                      setChoice(e.target.value);
-                      setPage(0);
-                    }}
-                  >
-                    {sources.map((s) => (
-                      <option key={s.id} value={sourceValue(s.templateId)}>
-                        {s.templateName} ({s.role === 'PRIMARY' ? 'primary' : 'linked'})
-                      </option>
-                    ))}
-                    <option value={OTHER}>Other templates…</option>
-                  </select>
-                </label>
-                {choice === OTHER && (
-                  <label className="block text-sm">
-                    <span className="mb-1 block font-medium">Template</span>
-                    <select
-                      className={inputClass}
-                      value={otherTemplateId}
-                      onChange={(e) => {
-                        setOtherTemplateId(e.target.value);
-                        setPage(0);
-                      }}
-                      disabled={!templates}
-                    >
-                      <option value="">Choose a template…</option>
-                      {(templates || [])
-                        .filter((t) => !sources.some((s) => String(s.templateId) === String(t.templateId)))
-                        .map((t) => (
-                          <option key={t.templateId} value={t.templateId}>
-                            {t.name}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                )}
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium">Search records</span>
-                  <input
-                    type="search"
-                    className={inputClass}
-                    value={q}
-                    placeholder="Name, ID number…"
-                    disabled={!templateId}
-                    onChange={(e) => setQ(e.target.value)}
-                  />
-                </label>
-                <label className="block text-sm">
-                  <span className="mb-1 block font-medium">Search in</span>
-                  <select
-                    className={inputClass}
-                    value={field}
-                    disabled={!templateId}
-                    onChange={(e) => {
-                      setField(e.target.value);
-                      setPage(0);
-                    }}
-                  >
-                    <option value="">All fields</option>
-                    {fields.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {!templateId ? (
-                <p className="text-sm text-muted">Choose a template to search its records.</p>
-              ) : results == null ? (
-                <Spinner label="Searching…" />
-              ) : (
-                <div aria-busy={searching || undefined}>
-                  <DataTable
-                    caption="Records"
-                    columns={columns}
-                    rows={results.items}
-                    emptyMessage={debouncedQ ? 'No records match this search.' : 'No records yet for this template.'}
-                    maxHeight="22rem"
-                  />
-                  <Pager
-                    page={results.page}
-                    size={results.size}
-                    total={results.total}
-                    onPage={setPage}
-                    label="Records"
-                    disabled={searching}
-                  />
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-3" data-testid="fill-preview">
-          <p className="text-sm">
-            From <strong>{primaryName}</strong>: {recordLabel(record)}
-          </p>
-          {preview.mappingSource === 'AUTO' && (
-            <Callout variant="info">
-              This template has no saved mapping for the document: fields were matched by name.
-            </Callout>
-          )}
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={emptyOnly} onChange={(e) => toggleEmptyOnly(e.target.checked)} />
-            Fill empty fields only
-          </label>
-          {(preview.linked || []).map((link) => {
-            const alternatives = link.alternatives || [];
-            const selectId = `${ids}-linked-${link.templateId}`;
-            return (
-              <div key={link.templateId} className="rounded border border-line p-2 text-sm" data-testid={`linked-${link.templateId}`}>
-                <p>
-                  Also from <strong>{link.templateName}</strong> matched by <code>{link.matchedBy}</code>
-                </p>
-                {alternatives.length > 0 && (
-                  <div className="mt-1">
-                    <label htmlFor={selectId} className="mb-1 block text-xs text-muted">
-                      Record from {link.templateName} ({alternatives.length + 1} matches)
-                    </label>
-                    <select
-                      id={selectId}
-                      className={inputClass}
-                      value={String(linkedChoice[link.templateId] ?? link.recordId)}
-                      onChange={(e) =>
-                        setLinkedChoice((current) => ({ ...current, [link.templateId]: Number(e.target.value) }))
-                      }
-                    >
-                      {[link.recordId, ...alternatives].map((rid) => (
-                        <option key={rid} value={String(rid)}>
-                          {linkedRecords[rid] ? recordLabel(linkedRecords[rid]) : `Record ${rid}`}
-                          {rid === link.recordId ? ' (newest)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {previewFields.length === 0 ? (
-            <p className="text-sm text-muted">This record has no values for this document’s fields.</p>
-          ) : (
-            <>
-              <DataTable
-                caption="Values to fill"
-                maxHeight="22rem"
-                rows={previewFields}
-                columns={[
-                  {
-                    key: 'use',
-                    label: '',
-                    srLabel: 'Fill',
-                    render: (f) => (
-                      <input
-                        type="checkbox"
-                        aria-label={`Fill ${f.label || f.regionKey}`}
-                        checked={Boolean(checked[f.regionKey])}
-                        disabled={emptyOnly && filled(f.currentValue)}
-                        onChange={(e) => setChecked((current) => ({ ...current, [f.regionKey]: e.target.checked }))}
-                      />
-                    ),
-                  },
-                  { key: 'label', label: 'Field', render: (f) => f.label || f.regionKey },
-                  {
-                    key: 'value',
-                    label: 'Value',
-                    render: (f) => <span data-testid={`fill-value-${f.regionKey}`}>{valueOf(f)}</span>,
-                  },
-                  {
-                    key: 'from',
-                    label: 'From',
-                    render: (f) => (
-                      <span className="text-muted">
-                        {templateName(f.sourceTemplateId)}.{f.sourceField}
-                        {f.sameName && (
-                          <>
-                            {' '}
-                            <Tag tone="success">same name</Tag>
-                          </>
-                        )}
-                      </span>
-                    ),
-                  },
-                  {
-                    key: 'current',
-                    label: 'Current value',
-                    render: (f) =>
-                      filled(f.currentValue) ? (
-                        <span>
-                          {f.currentValue}
-                          {checked[f.regionKey] && (
-                            <>
-                              {' '}
-                              <Tag tone="warning">will be replaced</Tag>
-                            </>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="text-muted">empty</span>
-                      ),
-                  },
-                ]}
-              />
-              <p className="text-xs text-muted" aria-live="polite">
-                {selectedKeys.length} of {previewFields.length} field{previewFields.length === 1 ? '' : 's'} selected
-              </p>
-            </>
-          )}
-        </div>
-      )}
+      <FillError message={fill.error} />
+      {!inPreview ? <FillSearch fill={fill} /> : <FillPreviewTable fill={fill} idPrefix={ids} />}
     </Modal>
+  );
+}
+
+/**
+ * "Fill from data" inline (the builder's first step, Choose data): the same
+ * search, then a compact preview — "document field ← flow field: value",
+ * ticked, with ⚠ and the message for values that would fail a check —
+ * and Apply. `onApplied()` runs after a fill; `onSkip()` is "Skip".
+ */
+export function FillFromDataPanel({ instance, onBeforeFill, onFilled, onApplied, onSkip }) {
+  const ids = useId();
+  const fill = useFillFromData({ open: true, instance, onBeforeFill, onFilled, onApplied });
+  const inPreview = Boolean(fill.preview);
+  return (
+    <section
+      aria-labelledby={`${ids}-heading`}
+      className="space-y-3 rounded-lg border border-line bg-white p-4"
+      data-testid="choose-data"
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 id={`${ids}-heading`} className="text-base font-medium">
+          Choose the data
+        </h2>
+        <span className="flex-1" />
+        {onSkip && (
+          <Button variant="secondary" size="sm" onClick={onSkip}>
+            Skip
+          </Button>
+        )}
+      </div>
+      <p className="text-sm text-muted">
+        Find the person or case (a validated record of the data flow); their values fill this document. You can fix
+        anything on the next step.
+      </p>
+      <FillError message={fill.error} />
+      {!inPreview ? (
+        <FillSearch fill={fill} />
+      ) : (
+        <>
+          <FillPreviewList fill={fill} idPrefix={ids} />
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={fill.backToResults} disabled={fill.busy}>
+              Back to results
+            </Button>
+            <Button onClick={fill.apply} disabled={fill.busy || fill.selectedKeys.length === 0}>
+              Apply
+            </Button>
+          </div>
+        </>
+      )}
+    </section>
   );
 }

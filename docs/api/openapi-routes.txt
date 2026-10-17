@@ -5,7 +5,7 @@
 # docs/api/versioning-policy.md. Regenerate with:
 #   mvn -Dtest=OpenApiContractTest \
 #       -Dmodocument.contract.update=true test
-# 228 operations.
+# 241 operations.
 POST /ImportDetails/Create
 GET /ImportDetails/GetAll
 GET /ImportDetails/GetById/{id}
@@ -129,6 +129,9 @@ GET /api/doccreation/blueprints
 POST /api/doccreation/blueprints
 DELETE /api/doccreation/blueprints/{id}
 GET /api/doccreation/blueprints/{id}
+GET /api/doccreation/blueprints/{id}/data-mapping
+PUT /api/doccreation/blueprints/{id}/data-mapping
+PUT /api/doccreation/blueprints/{id}/data-template
 POST /api/doccreation/blueprints/{id}/edit-images
 GET /api/doccreation/blueprints/{id}/file
 PUT /api/doccreation/blueprints/{id}/overlay
@@ -143,6 +146,16 @@ POST /api/doccreation/blueprints/{id}/sources
 DELETE /api/doccreation/blueprints/{id}/sources/{sourceId}
 PUT /api/doccreation/blueprints/{id}/sources/{sourceId}
 GET /api/doccreation/blueprints/{id}/versions
+GET /api/doccreation/data-templates
+POST /api/doccreation/data-templates
+GET /api/doccreation/data-templates/copy-preview
+POST /api/doccreation/data-templates/from-flow-template
+DELETE /api/doccreation/data-templates/{id}
+GET /api/doccreation/data-templates/{id}
+PUT /api/doccreation/data-templates/{id}
+PUT /api/doccreation/data-templates/{id}/fields
+PUT /api/doccreation/data-templates/{id}/rules
+POST /api/doccreation/data-templates/{id}/rules/test
 GET /api/doccreation/instances
 POST /api/doccreation/instances
 GET /api/doccreation/instances/pending-release

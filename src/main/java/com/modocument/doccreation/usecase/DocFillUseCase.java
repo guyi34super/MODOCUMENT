@@ -76,7 +76,7 @@ public class DocFillUseCase {
 
     /** {@code GET /instances/{id}/fill-preview?recordId=}. */
     public FillPreviewDto preview(int instanceId, long recordId) {
-        Plan plan = plan(instanceId, recordId, Map.of());
+        Plan plan = plan(instanceId, recordId, Map.of(), true);
         audit.success(AuditActions.SENSITIVE_DATA_VIEWED, "TemplateRecord", String.valueOf(recordId), null,
                 Map.of("view", "fill-preview"));
         return plan.preview();
@@ -110,7 +110,7 @@ public class DocFillUseCase {
                 }
             });
         }
-        Plan plan = plan(instanceId, request.recordId(), choices);
+        Plan plan = plan(instanceId, request.recordId(), choices, false);
         Set<String> selected = null;
         if (request.fields() != null) {
             selected = new LinkedHashSet<>();
@@ -162,7 +162,8 @@ public class DocFillUseCase {
     private record Plan(FillPreviewDto preview, List<Applied> applied, Set<String> regionKeys) {
     }
 
-    private Plan plan(int instanceId, long recordId, Map<Integer, Long> choices) {
+    /** With {@code checks} (the preview), each field carries the checks its value would fail (ws34). */
+    private Plan plan(int instanceId, long recordId, Map<Integer, Long> choices, boolean checks) {
         records.requireIngestionRead();
         DocInstance instance = ownership.requireInstance(instanceId);
         DocBlueprint blueprint = ownership.requireTemplate(instance.getBlueprintId());
@@ -239,16 +240,24 @@ public class DocFillUseCase {
                 byRegion.put(region.key(), new FillPreviewDto.FieldDto(region.key(), region.label(), value,
                         currentValue, source.record().templateId(), fieldName,
                         !currentValue.isEmpty() && !currentValue.equals(value),
-                        RecordText.sameName(fieldName, region.key(), region.label())));
+                        RecordText.sameName(fieldName, region.key(), region.label()), List.of()));
             }
+        }
+        Map<String, List<FillPreviewDto.CheckDto>> failing = Map.of();
+        if (checks && !byRegion.isEmpty()) {
+            Map<String, String> proposed = new LinkedHashMap<>();
+            byRegion.forEach((key, field) -> proposed.put(key, field.value()));
+            failing = instances.wouldFail(instance, blueprint, proposed);
         }
         List<FillPreviewDto.FieldDto> fields = new ArrayList<>();
         Set<String> regionKeys = new LinkedHashSet<>();
         for (TemplateRegion region : regions) {
             regionKeys.add(region.key());
-            FillPreviewDto.FieldDto field = byRegion.get(region.key());
-            if (field != null) {
-                fields.add(field);
+            FillPreviewDto.FieldDto f = byRegion.get(region.key());
+            if (f != null) {
+                fields.add(new FillPreviewDto.FieldDto(f.regionKey(), f.label(), f.value(), f.currentValue(),
+                        f.sourceTemplateId(), f.sourceField(), f.willOverwrite(), f.sameName(),
+                        failing.getOrDefault(region.key(), List.of())));
             }
         }
         return new Plan(new FillPreviewDto(anchor.id(), anchor.templateId(), mappingSource, linked, fields),

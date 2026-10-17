@@ -67,8 +67,13 @@ function cleanConfig(type, c) {
  * Add or edit one rule of `field` ({ key, label, kind }). The rule types on
  * offer are those whose `kinds` include the field's kind (from the server's
  * `ruleTypes`); each type gets its own inputs. `onSave(ruleInput)`.
+ *
+ * Generic over what owns the rules: `fields` are `{ key, label, kind }`
+ * (a PDF template's regions, or a data template's fields with `key` = the
+ * field name) and `keyName` names the key in the saved input
+ * ('regionKey' for a PDF template, 'fieldName' for a data template).
  */
-export default function RuleDialog({ open, field, rule, ruleTypes, fields, onSave, onCancel }) {
+export default function RuleDialog({ open, field, rule, ruleTypes, fields, onSave, onCancel, keyName = 'regionKey' }) {
   const ids = useId();
   const fitting = ruleTypes.filter((t) => !t.kinds?.length || t.kinds.includes(field?.kind));
   const [type, setType] = useState('');
@@ -109,7 +114,7 @@ export default function RuleDialog({ open, field, rule, ruleTypes, fields, onSav
     setTried(true);
     if (problem) return;
     onSave({
-      regionKey: field.key,
+      [keyName]: field.key,
       ruleType: type,
       config: cleanConfig(type, effective),
       message: message.trim() || null,

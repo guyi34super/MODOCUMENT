@@ -10,6 +10,10 @@ import java.util.Map;
  * suggestions for regions that are not mapped yet. {@code readable} is false
  * when the caller can no longer read the template (it was made private by
  * its owner): the source can then only be removed.
+ *
+ * <p>ws34 (data-templates-contract §3): {@code managed} is true for the
+ * PRIMARY source kept in step from the template's data-field mapping (the
+ * UI labels it); a source set up by hand is never managed.
  */
 public record BlueprintSourceDto(long id,
                                  int templateId,
@@ -20,7 +24,8 @@ public record BlueprintSourceDto(long id,
                                  Map<String, String> mapping,
                                  List<FieldDto> fields,
                                  List<SuggestionDto> suggestions,
-                                 boolean readable) {
+                                 boolean readable,
+                                 boolean managed) {
 
     /** A field of the flow template and its data type name (Text, Number, Date, …). */
     public record FieldDto(String name, String dataType) {

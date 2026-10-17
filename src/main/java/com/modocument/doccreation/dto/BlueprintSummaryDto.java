@@ -5,6 +5,12 @@ import java.time.LocalDateTime;
 /**
  * One entry of {@code GET /api/doccreation/blueprints} (contract §5);
  * {@code rulesCount} (ws33) — the template's field rules.
+ *
+ * <p>ws34 (data-templates-contract §3, the "Map fields" list): the chosen
+ * data template ({@code dataTemplateId}/{@code dataTemplateName}, null when
+ * none), the regions of the current version mapped to one of its fields
+ * ({@code mappedCount}) and the regions that have at least one compatible
+ * field ({@code mappableCount}; 0 without a data template).
  */
 public record BlueprintSummaryDto(int id,
                                   String name,
@@ -15,5 +21,9 @@ public record BlueprintSummaryDto(int id,
                                   int documentCount,
                                   String companyId,
                                   LocalDateTime createdDate,
-                                  int rulesCount) {
+                                  int rulesCount,
+                                  Integer dataTemplateId,
+                                  String dataTemplateName,
+                                  int mappedCount,
+                                  int mappableCount) {
 }

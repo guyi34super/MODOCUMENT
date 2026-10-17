@@ -292,6 +292,18 @@ no LLM involved.
   uptime monitors — build version + database round trip only.
 
 ### Document creation (exact PDF templates)
+**The document creation flow** has four steps, numbered under "Document
+Creation" in the sidebar: **1. Upload document** — upload a PDF and confirm
+its fields; **2. Validation** — a reusable **data template** holds the fields a
+document collects and their rules, made from scratch or copied from a flow
+template; **3. Map fields** — each PDF template chooses a data template and
+maps its fields onto the data fields (matched by name, suggestions accepted in
+one click); **4. Fix documents** — fill a document (from records or by hand),
+fix it until it passes, then download it. A document is saved as final
+(validated) and downloaded only once its data passes the data template's
+rules plus the PDF's own extra rules. See
+[docs/doccreation/data-templates-contract.md](docs/doccreation/data-templates-contract.md).
+
 The template **is the original PDF**: logo, fonts, layout, colours and page
 geometry stay exactly as uploaded. Documents store only values and photos;
 generation draws them onto the template. Output is **PDF only** (the Word
@@ -722,6 +734,8 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 | `GET /api/doccreation/blueprints/{id}/rules/import-preview?templateId=` | What importing flow-template field rules would add (data sources when no `templateId`) |
 | `POST /api/doccreation/blueprints/{id}/rules/import` | Import flow-template field rules (`MERGE` or `REPLACE`; also needs `validation:read`) |
 | `POST /api/doccreation/instances/{id}/validate` | Validate a document: `VALIDATED`, or `DRAFT` with the errors per field |
+| `PUT /api/doccreation/blueprints/{id}/data-template` | Choose a data template (`dataTemplateId`; the mapping is pre-filled from the suggestions) or clear it (`null`) |
+| `GET` / `PUT /api/doccreation/blueprints/{id}/data-mapping` | The mapping of the template's fields onto the data fields, with suggestions and counts / save it (400 for unknown fields or kinds that don't fit) |
 
 ## Ingestion walkthrough
 

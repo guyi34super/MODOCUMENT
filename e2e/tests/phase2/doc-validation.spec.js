@@ -39,7 +39,11 @@
 //          confirms it and the Field rules tab then loads
 //
 // UI contract (frontend/src/components/rules/*, components/doc/*,
-// components/pdf/*): tab "Field rules" (role=tab) -> data-testid
+// components/pdf/*): ws34 made the template's tabs steps (role=tab):
+// "Upload" (the layout), "Validation" (the field rules), "Map fields" (the
+// data sources under "Data from the flow (advanced)"), "Documents"; a new
+// document opens on the builder's "Choose data" step, the fields are on
+// "Fix fields". Step "Validation" -> data-testid
 // field-rules, one section rules-field-<key> with "Add rule to <label>";
 // dialog "Add a rule — <label>" (Rule type, Other field, This value must
 // be, "Add rule"); "Save rules"; "Import rules" dialog (radios "Data
@@ -160,8 +164,10 @@ async function createDocument(page, templateName, title) {
   await page.getByLabel('Template').selectOption({ label: `${templateName} (1 page)` });
   await page.getByPlaceholder(/Survey/).fill(title);
   await page.getByRole('button', { name: 'Create document' }).click();
-  await expect(page).toHaveURL(/\/creation\/documents\/\d+$/);
+  // ws34: a new document opens on the builder's first step, Choose data; the fields are on Fix fields.
+  await expect(page).toHaveURL(/\/creation\/documents\/\d+\?step=data$/);
   await expect(page.getByRole('heading', { name: title })).toBeVisible();
+  await page.getByRole('tab', { name: 'Fix fields' }).click();
   return Number(new URL(page.url()).pathname.split('/').pop());
 }
 
@@ -204,7 +210,7 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     // Layout: Status becomes a Dropdown with three options.
     await openAs(page, OPERATOR(), `/creation/blueprints/${blueprintId}`);
     await expect(page.getByRole('heading', { name: blueprintName })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Field rules' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Validation' })).toBeVisible();
     const properties = page.getByTestId('region-properties');
     await page.getByTestId('region-status').click();
     await expect(properties.getByLabel('Label')).toHaveValue('Status');
@@ -228,7 +234,7 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     expect(byKey.start_date.props).toMatchObject({ dateFormat: 'dd/MM/yyyy' });
 
     // Field rules tab.
-    await page.getByRole('tab', { name: 'Field rules' }).click();
+    await page.getByRole('tab', { name: 'Validation' }).click();
     const rulesTab = page.getByTestId('field-rules');
     await expect(rulesTab.getByText('revision 0')).toBeVisible();
 
@@ -286,7 +292,7 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     expect((await getBlueprint(operatorApi, blueprintId)).regions.find((r) => r.key === 'name').required).toBe(true);
 
     await page.reload();
-    await page.getByRole('tab', { name: 'Field rules' }).click();
+    await page.getByRole('tab', { name: 'Validation' }).click();
     await expect(page.getByTestId('field-rules').getByText('revision 1')).toBeVisible();
     await expectRulesListed();
   });
@@ -312,7 +318,7 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     });
 
     await openAs(page, OPERATOR(), `/creation/blueprints/${blueprintId}`);
-    await page.getByRole('tab', { name: 'Field rules' }).click();
+    await page.getByRole('tab', { name: 'Validation' }).click();
     const rulesTab = page.getByTestId('field-rules');
     await rulesTab.getByRole('button', { name: 'Import rules' }).click();
     const dialog = page.getByRole('dialog', { name: 'Import rules' });
@@ -377,9 +383,11 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     await page.getByLabel('Template').selectOption({ label: `${blueprintName} (1 page)` });
     await page.getByPlaceholder(/Survey/).fill(instanceTitle);
     await page.getByRole('button', { name: 'Create document' }).click();
-    await expect(page).toHaveURL(/\/creation\/documents\/\d+$/);
+    // ws34: a new document opens on the builder's first step, Choose data; the fields are on Fix fields.
+    await expect(page).toHaveURL(/\/creation\/documents\/\d+\?step=data$/);
     instanceId = Number(new URL(page.url()).pathname.split('/').pop());
     await expect(page.getByRole('heading', { name: instanceTitle })).toBeVisible();
+    await page.getByRole('tab', { name: 'Fix fields' }).click();
 
     // A new document is a draft: the gates are closed before anything is typed.
     await expect(page.getByText('DRAFT', { exact: true })).toBeVisible();
@@ -727,7 +735,7 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     await panel.getByRole('link', { name: 'Edit rules' }).click();
     await expect(page).toHaveURL(new RegExp(`/creation/blueprints/${form.id}\\?tab=rules$`));
     await expect(page.getByRole('heading', { name: form.name })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Field rules' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: 'Validation' })).toHaveAttribute('aria-selected', 'true');
     const rulesTab = page.getByTestId('field-rules');
     await expect(rulesTab.getByText('revision 2')).toBeVisible();
     await expect(rulesTab.getByTestId('rules-field-email').getByText(`Imported from ${from('email')}`)).toBeVisible();
@@ -738,7 +746,7 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     await expect(page.getByRole('heading', { name: title })).toBeVisible();
     await panel.getByRole('link', { name: 'Map from data sources' }).click();
     await expect(page).toHaveURL(new RegExp(`/creation/blueprints/${form.id}\\?tab=sources$`));
-    await expect(page.getByRole('tab', { name: 'Data sources' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: 'Map fields' })).toHaveAttribute('aria-selected', 'true');
     const sourceCard = page.getByTestId('data-sources').getByTestId(`source-${source.templateId}`);
     await expect(sourceCard.getByText('Primary', { exact: true })).toBeVisible();
     await expect(sourceCard.getByTestId('mapping-row-email').getByRole('combobox')).toHaveValue('email');
@@ -773,8 +781,8 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     await expect(panel.getByTestId('checks-state')).toHaveText('Generated · validated');
     expect((await operatorApi.get(`${DOCS}/instances/${docId}`)).status).toBe('GENERATED');
 
-    // The templates list ("Blueprints") counts the template's rules and links to them.
-    await page.getByRole('link', { name: 'Blueprints', exact: true }).click();
+    // The templates list (sidebar step 1, "Upload document") counts the template's rules and links to them.
+    await page.getByRole('complementary', { name: 'Main navigation' }).getByRole('link', { name: /Upload document$/ }).click();
     await expect(page).toHaveURL(/\/creation\/blueprints$/);
     const rulesLink = page.getByRole('link', { name: `Field rules of ${form.name}: 3` });
     await expect(rulesLink).toHaveText('3');
@@ -810,16 +818,16 @@ test.describe('field rules and validate-before-save @phase2 @validation', () => 
     expect(draft.regions.length).toBeGreaterThan(0);
 
     // The draft has the tabs; Field rules asks to confirm first (no rules are loaded for a draft).
-    const rulesTabButton = page.getByRole('tab', { name: 'Field rules' });
+    const rulesTabButton = page.getByRole('tab', { name: 'Validation' });
     await expect(rulesTabButton).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Data sources' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Map fields' })).toBeVisible();
     await rulesTabButton.click();
     await expect(rulesTabButton).toHaveAttribute('aria-selected', 'true');
     const confirmFirst = page.getByTestId('confirm-first');
     await expect(confirmFirst.getByText('Confirm the template first to add data sources and field rules.')).toBeVisible();
     await expect(page.getByTestId('field-rules')).toHaveCount(0);
     // ... and so does Data sources.
-    await page.getByRole('tab', { name: 'Data sources' }).click();
+    await page.getByRole('tab', { name: 'Map fields' }).click();
     await expect(confirmFirst.getByText('Confirm the template first to add data sources and field rules.')).toBeVisible();
     await expect(page.getByTestId('data-sources')).toHaveCount(0);
     // Still a draft on the server.

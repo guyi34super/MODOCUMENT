@@ -26,8 +26,10 @@
 //   REC-07 deleting the Customers ingestion job removes its records
 //
 // UI contract (frontend/src/components/records/*, pages/BlueprintDetailPage,
-// pages/DocBuilderPage): tabs "Layout" / "Data sources" (role=tab); the tab
-// is data-testid data-sources, one card per source source-<templateId>, its
+// pages/DocBuilderPage): ws34 steps "Upload" / "Validation" / "Map fields" /
+// "Documents" (role=tab), the data sources under "Map fields" -> "Data from
+// the flow (advanced)"; a new document opens on "Choose data". The sources
+// part is data-testid data-sources, one card per source source-<templateId>, its
 // rows mapping-row-<regionKey> (select "Template field for <label>"). The
 // "Add data source" dialog: "Flow template" select, radios Primary/Linked,
 // "Key field in <primary>" / "Key field in the new source". Builder: card
@@ -113,6 +115,17 @@ async function dragBy(page, locator, dx, dy) {
 }
 
 const boxOf = (r) => ({ fx: r.fx, fy: r.fy, fw: r.fw, fh: r.fh });
+
+/**
+ * ws34: the template's "Data sources" tab became the advanced part of the
+ * "Map fields" step: open the step, then "Data from the flow (advanced)".
+ */
+async function openDataSources(page) {
+  await page.getByRole('tab', { name: 'Map fields' }).click();
+  const toggle = page.getByRole('button', { name: 'Data from the flow (advanced)' });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await expect(page.getByTestId('data-sources')).toBeVisible();
+}
 
 test.describe.configure({ mode: 'serial' });
 
@@ -238,7 +251,7 @@ test.describe('flow records in document creation @phase2 @records', () => {
     test.skip(!blueprintId || !customers, 'needs REC-01 and REC-02');
     await openAs(page, OPERATOR(), `/creation/blueprints/${blueprintId}`);
     await expect(page.getByRole('heading', { name: blueprintName })).toBeVisible();
-    await page.getByRole('tab', { name: 'Data sources' }).click();
+    await openDataSources(page);
     const tab = page.getByTestId('data-sources');
     await expect(tab.getByText('No data sources yet.')).toBeVisible();
 
@@ -304,7 +317,7 @@ test.describe('flow records in document creation @phase2 @records', () => {
     expect(linked).toMatchObject({ templateId: accounts.templateId, linkFieldPrimary: 'nic', linkFieldThis: 'national_id' });
     expect(linked.mapping).toMatchObject({ account_number: 'account_number', branch: 'branch', nic: 'national_id' });
     await page.reload();
-    await page.getByRole('tab', { name: 'Data sources' }).click();
+    await openDataSources(page);
     await expect(
       page.getByTestId(`source-${accounts.templateId}`).getByTestId('mapping-row-nic').getByRole('combobox')
     ).toHaveValue('national_id');
@@ -330,9 +343,11 @@ test.describe('flow records in document creation @phase2 @records', () => {
     await page.getByLabel('Template').selectOption({ label: `${blueprintName} (1 page)` });
     await page.getByPlaceholder(/Survey/).fill(title);
     await page.getByRole('button', { name: 'Create document' }).click();
-    await expect(page).toHaveURL(/\/creation\/documents\/\d+$/);
+    // ws34: a new document opens on the builder's first step, Choose data; "Fill from data" is on Fix fields.
+    await expect(page).toHaveURL(/\/creation\/documents\/\d+\?step=data$/);
     instanceId = Number(new URL(page.url()).pathname.split('/').pop());
     await expect(page.getByRole('heading', { name: title })).toBeVisible();
+    await page.getByRole('tab', { name: 'Fix fields' }).click();
 
     // "Data from the flow" -> search "Jane" -> Use.
     await page.getByRole('button', { name: 'Fill from data' }).click();

@@ -165,11 +165,11 @@ class DocFieldRuleUseCaseTest {
     void flowRulesAreConvertedByTheTable() {
         assertThat(convert(RuleType.REQUIRED, "{}").type()).isEqualTo(DocRuleType.REQUIRED);
         assertThat(convert(RuleType.EXPIRY_DATE, "").type()).isEqualTo(DocRuleType.EXPIRY_DATE);
-        DocFieldRuleUseCase.Converted date = convert(RuleType.DATE_FORMAT, "{\"Format\":\"dd/MM\"}");
+        FlowRuleConverter.Converted date = convert(RuleType.DATE_FORMAT, "{\"Format\":\"dd/MM\"}");
         assertThat(date.config().toString()).isEqualTo("{\"Formats\":[\"yyyy-MM-dd\"]}");
-        assertThat(convert(RuleType.REGEX, "{\"Pattern\":\"" + DocFieldRuleUseCase.FLOW_EMAIL_PATTERN
+        assertThat(convert(RuleType.REGEX, "{\"Pattern\":\"" + FlowRuleConverter.FLOW_EMAIL_PATTERN
                 .replace("\\", "\\\\") + "\"}").type()).isEqualTo(DocRuleType.EMAIL);
-        DocFieldRuleUseCase.Converted regex = convert(RuleType.REGEX, "{\"Pattern\":\"^[0-9]{9}$\"}");
+        FlowRuleConverter.Converted regex = convert(RuleType.REGEX, "{\"Pattern\":\"^[0-9]{9}$\"}");
         assertThat(regex.type()).isEqualTo(DocRuleType.REGEX);
         assertThat(regex.config().get("Pattern").asText()).isEqualTo("^[0-9]{9}$");
         assertThat(regex.message()).as("generic for an unknown source field").isNull();
@@ -186,11 +186,11 @@ class DocFieldRuleUseCaseTest {
 
     @Test
     void theDayforceMessageIsKeptOnlyWhenSpecific() {
-        assertThat(DocFieldRuleUseCase.regexMessage("SIN", "^[1-79][0-9]{8}$"))
+        assertThat(FlowRuleConverter.regexMessage("SIN", "^[1-79][0-9]{8}$"))
                 .startsWith("SIN must have 9 digits");
-        assertThat(DocFieldRuleUseCase.regexMessage("customer_code", "^[A-Z]{3}$")).isNull();
-        assertThat(DocFieldRuleUseCase.regexMessage(null, "x")).isNull();
-        String longest = DocFieldRuleUseCase.regexMessage("ProvincialSafetyPlans", "^.$");
+        assertThat(FlowRuleConverter.regexMessage("customer_code", "^[A-Z]{3}$")).isNull();
+        assertThat(FlowRuleConverter.regexMessage(null, "x")).isNull();
+        String longest = FlowRuleConverter.regexMessage("ProvincialSafetyPlans", "^.$");
         assertThat(longest).hasSizeLessThanOrEqualTo(300);
     }
 
@@ -212,8 +212,8 @@ class DocFieldRuleUseCaseTest {
         assertThat(RuleTypeCatalog.fits(DocRuleType.REQUIRED, null)).isFalse();
     }
 
-    private static DocFieldRuleUseCase.Converted convert(RuleType type, String config) {
-        return DocFieldRuleUseCase.convert(new ValidationRule(1, "f", type, config));
+    private static FlowRuleConverter.Converted convert(RuleType type, String config) {
+        return FlowRuleConverter.convert(new ValidationRule(1, "f", type, config));
     }
 
     private static void assertSkipped(RuleType type, String config, String reason) {

@@ -20,6 +20,9 @@ const IngestionJobPage = lazy(() => import('./pages/IngestionJobPage'));
 const BlueprintListPage = lazy(() => import('./pages/BlueprintListPage'));
 const BlueprintDetailPage = lazy(() => import('./pages/BlueprintDetailPage'));
 const DocInstancesPage = lazy(() => import('./pages/DocInstancesPage'));
+const DataTemplatesPage = lazy(() => import('./pages/DataTemplatesPage'));
+const DataTemplateEditorPage = lazy(() => import('./pages/DataTemplateEditorPage'));
+const DataMappingListPage = lazy(() => import('./pages/DataMappingListPage'));
 const DocBuilderPage = lazy(() => import('./pages/DocBuilderPage'));
 const ExtractionSourcesPage = lazy(() => import('./pages/ExtractionSourcesPage'));
 const ExtractionJobsPage = lazy(() => import('./pages/ExtractionJobsPage'));
@@ -101,6 +104,10 @@ export default function App() {
         <Route path="/ingestion/:id" element={<IngestionJobPage />} />
         <Route path="/creation/blueprints" element={<BlueprintListPage />} />
         <Route path="/creation/blueprints/:id" element={<BlueprintDetailPage />} />
+        {/* ws34: step 2 (Validation: data templates) and step 3 (Map fields). */}
+        <Route path="/creation/data-templates" element={<DataTemplatesPage />} />
+        <Route path="/creation/data-templates/:id" element={<DataTemplateEditorPage />} />
+        <Route path="/creation/mapping" element={<DataMappingListPage />} />
         <Route path="/creation/documents" element={<DocInstancesPage />} />
         <Route path="/creation/documents/:id" element={<DocBuilderPage />} />
         <Route path="/extraction/sources" element={<ExtractionSourcesPage />} />
