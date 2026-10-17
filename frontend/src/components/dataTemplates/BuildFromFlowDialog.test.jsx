@@ -86,6 +86,30 @@ describe('predictFieldNames', () => {
     ]);
     expect(predictFieldNames([{ templateName: 'A', fields: ['x', 'x', 'x', 'x'] }]).map((p) => p.name)).toEqual(['x', 'x_a', 'x_a_2', 'x_a_3']);
   });
+
+  // The same cases as DataTemplateUseCaseTest's clashName test, so the preview shows what the server saves.
+  it('cuts names as the server does: the base gives way to the whole suffix, slugs end at 56 characters', () => {
+    const base = 'a'.repeat(56);
+    expect(predictFieldNames([{ templateId: 1, templateName: 'b'.repeat(20), fields: [base, base, base] }]).map((p) => p.name)).toEqual([
+      base,
+      `${'a'.repeat(43)}_${'b'.repeat(20)}`,
+      `${'a'.repeat(41)}_${'b'.repeat(20)}_2`,
+    ]);
+    // A template name whose slug is longer than 56 characters is cut to 56 in the suffix.
+    const [, long] = predictFieldNames([{ templateId: 1, templateName: 'c'.repeat(60), fields: [base, base] }]);
+    expect(long.name).toBe(`${'a'.repeat(7)}_${'c'.repeat(56)}`);
+    expect(long.name).toHaveLength(64);
+    // A flow field name longer than 56 characters is cut to 56 too.
+    expect(predictFieldNames([{ templateId: 1, templateName: 'T', fields: ['d'.repeat(70)] }])[0].name).toBe('d'.repeat(56));
+  });
+
+  it('names an empty slug as the server does: "field", and "template_<id>" for the suffix', () => {
+    expect(predictFieldNames([{ templateId: 7, templateName: '!!!', fields: ['***', '???'] }]).map((p) => p.name)).toEqual([
+      'field',
+      'field_template_7',
+    ]);
+    expect(predictFieldNames([{ templateId: 7, templateName: 'Façade', fields: ['Prénom'] }], ['prenom'])[0].name).toBe('prenom_facade');
+  });
 });
 
 describe('BuildFromFlowDialog', () => {

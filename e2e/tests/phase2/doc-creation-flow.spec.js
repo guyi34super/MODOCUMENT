@@ -1,10 +1,12 @@
 // The document creation flow in the user's order (docs/doccreation/
 // data-templates-contract.md, ws34): the sidebar "Document Creation" steps
 // 1 "Upload document", 2 "Validation", 3 "Map fields", 4 "Fix documents";
-// a reusable data template (fields + rules) copied from a flow template;
-// the PDF template's steps Upload / Validation / Map fields / Documents; the
-// builder's steps Choose data / Fix fields / Save & validate / Download, with
-// Download locked until the document is validated with the current rules.
+// a reusable data template (fields + rules) built from Document Flow
+// templates on the one Validation page (laid out like Document Flow → Set
+// Field Rules); the PDF template's steps Upload / Validation / Map fields /
+// Documents; the builder's steps Choose data / Fix fields / Save & validate /
+// Download, with Download locked until the document is validated with the
+// current rules.
 //
 // Setup through the API only: the flow template "Staff" (full_name,
 // email, start_date, status) with flow rules (REQUIRED on full_name, the
@@ -13,11 +15,13 @@
 //
 //   DCF-01 Upload document: sidebar step 1, upload the "Staff onboarding"
 //          PDF, confirm -> lands on the template's Validation step
-//   DCF-02 Validation: "Copy from a flow template" -> the fields ticked ->
-//          Copy; the data template lists the imported rules ("Imported from
-//          Staff.full_name"); a LENGTH max 20 rule is added by hand and saved;
-//          chosen on the PDF template's Validation step, where the rules show
-//          read-only under "Inherited from <data template>"
+//   DCF-02 Validation: "Build from Document Flow templates" -> the flow
+//          template ticked -> its fields (all ticked, with their rules) ->
+//          preview -> "Save as a new template"; the Fields card says "From
+//          Staff.<field>", the rules table lists the imported rules with their
+//          Source; a LENGTH max 20 rule is added with the "Add field rules"
+//          card (saved at once); chosen on the PDF template's Validation step,
+//          where the rules show read-only under "Inherited from <data template>"
 //   DCF-03 Map fields: "same name" badges pre-filled, "4 of 4 mapped"; one
 //          row unmapped and saved ("3 of 4 mapped" in the Map fields list);
 //          "Accept all suggestions" -> Save mapping -> "4 of 4 mapped"; the
@@ -31,22 +35,42 @@
 //   DCF-05 an edit locks Download again; My documents: Validation column
 //          "Not checked" / "1 error" / "Validated", Download only for the
 //          validated document
-//   DCF-06 a rule of the data template changes -> "The rules changed — save
-//          again", generate 409 NOT_VALIDATED (rules-changed message); Save
-//          again -> unlocked
-//   DCF-07 READ_ONLY cannot save a data template (403); another bank gets
-//          404 for the data template and the mapping
+//   DCF-06 a rule of the data template changes (Update in the rules table)
+//          -> "The rules changed — save again", generate 409 NOT_VALIDATED
+//          (rules-changed message); Save again -> unlocked
+//   DCF-07 READ_ONLY cannot save a data template nor build / add from flow
+//          templates (403); another bank gets 404 for the data template, the
+//          mapping, adding to it, and building from this bank's flow template
+//   DCF-08 ONE data template from TWO flow templates that both have "email":
+//          some fields of each ticked, the preview renames the second
+//          "email" to email_<slug of its flow template>; saved as a new
+//          template; the Fields card says "From <template>.<field>" per
+//          field; a Required rule and a Format pattern (RegexBuilder) rule
+//          added, one updated, one deleted; "Test a sample row" fails then
+//          passes; chosen on a PDF's Validation step; Document Flow → Set
+//          Field Rules (/validation) does not list it
+//   DCF-09 "Add to <current>" from the build dialog adds a flow template's
+//          fields (and rules) to the DCF-02 template: revision + 1, and the
+//          validated document of the PDF using it shows "Rules changed — save
+//          again" (Download locked, generate 409) until it is saved again
 //
-// UI contract (frontend/src/pages/{DataTemplatesPage,DataTemplateEditorPage,
-// DataMappingListPage,BlueprintDetailPage,DocBuilderPage,DocInstancesPage},
-// components/{mapping/FieldMatcher,doc/BuilderSteps,blueprint/
-// DataTemplateChooser,dataTemplates/DataTemplateDialogs}): steps are
-// role=tab ("Upload", "Validation", "Map fields", "Documents"; "Choose
-// data", "Fix fields", "Save & validate", "Download", aria-disabled when
-// locked, the reason in #gate-reason); copy dialog rows copy-field-<name>;
-// editor rows data-field-<name>, "Edit rules of <name>", drawer "Rules —
-// <name>"; chooser data-template-chooser / data-template-summary; inherited
-// rules inherited-rules / inherited-field-<key>; matcher field-matcher,
+// UI contract (frontend/src/pages/{DataValidationPage,DataMappingListPage,
+// BlueprintDetailPage,DocBuilderPage,DocInstancesPage}, components/
+// {mapping/FieldMatcher,doc/BuilderSteps,blueprint/DataTemplateChooser,
+// dataTemplates/BuildFromFlowDialog,rules/RulesTestPanel,RegexBuilder}):
+// steps are role=tab ("Upload", "Validation", "Map fields", "Documents";
+// "Choose data", "Fix fields", "Save & validate", "Download", aria-disabled
+// when locked, the reason in #gate-reason); the Validation page has the
+// "Template" select, "New template", "Build from Document Flow templates",
+// the Fields card (rows data-field-<name>), the "Add field rules" /
+// "Update field rules" card (Field / Required or Optional / Format rule
+// type, "Save rule" / "Update rule"), the rules table "Rules of <name>"
+// (Field / Required / Rule / Settings / Source / Update / Delete, buttons
+// "Update|Delete <Rule label> rule of <field label>") and "Test a sample
+// row" (rules-test); the build dialog has build-templates, build-source-<id>,
+// build-field-<id>-<name>, build-preview with preview-row-<name>, build-save;
+// chooser data-template-chooser / data-template-summary; inherited rules
+// inherited-rules / inherited-field-<key>; matcher field-matcher,
 // match-row-<key>, mapped-count; Choose data choose-data, fill-row-<key>,
 // would-fail-<key>; Save step save-step / save-result; Download step
 // download-step; lists validation-state.
@@ -59,7 +83,7 @@ import { OPERATOR, createUserViaMakerChecker, operator, uniqueName } from '../..
 import { onboardBank } from '../../lib/phase2.js';
 import { buildPdf } from '../../fixtures/pdf-form.js';
 import { containsText, pageTexts } from '../../lib/pdf-inspect.js';
-import { getBlueprint } from '../../lib/doccreation.js';
+import { getBlueprint, uploadBlueprint } from '../../lib/doccreation.js';
 
 const DOCS = '/api/doccreation';
 const DATA_TEMPLATES = `${DOCS}/data-templates`;
@@ -67,6 +91,9 @@ const FIELDS = ['full_name', 'email', 'start_date', 'status'];
 // The flow UI's e-mail preset: copied as an EMAIL rule (FlowRuleConverter.FLOW_EMAIL_PATTERN).
 const EMAIL_PATTERN = '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$';
 const MAX_NAME = 20;
+// RegexBuilder's "Whole number" and "Phone number" presets (components/RegexBuilder.jsx).
+const WHOLE_NUMBER = '^\\d+$';
+const PHONE_PATTERN = '^\\+?[0-9][0-9 ()-]{5,18}[0-9]$';
 
 // Passes the flow's rules, but the full name is longer than the LENGTH max 20 added on the data template.
 const PERSON = {
@@ -108,6 +135,55 @@ const stepTab = (page, name) => page.getByRole('tab', { name, exact: true });
 
 /** One row of a DataTable, by a text it shows (e.g. a title). */
 const rowWith = (page, text) => page.getByRole('row').filter({ hasText: text });
+
+/**
+ * The control of a <Field label="…"> (a <label> wrapping a caption <span> and
+ * the control). By the caption alone: the label's text also holds the
+ * select's option texts, so getByLabel would match loosely.
+ */
+const labelled = (scope, caption) =>
+  scope.locator(`xpath=.//label[span[normalize-space(.)=${JSON.stringify(caption)}]]`).locator('select, input, textarea').first();
+
+/** The slug the server gives a flow template's name in a renamed field (OverlayMapper.slug). */
+const slug = (text) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 56)
+    .replace(/_+$/g, '');
+
+/** The Validation page's parts. */
+function validationPage(page) {
+  const ruleCard = page.locator('form').filter({ has: page.getByRole('button', { name: /^(Save|Update) rule$/ }) });
+  return {
+    templateSelect: labelled(page, 'Template'),
+    ruleCard,
+    ruleField: labelled(ruleCard, 'Field'),
+    requirement: labelled(ruleCard, 'Required or Optional'),
+    ruleType: labelled(ruleCard, 'Format rule type'),
+    rulesTable: (name) => page.getByRole('table', { name: `Rules of ${name}` }),
+    testPanel: page.getByTestId('rules-test'),
+  };
+}
+
+/**
+ * "Build from Document Flow templates": ticks the flow templates (in this
+ * order) and moves to the fields step. Returns the dialog.
+ */
+async function openBuildDialog(page, flowNames) {
+  await page.getByRole('button', { name: 'Build from Document Flow templates' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Build from Document Flow templates' });
+  const templates = dialog.getByTestId('build-templates');
+  for (const name of flowNames) {
+    await labelled(templates, 'Search flow templates').fill(name);
+    await templates.getByRole('checkbox', { name, exact: true }).check();
+  }
+  await expect(templates.getByText(`Flow templates (${flowNames.length} ticked)`)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Next: choose fields' }).click();
+  await expect(dialog.getByTestId('build-fields')).toBeVisible();
+  return dialog;
+}
 
 test.describe.configure({ mode: 'serial' });
 
@@ -199,7 +275,7 @@ test.describe('document creation flow: data templates, mapping, validated downlo
     expect(await getBlueprint(operatorApi, blueprintId)).toMatchObject({ status: 'READY', currentVersion: 1 });
   });
 
-  test('DCF-02 Validation: copy a flow template into a data template, add a rule, choose it on the PDF template', async ({
+  test('DCF-02 Validation: build a data template from a flow template, add a rule, choose it on the PDF template', async ({
     page,
     operatorApi,
   }) => {
@@ -208,51 +284,94 @@ test.describe('document creation flow: data templates, mapping, validated downlo
     await openAs(page, OPERATOR(), '/');
     await sidebarLink(page, '/creation/data-templates').click();
     await expect(page.getByRole('heading', { name: 'Validation', level: 1 })).toBeVisible();
+    const v = validationPage(page);
+    await expect(page.getByText('Choose a template', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'New template' })).toBeVisible();
 
-    // Copy from a flow template: every field ticked, with the rules each brings.
-    await page.getByRole('button', { name: 'Copy from a flow template' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Copy from a flow template' });
-    await dialog.getByRole('combobox', { name: 'Flow template' }).selectOption({ label: flow.name });
+    // Build from Document Flow templates: the flow template ticked; every field ticked, with the rules each brings.
+    const dialog = await openBuildDialog(page, [flow.name]);
+    const source = dialog.getByTestId(`build-source-${flow.templateId}`);
+    await expect(source.getByText(`${flow.name} (4 of 4 fields)`)).toBeVisible();
     for (const name of FIELDS) {
-      await expect(dialog.getByTestId(`copy-field-${name}`).getByRole('checkbox')).toBeChecked();
+      await expect(source.getByTestId(`build-field-${flow.templateId}-${name}`).getByRole('checkbox')).toBeChecked();
     }
-    await expect(dialog.getByText('All fields (4 of 4 ticked)')).toBeVisible();
-    await expect(dialog.getByTestId('copy-field-full_name').getByText('Required', { exact: true })).toBeVisible();
-    await expect(dialog.getByTestId('copy-field-email').getByText('E-mail address', { exact: true })).toBeVisible();
-    await dialog.getByLabel('Name of the new data template').fill(dataTemplateName);
-    await dialog.getByRole('button', { name: 'Copy 4 fields' }).click();
-    await expect(page.getByText(`Copied 4 fields into ${dataTemplateName}`)).toBeVisible();
-    await expect(page).toHaveURL(/\/creation\/data-templates\/\d+$/);
-    dataTemplateId = Number(new URL(page.url()).pathname.split('/').pop());
-    await expect(page.getByRole('heading', { name: dataTemplateName })).toBeVisible();
-    await expect(page.getByText(`Copied from the flow template ${flow.name}.`)).toBeVisible();
+    await expect(source.getByTestId(`build-field-${flow.templateId}-full_name`).getByText('Required', { exact: true })).toBeVisible();
+    await expect(source.getByTestId(`build-field-${flow.templateId}-email`).getByText('E-mail address', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Next: preview' }).click();
+    const preview = dialog.getByTestId('build-preview');
+    await expect(preview.getByText('4 fields from 1 flow template.')).toBeVisible();
+    for (const name of FIELDS) {
+      const row = preview.getByTestId(`preview-row-${name}`);
+      await expect(row).toContainText(`${flow.name}.${name}`);
+      await expect(row.getByText('renamed', { exact: true })).toHaveCount(0);
+    }
+    await expect(preview.getByTestId('preview-row-full_name')).toContainText('Required');
+    await expect(preview.getByTestId('preview-row-email')).toContainText('E-mail address');
+    await dialog.getByRole('button', { name: 'Next: save' }).click();
+    const nameInput = labelled(dialog.getByTestId('build-save'), 'Name of the new template');
+    await expect(nameInput).toHaveValue(flow.name);
+    await nameInput.fill(dataTemplateName);
+    await dialog.getByRole('button', { name: 'Save as a new template' }).click();
+    await expect(page.getByText(`Saved ${dataTemplateName} with 4 fields`)).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(/\/creation\/data-templates\?template=\d+$/);
+    dataTemplateId = Number(new URL(page.url()).searchParams.get('template'));
+    await expect(v.templateSelect).toHaveValue(String(dataTemplateId));
+    await expect(v.templateSelect.locator('option:checked')).toHaveText(dataTemplateName);
+    await expect(page.getByTestId('used-by')).toHaveText('Used by 0 PDF templates.');
 
-    // The fields and their imported rules.
-    for (const name of FIELDS) await expect(page.getByTestId(`data-field-${name}`)).toBeVisible();
-    await expect(page.getByRole('list', { name: 'Rules of full_name' })).toContainText('Must be filled in');
-    await expect(page.getByRole('list', { name: 'Rules of email' })).toContainText('An e-mail address');
-    await expect(page.getByTestId('data-field-status').getByText('No rules')).toBeVisible();
+    // The Fields card: each field says where it came from.
+    for (const name of FIELDS) {
+      await expect(page.getByTestId(`data-field-${name}`).getByText(`From ${flow.name}.${name}`, { exact: true })).toBeVisible();
+    }
+    // The rules table: the imported rules with their Source.
+    const table = v.rulesTable(dataTemplateName);
+    await expect(table.getByRole('columnheader')).toHaveText(['Field', 'Required', 'Rule', 'Settings', 'Source', 'Update', 'Delete']);
+    await expect(rowWith(table, 'Must be filled in').getByRole('cell')).toHaveText([
+      'full_name',
+      'Yes',
+      'Must be filled in',
+      'Error',
+      `From ${flow.name}.full_name`,
+      'Update',
+      'Delete',
+    ]);
+    await expect(rowWith(table, 'An e-mail address').getByRole('cell')).toHaveText([
+      'email',
+      'No',
+      'An e-mail address',
+      'Error',
+      `From ${flow.name}.email`,
+      'Update',
+      'Delete',
+    ]);
 
-    // The rules drawer: the origin of the imported rule, and a LENGTH rule added by hand.
-    await page.getByRole('button', { name: 'Edit rules of full_name' }).click();
-    const drawer = page.getByRole('dialog', { name: 'Rules — full_name' });
-    await expect(drawer.getByText(`Imported from ${flow.name}.full_name`)).toBeVisible();
-    await drawer.getByRole('button', { name: 'Add rule to full_name' }).click();
-    const ruleDialog = page.getByRole('dialog', { name: 'Add a rule — full_name' });
-    await ruleDialog.getByLabel('Rule type').selectOption('LENGTH');
-    await ruleDialog.getByLabel('Maximum length').fill(String(MAX_NAME));
-    await ruleDialog.getByRole('button', { name: 'Add rule', exact: true }).click();
-    await expect(drawer.getByText(`Length at most ${MAX_NAME} characters`)).toBeVisible();
-    await expect(drawer.getByText('Manual', { exact: true })).toBeVisible();
-    await drawer.getByRole('button', { name: 'Done' }).click();
-    await expect(page.getByText('Unsaved changes: rules.')).toBeVisible();
-    await page.getByRole('button', { name: 'Save rules' }).click();
-    await expect(page.getByText('Rules saved')).toBeVisible();
-    await expect(page.getByRole('list', { name: 'Rules of full_name' })).toContainText(`Length at most ${MAX_NAME} characters`);
+    // "Add field rules": a LENGTH max 20 rule on full_name, saved at once (it stays Required).
+    await expect(page.getByRole('heading', { name: 'Add field rules' })).toBeVisible();
+    await v.ruleField.selectOption('full_name');
+    await expect(v.requirement).toHaveValue('required');
+    await v.ruleType.selectOption('LENGTH');
+    await labelled(v.ruleCard, 'Maximum length').fill(String(MAX_NAME));
+    const put = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`/data-templates/${dataTemplateId}/rules`));
+    await v.ruleCard.getByRole('button', { name: 'Save rule' }).click();
+    expect((await put).status()).toBe(200);
+    await expect(page.getByText('Rules saved for full_name')).toBeVisible();
+    await expect(v.ruleField).toHaveValue('');
+    await expect(rowWith(table, `Length at most ${MAX_NAME} characters`).getByRole('cell')).toHaveText([
+      'full_name',
+      'Yes',
+      `Length at most ${MAX_NAME} characters`,
+      'Error',
+      'Manual',
+      'Update',
+      'Delete',
+    ]);
 
     const saved = await operatorApi.get(`${DATA_TEMPLATES}/${dataTemplateId}`);
     expect(saved).toMatchObject({ name: dataTemplateName, sourceTemplateId: flow.templateId, revision: 1 });
-    expect(saved.fields.map((f) => [f.name, f.sourceFieldName])).toEqual(FIELDS.map((f) => [f, f]));
+    expect(saved.fields.map((f) => [f.name, f.sourceFieldName, f.sourceTemplateId])).toEqual(
+      FIELDS.map((f) => [f, f, flow.templateId])
+    );
     expect(saved.rules.map((r) => [r.fieldName, r.ruleType, r.origin])).toEqual(
       expect.arrayContaining([
         ['full_name', 'REQUIRED', 'IMPORTED'],
@@ -261,12 +380,8 @@ test.describe('document creation flow: data templates, mapping, validated downlo
       ])
     );
     expect(saved.rules).toHaveLength(3);
-
-    // The Validation list shows it.
-    await sidebarLink(page, '/creation/data-templates').click();
-    const listed = rowWith(page, dataTemplateName);
-    await expect(listed).toContainText(flow.name);
-    await expect(listed).toContainText('Not used yet');
+    const summary = (await operatorApi.get(DATA_TEMPLATES)).find((t) => t.id === dataTemplateId);
+    expect(summary).toMatchObject({ fieldCount: 4, ruleCount: 3, sourceTemplateId: flow.templateId, usedBy: 0 });
 
     // Choose it on the PDF template's Validation step.
     await sidebarLink(page, '/creation/blueprints').click();
@@ -274,9 +389,14 @@ test.describe('document creation flow: data templates, mapping, validated downlo
     await expect(page.getByRole('heading', { name: blueprintName })).toBeVisible();
     await stepTab(page, 'Validation').click();
     const chooser = page.getByTestId('data-template-chooser');
+    await expect(chooser.getByRole('button', { name: 'Build from Document Flow templates' })).toBeVisible();
     await chooser.getByRole('combobox', { name: 'Data template' }).selectOption({ label: dataTemplateName });
     await expect(page.getByText('Data template chosen — 4 of 4 fields matched automatically')).toBeVisible();
     await expect(page.getByTestId('data-template-summary')).toContainText('4 of 4 PDF fields mapped');
+    await expect(page.getByTestId('data-template-summary').getByRole('link', { name: 'Edit the data template' })).toHaveAttribute(
+      'href',
+      `/creation/data-templates?template=${dataTemplateId}`
+    );
     await expect(stepTab(page, 'Validation')).toHaveAttribute('data-done', 'true');
 
     // Its rules are inherited, read-only, above the PDF's own rules.
@@ -297,6 +417,11 @@ test.describe('document creation flow: data templates, mapping, validated downlo
         ['email', 'EMAIL', 'DATA_TEMPLATE'],
       ])
     );
+
+    // The Validation page now names the PDF template that uses it.
+    await page.getByTestId('data-template-summary').getByRole('link', { name: 'Edit the data template' }).click();
+    await expect(page).toHaveURL(new RegExp(`/creation/data-templates\\?template=${dataTemplateId}$`));
+    await expect(page.getByTestId('used-by')).toContainText(`Used by 1 PDF template: ${blueprintName}.`);
   });
 
   test('DCF-03 Map fields: same-name matches, a change saved, Accept all suggestions, the managed data source', async ({
@@ -542,20 +667,34 @@ test.describe('document creation flow: data templates, mapping, validated downlo
     // Validated in DCF-05 (and generated by the Download from My documents).
     expect(['VALIDATED', 'GENERATED']).toContain((await operatorApi.get(`${DOCS}/instances/${instanceId}`)).status);
 
-    // The data template's LENGTH rule changes from 20 to 25.
+    const before = await operatorApi.get(`${DATA_TEMPLATES}/${dataTemplateId}`);
+
+    // The data template's LENGTH rule changes from 20 to 25 (the old link opens the Validation page with it chosen).
     await openAs(page, OPERATOR(), `/creation/data-templates/${dataTemplateId}`);
-    await expect(page.getByRole('heading', { name: dataTemplateName })).toBeVisible();
-    await expect(page.getByRole('link', { name: blueprintName })).toBeVisible(); // "Used by"
-    await page.getByRole('button', { name: 'Edit rules of full_name' }).click();
-    const drawer = page.getByRole('dialog', { name: 'Rules — full_name' });
-    await drawer.getByRole('button', { name: 'Edit Length rule of full_name' }).click();
-    const ruleDialog = page.getByRole('dialog', { name: 'Edit a rule — full_name' });
-    await ruleDialog.getByLabel('Maximum length').fill('25');
-    await ruleDialog.getByRole('button', { name: 'Update rule' }).click();
-    await expect(drawer.getByText('Length at most 25 characters')).toBeVisible();
-    await drawer.getByRole('button', { name: 'Done' }).click();
-    await page.getByRole('button', { name: 'Save rules' }).click();
-    await expect(page.getByText('Rules saved')).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/creation/data-templates\\?template=${dataTemplateId}$`));
+    const v = validationPage(page);
+    await expect(v.templateSelect).toHaveValue(String(dataTemplateId));
+    await expect(page.getByTestId('used-by').getByRole('link', { name: blueprintName })).toBeVisible();
+    const table = v.rulesTable(dataTemplateName);
+    await table.getByRole('button', { name: 'Update Length rule of full_name' }).click();
+    await expect(page.getByRole('heading', { name: 'Update field rules' })).toBeVisible();
+    await expect(v.ruleField).toHaveValue('full_name');
+    await expect(v.requirement).toHaveValue('required');
+    await expect(v.ruleType).toHaveValue('LENGTH');
+    const maxLength = labelled(v.ruleCard, 'Maximum length');
+    await expect(maxLength).toHaveValue(String(MAX_NAME));
+    await maxLength.fill('25');
+    await v.ruleCard.getByRole('button', { name: 'Update rule' }).click();
+    await expect(page.getByText('Rules updated for full_name')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Add field rules' })).toBeVisible();
+    await expect(rowWith(table, 'Length at most 25 characters')).toHaveCount(1);
+    await expect(rowWith(table, `Length at most ${MAX_NAME} characters`)).toHaveCount(0);
+    const after = await operatorApi.get(`${DATA_TEMPLATES}/${dataTemplateId}`);
+    expect(after.revision).toBe(before.revision + 1);
+    const length = after.rules.find((r) => r.ruleType === 'LENGTH');
+    expect(length.fieldName).toBe('full_name');
+    expect(String(length.config.Max)).toBe('25');
+    expect(after.rules).toHaveLength(before.rules.length);
 
     // The document: Download locked with the reason; the API refuses to generate.
     await page.goto(`/creation/documents/${instanceId}?step=download`);
@@ -587,7 +726,7 @@ test.describe('document creation flow: data templates, mapping, validated downlo
     expect(generated.status).toBe(200);
   });
 
-  test('DCF-07 READ_ONLY cannot save a data template; another bank gets 404 for the data template and the mapping', async ({
+  test('DCF-07 READ_ONLY cannot save, build or add to a data template; another bank gets 404 for it, the mapping and the flow template', async ({
     operatorApi,
     platformApi,
     platformCheckerApi,
@@ -616,6 +755,20 @@ test.describe('document creation flow: data templates, mapping, validated downlo
       ).status
     ).toBe(403);
     expect(
+      (
+        await reader.request('POST', `${DATA_TEMPLATES}/from-flow-templates`, {
+          json: { name: uniqueName('Not allowed'), sources: [{ templateId: flow.templateId }] },
+        })
+      ).status
+    ).toBe(403);
+    expect(
+      (
+        await reader.request('POST', `${DATA_TEMPLATES}/${dataTemplateId}/add-from-flow-templates`, {
+          json: { baseRevision: before.revision, sources: [{ templateId: flow.templateId, fields: ['email'] }] },
+        })
+      ).status
+    ).toBe(403);
+    expect(
       (await reader.request('PUT', `${DOCS}/blueprints/${blueprintId}/data-mapping`, { json: { mapping: {} } })).status
     ).toBe(403);
     const after = await operatorApi.get(`${DATA_TEMPLATES}/${dataTemplateId}`);
@@ -636,8 +789,383 @@ test.describe('document creation flow: data templates, mapping, validated downlo
     expect(
       (await adminB.request('PUT', `${DOCS}/blueprints/${blueprintId}/data-mapping`, { json: { mapping: {} } })).status
     ).toBe(404);
+    expect(
+      (
+        await adminB.request('POST', `${DATA_TEMPLATES}/${dataTemplateId}/add-from-flow-templates`, {
+          json: { baseRevision: before.revision, sources: [{ templateId: flow.templateId }] },
+        })
+      ).status
+    ).toBe(404);
+    // Bank A's flow template cannot be built from in bank B; nothing is created.
+    const listBefore = await adminB.get(DATA_TEMPLATES);
+    expect(
+      (
+        await adminB.request('POST', `${DATA_TEMPLATES}/from-flow-templates`, {
+          json: { name: uniqueName('Taken over'), sources: [{ templateId: flow.templateId }] },
+        })
+      ).status
+    ).toBe(404);
     const listB = await adminB.get(DATA_TEMPLATES);
+    expect(listB).toHaveLength(listBefore.length);
     expect(listB.some((t) => t.id === dataTemplateId)).toBe(false);
+    expect(await operatorApi.get(`${DATA_TEMPLATES}/${dataTemplateId}`)).toMatchObject({ revision: before.revision });
+    expect((await operatorApi.get(`${DOCS}/blueprints/${blueprintId}/data-mapping`)).mappedCount).toBe(4);
+  });
+
+  test('DCF-08 one data template from two flow templates: renamed duplicate, field sources, rules added / updated / deleted, sample row, PDF, not in Set Field Rules', async ({
+    page,
+    operatorApi,
+  }) => {
+    // Setup (API): two flow templates that both have "email", each with flow rules.
+    const accounts = await createTemplate(operatorApi, { name: uniqueName('Accounts'), fields: ['email', 'account_no', 'branch'] });
+    await operatorApi.put('/ValidationRules/Upsert', {
+      templateId: accounts.templateId,
+      fieldName: 'email',
+      ruleType: 'REGEX',
+      config: { Pattern: EMAIL_PATTERN },
+    });
+    const contacts = await createTemplate(operatorApi, { name: uniqueName('Contacts'), fields: ['email', 'phone', 'full_name'] });
+    await operatorApi.put('/ValidationRules/Upsert', {
+      templateId: contacts.templateId,
+      fieldName: 'email',
+      ruleType: 'REGEX',
+      config: { Pattern: EMAIL_PATTERN },
+    });
+    await operatorApi.put('/ValidationRules/Upsert', {
+      templateId: contacts.templateId,
+      fieldName: 'phone',
+      ruleType: 'REQUIRED',
+      config: {},
+    });
+    const accountsRules = await operatorApi.get(`/ValidationRules/GetByTemplate/${accounts.templateId}`);
+    const contactsRules = await operatorApi.get(`/ValidationRules/GetByTemplate/${contacts.templateId}`);
+    const renamed = `email_${slug(contacts.name)}`;
+    const builtName = uniqueName('Customer data');
+
+    await openAs(page, OPERATOR(), '/creation/data-templates');
+    await expect(page.getByRole('heading', { name: 'Validation', level: 1 })).toBeVisible();
+    const v = validationPage(page);
+
+    // Both flow templates ticked; some fields of each.
+    const dialog = await openBuildDialog(page, [accounts.name, contacts.name]);
+    const fromAccounts = dialog.getByTestId(`build-source-${accounts.templateId}`);
+    const fromContacts = dialog.getByTestId(`build-source-${contacts.templateId}`);
+    await expect(fromAccounts.getByText(`${accounts.name} (3 of 3 fields)`)).toBeVisible();
+    await expect(fromContacts.getByText(`${contacts.name} (3 of 3 fields)`)).toBeVisible();
+    await expect(fromContacts.getByTestId(`build-field-${contacts.templateId}-phone`).getByText('Required', { exact: true })).toBeVisible();
+    await fromAccounts.getByTestId(`build-field-${accounts.templateId}-branch`).getByRole('checkbox').uncheck();
+    await fromContacts.getByTestId(`build-field-${contacts.templateId}-full_name`).getByRole('checkbox').uncheck();
+    await expect(fromAccounts.getByText(`${accounts.name} (2 of 3 fields)`)).toBeVisible();
+    await expect(fromContacts.getByText(`${contacts.name} (2 of 3 fields)`)).toBeVisible();
+
+    // The preview: the second "email" is renamed with the slug of its flow template's name.
+    await dialog.getByRole('button', { name: 'Next: preview' }).click();
+    const preview = dialog.getByTestId('build-preview');
+    await expect(preview.getByText('4 fields from 2 flow templates.')).toBeVisible();
+    const previewRows = preview.getByRole('table', { name: 'Fields of the new template' }).locator('tbody tr');
+    await expect(previewRows).toHaveCount(4);
+    const expected = [
+      ['email', `${accounts.name}.email`, false],
+      ['account_no', `${accounts.name}.account_no`, false],
+      [renamed, `${contacts.name}.email`, true],
+      ['phone', `${contacts.name}.phone`, false],
+    ];
+    for (const [i, [name, from, isRenamed]] of expected.entries()) {
+      const row = previewRows.nth(i);
+      await expect(row).toHaveAttribute('data-testid', `preview-row-${name}`);
+      await expect(row.getByRole('cell').nth(1)).toHaveText(from);
+      await expect(row.getByText('renamed', { exact: true })).toHaveCount(isRenamed ? 1 : 0);
+    }
+    await expect(preview.getByTestId(`preview-row-${renamed}`)).toContainText('E-mail address');
+    await expect(preview.getByTestId('preview-row-phone')).toContainText('Required');
+    await expect(preview.getByTestId('preview-row-branch')).toHaveCount(0);
+    await expect(preview.getByTestId('preview-row-full_name')).toHaveCount(0);
+
+    // Save as a new template.
+    await dialog.getByRole('button', { name: 'Next: save' }).click();
+    const nameInput = labelled(dialog.getByTestId('build-save'), 'Name of the new template');
+    await expect(nameInput).toHaveValue(`${accounts.name} + ${contacts.name}`);
+    await nameInput.fill(builtName);
+    const posted = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/data-templates/from-flow-templates'));
+    await dialog.getByRole('button', { name: 'Save as a new template' }).click();
+    const response = await posted;
+    expect(response.status()).toBe(201);
+    expect(JSON.parse(response.request().postData())).toEqual({
+      name: builtName,
+      sources: [
+        { templateId: accounts.templateId, fields: ['email', 'account_no'] },
+        { templateId: contacts.templateId, fields: ['email', 'phone'] },
+      ],
+    });
+    await expect(page.getByText(`Saved ${builtName} with 4 fields`)).toBeVisible();
+    await expect(page).toHaveURL(/\/creation\/data-templates\?template=\d+$/);
+    const builtId = Number(new URL(page.url()).searchParams.get('template'));
+    await expect(v.templateSelect.locator('option:checked')).toHaveText(builtName);
+
+    // The Fields card: "From <template>.<field>" per field.
+    for (const [name, from] of expected) {
+      await expect(page.getByTestId(`data-field-${name}`).getByText(`From ${from}`, { exact: true })).toBeVisible();
+    }
+    await expect(page.getByTestId(`data-field-${renamed}`).getByLabel(`Label of ${renamed}`)).toHaveValue('email');
+
+    const built = await operatorApi.get(`${DATA_TEMPLATES}/${builtId}`);
+    expect(built).toMatchObject({ name: builtName, revision: 0, sourceTemplateId: accounts.templateId });
+    expect(built.fields.map((f) => [f.name, f.label, f.sourceTemplateId, f.sourceTemplateName, f.sourceFieldName])).toEqual([
+      ['email', 'email', accounts.templateId, accounts.name, 'email'],
+      ['account_no', 'account_no', accounts.templateId, accounts.name, 'account_no'],
+      [renamed, 'email', contacts.templateId, contacts.name, 'email'],
+      ['phone', 'phone', contacts.templateId, contacts.name, 'phone'],
+    ]);
+    expect(built.rules.map((r) => [r.fieldName, r.ruleType, r.origin, r.sourceTemplateId, r.sourceFieldName])).toEqual(
+      expect.arrayContaining([
+        ['email', 'EMAIL', 'IMPORTED', accounts.templateId, 'email'],
+        [renamed, 'EMAIL', 'IMPORTED', contacts.templateId, 'email'],
+        ['phone', 'REQUIRED', 'IMPORTED', contacts.templateId, 'phone'],
+      ])
+    );
+    expect(built.rules).toHaveLength(3);
+
+    // The rules table: each imported rule with its Source.
+    const table = v.rulesTable(builtName);
+    await expect(rowWith(table, `From ${accounts.name}.email`).getByRole('cell').nth(2)).toHaveText('An e-mail address');
+    await expect(rowWith(table, `From ${contacts.name}.email`).getByRole('cell').nth(2)).toHaveText('An e-mail address');
+    await expect(rowWith(table, `From ${contacts.name}.phone`).getByRole('cell')).toHaveText([
+      'phone',
+      'Yes',
+      'Must be filled in',
+      'Error',
+      `From ${contacts.name}.phone`,
+      'Update',
+      'Delete',
+    ]);
+
+    // A Required rule on account_no (no format rule).
+    await v.ruleField.selectOption('account_no');
+    await expect(v.requirement).toHaveValue('optional');
+    await expect(v.ruleCard.getByText('Mark the field Required or pick a format rule — there is nothing to save yet.')).toBeVisible();
+    await expect(v.ruleCard.getByRole('button', { name: 'Save rule' })).toBeDisabled();
+    await v.requirement.selectOption('required');
+    await v.ruleCard.getByRole('button', { name: 'Save rule' }).click();
+    await expect(page.getByText('Rules saved for account_no')).toBeVisible();
+    await expect(rowWith(table, 'account_no').getByRole('cell')).toHaveText([
+      'account_no',
+      'Yes',
+      'Must be filled in',
+      'Error',
+      'Manual',
+      'Update',
+      'Delete',
+    ]);
+
+    // A Format pattern rule on phone, built with the RegexBuilder ("Whole number").
+    await v.ruleField.selectOption('phone');
+    await expect(v.requirement).toHaveValue('required');
+    await v.ruleType.selectOption('REGEX');
+    await expect(v.ruleType.locator('option:checked')).toHaveText('Format pattern — match text rules');
+    await expect(v.ruleCard.getByRole('tablist', { name: 'Pattern mode' })).toBeVisible();
+    await labelled(v.ruleCard, 'What should this field look like?').selectOption({ label: 'Whole number' });
+    await expect(v.ruleCard.getByText('Generated pattern:')).toContainText(WHOLE_NUMBER);
+    await v.ruleCard.getByRole('button', { name: 'Save rule' }).click();
+    await expect(page.getByText('Rules saved for phone')).toBeVisible();
+    await expect(rowWith(table, `Matches ${WHOLE_NUMBER}`).getByRole('cell')).toHaveText([
+      'phone',
+      'Yes',
+      `Matches ${WHOLE_NUMBER}`,
+      'Error',
+      'Manual',
+      'Update',
+      'Delete',
+    ]);
+
+    // Update the pattern: "Phone number".
+    await table.getByRole('button', { name: 'Update Pattern rule of phone' }).click();
+    await expect(page.getByRole('heading', { name: 'Update field rules' })).toBeVisible();
+    await expect(v.ruleField).toHaveValue('phone');
+    await expect(v.ruleType).toHaveValue('REGEX');
+    await labelled(v.ruleCard, 'What should this field look like?').selectOption({ label: 'Phone number' });
+    await v.ruleCard.getByRole('button', { name: 'Update rule' }).click();
+    await expect(page.getByText('Rules updated for phone')).toBeVisible();
+    await expect(rowWith(table, `Matches ${PHONE_PATTERN}`)).toHaveCount(1);
+    await expect(rowWith(table, `Matches ${WHOLE_NUMBER}`)).toHaveCount(0);
+
+    // Delete the Required rule of account_no.
+    await table.getByRole('button', { name: 'Delete Required rule of account_no' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Delete this rule?' });
+    await expect(confirm).toContainText('Delete “Must be filled in” on account_no?');
+    await confirm.getByRole('button', { name: 'Delete rule' }).click();
+    await expect(page.getByText('Rule on account_no deleted')).toBeVisible();
+    await expect(rowWith(table, 'account_no')).toHaveCount(0);
+
+    const ruled = await operatorApi.get(`${DATA_TEMPLATES}/${builtId}`);
+    expect(ruled.revision).toBe(4); // four rule saves: add, add, update, delete
+    expect(ruled.rules.map((r) => [r.fieldName, r.ruleType, r.origin, r.config?.Pattern ?? null])).toEqual(
+      expect.arrayContaining([
+        ['email', 'EMAIL', 'IMPORTED', null],
+        [renamed, 'EMAIL', 'IMPORTED', null],
+        ['phone', 'REQUIRED', 'IMPORTED', null],
+        ['phone', 'REGEX', 'MANUAL', PHONE_PATTERN],
+      ])
+    );
+    expect(ruled.rules).toHaveLength(4);
+
+    // Test a sample row: errors first, then it passes. Both e-mail fields are labelled "email" (their flow names).
+    await expect(page.getByRole('heading', { name: 'Test a sample row' })).toBeVisible();
+    const sample = (label) => v.testPanel.getByLabel(`Sample value for ${label}`, { exact: true });
+    await expect(sample('email')).toHaveCount(2);
+    await sample('email').nth(0).fill('not-an-email');
+    await sample('phone').fill('');
+    await v.testPanel.getByRole('button', { name: 'Run the rules' }).click();
+    await expect(v.testPanel.getByRole('status')).toHaveText('2 errors, 0 warnings');
+    await expect(sample('email').nth(0)).toHaveAttribute('aria-invalid', 'true');
+    await expect(sample('phone')).toHaveAttribute('aria-invalid', 'true');
+    await expect(sample('account_no')).not.toHaveAttribute('aria-invalid', 'true'); // its Required rule was deleted
+    await sample('email').nth(0).fill('jane@acme.com');
+    await sample('email').nth(1).fill('jane.contact@acme.com');
+    await sample('phone').fill('+1 416 555-0199'); // passes the updated pattern, not "Whole number"
+    await v.testPanel.getByRole('button', { name: 'Run the rules' }).click();
+    await expect(v.testPanel.getByRole('status')).toHaveText('No errors or warnings');
+    await expect(v.testPanel.locator('[aria-invalid="true"]')).toHaveCount(0);
+
+    // Chosen on a PDF's Validation step (setup of the PDF through the API).
+    const pdfName = uniqueName('E2E Customer form');
+    const uploaded = await uploadBlueprint(operatorApi, { bytes: onboardingForm(), fileName: 'customer-form.pdf', flow: 'BLANK', name: pdfName });
+    expect([200, 201]).toContain(uploaded.status);
+    const pdfId = uploaded.body.id;
+    const draft = await getBlueprint(operatorApi, pdfId);
+    await operatorApi.put(`${DOCS}/blueprints/${pdfId}/overlay`, {
+      baseVersion: draft.currentVersion ?? draft.version,
+      regions: draft.regions.filter((r) => !r.suggested).map(({ sampleValue, removedText, ...r }) => r), // eslint-disable-line no-unused-vars
+      edits: draft.edits.map(({ sampleValue, removedText, ...e }) => e), // eslint-disable-line no-unused-vars
+      confirm: true,
+    });
+    await page.goto(`/creation/blueprints/${pdfId}?step=validation`);
+    await expect(page.getByRole('heading', { name: pdfName })).toBeVisible();
+    const chooser = page.getByTestId('data-template-chooser');
+    await chooser.getByRole('combobox', { name: 'Data template' }).selectOption({ label: builtName });
+    await expect(page.getByText(/^Data template chosen — \d+ of \d+ fields matched automatically$/)).toBeVisible();
+    await expect(page.getByTestId('data-template-summary')).toContainText(builtName);
+    await expect(page.getByTestId('data-template-summary')).toContainText('4 fields · 4 rules');
+    const mapping = await operatorApi.get(`${DOCS}/blueprints/${pdfId}/data-mapping`);
+    expect(mapping).toMatchObject({ dataTemplateId: builtId, dataTemplateName: builtName });
+    expect(mapping.rows.find((r) => r.regionKey === 'email').mappedField).toBe('email');
+    expect(mapping.fields.map((f) => f.name)).toEqual(['email', 'account_no', renamed, 'phone']);
+    expect((await operatorApi.get(`${DATA_TEMPLATES}/${builtId}`)).usedBy).toEqual([{ blueprintId: pdfId, name: pdfName }]);
+
+    // Document Flow → Set Field Rules lists the flow templates, never the data template.
+    await page.goto('/validation');
+    await expect(page.getByRole('heading', { name: 'Set Field Rules', level: 1 })).toBeVisible();
+    const flowSelect = labelled(page, 'Template');
+    await expect(flowSelect.locator('option', { hasText: accounts.name })).toHaveCount(1);
+    await expect(flowSelect.locator('option', { hasText: contacts.name })).toHaveCount(1);
+    await expect(flowSelect.locator('option', { hasText: builtName })).toHaveCount(0);
+    if (dataTemplateName) await expect(flowSelect.locator('option', { hasText: dataTemplateName })).toHaveCount(0);
+    // The flow templates' own rules are untouched by the copy and the edits.
+    expect(await operatorApi.get(`/ValidationRules/GetByTemplate/${contacts.templateId}`)).toEqual(contactsRules);
+    expect(await operatorApi.get(`/ValidationRules/GetByTemplate/${accounts.templateId}`)).toEqual(accountsRules);
+  });
+
+  test('DCF-09 "Add to <current>" adds a flow template\'s fields to the data template: revision + 1, the validated document must be saved again', async ({
+    page,
+    operatorApi,
+  }) => {
+    test.skip(!instanceId || !dataTemplateId, 'needs DCF-01..06');
+    // Setup (API): one more flow template; its "email" clashes with the data template's.
+    const payroll = await createTemplate(operatorApi, { name: uniqueName('Payroll'), fields: ['email', 'iban'] });
+    await operatorApi.put('/ValidationRules/Upsert', {
+      templateId: payroll.templateId,
+      fieldName: 'iban',
+      ruleType: 'REQUIRED',
+      config: {},
+    });
+    const renamed = `email_${slug(payroll.name)}`;
+    const before = await operatorApi.get(`${DATA_TEMPLATES}/${dataTemplateId}`);
+    expect(['VALIDATED', 'GENERATED']).toContain((await operatorApi.get(`${DOCS}/instances/${instanceId}`)).status);
+    expect((await operatorApi.get(`${DOCS}/instances?blueprintId=${blueprintId}`)).find((s) => s.title === instanceTitle)).toMatchObject({
+      validationState: 'VALIDATED',
+    });
+
+    await openAs(page, OPERATOR(), `/creation/data-templates?template=${dataTemplateId}`);
+    const v = validationPage(page);
+    await expect(v.templateSelect).toHaveValue(String(dataTemplateId));
+    await expect(page.getByTestId('data-field-full_name')).toBeVisible();
+
+    const dialog = await openBuildDialog(page, [payroll.name]);
+    await expect(dialog.getByTestId(`build-source-${payroll.templateId}`).getByText(`${payroll.name} (2 of 2 fields)`)).toBeVisible();
+    await dialog.getByRole('button', { name: 'Next: preview' }).click();
+    const preview = dialog.getByTestId('build-preview');
+    // A new template by default: nothing clashes there.
+    await expect(preview.getByRole('radio', { name: 'A new template' })).toBeChecked();
+    await expect(preview.getByTestId('preview-row-email').getByText('renamed', { exact: true })).toHaveCount(0);
+    // Added to the current one, its "email" is taken: renamed.
+    await preview.getByRole('radio', { name: `Add to ${dataTemplateName}` }).check();
+    await expect(preview.getByRole('table', { name: `Fields to add to ${dataTemplateName}` })).toBeVisible();
+    await expect(preview.getByTestId(`preview-row-${renamed}`).getByText('renamed', { exact: true })).toBeVisible();
+    await expect(preview.getByTestId(`preview-row-${renamed}`)).toContainText(`${payroll.name}.email`);
+    await expect(preview.getByTestId('preview-row-iban')).toContainText('Required');
+    await expect(preview.getByTestId('preview-row-iban').getByText('renamed', { exact: true })).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Next: save' }).click();
+    await expect(dialog.getByTestId('build-save')).toHaveText(`Add 2 fields and their rules to ${dataTemplateName}.`);
+    const posted = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith(`/data-templates/${dataTemplateId}/add-from-flow-templates`)
+    );
+    await dialog.getByRole('button', { name: `Add to ${dataTemplateName}` }).click();
+    const response = await posted;
+    expect(response.status()).toBe(200);
+    expect(JSON.parse(response.request().postData())).toEqual({
+      baseRevision: before.revision,
+      sources: [{ templateId: payroll.templateId, fields: ['email', 'iban'] }],
+    });
+    await expect(page.getByText(`Added 2 fields to ${dataTemplateName}`)).toBeVisible();
+    await expect(v.templateSelect).toHaveValue(String(dataTemplateId));
+
+    // The new fields after the existing ones, each with its source; the old ones unchanged.
+    await expect(page.getByTestId(`data-field-${renamed}`).getByText(`From ${payroll.name}.email`, { exact: true })).toBeVisible();
+    await expect(page.getByTestId('data-field-iban').getByText(`From ${payroll.name}.iban`, { exact: true })).toBeVisible();
+    await expect(page.getByTestId('data-field-email').getByText(`From ${flow.name}.email`, { exact: true })).toBeVisible();
+    await expect(rowWith(v.rulesTable(dataTemplateName), `From ${payroll.name}.iban`).getByRole('cell')).toHaveText([
+      'iban',
+      'Yes',
+      'Must be filled in',
+      'Error',
+      `From ${payroll.name}.iban`,
+      'Update',
+      'Delete',
+    ]);
+
+    const after = await operatorApi.get(`${DATA_TEMPLATES}/${dataTemplateId}`);
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.sourceTemplateId, 'the main flow template stays').toBe(flow.templateId);
+    expect(after.fields.map((f) => f.name)).toEqual([...before.fields.map((f) => f.name), renamed, 'iban']);
+    expect(after.fields.slice(-2).map((f) => [f.sourceTemplateId, f.sourceFieldName])).toEqual([
+      [payroll.templateId, 'email'],
+      [payroll.templateId, 'iban'],
+    ]);
+    expect(after.rules).toHaveLength(before.rules.length + 1);
+    expect(after.rules.find((r) => r.fieldName === 'iban')).toMatchObject({
+      ruleType: 'REQUIRED',
+      origin: 'IMPORTED',
+      sourceTemplateId: payroll.templateId,
+    });
+
+    // The PDF using it: its validated document must be saved again.
+    await page.goto(`/creation/documents/${instanceId}?step=download`);
+    await expect(page.getByRole('heading', { name: instanceTitle })).toBeVisible();
+    await expect(page.locator('#gate-reason')).toHaveText('The rules changed — save again');
+    await expect(stepTab(page, 'Download')).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByRole('button', { name: 'Download PDF', exact: true })).toBeDisabled();
+    const refused = await operatorApi.request('POST', `${DOCS}/instances/${instanceId}/generate`);
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: 'NOT_VALIDATED' });
+    await sidebarLink(page, '/creation/documents').click();
+    await expect(rowWith(page, instanceTitle).getByTestId('validation-state')).toHaveText('Rules changed — save again');
+    await expect(page.getByRole('button', { name: `Download ${instanceTitle}` })).toBeDisabled();
+
+    // Saved again: the added fields are not mapped to the PDF, so the document validates.
+    await page.goto(`/creation/documents/${instanceId}?step=save`);
+    const saveStep = page.getByTestId('save-step');
+    await saveStep.getByRole('button', { name: 'Save and validate' }).click();
+    await expect(saveStep.getByTestId('save-result').getByText('Validated', { exact: true })).toBeVisible();
+    await expect(stepTab(page, 'Download')).not.toHaveAttribute('aria-disabled', 'true');
     expect((await operatorApi.get(`${DOCS}/blueprints/${blueprintId}/data-mapping`)).mappedCount).toBe(4);
   });
 });
