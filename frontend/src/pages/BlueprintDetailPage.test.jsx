@@ -36,6 +36,17 @@ vi.mock('../api/docRules', () => ({
   toRuleInput: (r) => ({ regionKey: r.regionKey, ruleType: r.ruleType, config: r.config || {}, message: r.message ?? null, severity: r.severity || 'ERROR' }),
 }));
 
+// ws34: the Validation and Map fields steps read the data template and the mapping; none here.
+vi.mock('../api/dataTemplates', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getDataMapping: vi.fn(() =>
+    Promise.resolve({ dataTemplateId: null, dataTemplateName: null, revision: 0, mappedCount: 0, mappableCount: 0, rows: [], fields: [] })
+  ),
+  listDataTemplates: vi.fn(() => Promise.resolve([])),
+  setBlueprintDataTemplate: vi.fn(),
+  saveDataMapping: vi.fn(),
+}));
+
 const PAGE = { width: 600, height: 800, rotation: 0 };
 
 const region = (key, label, overrides = {}) => ({

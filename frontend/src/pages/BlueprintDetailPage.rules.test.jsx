@@ -38,6 +38,17 @@ vi.mock('../api/docRules', async (importOriginal) => {
 });
 
 vi.mock('../api/cache', () => ({ getTemplates: vi.fn() }));
+
+// ws34: the Validation and Map fields steps read the data template and the mapping; none here.
+vi.mock('../api/dataTemplates', async (importOriginal) => ({
+  ...(await importOriginal()),
+  getDataMapping: vi.fn(() =>
+    Promise.resolve({ dataTemplateId: null, dataTemplateName: null, revision: 0, mappedCount: 0, mappableCount: 0, rows: [], fields: [] })
+  ),
+  listDataTemplates: vi.fn(() => Promise.resolve([])),
+  setBlueprintDataTemplate: vi.fn(),
+  saveDataMapping: vi.fn(),
+}));
 vi.mock('../api/templates', () => ({ getAllFields: vi.fn(() => Promise.resolve([])) }));
 
 const PAGE = { width: 600, height: 800, rotation: 0 };
@@ -136,7 +147,7 @@ function renderPage(path = '/creation/blueprints/4') {
 }
 
 const openRules = async () => {
-  await userEvent.click(await screen.findByRole('tab', { name: 'Field rules' }));
+  await userEvent.click(await screen.findByRole('tab', { name: 'Validation' }));
   return screen.findByTestId('field-rules');
 };
 const section = (key) => screen.getByTestId(`rules-field-${key}`);
@@ -458,7 +469,7 @@ describe('BlueprintDetailPage — editor tools with rules', () => {
     expect(screen.queryByText(/Unsaved changes/)).not.toBeInTheDocument();
 
     await userEvent.click(within(screen.getByTestId('region-properties')).getByRole('button', { name: 'Edit rules' }));
-    expect(screen.getByRole('tab', { name: 'Field rules' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Validation' })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(within(section('dob')).getByRole('button', { name: /Show on the page/ })).toHaveFocus());
   });
 
@@ -586,7 +597,7 @@ describe('BlueprintDetailPage — editor tools with rules', () => {
     expect(await screen.findByTestId('field-rules')).toBeInTheDocument();
     await waitFor(() => expect(within(section('dob')).getByRole('button', { name: /Show on the page/ })).toHaveFocus());
     await userEvent.click(within(section('dob')).getByRole('button', { name: /Show on the page/ }));
-    expect(screen.getByRole('tab', { name: 'Layout' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Upload' })).toHaveAttribute('aria-selected', 'true');
     await waitFor(() => expect(screen.getByTestId('region-dob')).toHaveFocus());
   });
 });
@@ -603,21 +614,21 @@ describe('BlueprintDetailPage — deep links and a draft template', () => {
   });
 
   it.each([
-    ['rules', 'Field rules', 'field-rules'],
-    ['sources', 'Data sources', 'data-sources'],
-  ])('selects the tab of ?tab=%s on a confirmed template', async (tab, name, testId) => {
+    ['rules', 'Validation', 'field-rules'],
+    ['sources', 'Map fields', 'data-sources'],
+  ])('selects the step of the older ?tab=%s link on a confirmed template', async (tab, name, testId) => {
     renderPage(`/creation/blueprints/4?tab=${tab}`);
     expect(await screen.findByTestId(testId)).toBeInTheDocument();
     expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
     expectAccessible();
   });
 
-  it('shows the tabs on a draft, where Data sources and Field rules ask to confirm the template first', async () => {
+  it('shows the steps on a draft, where Validation and Map fields ask to confirm the template first', async () => {
     getBlueprint.mockResolvedValue(blueprint({ status: 'DRAFT', version: 1, currentVersion: 1 }));
     saveOverlay.mockImplementation(async (id, body) => blueprint({ version: 1, currentVersion: 1, regions: body.regions }));
     renderPage('/creation/blueprints/4?tab=rules');
 
-    const rulesTab = await screen.findByRole('tab', { name: 'Field rules' });
+    const rulesTab = await screen.findByRole('tab', { name: 'Validation' });
     expect(rulesTab).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('confirm-first')).toHaveTextContent(
       'Confirm the template first to add data sources and field rules.'
@@ -626,19 +637,19 @@ describe('BlueprintDetailPage — deep links and a draft template', () => {
     expect(getRules).not.toHaveBeenCalled();
     expectAccessible();
 
-    await userEvent.click(screen.getByRole('tab', { name: 'Data sources' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Map fields' }));
     expect(screen.getByTestId('confirm-first')).toHaveTextContent('Confirm the template first');
-    await userEvent.click(screen.getByRole('tab', { name: 'Layout' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Upload' }));
     expect(screen.queryByTestId('confirm-first')).not.toBeInTheDocument();
     expect(screen.getByTestId('region-dob')).toBeInTheDocument();
 
     // The callout's button is the template's own Confirm action.
-    await userEvent.click(screen.getByRole('tab', { name: 'Field rules' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Validation' }));
     await userEvent.click(within(screen.getByTestId('confirm-first')).getByRole('button', { name: 'Confirm template' }));
     expect(saveOverlay).toHaveBeenCalledTimes(1);
     expect(saveOverlay.mock.calls[0][1]).toMatchObject({ confirm: true, baseVersion: 1 });
     expect(saveOverlay.mock.calls[0][1].regions.map((r) => r.key)).toEqual(['full_name', 'dob', 'email']);
-    // Confirmed: the Field rules tab now shows (and loads) the rules.
+    // Confirmed: the Validation step now shows (and loads) the rules.
     expect(await screen.findByTestId('field-rules')).toBeInTheDocument();
     expect(getRules).toHaveBeenCalledWith('4');
   });
