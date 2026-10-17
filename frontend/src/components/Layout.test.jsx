@@ -190,7 +190,7 @@ describe('Layout sidebar', () => {
       '/platform/releases'
     );
     expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
-    for (const hidden of ['Home', /Design Templates/, 'Blueprints', 'Extraction Jobs',
+    for (const hidden of ['Home', /Design Templates/, /Upload document/, 'Extraction Jobs',
       'Security alerts', 'Releases', 'Admin dashboard']) {
       expect(screen.queryByRole('link', { name: hidden })).not.toBeInTheDocument();
     }
@@ -207,6 +207,25 @@ describe('Layout sidebar', () => {
     expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
     expect(screen.getByText('Document Flow')).toBeInTheDocument();
+  });
+
+  /** ws34: Document Creation lists the flow's four numbered steps, in the user's order. */
+  it('numbers the Document Creation steps like the Document Flow', () => {
+    stubViewport(true);
+    localStorage.setItem('modoc.user', JSON.stringify({ userId: 2, role: 'READ_WRITE' }));
+    renderLayout();
+
+    const heading = screen.getByText('Document Creation');
+    const section = heading.parentElement;
+    const links = Array.from(section.querySelectorAll('a'));
+    expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+      ['1Upload document', '/creation/blueprints'],
+      ['2Validation', '/creation/data-templates'],
+      ['3Map fields', '/creation/mapping'],
+      ['4Fix documents', '/creation/documents'],
+    ]);
+    expect(screen.getByRole('link', { name: /Map fields/ })).toHaveAttribute('href', '/creation/mapping');
+    expect(screen.queryByRole('link', { name: 'Blueprints' })).not.toBeInTheDocument();
   });
 
   /** ws25/ws26: the Integrations section — integration:admin (ADMIN), runs also integration:run. */
