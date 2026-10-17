@@ -47,6 +47,7 @@ const A11Y_GATED = new Set([
   'PlatformOverviewPage.test.jsx',
   'SettingField.test.jsx',
   'SettingsPage.test.jsx',
+  'Stepper.test.jsx',
   'ValidationPanel.test.jsx',
 ]);
 
