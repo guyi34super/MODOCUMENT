@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import { listDataTemplates, setBlueprintDataTemplate } from '../../api/dataTemplates';
 import { useToast } from '../../context/ToastContext';
 import ConfirmDialog from '../ConfirmDialog';
-import { CopyFromFlowDialog, NewDataTemplateDialog } from '../dataTemplates/DataTemplateDialogs';
+import BuildFromFlowDialog from '../dataTemplates/BuildFromFlowDialog';
+import { NewDataTemplateDialog } from '../dataTemplates/DataTemplateDialogs';
 import { Button, Card, ErrorBanner, Spinner, inputClass } from '../ui';
 
 /**
  * The Validation step's data template card (data-templates contract §3,
- * §6): choose one of the user's data templates, or create one / copy one
- * from a flow template right here; then its summary (fields, rules) with a
+ * §6): choose one of the user's data templates, or create one / build one
+ * from Document Flow templates right here; then its summary (fields, rules) with a
  * link to edit it. Choosing pre-fills the mapping on the server; changing
  * a choice that has mapped fields asks first. `onChanged(mappingDto)`.
  */
@@ -105,7 +106,7 @@ export default function DataTemplateChooser({ blueprintId, mapping, readOnly = f
                   Create new
                 </Button>
                 <Button variant="secondary" onClick={() => setCopyOpen(true)} disabled={busy}>
-                  Copy from a flow template
+                  Build from Document Flow templates
                 </Button>
               </>
             )}
@@ -118,7 +119,7 @@ export default function DataTemplateChooser({ blueprintId, mapping, readOnly = f
               {current ? `${current.fieldCount ?? 0} fields · ${current.ruleCount ?? 0} rules` : `${mapping?.fields?.length ?? 0} fields`}
               {mapping ? ` · ${mapping.mappedCount ?? 0} of ${mapping.mappableCount ?? 0} PDF fields mapped` : ''}
             </span>
-            <Link to={`/creation/data-templates/${currentId}`} className="text-accent hover:underline">
+            <Link to={`/creation/data-templates?template=${currentId}`} className="text-accent hover:underline">
               Edit the data template
             </Link>
             <span className="flex-1" />
@@ -139,10 +140,10 @@ export default function DataTemplateChooser({ blueprintId, mapping, readOnly = f
           choose(dto.id, { created: true });
         }}
       />
-      <CopyFromFlowDialog
+      <BuildFromFlowDialog
         open={copyOpen}
         onClose={() => setCopyOpen(false)}
-        onCopied={(dto) => {
+        onSaved={(dto) => {
           setCopyOpen(false);
           choose(dto.id, { created: true });
         }}

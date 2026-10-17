@@ -7,7 +7,9 @@ import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.port.ValidationRuleRepository;
 import com.modocument.application.usecase.TemplateOwnership;
+import com.modocument.doccreation.dto.AddFlowTemplatesRequest;
 import com.modocument.doccreation.dto.CopyFlowTemplateRequest;
+import com.modocument.doccreation.dto.CopyFlowTemplatesRequest;
 import com.modocument.doccreation.dto.CopyPreviewDto;
 import com.modocument.doccreation.dto.DataFieldInput;
 import com.modocument.doccreation.dto.DataRuleInput;
@@ -69,7 +71,8 @@ import java.util.stream.Collectors;
 /**
  * Data templates of document creation (docs/doccreation/data-templates-contract.md
  * §2): the reusable fields a document collects and their rules, made from
- * scratch or copied from a flow template's fields and rules.
+ * scratch or copied from the fields and rules of one or several flow
+ * templates (each field remembers the flow template it came from).
  *
  * <p>Data templates are owner-scoped like PDF templates: another user's, or
  * another bank's, answers 404 (audited as a probe). Copying from a flow
@@ -94,6 +97,10 @@ public class DataTemplateUseCase {
     static final int MAX_FIELDS = 500;
     static final int MAX_LABEL = 200;
     static final int MAX_SOURCE_FIELD = 255;
+    /** The most flow templates one copy may name. */
+    static final int MAX_SOURCES = 50;
+    /** The longest field name ({@code [a-z0-9_]{1,64}}). */
+    static final int MAX_KEY = 64;
     /** The kinds a data field may have (V330): the region kinds without SIGNATURE. */
     static final List<String> KINDS = List.of("TEXT", "MULTILINE", "DATE", "NUMBER", "CHOICE", "CHECKBOX", "IMAGE");
 
@@ -267,11 +274,19 @@ public class DataTemplateUseCase {
                         + " field; remove the rule first or keep the kind.");
             }
         }
+        // FieldInput has no sourceTemplateId: a kept field (same name, same flow field) keeps its flow template
+        Map<String, DocDataField> before = new HashMap<>();
+        fieldsOf(template).forEach(f -> before.putIfAbsent(f.getFieldName(), f));
         rules.deleteAll(removed);
         fields.deleteTemplate(template.getBankId(), id);
         for (DocDataField field : checked) {
             field.setBankId(template.getBankId());
             field.setDataTemplateId(id);
+            DocDataField kept = before.get(field.getFieldName());
+            if (kept != null && field.getSourceFieldName() != null
+                    && field.getSourceFieldName().equals(kept.getSourceFieldName())) {
+                field.setSourceTemplateId(kept.getSourceTemplateId());
+            }
         }
         fields.saveAll(checked);
         bump(template);
@@ -359,7 +374,9 @@ public class DataTemplateUseCase {
      * {@code POST /data-templates/from-flow-template}: a new data template
      * with the chosen flow fields (slugged, unique names; kind from the data
      * type; PII kind kept) and their convertible rules (IMPORTED, with the
-     * source template and field).
+     * source template and field). The one-template case of
+     * {@link #copyFromFlowTemplates}; an empty field list makes an empty
+     * template, as it always did.
      */
     @Transactional
     public DataTemplateDto copyFromFlowTemplate(CopyFlowTemplateRequest request) {
@@ -369,66 +386,261 @@ public class DataTemplateUseCase {
         }
         Template template = flowTemplate(request.templateId());
         String name = name(request.name());
-        List<PlannedField> planned = plan(template, request.fields());
-        if (planned.size() > MAX_FIELDS) {
-            throw new IllegalArgumentException("A data template has at most " + MAX_FIELDS + " fields.");
-        }
+        Merged merged = merge(List.of(new Source(template, request.fields())), List.of(), List.of(), true);
+        DocDataTemplate created = newTemplate(name, null, template.getTemplateId());
+        store(created, merged);
+        auditCopied(created, merged, false, template.getTemplateId());
+        return toDto(created);
+    }
 
-        Set<String> used = new HashSet<>();
-        List<DocDataField> newFields = new ArrayList<>();
-        List<DocDataFieldRule> newRules = new ArrayList<>();
-        Map<String, Integer> perField = new HashMap<>();
-        int skipped = 0;
-        LocalDateTime now = LocalDateTime.now();
-        for (PlannedField field : planned) {
-            String fieldName = uniqueName(OverlayMapper.slug(field.flowName()), used);
-            DocDataField row = new DocDataField();
-            row.setFieldName(fieldName);
-            row.setLabel(FieldRuleChecks.truncate(field.flowName(), MAX_LABEL));
-            row.setKind(field.kind().name());
-            row.setPiiKind(field.piiKind());
-            row.setSourceFieldName(FieldRuleChecks.truncate(field.flowName(), MAX_SOURCE_FIELD));
-            row.setSortOrder(newFields.size());
-            newFields.add(row);
-            skipped += field.skipped().size();
-            for (Converted converted : field.rules()) {
-                DocDataFieldRule rule = new DocDataFieldRule();
-                rule.setFieldName(fieldName);
-                rule.setRuleType(converted.type().name());
-                rule.setConfigJson(converted.config().toString());
-                rule.setMessage(converted.message());
-                rule.setSeverity("ERROR");
-                rule.setOrigin(DocFieldRuleUseCase.ORIGIN_IMPORTED);
-                rule.setSourceTemplateId(template.getTemplateId());
-                rule.setSourceFieldName(FieldRuleChecks.truncate(field.flowName(), MAX_SOURCE_FIELD));
-                rule.setSortOrder(perField.merge(fieldName, 1, Integer::sum) - 1);
-                rule.setUpdatedAt(now);
-                newRules.add(rule);
+    /**
+     * {@code POST /data-templates/from-flow-templates}: a new data template
+     * from the chosen fields of several flow templates (contract §2,
+     * "Building from several flow templates"). Each field is copied as by
+     * {@link #copyFromFlowTemplate} and remembers its flow template; a name
+     * an earlier source already took gets the suffix {@code _<slug of the
+     * flow template's name>}. The template's own SourceTemplateId is the flow
+     * template that gave the most fields (the first on a tie).
+     *
+     * @throws IllegalArgumentException for no sources, a source with an empty
+     *                                  field list, or an unknown flow field (400)
+     */
+    @Transactional
+    public DataTemplateDto copyFromFlowTemplates(CopyFlowTemplatesRequest request) {
+        requireCopyAccess();
+        if (request == null) {
+            throw new IllegalArgumentException("Choose at least one flow template.");
+        }
+        checkSources(request.sources());
+        String name = name(request.name());
+        List<Source> sources = readSources(request.sources());
+        Merged merged = merge(sources, List.of(), List.of(), false);
+        DocDataTemplate created = newTemplate(name, null, merged.mainTemplateId());
+        store(created, merged);
+        auditCopied(created, merged, false, null);
+        return toDto(created);
+    }
+
+    /**
+     * {@code POST /data-templates/{id}/add-from-flow-templates}: adds the
+     * chosen flow fields and their rules after the template's own fields
+     * (names that clash with its fields get the flow template's suffix).
+     * Raises the revision, and that of every PDF template using it, like any
+     * other save; the template's SourceTemplateId is set only when it had
+     * none.
+     *
+     * @throws IllegalStateException    when {@code baseRevision} is stale (409)
+     * @throws IllegalArgumentException as {@link #copyFromFlowTemplates} (400)
+     */
+    @Transactional
+    public DataTemplateDto addFromFlowTemplates(int id, AddFlowTemplatesRequest request) {
+        requireCopyAccess();
+        DocDataTemplate template = lock(require(id));
+        if (request == null) {
+            throw new IllegalArgumentException("Choose at least one flow template.");
+        }
+        requireCurrentRevision(template, request.baseRevision());
+        checkSources(request.sources());
+        List<Source> sources = readSources(request.sources());
+        Merged merged = merge(sources, fieldsOf(template), rulesOf(template), false);
+        store(template, merged);
+        if (template.getSourceTemplateId() == null) {
+            template.setSourceTemplateId(merged.mainTemplateId());
+        }
+        bump(template);
+        auditCopied(template, merged, true, null);
+        return toDto(template);
+    }
+
+    /** A readable flow template and the flow field names wanted from it (null = all). */
+    private record Source(Template template, List<String> wanted) {
+    }
+
+    /**
+     * What a copy adds: the fields and rules (not yet stored: no bank or
+     * template), the skipped rule count, and how many fields each flow
+     * template gave, in the request's order.
+     */
+    private record Merged(List<DocDataField> fields, List<DocDataFieldRule> rules, int skipped,
+                          Map<Integer, Integer> fieldsPerTemplate) {
+
+        /** The flow template that gave the most fields; the first on a tie, null when there is none. */
+        Integer mainTemplateId() {
+            Integer main = null;
+            int most = -1;
+            for (Map.Entry<Integer, Integer> entry : fieldsPerTemplate.entrySet()) {
+                if (entry.getValue() > most) {
+                    main = entry.getKey();
+                    most = entry.getValue();
+                }
+            }
+            return main;
+        }
+    }
+
+    /** The request's shape: at least one source, each naming a template once, no empty field list (400). */
+    private static void checkSources(List<CopyFlowTemplatesRequest.Source> sources) {
+        if (sources == null || sources.isEmpty()) {
+            throw new IllegalArgumentException("Choose at least one flow template.");
+        }
+        if (sources.size() > MAX_SOURCES) {
+            throw new IllegalArgumentException("Choose at most " + MAX_SOURCES + " flow templates.");
+        }
+        Set<Integer> seen = new HashSet<>();
+        for (int i = 0; i < sources.size(); i++) {
+            CopyFlowTemplatesRequest.Source source = sources.get(i);
+            String where = "Flow template " + (i + 1) + ": ";
+            if (source == null || source.templateId() == null) {
+                throw new IllegalArgumentException(where + "a flow template is required.");
+            }
+            if (!seen.add(source.templateId())) {
+                throw new IllegalArgumentException(where + "this flow template is listed twice.");
+            }
+            if (source.fields() != null && source.fields().isEmpty()) {
+                throw new IllegalArgumentException(where + "choose at least one field, or leave the list out "
+                        + "to copy every field.");
             }
         }
-        FieldRuleChecks.checkLimits(newRules.stream().map(DocDataFieldRule::getFieldName).toList(),
-                "A data template");
+    }
 
-        DocDataTemplate created = newTemplate(name, null, template.getTemplateId());
-        for (DocDataField field : newFields) {
-            field.setBankId(created.getBankId());
-            field.setDataTemplateId(created.getDocDataTemplateId());
+    /** Every source's flow template, read-checked ({@link TemplateOwnership#requireReadable}, 404). */
+    private List<Source> readSources(List<CopyFlowTemplatesRequest.Source> sources) {
+        List<Source> out = new ArrayList<>();
+        for (CopyFlowTemplatesRequest.Source source : sources) {
+            out.add(new Source(flowTemplate(source.templateId()), source.fields()));
         }
-        for (DocDataFieldRule rule : newRules) {
-            rule.setBankId(created.getBankId());
-            rule.setDataTemplateId(created.getDocDataTemplateId());
-        }
-        fields.saveAll(newFields);
-        rules.saveAll(newRules);
+        return out;
+    }
 
+    /**
+     * The fields and rules the {@code sources} add next to the template's
+     * {@code existing} fields and rules (none for a new template), in the
+     * order of the sources and, within one, of the flow template. A name
+     * that is taken gets {@link #clashName} (the flow template suffix, then
+     * a number); the single copy ({@code singleCopy}) keeps its _2, _3, ...
+     *
+     * @throws IllegalArgumentException for an unknown flow field or a limit (400)
+     */
+    private Merged merge(List<Source> sources, List<DocDataField> existing, List<DocDataFieldRule> existingRules,
+                         boolean singleCopy) {
+        Set<String> used = new HashSet<>();
+        existing.forEach(f -> used.add(f.getFieldName()));
+        int nextSort = existing.stream().mapToInt(DocDataField::getSortOrder).max().orElse(-1) + 1;
+        List<DocDataField> newFields = new ArrayList<>();
+        List<DocDataFieldRule> newRules = new ArrayList<>();
+        Map<Integer, Integer> perTemplate = new LinkedHashMap<>();
+        int skipped = 0;
+        LocalDateTime now = LocalDateTime.now();
+        for (Source source : sources) {
+            Template template = source.template();
+            List<PlannedField> planned = plan(template, source.wanted());
+            String templateSlug = templateSlug(template);
+            Map<String, Integer> perField = new HashMap<>();
+            for (PlannedField field : planned) {
+                String base = OverlayMapper.slug(field.flowName());
+                String fieldName = singleCopy ? uniqueName(base, used) : clashName(base, templateSlug, used);
+                String flowName = FieldRuleChecks.truncate(field.flowName(), MAX_SOURCE_FIELD);
+                DocDataField row = new DocDataField();
+                row.setFieldName(fieldName);
+                // A renamed duplicate (two flow templates with the same field) gets a label naming its
+                // template, so the two fields read differently on the Validation page.
+                boolean renamed = !fieldName.equals(base);
+                row.setLabel(FieldRuleChecks.truncate(renamed && !singleCopy
+                        ? field.flowName() + " (" + template.getName() + ")" : field.flowName(), MAX_LABEL));
+                row.setKind(field.kind().name());
+                row.setPiiKind(field.piiKind());
+                row.setSourceFieldName(flowName);
+                row.setSourceTemplateId(template.getTemplateId());
+                row.setSortOrder(nextSort++);
+                newFields.add(row);
+                skipped += field.skipped().size();
+                for (Converted converted : field.rules()) {
+                    DocDataFieldRule rule = new DocDataFieldRule();
+                    rule.setFieldName(fieldName);
+                    rule.setRuleType(converted.type().name());
+                    rule.setConfigJson(converted.config().toString());
+                    rule.setMessage(converted.message());
+                    rule.setSeverity("ERROR");
+                    rule.setOrigin(DocFieldRuleUseCase.ORIGIN_IMPORTED);
+                    rule.setSourceTemplateId(template.getTemplateId());
+                    rule.setSourceFieldName(flowName);
+                    rule.setSortOrder(perField.merge(fieldName, 1, Integer::sum) - 1);
+                    rule.setUpdatedAt(now);
+                    newRules.add(rule);
+                }
+            }
+            perTemplate.put(template.getTemplateId(), planned.size());
+        }
+        if (existing.size() + newFields.size() > MAX_FIELDS) {
+            throw new IllegalArgumentException("A data template has at most " + MAX_FIELDS + " fields.");
+        }
+        List<String> ruleKeys = new ArrayList<>();
+        existingRules.forEach(r -> ruleKeys.add(r.getFieldName()));
+        newRules.forEach(r -> ruleKeys.add(r.getFieldName()));
+        FieldRuleChecks.checkLimits(ruleKeys, "A data template");
+        return new Merged(newFields, newRules, skipped, perTemplate);
+    }
+
+    /** Stores the merged fields and rules into {@code target}. */
+    private void store(DocDataTemplate target, Merged merged) {
+        for (DocDataField field : merged.fields()) {
+            field.setBankId(target.getBankId());
+            field.setDataTemplateId(target.getDocDataTemplateId());
+        }
+        for (DocDataFieldRule rule : merged.rules()) {
+            rule.setBankId(target.getBankId());
+            rule.setDataTemplateId(target.getDocDataTemplateId());
+        }
+        fields.saveAll(merged.fields());
+        rules.saveAll(merged.rules());
+    }
+
+    /**
+     * {@code DOC_DATA_TEMPLATE_COPIED}: the flow template ids and the counts,
+     * never names, configs or values. The single copy also keeps its
+     * {@code templateId}.
+     */
+    private void auditCopied(DocDataTemplate target, Merged merged, boolean added, Integer singleTemplateId) {
         Map<String, Object> values = new LinkedHashMap<>();
-        values.put("templateId", template.getTemplateId());
-        values.put("fields", newFields.size());
-        values.put("rules", newRules.size());
-        values.put("skipped", skipped);
-        audit.success(AuditActions.DOC_DATA_TEMPLATE_COPIED, ENTITY, String.valueOf(created.getDocDataTemplateId()),
+        if (singleTemplateId != null) {
+            values.put("templateId", singleTemplateId);
+        }
+        values.put("templates", List.copyOf(merged.fieldsPerTemplate().keySet()));
+        values.put("fields", merged.fields().size());
+        values.put("rules", merged.rules().size());
+        values.put("skipped", merged.skipped());
+        values.put("added", added);
+        audit.success(AuditActions.DOC_DATA_TEMPLATE_COPIED, ENTITY, String.valueOf(target.getDocDataTemplateId()),
                 null, values);
-        return toDto(created);
+    }
+
+    /** The slug of the flow template's name ("template_<id>" when it has none). */
+    private static String templateSlug(Template template) {
+        String slug = OverlayMapper.slug(template.getName() == null ? "" : template.getName());
+        return slug.isEmpty() ? "template_" + template.getTemplateId() : slug;
+    }
+
+    /**
+     * The name of a field copied from several flow templates (contract §2):
+     * {@code base} ("field" when empty) when it is free; otherwise
+     * {@code base_<templateSlug>}, then {@code base_<templateSlug>_2},
+     * {@code _3}, ... (e.g. email, email_accounts, email_accounts_2). The
+     * base is cut so the whole name keeps its suffix within 64 characters.
+     * The name is added to {@code used}.
+     */
+    static String clashName(String base, String templateSlug, Set<String> used) {
+        String root = base == null || base.isEmpty() ? "field" : base;
+        if (used.add(root)) {
+            return root;
+        }
+        for (int n = 1; ; n++) {
+            String suffix = "_" + templateSlug + (n == 1 ? "" : "_" + n);
+            String name = root.substring(0, Math.max(1, Math.min(root.length(), MAX_KEY - suffix.length())))
+                    + suffix;
+            if (used.add(name)) {
+                return name;
+            }
+        }
     }
 
     /** One flow field to copy: its kind, PII kind, the rules it brings and the ones skipped. */
@@ -781,12 +993,15 @@ public class DataTemplateUseCase {
         return out;
     }
 
-    /** The names of the flow templates the caller can read, by id. */
+    /** The names of the flow templates the caller can read, by id, in one lookup. */
     private Map<Integer, String> templateNames(List<Integer> ids) {
+        Set<Integer> wanted = ids.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+        if (wanted.isEmpty()) {
+            return Map.of();
+        }
         Map<Integer, String> names = new HashMap<>();
-        for (Integer id : ids.stream().filter(Objects::nonNull).collect(Collectors.toSet())) {
-            templates.getAccessible(id, ownership.requireUserId(), ownership.requireBankId())
-                    .ifPresent(t -> names.put(id, t.getName()));
+        for (Template t : templates.listAccessible(wanted, ownership.requireUserId(), ownership.requireBankId())) {
+            names.put(t.getTemplateId(), t.getName());
         }
         return names;
     }
@@ -805,6 +1020,7 @@ public class DataTemplateUseCase {
                 .thenComparing(r -> r.getDocDataFieldRuleId() == null ? Long.MAX_VALUE : r.getDocDataFieldRuleId()));
         List<Integer> sourceIds = new ArrayList<>();
         sourceIds.add(template.getSourceTemplateId());
+        fieldRows.forEach(f -> sourceIds.add(f.getSourceTemplateId()));
         ruleRows.forEach(r -> sourceIds.add(r.getSourceTemplateId()));
         Map<Integer, String> names = templateNames(sourceIds);
 
@@ -812,7 +1028,9 @@ public class DataTemplateUseCase {
                 .map(f -> {
                     FieldProps props = FieldPropsCodec.read(f.getPropsJson());
                     return new DataTemplateDto.Field(f.getFieldName(), f.getLabel(), f.getKind(), f.getPiiKind(),
-                            props.isEmpty() ? null : props, f.getSourceFieldName(), f.getSortOrder());
+                            props.isEmpty() ? null : props, f.getSourceFieldName(), f.getSortOrder(),
+                            f.getSourceTemplateId(),
+                            f.getSourceTemplateId() == null ? null : names.get(f.getSourceTemplateId()));
                 })
                 .toList();
         List<DataTemplateDto.Rule> ruleDtos = ruleRows.stream()

@@ -628,6 +628,30 @@ class DataMappingApiTest extends IsolatedStorageApiTestSupport {
         assertThat(MAPPER.convertValue(kept.get(0).get("mapping"), Map.class)).isEqualTo(Map.of("notes", "full_name"));
     }
 
+    @Test
+    void theManagedSourceMapsOnlyTheFieldsOfTheMainFlowTemplate() throws Exception {
+        Template orders = new Template();
+        orders.setOwnerUserId(owner.getAppUserId());
+        orders.setBankId(bank.getBankId());
+        orders.setName("Orders " + UUID.randomUUID().toString().substring(0, 8));
+        orders.setVisibility(TemplateVisibility.PRIVATE);
+        orders = templates.save(orders);
+        int blueprintId = readyTemplate("Merged form");
+        DocDataTemplate merged = customerData(customers.getTemplateId());
+        // V333: full_name came from the main flow template, nic from another one with a same-named field
+        jdbc.update("UPDATE DocDataField SET SourceTemplateId = ? WHERE DataTemplateId = ? AND FieldName = ?",
+                customers.getTemplateId(), merged.getDocDataTemplateId(), "full_name");
+        jdbc.update("UPDATE DocDataField SET SourceTemplateId = ? WHERE DataTemplateId = ? AND FieldName = ?",
+                orders.getTemplateId(), merged.getDocDataTemplateId(), "nic");
+
+        JsonNode chosen = choose(blueprintId, merged.getDocDataTemplateId(), 200);
+        assertThat(rows(chosen).get("id_number").get("mappedField").asText()).isEqualTo("nic");
+        JsonNode managed = call(get("/api/doccreation/blueprints/" + blueprintId + "/sources"), 200).get(0);
+        assertThat(managed.get("templateId").asInt()).isEqualTo(customers.getTemplateId());
+        assertThat(MAPPER.convertValue(managed.get("mapping"), Map.class)).as("nic is not the main template's")
+                .isEqualTo(Map.of("full_name", "full_name", "date_of_birth", "dob"));
+    }
+
     // ------------------------------------------------------- fill preview
 
     @Test

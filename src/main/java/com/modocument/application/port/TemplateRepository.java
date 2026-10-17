@@ -2,6 +2,7 @@ package com.modocument.application.port;
 
 import com.modocument.domain.entity.Template;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,6 +32,16 @@ public interface TemplateRepository {
 
     /** Every template {@link #getAccessible} would return: own + bank-shared, oldest first. */
     List<Template> listAccessible(int userId, int bankId);
+
+    /**
+     * The templates among {@code ids} that {@link #getAccessible} would
+     * return, in one lookup (unordered); ids the caller cannot read are left
+     * out.
+     */
+    default List<Template> listAccessible(Collection<Integer> ids, int userId, int bankId) {
+        return ids.stream().distinct().map(id -> getAccessible(id, userId, bankId))
+                .flatMap(Optional::stream).toList();
+    }
 
     void add(Template entity);
 

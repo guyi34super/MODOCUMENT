@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  addFromFlowTemplates,
+  buildFromFlowTemplates,
   copyFromFlowTemplate,
   copyPreview,
   createDataTemplate,
@@ -85,6 +87,34 @@ describe('api/dataTemplates', () => {
       path: '/api/doccreation/data-templates/from-flow-template',
       method: 'POST',
       body: { templateId: 9, name: 'Customers', fields: ['full_name'] },
+    });
+  });
+
+  it('builds a data template from several flow templates and adds flow fields to one', async () => {
+    const fetchMock = stubFetch({});
+    await buildFromFlowTemplates({
+      name: 'Customer + Accounts',
+      sources: [
+        { templateId: '9', fields: ['full_name'] },
+        { templateId: 11, fields: ['iban', 'full_name'] },
+      ],
+    });
+    await addFromFlowTemplates(3, { baseRevision: 4, sources: [{ templateId: 11 }] });
+    expect(call(fetchMock, 0)).toEqual({
+      path: '/api/doccreation/data-templates/from-flow-templates',
+      method: 'POST',
+      body: {
+        name: 'Customer + Accounts',
+        sources: [
+          { templateId: 9, fields: ['full_name'] },
+          { templateId: 11, fields: ['iban', 'full_name'] },
+        ],
+      },
+    });
+    expect(call(fetchMock, 1)).toEqual({
+      path: '/api/doccreation/data-templates/3/add-from-flow-templates',
+      method: 'POST',
+      body: { baseRevision: 4, sources: [{ templateId: 11 }] },
     });
   });
 

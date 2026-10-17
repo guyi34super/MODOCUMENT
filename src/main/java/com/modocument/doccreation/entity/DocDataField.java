@@ -45,6 +45,10 @@ public class DocDataField {
     @Column(name = "SourceFieldName", length = 255)
     private String sourceFieldName;
 
+    /** V333: the flow template this field came from (a template may mix several), null = made by hand. */
+    @Column(name = "SourceTemplateId")
+    private Integer sourceTemplateId;
+
     @Column(name = "SortOrder", nullable = false)
     private int sortOrder;
 
@@ -131,4 +135,12 @@ public class DocDataField {
         this.sortOrder = sortOrder;
     }
 
+
+    public Integer getSourceTemplateId() {
+        return sourceTemplateId;
+    }
+
+    public void setSourceTemplateId(Integer sourceTemplateId) {
+        this.sourceTemplateId = sourceTemplateId;
+    }
 }

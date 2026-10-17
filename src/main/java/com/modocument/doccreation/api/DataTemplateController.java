@@ -1,7 +1,9 @@
 package com.modocument.doccreation.api;
 
 import com.modocument.api.security.RequiresPermission;
+import com.modocument.doccreation.dto.AddFlowTemplatesRequest;
 import com.modocument.doccreation.dto.CopyFlowTemplateRequest;
+import com.modocument.doccreation.dto.CopyFlowTemplatesRequest;
 import com.modocument.doccreation.dto.SaveDataFieldsRequest;
 import com.modocument.doccreation.dto.SaveDataRulesRequest;
 import com.modocument.doccreation.dto.SaveDataTemplateRequest;
@@ -110,6 +112,23 @@ public class DataTemplateController {
     @PostMapping("/from-flow-template")
     public ResponseEntity<?> copyFromFlowTemplate(@RequestBody CopyFlowTemplateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(useCase.copyFromFlowTemplate(request));
+    }
+
+    /**
+     * A new data template from the chosen fields of several flow templates
+     * (each also needs template:read and validation:read and must be readable).
+     */
+    @RequiresPermission(Permission.DOC_WRITE)
+    @PostMapping("/from-flow-templates")
+    public ResponseEntity<?> copyFromFlowTemplates(@RequestBody CopyFlowTemplatesRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(useCase.copyFromFlowTemplates(request));
+    }
+
+    /** Adds flow fields and their rules to a data template; 409 when {@code baseRevision} is stale. */
+    @RequiresPermission(Permission.DOC_WRITE)
+    @PostMapping("/{id}/add-from-flow-templates")
+    public ResponseEntity<?> addFromFlowTemplates(@PathVariable int id, @RequestBody AddFlowTemplatesRequest request) {
+        return ResponseEntity.ok(useCase.addFromFlowTemplates(id, request));
     }
 
     @ExceptionHandler(DocCreationException.class)

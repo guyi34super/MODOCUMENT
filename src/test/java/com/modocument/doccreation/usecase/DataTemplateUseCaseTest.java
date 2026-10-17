@@ -6,7 +6,9 @@ import com.modocument.application.port.TemplateFieldsRepository;
 import com.modocument.application.port.TemplateRepository;
 import com.modocument.application.port.ValidationRuleRepository;
 import com.modocument.application.usecase.TemplateOwnership;
+import com.modocument.doccreation.dto.AddFlowTemplatesRequest;
 import com.modocument.doccreation.dto.CopyFlowTemplateRequest;
+import com.modocument.doccreation.dto.CopyFlowTemplatesRequest;
 import com.modocument.doccreation.dto.DataFieldInput;
 import com.modocument.doccreation.entity.DocDataField;
 import com.modocument.doccreation.fields.FieldProps;
@@ -73,6 +75,49 @@ class DataTemplateUseCaseTest {
         assertThatThrownBy(() -> useCase.copyPreview(4)).isInstanceOf(AccessDeniedException.class)
                 .hasMessageContaining("template:read");
         verifyNoInteractions(templateOwnership, templateFields, flowRules, dataTemplates);
+    }
+
+    @Test
+    void buildingFromSeveralFlowTemplatesNeedsValidationReadAndTemplateReadToo() {
+        List<CopyFlowTemplatesRequest.Source> sources = List.of(new CopyFlowTemplatesRequest.Source(4, null),
+                new CopyFlowTemplatesRequest.Source(5, List.of("Email")));
+        when(ownership.callerHas(Permission.TEMPLATE_READ)).thenReturn(false);
+        assertThatThrownBy(() -> useCase.copyFromFlowTemplates(new CopyFlowTemplatesRequest("Copy", sources)))
+                .isInstanceOf(AccessDeniedException.class).hasMessageContaining("template:read");
+        assertThatThrownBy(() -> useCase.addFromFlowTemplates(7, new AddFlowTemplatesRequest(0, sources)))
+                .isInstanceOf(AccessDeniedException.class);
+
+        when(ownership.callerHas(Permission.TEMPLATE_READ)).thenReturn(true);
+        when(ownership.callerHas(Permission.VALIDATION_READ)).thenReturn(false);
+        assertThatThrownBy(() -> useCase.copyFromFlowTemplates(new CopyFlowTemplatesRequest("Copy", sources)))
+                .isInstanceOf(AccessDeniedException.class).hasMessageContaining("validation:read");
+        assertThatThrownBy(() -> useCase.addFromFlowTemplates(7, new AddFlowTemplatesRequest(0, sources)))
+                .isInstanceOf(AccessDeniedException.class);
+        verifyNoInteractions(templateOwnership, templateFields, flowRules, dataTemplates);
+    }
+
+    @Test
+    void aClashGetsTheFlowTemplateSuffixThenANumberAfterIt() {
+        Set<String> used = new HashSet<>();
+        assertThat(DataTemplateUseCase.clashName("email", "accounts", used)).isEqualTo("email");
+        assertThat(DataTemplateUseCase.clashName("email", "accounts", used)).isEqualTo("email_accounts");
+        assertThat(DataTemplateUseCase.clashName("email", "accounts", used)).isEqualTo("email_accounts_2");
+        assertThat(DataTemplateUseCase.clashName("email", "accounts", used)).isEqualTo("email_accounts_3");
+        assertThat(DataTemplateUseCase.clashName("email", "orders", used)).isEqualTo("email_orders");
+        assertThat(DataTemplateUseCase.clashName("", "orders", used)).isEqualTo("field");
+        assertThat(DataTemplateUseCase.clashName("", "orders", used)).isEqualTo("field_orders");
+
+        // cut to 64 characters, keeping the whole suffix
+        String base = "a".repeat(56);
+        String slug = "b".repeat(20);
+        assertThat(DataTemplateUseCase.clashName(base, slug, used)).isEqualTo(base);
+        assertThat(DataTemplateUseCase.clashName(base, slug, used)).isEqualTo("a".repeat(43) + "_" + slug)
+                .hasSize(64).matches(OverlayMapper.KEY.pattern());
+        assertThat(DataTemplateUseCase.clashName(base, slug, used)).isEqualTo("a".repeat(41) + "_" + slug + "_2")
+                .hasSize(64);
+        String longSlug = "c".repeat(56);
+        assertThat(DataTemplateUseCase.clashName(base, longSlug, used)).isEqualTo("a".repeat(7) + "_" + longSlug)
+                .hasSize(64);
     }
 
     @Test

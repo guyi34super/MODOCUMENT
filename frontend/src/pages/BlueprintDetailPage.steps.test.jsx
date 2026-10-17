@@ -259,7 +259,7 @@ describe('BlueprintDetailPage — the steps of a PDF template', () => {
     expect(await screen.findByText('Data template chosen — 1 of 2 fields matched automatically')).toBeInTheDocument();
     const summary = screen.getByTestId('data-template-summary');
     expect(summary).toHaveTextContent('Customer2 fields · 4 rules · 1 of 2 PDF fields mapped');
-    expect(within(summary).getByRole('link', { name: 'Edit the data template' })).toHaveAttribute('href', '/creation/data-templates/3');
+    expect(within(summary).getByRole('link', { name: 'Edit the data template' })).toHaveAttribute('href', '/creation/data-templates?template=3');
 
     const inherited = await screen.findByTestId('inherited-rules');
     expect(within(inherited).getByRole('heading', { name: 'Inherited from Customer' })).toBeInTheDocument();

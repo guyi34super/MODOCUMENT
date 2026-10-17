@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -22,6 +23,13 @@ public interface TemplateJpaRepository extends JpaRepository<Template, Integer> 
             + " and t.bankId = :bankId))")
     Optional<Template> findAccessible(@Param("id") int id, @Param("userId") int userId,
                                       @Param("bankId") int bankId);
+
+    /** The templates among {@code ids} that {@link #findAccessible(int, int, int)} would return. */
+    @Query("select t from Template t where t.templateId in :ids and (t.ownerUserId = :userId"
+            + " or (t.visibility = com.modocument.domain.model.TemplateVisibility.BANK"
+            + " and t.bankId = :bankId))")
+    List<Template> findAccessibleIn(@Param("ids") Collection<Integer> ids, @Param("userId") int userId,
+                                    @Param("bankId") int bankId);
 
     /** Every template {@link #findAccessible} would return for the caller, oldest first. */
     @Query("select t from Template t where t.ownerUserId = :userId"

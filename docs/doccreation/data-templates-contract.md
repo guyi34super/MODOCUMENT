@@ -67,6 +67,8 @@ All routes are under `/api/doccreation/data-templates`. Reading needs `DOC_READ`
 | `POST /{id}/rules/test` | `{values:{fieldName: value}, rules?:[RuleInput]}` → `ValidationResultDto`. The keys are field names. |
 | `GET /copy-preview?templateId=` | `CopyPreviewDto`. Needs `TEMPLATE_READ` and `VALIDATION_READ`, and the flow template must pass `TemplateOwnership.requireReadable`. |
 | `POST /from-flow-template` | `{templateId, name, fields:[flowFieldName]}` → 201 with `DataTemplateDto`. Same checks as copy-preview. |
+| `POST /from-flow-templates` | **(follow-up)** `{name, sources:[{templateId, fields:[flowFieldName]}]}` → 201 with `DataTemplateDto`. Builds one template from the chosen fields of **several** flow templates. Each template is checked as for copy-preview. |
+| `POST /{id}/add-from-flow-templates` | **(follow-up)** `{baseRevision, sources:[{templateId, fields}]}` → `DataTemplateDto`. Adds the chosen flow fields and their rules to an existing template. A stale revision returns 409. |
 
 ### Shapes
 
@@ -107,6 +109,23 @@ CopyPreviewDto = { "templateId", "templateName",
 - **Every save of fields or rules also raises `DocBlueprint.RulesRevision` of each PDF template that uses this data template**, by 1. Documents validated earlier then see that the rules changed (§5).
 - Audit: `DOC_DATA_TEMPLATE_SAVED` (`{change: CREATED|DETAILS|FIELDS|RULES, fields, rules, revision}`) and `DOC_DATA_TEMPLATE_DELETED`.
 
+### Building from several flow templates (follow-up)
+**Merging the fields**
+- `from-flow-templates` and `add-from-flow-templates` copy fields and rules exactly as the single copy below does.
+- **Name clashes:** a field name that already exists (from an earlier source, or in the template you add to) is given the suffix `_` + the slug of its flow template's name. If that name is also taken, a number is added: `_2`, `_3` and so on.
+- **Labels** are the flow field names. A **renamed** field's label also names its flow template, e.g. "email (Contacts)", so two same-named fields read differently on the Validation page. The single copy is unchanged.
+- **Each field's origin:** `DocDataField.SourceTemplateId` (V333) records the flow template the field came from.
+
+**The main flow template**
+- `DocDataTemplate.SourceTemplateId` is set to the flow template that gave the most fields. On a tie, the first in the request wins.
+- When adding to an existing template, it is set only if it was empty.
+- The managed data source (§3) is built from the main template.
+
+**Other rules**
+- **Empty requests:** an empty `sources` list, or a source with an empty `fields` list, is a 400. Leaving out `fields` copies all of that template's fields.
+- **Audit:** `DOC_DATA_TEMPLATE_COPIED` with `{templates:[ids], fields, rules, skipped, added: true|false}`.
+- **`DataTemplateDto.fields[]`** gains `sourceTemplateId` and `sourceTemplateName`.
+
 ### Copying from a flow template
 For each chosen flow field:
 
@@ -146,6 +165,13 @@ These pin down what the table above leaves open. The shapes are unchanged.
   - Fields keep the flow template's order.
   - A converted rule that doesn't fit the field's kind is skipped with the reason "<TYPE> does not apply to a <kind> field".
   - Names are `OverlayMapper.slug` of the flow name ("field" when empty), made unique with `_2`, `_3` and so on.
+- **Several flow templates (follow-up):**
+  - The single `from-flow-template` is the one-source case of the same code; its audit keeps `templateId` next to `templates` and `added`, and an empty `fields` list there still makes an empty template.
+  - Naming (so the frontend preview matches): base = slug of the flow field name; when it is taken (by an existing field, an earlier source or an earlier field of the same flow template) it becomes `base_<slug of the flow template's name>`, then `base_<slug>_2`, `_3`… (e.g. `email`, `email_accounts`, `email_accounts_2`). The base is cut so the whole name, suffix included, fits 64 characters. Only the single `from-flow-template` keeps its old `_2`, `_3`.
+  - A flow template listed twice, or more than 50 sources, is a 400. A source the caller can't read is a 404 (as in copy-preview); nothing is created or added.
+  - `add-from-flow-templates` puts the new fields after the existing ones; `fields` must still fit 500 and the rule limits together with what is there.
+  - `PUT /{id}/fields` keeps a field's `sourceTemplateId` when the field keeps its name and `sourceFieldName` (`FieldInput` has no `sourceTemplateId`).
+  - The managed data source maps only fields whose `sourceTemplateId` is the main template (or null).
 
 ## 3. PDF template ↔ data template (BE-B)
 
@@ -226,6 +252,18 @@ This extends ws33 §4.
 - **The fill preview** (`GET /instances/{id}/fill-preview`): each `fields[]` entry gains `wouldFail: [{code, message}]`. These are the checks that value would fail, evaluated with the effective rules on the document's values with that value applied. Messages never contain values.
 
 ## 6. Frontend (FE)
+
+**Follow-up: one Validation page.** `/creation/data-templates` (sidebar step 2) is now one page built with the **same controls as Document Flow → Set Field Rules**:
+- a Template select, with New template / **Build from Document Flow templates** / Rename / Delete;
+- a Fields card;
+- an "Add/Update field rules" card with Field, Required or Optional, and Format rule type (with `RegexBuilder` and Min/Max inline, plus the extra Document Creation types), a message, and Warning only;
+- a rules table: Field / Required / Rule / Settings / Source / Update / Delete;
+- a "Test a sample row" card.
+
+`/creation/data-templates/:id` redirects to `?template=:id`. These templates are only shown in Document Creation.
+
+The details below are the original #64 design.
+
 
 **Sidebar "Document Creation"** has numbered steps, like Document Flow:
 1. "Upload document" (`/creation/blueprints`)
