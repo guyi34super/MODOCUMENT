@@ -97,6 +97,13 @@ public class DocFieldRuleUseCase {
     @PersistenceContext
     private EntityManager entityManager;
 
+    /**
+     * ws34 (data-templates-contract §4): the data template's rules re-keyed
+     * onto the mapped regions; null in unit wiring (the PDF's own rules only).
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private EffectiveRules effectiveRules;
+
     public DocFieldRuleUseCase(DocCreationOwnership ownership,
                                DocFieldRuleJpaRepository rules,
                                TemplateVersions versions,
@@ -123,7 +130,11 @@ public class DocFieldRuleUseCase {
 
     // ---------------------------------------------------------------- API
 
-    /** {@code GET /blueprints/{id}/rules}. */
+    /**
+     * {@code GET /blueprints/{id}/rules}: the PDF's own rules, plus (ws34)
+     * the data template's rules re-keyed onto the mapped regions as
+     * {@code inherited} (read-only; never part of a save).
+     */
     @Transactional(readOnly = true)
     public RulesDto get(int blueprintId) {
         DocBlueprint blueprint = ownership.requireTemplate(blueprintId);
@@ -164,7 +175,9 @@ public class DocFieldRuleUseCase {
 
     /**
      * {@code POST /blueprints/{id}/rules/test}: checks sample values against
-     * the given (unsaved) rules or the saved ones. Nothing is stored.
+     * the given (unsaved) rules or the saved ones — ws34: together with the
+     * data template's rules re-keyed onto the mapped regions (the effective
+     * rules). Nothing is stored.
      */
     @Transactional(readOnly = true)
     public ValidationResultDto test(int blueprintId, TestRulesRequest request) {
@@ -176,6 +189,9 @@ public class DocFieldRuleUseCase {
             checkedRules.forEach(rule -> stamp(rule, blueprint, null));
         } else {
             checkedRules = rulesOf(blueprint);
+        }
+        if (effectiveRules != null) {
+            checkedRules = effectiveRules.resolve(blueprint, checkedRules).rules();
         }
         DocRuleEvaluator checker = evaluator.getIfAvailable();
         if (checker == null) {
@@ -310,16 +326,14 @@ public class DocFieldRuleUseCase {
 
     // ------------------------------------------------- shared with templates
 
-    /** The region keys with a REQUIRED rule: {@code RegionDto.required} (contract §3). */
-    public Set<String> requiredKeys(int bankId, int blueprintId) {
-        Set<String> keys = new HashSet<>();
-        for (DocFieldRule rule : rules.findByBankIdAndBlueprintIdOrderByRegionKeyAscSortOrderAscDocFieldRuleIdAsc(
-                bankId, blueprintId)) {
-            if (DocRuleType.REQUIRED.name().equals(rule.getRuleType())) {
-                keys.add(rule.getRegionKey());
-            }
-        }
-        return keys;
+    /**
+     * The region keys with a REQUIRED rule: {@code RegionDto.required}
+     * (contract §3) — ws34: among the effective rules, so a field the data
+     * template requires is shown required too.
+     */
+    public Set<String> requiredKeys(DocBlueprint blueprint) {
+        return EffectiveRules.requiredKeys(effectiveRules == null ? rulesOf(blueprint)
+                : effectiveRules.resolve(blueprint, rulesOf(blueprint)).rules());
     }
 
     /**
@@ -329,6 +343,8 @@ public class DocFieldRuleUseCase {
      * MANUAL and REGION_FLAG REQUIRED rules of that key (IMPORTED ones stay).
      * When anything changed, the blueprint's RulesRevision goes up by one on
      * the entity; the caller saves it (and should hold {@link #lock}).
+     * ws34: a key the data template already requires (an inherited REQUIRED
+     * rule, shown as {@code required:true}) gets no PDF rule of its own.
      *
      * @return whether a rule was added or removed
      */
@@ -342,13 +358,15 @@ public class DocFieldRuleUseCase {
                 requiredByKey.computeIfAbsent(rule.getRegionKey(), k -> new ArrayList<>()).add(rule);
             }
         }
+        Set<String> inheritedRequired = effectiveRules == null ? Set.of()
+                : EffectiveRules.requiredKeys(effectiveRules.resolve(blueprint, List.of()).inherited());
         List<DocFieldRule> added = new ArrayList<>();
         List<DocFieldRule> removed = new ArrayList<>();
         LocalDateTime now = LocalDateTime.now();
         for (TemplateRegion region : regions) {
             List<DocFieldRule> required = requiredByKey.getOrDefault(region.key(), List.of());
             if (region.required()) {
-                if (required.isEmpty()) {
+                if (required.isEmpty() && !inheritedRequired.contains(region.key())) {
                     DocFieldRule rule = new DocFieldRule();
                     rule.setRegionKey(region.key());
                     rule.setRuleType(DocRuleType.REQUIRED.name());
@@ -637,7 +655,32 @@ public class DocFieldRuleUseCase {
         List<RulesDto.Field> fields = regions.stream()
                 .map(r -> new RulesDto.Field(r.key(), r.label(), r.kind().name(), r.box().page()))
                 .toList();
-        return new RulesDto(blueprint.getRulesRevision(), ruleDtos, fields, ruleTypes());
+        return new RulesDto(blueprint.getRulesRevision(), ruleDtos, fields, ruleTypes(),
+                inheritedViews(blueprint, regionOrder));
+    }
+
+    /**
+     * ws34: the data template's rules re-keyed onto the mapped regions
+     * (origin DATA_TEMPLATE, negative ids), in region order, with the data
+     * template's name as {@code sourceTemplateName}.
+     */
+    private List<RulesDto.Rule> inheritedViews(DocBlueprint blueprint, Map<String, Integer> regionOrder) {
+        if (effectiveRules == null) {
+            return List.of();
+        }
+        EffectiveRules.Resolved resolved = effectiveRules.resolve(blueprint, List.of());
+        List<DocFieldRule> sorted = new ArrayList<>(resolved.inherited());
+        sorted.sort(Comparator.<DocFieldRule>comparingInt(r -> regionOrder.getOrDefault(r.getRegionKey(),
+                        Integer.MAX_VALUE))
+                .thenComparing(DocFieldRule::getRegionKey)
+                .thenComparingInt(DocFieldRule::getSortOrder)
+                .thenComparing(r -> r.getDocFieldRuleId() == null ? 0L : -r.getDocFieldRuleId()));
+        return sorted.stream()
+                .map(r -> new RulesDto.Rule(r.getDocFieldRuleId(), r.getRegionKey(), r.getRuleType(),
+                        FieldRuleChecks.readConfig(r.getConfigJson()), r.getMessage(), r.getSeverity(),
+                        r.getOrigin(), r.getSourceTemplateId(), resolved.dataTemplateName(),
+                        r.getSourceFieldName(), r.getSortOrder(), !regionOrder.containsKey(r.getRegionKey())))
+                .toList();
     }
 
     /** The {@code ruleTypes} metadata of {@link RulesDto}. */

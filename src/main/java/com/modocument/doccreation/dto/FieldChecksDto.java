@@ -13,7 +13,10 @@ import java.util.List;
  */
 public record FieldChecksDto(List<RuleView> rules, List<String> builtIn, List<MappedFrom> mappedFrom) {
 
-    /** A field rule; {@code sourceTemplateName}/{@code sourceFieldName} only for IMPORTED rules. */
+    /**
+     * A field rule; {@code sourceTemplateName}/{@code sourceFieldName} only for IMPORTED rules and (ws34)
+     * DATA_TEMPLATE rules, whose {@code sourceTemplateName} is the data template's name.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record RuleView(Long id, String ruleType, String summary, String severity, String origin,
                            String sourceTemplateName, String sourceFieldName) {

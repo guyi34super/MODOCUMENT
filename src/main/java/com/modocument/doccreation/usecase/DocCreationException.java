@@ -52,6 +52,15 @@ public class DocCreationException extends RuntimeException {
                 "Save and validate the document first: it has changes that have not passed its checks.");
     }
 
+    /**
+     * 409: the document was validated, but its template's rules, data
+     * template or mapping changed since (data-templates-contract §5).
+     */
+    public static DocCreationException rulesChanged() {
+        return new DocCreationException(409, NOT_VALIDATED,
+                "The rules changed since this document was validated; save it again to re-check.");
+    }
+
     public int status() {
         return status;
     }

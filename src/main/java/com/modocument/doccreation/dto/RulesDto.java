@@ -11,11 +11,18 @@ import java.util.List;
  * RulesRevision (the {@code baseRevision} of the next save), {@code fields}
  * the current version's regions in sort order and {@code ruleTypes} what
  * each rule type applies to (the editor builds its forms from it).
+ *
+ * <p>ws34 (data-templates-contract §4): {@code inherited} lists the chosen
+ * data template's rules re-keyed onto the regions mapped to their fields —
+ * {@code origin} DATA_TEMPLATE, negative ids, {@code sourceTemplateName}
+ * the data template's name. They are read-only here (edited on the data
+ * template) and never part of a save; {@code rules} stays the PDF's own.
  */
 public record RulesDto(int revision,
                        List<Rule> rules,
                        List<Field> fields,
-                       List<RuleType> ruleTypes) {
+                       List<RuleType> ruleTypes,
+                       List<Rule> inherited) {
 
     /**
      * One rule; {@code orphan} is true when its region key is not in the
