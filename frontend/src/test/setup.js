@@ -27,6 +27,7 @@ const A11Y_GATED = new Set([
   'DocBuilderPage.checks.test.jsx',
   'DocBuilderPage.fill.test.jsx',
   'DocBuilderPage.layout.test.jsx',
+  'DocBuilderPage.steps.test.jsx',
   'DocBuilderPage.validation.test.jsx',
   'DocInstancesPage.test.jsx',
   'FieldList.test.jsx',

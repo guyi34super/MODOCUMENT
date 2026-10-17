@@ -225,7 +225,7 @@ describe('BlueprintDetailPage — the steps of a PDF template', () => {
 
     await userEvent.click(tab('Map fields'));
     expect(tab('Map fields')).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByTestId('location')).toHaveTextContent('?step=mapping');
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('?step=mapping'));
     expect(await screen.findByTestId('field-matcher')).toBeInTheDocument();
     expectAccessible();
   });
