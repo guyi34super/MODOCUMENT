@@ -52,6 +52,14 @@ public final class AuditActions {
     public static final String DOC_FIELD_RULES_IMPORTED = "DOC_FIELD_RULES_IMPORTED";
     /** ws33: a document was validated; SUCCESS = VALIDATED, FAILED = stays DRAFT (counts only). */
     public static final String DOC_VALIDATED = "DOC_VALIDATED";
+    /** ws34: a data template (validation) was created or its details, fields or rules saved (counts only). */
+    public static final String DOC_DATA_TEMPLATE_SAVED = "DOC_DATA_TEMPLATE_SAVED";
+    /** ws34: a data template was deleted. */
+    public static final String DOC_DATA_TEMPLATE_DELETED = "DOC_DATA_TEMPLATE_DELETED";
+    /** ws34: a data template was made from a flow template's fields and rules (counts and ids only). */
+    public static final String DOC_DATA_TEMPLATE_COPIED = "DOC_DATA_TEMPLATE_COPIED";
+    /** ws34: a PDF template's data template or field mapping was saved (counts only). */
+    public static final String DOC_BLUEPRINT_DATA_MAPPING_SAVED = "DOC_BLUEPRINT_DATA_MAPPING_SAVED";
 
     /**
      * A refusal outside method security: an AccessDeniedException raised
@@ -134,7 +142,8 @@ public final class AuditActions {
         add(c, "Documents", DOC_GENERATED, DOC_DOWNLOADED, "DOC_SUBMITTED", "DOC_RELEASED",
                 "DOC_RELEASE_REJECTED", "DOC_BLUEPRINT_CREATED", "DOC_BLUEPRINT_VERSION_SAVED",
                 "DOC_LEGACY_PURGED", DOC_BLUEPRINT_MAPPING_SAVED, DOC_FILLED_FROM_RECORD,
-                DOC_FIELD_RULES_SAVED, DOC_FIELD_RULES_IMPORTED, DOC_VALIDATED);
+                DOC_FIELD_RULES_SAVED, DOC_FIELD_RULES_IMPORTED, DOC_VALIDATED, DOC_DATA_TEMPLATE_SAVED,
+                DOC_DATA_TEMPLATE_DELETED, DOC_DATA_TEMPLATE_COPIED, DOC_BLUEPRINT_DATA_MAPPING_SAVED);
         add(c, "Privacy", SENSITIVE_DATA_VIEWED, TEMPLATE_RECORDS_SEARCHED, "DSR_SEARCH", "DSR_EXPORTED",
                 "DSR_ERASED", "RETENTION_PURGE_COMPLETED");
         add(c, "Audit", AUDIT_LOG_VIEWED, AUDIT_LOG_EXPORTED);
