@@ -152,6 +152,10 @@ public class DocInstance {
     @Column(name = "ValidationJson", columnDefinition = "text")
     private String validationJson;
 
+    /** V334: whether this document must pass validation before generate/download. */
+    @Column(name = "ValidationEnabled", nullable = false)
+    private boolean validationEnabled = true;
+
     public DocInstance() {
     }
 
@@ -384,5 +388,13 @@ public class DocInstance {
 
     public void setValidationJson(String validationJson) {
         this.validationJson = validationJson;
+    }
+
+    public boolean isValidationEnabled() {
+        return validationEnabled;
+    }
+
+    public void setValidationEnabled(boolean validationEnabled) {
+        this.validationEnabled = validationEnabled;
     }
 }

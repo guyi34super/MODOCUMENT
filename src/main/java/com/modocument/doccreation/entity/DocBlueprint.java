@@ -89,6 +89,10 @@ public class DocBlueprint {
     @Column(name = "DataMappingJson", columnDefinition = "text")
     private String dataMappingJson;
 
+    /** V334: whether new documents from this template are validated (their default). */
+    @Column(name = "ValidationEnabled", nullable = false)
+    private boolean validationEnabled = true;
+
     /** PDF_OVERLAY or DOCX_LEGACY (V300; existing rows default to DOCX_LEGACY). */
     @Column(name = "Kind", nullable = false, length = 16)
     private String kind = KIND_DOCX_LEGACY;
@@ -268,5 +272,13 @@ public class DocBlueprint {
 
     public void setDataMappingJson(String dataMappingJson) {
         this.dataMappingJson = dataMappingJson;
+    }
+
+    public boolean isValidationEnabled() {
+        return validationEnabled;
+    }
+
+    public void setValidationEnabled(boolean validationEnabled) {
+        this.validationEnabled = validationEnabled;
     }
 }
