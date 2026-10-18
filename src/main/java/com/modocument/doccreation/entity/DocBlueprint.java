@@ -90,6 +90,7 @@ public class DocBlueprint {
     private String dataMappingJson;
 
     /** V334: whether new documents from this template are validated (their default). */
+    @org.hibernate.annotations.ColumnDefault("true")
     @Column(name = "ValidationEnabled", nullable = false)
     private boolean validationEnabled = true;
 

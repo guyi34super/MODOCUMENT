@@ -3,6 +3,7 @@ package com.modocument.doccreation.api;
 import com.modocument.api.security.RequiresPermission;
 import com.modocument.doccreation.dto.BlueprintDto;
 import com.modocument.doccreation.dto.SaveOverlayRequest;
+import com.modocument.doccreation.dto.ValidationSettingRequest;
 import com.modocument.doccreation.usecase.DocBlueprintUseCase;
 import com.modocument.doccreation.usecase.DocCreationException;
 import com.modocument.domain.model.Permission;
@@ -94,6 +95,17 @@ public class DocBlueprintController {
     @PutMapping("/api/doccreation/blueprints/{id}/overlay")
     public ResponseEntity<?> saveOverlay(@PathVariable int id, @Valid @RequestBody SaveOverlayRequest request) {
         return ResponseEntity.ok(useCase.saveOverlay(id, request));
+    }
+
+    /**
+     * ws34 (data-templates-contract §8): {@code {enabled}} — whether new
+     * documents from this template are validated (their default only).
+     */
+    @RequiresPermission(Permission.DOC_WRITE)
+    @PutMapping("/api/doccreation/blueprints/{id}/validation-setting")
+    public ResponseEntity<?> validationSetting(@PathVariable int id,
+                                               @Valid @RequestBody ValidationSettingRequest request) {
+        return ResponseEntity.ok(useCase.setValidationEnabled(id, request.enabled()));
     }
 
     /** Multipart {@code file}: a PNG/JPEG for an ADD_IMAGE edit; returns its {@code imageKey}. */

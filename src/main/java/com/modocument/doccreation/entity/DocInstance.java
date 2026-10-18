@@ -153,6 +153,7 @@ public class DocInstance {
     private String validationJson;
 
     /** V334: whether this document must pass validation before generate/download. */
+    @org.hibernate.annotations.ColumnDefault("true")
     @Column(name = "ValidationEnabled", nullable = false)
     private boolean validationEnabled = true;
 

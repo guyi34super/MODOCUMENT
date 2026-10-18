@@ -35,6 +35,8 @@ All notable changes to MoDocument are recorded here. The format follows
 - The guided flow: `GET /instances` gives each document's `validationState` (`NOT_CHECKED`,
   `ERRORS`, `VALIDATED`, `RULES_CHANGED`) and `errorCount`; the fill preview marks the values
   that would fail a check (`wouldFail`, messages without values).
+- Validation can be switched off per PDF template (default) and per document; documents without
+  validation can be generated and downloaded straight away.
 - Field properties for PDF template fields: placeholder, help text, default value, maximum
   length, a date output format for DATE fields and a number format (decimals, thousands
   separator, prefix, suffix) for NUMBER fields, sent and returned as `props` on each region of

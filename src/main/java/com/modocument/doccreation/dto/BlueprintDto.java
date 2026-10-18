@@ -12,6 +12,8 @@ import java.util.List;
  * 1) is under review, READY once confirmed. {@code warnings} and the sample
  * values / removed texts are review data: only present while DRAFT.
  * {@code fonts} (ws33) are the bundled font names a region may use.
+ * {@code validationEnabled} (ws34, data-templates-contract §8) is whether new
+ * documents from this template are validated (their default).
  */
 public record BlueprintDto(int id,
                            String name,
@@ -28,5 +30,6 @@ public record BlueprintDto(int id,
                            String companyId,
                            String originalFileName,
                            LocalDateTime createdDate,
-                           List<String> fonts) {
+                           List<String> fonts,
+                           boolean validationEnabled) {
 }

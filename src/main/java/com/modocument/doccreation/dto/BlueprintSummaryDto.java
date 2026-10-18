@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
  * none), the regions of the current version mapped to one of its fields
  * ({@code mappedCount}) and the regions that have at least one compatible
  * field ({@code mappableCount}; 0 without a data template).
+ * {@code validationEnabled} (§8): the default for new documents.
  */
 public record BlueprintSummaryDto(int id,
                                   String name,
@@ -25,5 +26,6 @@ public record BlueprintSummaryDto(int id,
                                   Integer dataTemplateId,
                                   String dataTemplateName,
                                   int mappedCount,
-                                  int mappableCount) {
+                                  int mappableCount,
+                                  boolean validationEnabled) {
 }
