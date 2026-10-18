@@ -31,7 +31,7 @@ export function uploadBlueprint(file, { name, companyId, flow = 'AUTO' } = {}) {
   return api.post(`${BASE}/blueprints`, form);
 }
 
-/** BlueprintSummaryDto[]: { id, name, status, currentVersion, pageCount, flow, documentCount, companyId, createdDate }. */
+/** BlueprintSummaryDto[]: { id, name, status, currentVersion, pageCount, flow, documentCount, companyId, createdDate, validationEnabled }. */
 export function listBlueprints() {
   return api.get(`${BASE}/blueprints`);
 }
@@ -89,9 +89,30 @@ export function deleteBlueprint(id) {
 
 // ----------------------------------------------------------------- instances
 
-/** 201 { id }; a DRAFT blueprint answers 409. */
-export function createInstance(blueprintId, title) {
-  return api.post(`${BASE}/instances`, { blueprintId, title });
+/**
+ * Turns validation on or off for the template's NEW documents (data-templates contract §8).
+ * Resolves to the BlueprintDto (`validationEnabled`).
+ */
+export function setBlueprintValidation(id, enabled) {
+  return api.put(`${BASE}/blueprints/${id}/validation-setting`, { enabled: Boolean(enabled) });
+}
+
+/**
+ * 201 { id }; a DRAFT blueprint answers 409. `validationEnabled` (optional): whether
+ * this document is validated; left out, the template's default applies (contract §8).
+ */
+export function createInstance(blueprintId, title, validationEnabled) {
+  const body = { blueprintId, title };
+  if (typeof validationEnabled === 'boolean') body.validationEnabled = validationEnabled;
+  return api.post(`${BASE}/instances`, body);
+}
+
+/**
+ * Turns validation on or off for one document (contract §8); 409 once it is SUBMITTED or
+ * RELEASED. Switching on sends a VALIDATED/GENERATED document back to DRAFT. Resolves to the InstanceDto.
+ */
+export function setInstanceValidation(id, enabled) {
+  return api.put(`${BASE}/instances/${id}/validation-setting`, { enabled: Boolean(enabled) });
 }
 
 /**

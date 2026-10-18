@@ -238,6 +238,7 @@ export default function BuildFromFlowDialog({ open, onClose, current = null, onS
       open={open}
       onClose={onClose}
       size="lg"
+      scrollBody
       title="Build from Document Flow templates"
       description="Pick one or more Document Flow templates and the fields you want; their rules come along. Everything stays editable afterwards."
       footer={footer}

@@ -75,7 +75,7 @@ describe('DocInstancesPage', () => {
     await userEvent.type(screen.getByLabelText(/^Title/), 'Welcome letter — J. Doe');
     await userEvent.click(screen.getByRole('button', { name: 'Create document' }));
 
-    expect(createInstance).toHaveBeenCalledWith(3, 'Welcome letter — J. Doe');
+    expect(createInstance).toHaveBeenCalledWith(3, 'Welcome letter — J. Doe', true);
     // ws34: a new document opens on the builder's first step, Choose data.
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/creation/documents/12?step=data'));
   });

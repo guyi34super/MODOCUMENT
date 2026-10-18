@@ -160,6 +160,7 @@ export default function RuleDialog({ open, field, rule, ruleTypes, fields, onSav
       open={open}
       onClose={onCancel}
       size="lg"
+      scrollBody
       title={`${rule ? 'Edit' : 'Add'} a rule — ${field.label || field.key}`}
       footer={
         <>
