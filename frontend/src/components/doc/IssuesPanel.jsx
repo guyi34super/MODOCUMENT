@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ScrollBox from '../ScrollBox';
 import { Button } from '../ui';
 
 /**
@@ -30,30 +31,32 @@ export default function IssuesPanel({ issues, onGoTo }) {
           Next issue
         </Button>
       </div>
-      <ul className="max-h-60 space-y-1 overflow-y-auto text-xs">
-        {issues.map((issue) => (
-          <li key={issue.id} className="flex items-start gap-2">
-            <span
-              className={`mt-0.5 shrink-0 rounded px-1 text-[10px] font-semibold uppercase ${
-                issue.level === 'error' ? 'bg-danger-bg text-danger-ink' : 'bg-amber-100 text-amber-800'
-              }`}
-            >
-              {issue.level === 'error' ? 'Error' : 'Warning'}
-            </span>
-            <span className="flex-1">{issue.message}</span>
-            {issue.regionKey && (
-              <button
-                type="button"
-                className="shrink-0 text-accent hover:underline"
-                aria-label={`Go to field: ${issue.label}`}
-                onClick={() => onGoTo(issue.regionKey)}
+      <ScrollBox label="Issue list" maxHeight="max-h-60" testId="issues-scroll">
+        <ul className="space-y-1 pr-1 text-xs">
+          {issues.map((issue) => (
+            <li key={issue.id} className="flex items-start gap-2">
+              <span
+                className={`mt-0.5 shrink-0 rounded px-1 text-[10px] font-semibold uppercase ${
+                  issue.level === 'error' ? 'bg-danger-bg text-danger-ink' : 'bg-amber-100 text-amber-800'
+                }`}
               >
-                Go to field
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+                {issue.level === 'error' ? 'Error' : 'Warning'}
+              </span>
+              <span className="flex-1">{issue.message}</span>
+              {issue.regionKey && (
+                <button
+                  type="button"
+                  className="shrink-0 text-accent hover:underline"
+                  aria-label={`Go to field: ${issue.label}`}
+                  onClick={() => onGoTo(issue.regionKey)}
+                >
+                  Go to field
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </ScrollBox>
     </section>
   );
 }

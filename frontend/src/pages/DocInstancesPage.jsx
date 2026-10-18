@@ -13,6 +13,7 @@ import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { Badge, Button, Card, ErrorBanner, Field, Spinner, inputClass } from '../components/ui';
 import { ValidationStateTag, downloadBlockReason } from '../components/doc/validationState';
+import { ValidateCheckbox } from '../components/blueprint/DocumentsStep';
 import { useToast } from '../context/ToastContext';
 
 const blueprintIdOf = (b) => b.id ?? b.blueprintId;
@@ -40,9 +41,13 @@ export default function DocInstancesPage() {
   const [blueprintId, setBlueprintId] = useState('');
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
+  // "Validate this document": null follows the chosen template's default (contract §8).
+  const [validateChoice, setValidateChoice] = useState(null);
   const [showCreate, setShowCreate] = useState(null);
   const createOpen = showCreate ?? (instances !== null && instances.length === 0 && !status);
   const chosen = blueprints.find((b) => String(blueprintIdOf(b)) === String(blueprintId));
+  const templateValidates = chosen?.validationEnabled !== false;
+  const validate = validateChoice ?? templateValidates;
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -68,7 +73,7 @@ export default function DocInstancesPage() {
     if (!blueprintId || !title.trim()) return;
     setCreating(true);
     try {
-      const created = await toast.promise(() => createInstance(Number(blueprintId), title.trim()), {
+      const created = await toast.promise(() => createInstance(Number(blueprintId), title.trim(), validate), {
         loading: 'Creating document…',
         success: 'Document created',
         error: (err) => err.message,
@@ -82,7 +87,10 @@ export default function DocInstancesPage() {
     }
   };
 
-  /** Download is only offered for a document whose data passed the validation (contract §5, §6). */
+  /**
+   * Download is only offered for a document whose data passed the validation (contract §5, §6),
+   * or whose validation is off (§8).
+   */
   const download = async (instance) => {
     try {
       await toast.promise(() => downloadInstance(instanceIdOf(instance), `${instance.title || 'document'}.pdf`), {
@@ -140,7 +148,11 @@ export default function DocInstancesPage() {
                   required
                   className={inputClass}
                   value={blueprintId}
-                  onChange={(e) => setBlueprintId(e.target.value)}
+                  onChange={(e) => {
+                    setBlueprintId(e.target.value);
+                    // Another template: start again from its default.
+                    setValidateChoice(null);
+                  }}
                 >
                   <option value="">Select a template…</option>
                   {blueprints.map((b) => (
@@ -185,6 +197,9 @@ export default function DocInstancesPage() {
                   {chosen.name} · page 1{chosen.pageCount > 1 ? ` of ${chosen.pageCount}` : ''}
                 </figcaption>
               </figure>
+            )}
+            {chosen && (
+              <ValidateCheckbox checked={validate} onChange={setValidateChoice} templateDefault={templateValidates} />
             )}
             <Button type="submit" disabled={creating || !blueprintId || !title.trim()}>
               {creating ? 'Creating…' : 'Create document'}

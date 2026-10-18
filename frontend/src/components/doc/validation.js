@@ -88,9 +88,12 @@ export const RULES_CHANGED_TEXT = 'The rules changed — save again';
  * shown (an edit already made it DRAFT). Submitted and released documents
  * stay downloadable; a generated document from before validation existed
  * (never checked) is allowed, as the server allows it.
+ * With validation off for the document (`validationEnabled` false, contract
+ * §8) nothing is gated on validation: the step is always open.
  * Returns { locked, reason }.
  */
-export function downloadGate({ status, validation }) {
+export function downloadGate({ status, validation, validationEnabled = true }) {
+  if (validationEnabled === false) return { locked: false, reason: '' };
   if (status === 'SUBMITTED' || status === 'RELEASED') return { locked: false, reason: '' };
   if (status !== 'VALIDATED' && status !== 'GENERATED') return { locked: true, reason: NOT_VALIDATED_TEXT };
   if (validation?.rulesChangedSinceValidation) return { locked: true, reason: RULES_CHANGED_TEXT };

@@ -9,6 +9,7 @@ import {
   imageContentPath,
   placeImage,
   saveOverlay,
+  setInstanceValidation,
   submitInstance,
   upgradeInstance,
   uploadImages,
@@ -19,7 +20,7 @@ import Stepper from '../components/Stepper';
 import { DownloadStep, SaveStep } from '../components/doc/BuilderSteps';
 import AuthedImage from '../components/AuthedImage';
 import Modal from '../components/Modal';
-import { Badge, Button, Callout, Card, ErrorBanner, Spinner, Tag, inputClass } from '../components/ui';
+import { Badge, Button, Callout, Card, ErrorBanner, Spinner, Switch, Tag, inputClass } from '../components/ui';
 import PhotoBox, { startPhotoDrag } from '../components/doc/PhotoBox';
 import PreviewDialog from '../components/doc/PreviewDialog';
 import RegionInput from '../components/doc/RegionInput';
@@ -60,7 +61,14 @@ export const BUILDER_STEPS = [
   { id: 'save', label: 'Save & validate' },
   { id: 'download', label: 'Download' },
 ];
+/** With validation off for the document (contract §8) there is nothing to validate: three steps. */
+export const BUILDER_STEPS_OFF = [
+  { id: 'data', label: 'Choose data' },
+  { id: 'fix', label: 'Fill fields' },
+  { id: 'download', label: 'Download' },
+];
 const stepOf = (value) => (BUILDER_STEPS.some((s) => s.id === value) ? value : 'fix');
+export const VALIDATION_ON_TEXT = 'The document will need to pass its checks before Download.';
 
 /** CSS px for a region's text: its own size, or a fit to the box ("auto"), scaled to the page. */
 function fontPx(region, page, scale) {
@@ -125,6 +133,9 @@ export default function DocBuilderPage() {
   // The server refused the validate (403): this user may not edit the document.
   const [forbidden, setForbidden] = useState(false);
   const [goTo, setGoTo] = useState(null);
+  // The document's own validation switch (contract §8); turning it on asks first.
+  const [confirmValidationOn, setConfirmValidationOn] = useState(false);
+  const [switchingValidation, setSwitchingValidation] = useState(false);
 
   // Autosave (components/doc/useAutosave): changed keys wait until typing pauses.
   const pendingRef = useRef(() => ({}));
@@ -201,15 +212,18 @@ export default function DocBuilderPage() {
 
   // ------------------------------------------------------- validation
 
+  // Validation on/off for this document (contract §8): an older server without the field means on.
+  const validationOn = doc?.validationEnabled !== false;
   const serverStatus = doc?.status;
   // Any edit makes the document a draft again (the server resets it too).
   const status = edited.size && (serverStatus === 'VALIDATED' || serverStatus === 'GENERATED') ? 'DRAFT' : serverStatus;
   const validation = doc?.validation || null;
   // Step 4 (and the Generate / Download / Submit shortcuts) open only for a document validated with the
   // current rules; an edit re-locks it at once (the status above is already DRAFT).
-  const gate = downloadGate({ status, validation });
+  // With validation off nothing is gated on it (only the usual conditions, e.g. Submit needs GENERATED).
+  const gate = downloadGate({ status, validation, validationEnabled: validationOn });
   const notValidated = gate.locked;
-  const issuesByKey = useMemo(() => serverIssues(validation), [validation]);
+  const issuesByKey = useMemo(() => (validationOn ? serverIssues(validation) : new Map()), [validation, validationOn]);
   const rulesByKey = useMemo(() => {
     const map = new Map();
     for (const rule of fieldRules.data?.rules || []) {
@@ -221,6 +235,8 @@ export default function DocBuilderPage() {
 
   /** What to show under a field: the server's errors and warnings, else (after an edit) live hints. */
   const fieldMessages = (region) => {
+    // Validation off: nothing is checked, so the fields carry no messages (the Checks panel lists the rules).
+    if (!validationOn) return { errors: [], warnings: [], hints: [] };
     const server = !edited.has(region.key) ? issuesByKey.get(region.key) : null;
     if (server && (server.errors.length || server.warnings.length)) {
       return { errors: server.errors, warnings: server.warnings, hints: [] };
@@ -236,7 +252,7 @@ export default function DocBuilderPage() {
   };
 
   const issues = useMemo(() => {
-    if (!validation?.checked) return [];
+    if (!validationOn || !validation?.checked) return [];
     const labelOf = (key) => fieldLabel(regions.find((r) => r.key === key) || { key });
     const list = [];
     (validation.errors || []).forEach((e, i) =>
@@ -246,7 +262,7 @@ export default function DocBuilderPage() {
       list.push({ id: `w${i}`, level: 'warning', regionKey: w.regionKey, label: w.label || labelOf(w.regionKey), message: w.message })
     );
     return list;
-  }, [validation, regions]);
+  }, [validation, regions, validationOn]);
 
   // What each field is checked against (contract §4.4): its rules, built-in checks and data-source mapping.
   const fieldChecks = doc?.fieldChecks;
@@ -291,8 +307,29 @@ export default function DocBuilderPage() {
     setGoTo(null);
   }, [goTo]);
 
-  /** Save: send what waits, stop if that failed, then validate. */
+  /** Validation off: Save only sends what waits (no validate call). */
+  const saveOnly = async () => {
+    setValidating(true);
+    setError('');
+    try {
+      const flushed = await flush();
+      if (!flushed) {
+        setError('Your latest changes could not be saved. Check your connection and press Save again.');
+        return;
+      }
+      setEdited(new Set());
+      toast.success('Document saved');
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  /** Save: send what waits, stop if that failed, then validate (validation off: only save). */
   const saveAndValidate = async () => {
+    if (!validationOn) {
+      await saveOnly();
+      return;
+    }
     setValidating(true);
     setError('');
     try {
@@ -328,6 +365,39 @@ export default function DocBuilderPage() {
       return /rules changed/i.test(err.message || '') ? err.message : NOT_VALIDATED_TEXT;
     }
     return err.message;
+  };
+
+  /** Turns this document's validation on or off (PUT validation-setting; the reply is the InstanceDto). */
+  const applyValidation = async (enabled) => {
+    setConfirmValidationOn(false);
+    setSwitchingValidation(true);
+    setError('');
+    try {
+      const flushed = await flush();
+      if (!flushed) {
+        setError('Your latest changes could not be saved, so validation was not changed. Press Save, then try again.');
+        return;
+      }
+      const dto = await toast.promise(() => setInstanceValidation(id, enabled), {
+        loading: enabled ? 'Turning validation on…' : 'Turning validation off…',
+        success: enabled
+          ? 'Validation is on — the document has to pass its checks before Download'
+          : 'Validation is off — nothing is checked before Download',
+        error: (err) => err.message,
+      });
+      setEdited(new Set());
+      adopt(dto ? { ...dto, validationEnabled: dto.validationEnabled ?? enabled } : dto);
+    } catch {
+      // The error toast is already shown.
+    } finally {
+      setSwitchingValidation(false);
+    }
+  };
+
+  /** The header switch: turning off applies at once; turning on asks first (Download will wait for the checks). */
+  const toggleValidation = (next) => {
+    if (next) setConfirmValidationOn(true);
+    else applyValidation(false);
   };
 
   // ------------------------------------------------------------ photos
@@ -633,8 +703,11 @@ export default function DocBuilderPage() {
     error: 'Not saved — will retry on your next change',
   }[saveState];
 
+  // Validation off: there is no Save & validate step (a `?step=save` link shows Fill fields).
+  const steps = validationOn ? BUILDER_STEPS : BUILDER_STEPS_OFF;
+  const wanted = !validationOn && step === 'save' ? 'fix' : step;
   // A locked Download step (a deep link, or the rules changed under it) shows Save & validate instead.
-  const current = step === 'download' && (gate.locked || layoutMode) ? 'save' : step;
+  const current = wanted === 'download' && (gate.locked || layoutMode) ? (validationOn ? 'save' : 'fix') : wanted;
 
   const page = pages[pageIndex];
   const version = doc?.blueprintVersion ?? 1;
@@ -682,6 +755,21 @@ export default function DocBuilderPage() {
         actions={
           doc && (
             <>
+              <span className="flex items-center gap-1.5 self-center text-xs" data-testid="validation-switch">
+                <span id="builder-validation-label" className="text-ink">
+                  Validation
+                </span>
+                <Switch
+                  id="builder-validation-switch"
+                  checked={validationOn}
+                  onChange={toggleValidation}
+                  labelledBy="builder-validation-label"
+                  disabled={locked || layoutMode || switchingValidation}
+                />
+                <span aria-hidden="true" className="w-6 text-muted">
+                  {validationOn ? 'on' : 'off'}
+                </span>
+              </span>
               <span role="status" aria-live="polite" className="min-w-16 text-xs text-muted" data-testid="save-state">
                 {saveText}
               </span>
@@ -748,7 +836,8 @@ export default function DocBuilderPage() {
         <>
           <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted">
             <Badge status={status} />
-            {['GENERATED', 'SUBMITTED', 'RELEASED'].includes(status) &&
+            {validationOn &&
+              ['GENERATED', 'SUBMITTED', 'RELEASED'].includes(status) &&
               validation?.checked &&
               (validation.errors || []).length === 0 && (
                 <Tag tone="success" className="!text-xs" title="This document passed its checks">
@@ -795,13 +884,14 @@ export default function DocBuilderPage() {
             current={current}
             onSelect={selectStep}
             panelId={(value) => `builder-panel-${value}`}
-            steps={BUILDER_STEPS.map((s) => ({
+            steps={steps.map((s) => ({
               ...s,
               done:
                 s.id === 'data'
                   ? sourceRecords.length > 0
                   : s.id === 'fix'
-                    ? !gate.locked || (requiredRegions.length > 0 && requiredFilled === requiredRegions.length)
+                    ? (validationOn && !gate.locked) ||
+                      (requiredRegions.length > 0 && requiredFilled === requiredRegions.length)
                     : s.id === 'save'
                       ? !gate.locked
                       : ['GENERATED', 'SUBMITTED', 'RELEASED'].includes(status) && !gate.locked,
@@ -852,6 +942,7 @@ export default function DocBuilderPage() {
                 onDownload={download}
                 onSubmit={submitForRelease}
                 onPreview={openPreview}
+                validationOn={validationOn}
               />
             </div>
           ) : (
@@ -1122,6 +1213,7 @@ export default function DocBuilderPage() {
                 onGoTo={goToField}
                 requiredFilled={requiredFilled}
                 requiredTotal={requiredRegions.length}
+                validationOn={validationOn}
               />
 
               <Card padding="compact">
@@ -1386,6 +1478,25 @@ export default function DocBuilderPage() {
       )}
 
       <DeleteFieldsDialog editor={layout} nameOf={fieldLabel} />
+
+      <Modal
+        open={confirmValidationOn}
+        onClose={() => setConfirmValidationOn(false)}
+        title="Turn validation on?"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmValidationOn(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => applyValidation(true)}>Turn validation on</Button>
+          </>
+        }
+      >
+        <p>{VALIDATION_ON_TEXT}</p>
+        <p className="mt-2 text-muted">
+          A validated or generated document goes back to a draft and has to pass Save &amp; validate again.
+        </p>
+      </Modal>
 
       <Modal
         open={layoutConflict}

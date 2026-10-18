@@ -70,15 +70,30 @@ export function SaveStep({ validation, checkedNow, validating, disabled, gate, i
   );
 }
 
-/** The builder's step 4, "Download": Generate, Download PDF and (once generated) Submit for release. */
-export function DownloadStep({ status, docLocked, generating, submitting, onGenerate, onDownload, onSubmit, onPreview }) {
+/**
+ * The builder's last step, "Download": Generate, Download PDF and (once generated) Submit for release.
+ * With validation off (`validationOn` false) it is step 3 and nothing waits on a check.
+ */
+export function DownloadStep({
+  status,
+  docLocked,
+  generating,
+  submitting,
+  onGenerate,
+  onDownload,
+  onSubmit,
+  onPreview,
+  validationOn = true,
+}) {
   return (
     <section aria-labelledby="download-step-heading" className="space-y-3 rounded-lg border border-line bg-white p-4" data-testid="download-step">
       <h2 id="download-step-heading" className="text-base font-medium">
         Download
       </h2>
       <p className="text-sm text-muted">
-        The document passed its checks. Generate the final PDF, download it, or hand it to an approver for release.
+        {validationOn
+          ? 'The document passed its checks. Generate the final PDF, download it, or hand it to an approver for release.'
+          : 'Validation is off for this document, so nothing is checked. Generate the final PDF, download it, or hand it to an approver for release.'}
       </p>
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" onClick={onPreview}>

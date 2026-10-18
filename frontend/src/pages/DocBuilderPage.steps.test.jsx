@@ -103,6 +103,7 @@ const doc = (overrides = {}) => ({
   canEditLayout: false,
   blueprintEdits: [],
   validation: NOT_CHECKED,
+  validationEnabled: true,
   ...overrides,
 });
 

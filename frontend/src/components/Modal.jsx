@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import ScrollBox from './ScrollBox';
 
 const FOCUSABLE = [
   'a[href]',
@@ -34,6 +35,9 @@ function focusableIn(node) {
  * - `size`: 'sm' | 'md' (default) | 'lg'
  * - `initialFocusRef`: element to focus on open (default: first focusable)
  * - `closeOnBackdrop` (default true)
+ * - `scrollBody`: the body scrolls inside the dialog (max 70vh, a focusable
+ *   region named by the title) so the header and the footer buttons stay
+ *   visible however long the content is
  */
 export default function Modal({
   open,
@@ -45,6 +49,7 @@ export default function Modal({
   size = 'md',
   initialFocusRef,
   closeOnBackdrop = true,
+  scrollBody = false,
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -64,7 +69,8 @@ export default function Modal({
     const items = focusableIn(panelRef.current);
     const target =
       initialFocusRef?.current ||
-      items.find((el) => !el.hasAttribute('data-modal-close')) ||
+      // The scrollable body is focusable for keyboard scrolling, but it is not where a dialog starts.
+      items.find((el) => !el.hasAttribute('data-modal-close') && !el.hasAttribute('data-scrollbox')) ||
       items[0] ||
       panelRef.current;
     target?.focus();
@@ -149,7 +155,18 @@ export default function Modal({
             ×
           </button>
         </div>
-        <div className="px-5 py-4 text-sm text-ink">{children}</div>
+        {scrollBody ? (
+          <ScrollBox
+            labelledBy={titleId}
+            maxHeight="max-h-[70vh]"
+            className="!rounded-none px-5 py-4 text-sm text-ink"
+            testId="modal-body"
+          >
+            {children}
+          </ScrollBox>
+        ) : (
+          <div className="px-5 py-4 text-sm text-ink">{children}</div>
+        )}
         {footer && (
           <div className="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-3">
             {footer}

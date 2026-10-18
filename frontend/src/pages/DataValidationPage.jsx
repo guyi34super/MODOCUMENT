@@ -17,6 +17,7 @@ import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
 import RegexBuilder from '../components/RegexBuilder';
+import ScrollBox from '../components/ScrollBox';
 import BuildFromFlowDialog from '../components/dataTemplates/BuildFromFlowDialog';
 import { NewDataTemplateDialog } from '../components/dataTemplates/DataTemplateDialogs';
 import { DATA_KIND_LABELS, PII_KINDS } from '../components/dataTemplates/dataFieldKinds';
@@ -566,8 +567,8 @@ export default function DataValidationPage() {
             {fields.length === 0 ? (
               <p className="text-sm text-muted">No fields yet — use “+ Add field”, or build from Document Flow templates.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+              <ScrollBox label={`Fields of ${dto.name}`} maxHeight="max-h-[60vh]" stickyHeader testId="fields-scroll">
+                <table className="w-full min-w-[40rem] text-left text-sm">
                   <caption className="sr-only">Fields of {dto.name}</caption>
                   <thead className="text-xs text-muted">
                     <tr>
@@ -664,7 +665,7 @@ export default function DataValidationPage() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </ScrollBox>
             )}
           </Card>
 
@@ -841,6 +842,7 @@ export default function DataValidationPage() {
             <DataTable
               caption={`Rules of ${dto.name}`}
               maxHeight="45vh"
+              scrollLabel={`Rules of ${dto.name}`}
               rows={ruleRows(rules, savedFields)}
               emptyMessage="No rules for this template yet."
               columns={[
