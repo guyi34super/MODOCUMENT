@@ -12,6 +12,7 @@ import com.modocument.doccreation.dto.PlaceImageRequest;
 import com.modocument.doccreation.dto.UpdateDocInstanceRequest;
 import com.modocument.doccreation.dto.UpdateValuesRequest;
 import com.modocument.doccreation.dto.ValidationResultDto;
+import com.modocument.doccreation.dto.ValidationSettingRequest;
 import com.modocument.doccreation.usecase.DocCreationException;
 import com.modocument.doccreation.usecase.DocInstanceUseCase;
 import com.modocument.domain.model.AuditOutcome;
@@ -68,11 +69,16 @@ public class DocInstanceController {
 
     // ------------------------------------------------------------- instances
 
-    /** 201 {@code {id, instanceId}}; a DRAFT template is a 409. */
+    /**
+     * 201 {@code {id, instanceId}}; a DRAFT template is a 409. ws34 §8:
+     * {@code validationEnabled} (optional) — null takes the template's default.
+     */
     @RequiresPermission(Permission.DOC_WRITE)
     @PostMapping("/api/doccreation/instances")
     public ResponseEntity<?> create(@Valid @RequestBody CreateDocInstanceRequest request) {
-        CreatedInstanceDto created = useCase.create(request.getBlueprintId(), request.getTitle());
+        CreatedInstanceDto created = request.getValidationEnabled() == null
+                ? useCase.create(request.getBlueprintId(), request.getTitle())
+                : useCase.create(request.getBlueprintId(), request.getTitle(), request.getValidationEnabled());
         return ResponseEntity.created(URI.create("/api/doccreation/instances/" + created.id())).body(created);
     }
 
@@ -142,6 +148,19 @@ public class DocInstanceController {
                 .newValues(values)
                 .build());
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * ws34 (data-templates-contract §8): {@code {enabled}} — validation on or
+     * off for this document (SUBMITTED/RELEASED 409). Switching on sends a
+     * VALIDATED or GENERATED document back to DRAFT; switching off keeps the
+     * status. Audited DOC_VALIDATION_SETTING_CHANGED when it changes.
+     */
+    @RequiresPermission(Permission.DOC_WRITE)
+    @PutMapping("/api/doccreation/instances/{id}/validation-setting")
+    public ResponseEntity<?> validationSetting(@PathVariable int id,
+                                               @Valid @RequestBody ValidationSettingRequest request) {
+        return ResponseEntity.ok(useCase.setValidationEnabled(id, request.enabled()));
     }
 
     // ---------------------------------------------------------------- photos

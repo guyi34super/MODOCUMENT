@@ -1,6 +1,7 @@
 package com.modocument.doccreation.usecase;
 
 import com.modocument.doccreation.repo.DocFieldRuleJpaRepository;
+import com.modocument.application.audit.AuditActions;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.doccreation.dto.BlueprintDto;
@@ -307,7 +308,7 @@ public class DocBlueprintUseCase {
                             b.getCompanyId(), b.getCreatedDate(),
                             ruleCounts.getOrDefault(b.getDocBlueprintId(), 0L).intValue(),
                             counts.dataTemplateId(), counts.dataTemplateName(), counts.mappedCount(),
-                            counts.mappableCount());
+                            counts.mappableCount(), b.isValidationEnabled());
                 })
                 .toList();
     }
@@ -508,6 +509,34 @@ public class DocBlueprintUseCase {
         return imageKey;
     }
 
+    /**
+     * {@code PUT /blueprints/{id}/validation-setting} (data-templates-contract
+     * §8): whether NEW documents from this template are validated; existing
+     * documents keep their own choice. Locks the template row like the other
+     * template writes. Unchanged: nothing is stored or audited. Audited
+     * DOC_VALIDATION_SETTING_CHANGED (no values).
+     */
+    @Transactional
+    public BlueprintDto setValidationEnabled(int blueprintId, boolean enabled) {
+        DocBlueprint blueprint = ownership.requireTemplate(blueprintId);
+        if (blueprint.getBankId() != ownership.requireBankId()) {
+            throw new NoSuchElementException("Blueprint " + blueprintId + " not found.");
+        }
+        if (fieldRules != null) {
+            fieldRules.lock(blueprint);
+        }
+        if (blueprint.isValidationEnabled() != enabled) {
+            blueprint.setValidationEnabled(enabled);
+            blueprints.save(blueprint);
+            Map<String, Object> values = new LinkedHashMap<>();
+            values.put("target", "BLUEPRINT");
+            values.put("enabled", enabled);
+            audit.success(AuditActions.DOC_VALIDATION_SETTING_CHANGED, "DocBlueprint", String.valueOf(blueprintId),
+                    null, values);
+        }
+        return toDto(blueprint, TemplateVersions.effectiveVersion(blueprint));
+    }
+
     @Transactional
     public void delete(int blueprintId) {
         DocBlueprint blueprint = ownership.requireTemplate(blueprintId);
@@ -576,7 +605,8 @@ public class DocBlueprintUseCase {
                 blueprint.getUploadFlow(), version, TemplateVersions.effectiveVersion(blueprint), pages, regionDtos,
                 editDtos, draft ? review.warnings() : List.of(), detectedBy,
                 instances.countByBlueprint(blueprint.getDocBlueprintId()), blueprint.getCompanyId(),
-                blueprint.getOriginalFileName(), blueprint.getCreatedDate(), BundledFonts.names());
+                blueprint.getOriginalFileName(), blueprint.getCreatedDate(), BundledFonts.names(),
+                blueprint.isValidationEnabled());
     }
 
     /**

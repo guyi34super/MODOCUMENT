@@ -33,6 +33,11 @@ import java.util.Map;
  * checks and the data-source fields mapped onto it; {@code rulesRevision}
  * the template's rules revision; {@code canEditRules} — the caller owns the
  * template and holds {@code doc:write} (may open its Field rules tab).
+ *
+ * <p>ws34 (docs/doccreation/data-templates-contract.md §8):
+ * {@code validationEnabled} — whether this document must pass validation
+ * before it is generated or downloaded ({@code validation},
+ * {@code fieldChecks} stay informational when it is off).
  */
 public record InstanceDto(int id,
                           String title,
@@ -58,7 +63,8 @@ public record InstanceDto(int id,
                           List<String> fonts,
                           Map<String, FieldChecksDto> fieldChecks,
                           int rulesRevision,
-                          boolean canEditRules) {
+                          boolean canEditRules,
+                          boolean validationEnabled) {
 
     /** A photo of the document: placed in {@code regionKey}, or in the tray when null. */
     public record ImageDto(int id, String regionKey, String originalName) {
@@ -73,6 +79,6 @@ public record InstanceDto(int id,
         return new InstanceDto(id, title, status, blueprintId, blueprintName, blueprintVersion,
                 blueprintCurrentVersion, pages, regions, values, images, overflow, lastGeneratedDate, pdfAvailable,
                 reviewerComment, sourceRecords, canEditLayout, blueprintEdits, List.copyOf(keys), validation, props, fonts,
-                fieldChecks, rulesRevision, canEditRules);
+                fieldChecks, rulesRevision, canEditRules, validationEnabled);
     }
 }

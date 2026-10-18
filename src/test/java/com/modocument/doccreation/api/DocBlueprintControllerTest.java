@@ -29,7 +29,7 @@ class DocBlueprintControllerTest {
 
     private static BlueprintDto dto(int id, String status, int version) {
         return new BlueprintDto(id, "report", status, "BLANK", version, version, List.of(), List.of(), List.of(),
-                List.of(), "CODE", 0, null, "report.pdf", null, List.of());
+                List.of(), "CODE", 0, null, "report.pdf", null, List.of(), true);
     }
 
     @Test
