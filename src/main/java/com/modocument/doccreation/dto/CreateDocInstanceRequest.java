@@ -14,6 +14,20 @@ public class CreateDocInstanceRequest {
     @Size(max = 255)
     private String title;
 
+    /**
+     * ws34 (data-templates-contract §8): whether the new document is
+     * validated; null takes the template's default.
+     */
+    private Boolean validationEnabled;
+
+    public Boolean getValidationEnabled() {
+        return validationEnabled;
+    }
+
+    public void setValidationEnabled(Boolean validationEnabled) {
+        this.validationEnabled = validationEnabled;
+    }
+
     public int getBlueprintId() {
         return blueprintId;
     }

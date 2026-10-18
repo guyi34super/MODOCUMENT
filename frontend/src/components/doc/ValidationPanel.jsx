@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import ScrollBox from '../ScrollBox';
 import IssuesPanel from './IssuesPanel';
 import { FieldChecksDetail, checksFor, hasChecks, totalRules } from './fieldChecks';
 import { fieldLabel } from './fields';
@@ -69,14 +70,30 @@ function Disclosure({ id, title, open, onToggle, children }) {
  * issues of the last Save, the template's rule problems, the rules and
  * data-source mapping of each field, and (for the template's owner) links
  * to the template's Field rules and Data sources tabs.
+ *
+ * With validation off for the document (`validationOn` false, contract §8)
+ * it is titled "Checks (validation off)" and only informs: the rules are
+ * listed, but no issues, lock or "save again" messages are shown.
  */
-export default function ValidationPanel({ doc, status, locked, regions, issues, onGoTo, requiredFilled, requiredTotal }) {
+export default function ValidationPanel({
+  doc,
+  status,
+  locked,
+  regions,
+  issues,
+  onGoTo,
+  requiredFilled,
+  requiredTotal,
+  validationOn = true,
+}) {
   const validation = doc.validation || null;
   const fieldChecks = doc.fieldChecks || {};
   const rulesTotal = totalRules(fieldChecks);
   const [rulesOpen, setRulesOpen] = useState(rulesTotal > 0);
   const [setupOpen, setSetupOpen] = useState(false);
-  const line = stateLine({ validation, status, locked });
+  const line = validationOn
+    ? stateLine({ validation, status, locked })
+    : { tone: 'muted', text: 'Validation is off for this document — the rules below are for information; nothing is checked before Download.' };
   const setupWarnings = validation?.setupWarnings || [];
   const fields = regions.map((region) => [region, checksFor(fieldChecks, region.key)]).filter(([, c]) => hasChecks(c));
   const labelOf = (key) => fieldLabel(regions.find((r) => r.key === key) || { key });
@@ -85,12 +102,12 @@ export default function ValidationPanel({ doc, status, locked, regions, issues, 
   return (
     <section aria-labelledby="checks-heading" className="space-y-3 rounded-lg border border-line bg-white p-3" data-testid="validation-panel">
       <h2 id="checks-heading" className="text-sm font-medium">
-        Checks
+        {validationOn ? 'Checks' : 'Checks (validation off)'}
       </h2>
       <p className={`text-sm ${TONES[line.tone]}`} data-testid="checks-state">
         {line.text}
       </p>
-      {validation?.rulesChangedSinceValidation && !locked && (
+      {validationOn && validation?.rulesChangedSinceValidation && !locked && (
         <p className="rounded bg-amber-100 px-2 py-1 text-xs text-amber-900" role="note">
           Rules changed since this document was validated — save again to re-check.
         </p>
@@ -102,7 +119,7 @@ export default function ValidationPanel({ doc, status, locked, regions, issues, 
         {` · ${plural(rulesTotal, 'rule')} on this template`}
       </p>
 
-      <IssuesPanel issues={issues} onGoTo={onGoTo} />
+      {validationOn && <IssuesPanel issues={issues} onGoTo={onGoTo} />}
 
       {setupWarnings.length > 0 && (
         <Disclosure
@@ -132,20 +149,22 @@ export default function ValidationPanel({ doc, status, locked, regions, issues, 
           {fields.length === 0 ? (
             <p className="text-xs text-muted">No checks on the fields of this template.</p>
           ) : (
-            <ul className="max-h-80 space-y-2 overflow-y-auto pr-1" data-testid="field-rules-list">
-              {fields.map(([region, checks]) => (
-                <li key={region.key} data-testid={`field-rules-${region.key}`}>
-                  <button
-                    type="button"
-                    className="text-left text-xs font-medium text-accent hover:underline"
-                    onClick={() => onGoTo(region.key)}
-                  >
-                    {fieldLabel(region)}
-                  </button>
-                  <FieldChecksDetail checks={checks} />
-                </li>
-              ))}
-            </ul>
+            <ScrollBox label="Rules for each field" maxHeight="max-h-80" testId="field-rules-scroll">
+              <ul className="space-y-2 pr-1" data-testid="field-rules-list">
+                {fields.map(([region, checks]) => (
+                  <li key={region.key} data-testid={`field-rules-${region.key}`}>
+                    <button
+                      type="button"
+                      className="text-left text-xs font-medium text-accent hover:underline"
+                      onClick={() => onGoTo(region.key)}
+                    >
+                      {fieldLabel(region)}
+                    </button>
+                    <FieldChecksDetail checks={checks} />
+                  </li>
+                ))}
+              </ul>
+            </ScrollBox>
           )}
         </Disclosure>
         {rulesTotal === 0 && <p className="mt-1 text-xs text-muted">This template has no field rules yet.</p>}

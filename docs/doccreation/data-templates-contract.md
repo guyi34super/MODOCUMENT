@@ -312,3 +312,32 @@ Step 4 is locked until the document is validated with the current rules, with th
 | **BE-B** | the PDF ↔ data template routes, `EffectiveRules` and its wiring, the managed source, the list counts, the stricter gate, `validationState`/`errorCount`, `wouldFail`, the `GET /rules` `inherited` list, an RLS PostgreSQL IT for the three tables, `openapi-routes.txt` (both streams' routes), README and CHANGELOG |
 | **FE** | `frontend/src/**` |
 | **QA** | `e2e/**` (wave 2) |
+
+
+## 8. Validation on/off (follow-up, V334)
+
+Validation in document creation can be switched off. Document Flow is not affected.
+
+### Database and API
+- **V334:** `DocBlueprint.ValidationEnabled` (default true) is the default for new documents. `DocInstance.ValidationEnabled` (default true) is each document's own choice. Existing rows stay on.
+- **`PUT /api/doccreation/blueprints/{id}/validation-setting {enabled}`** (`DOC_WRITE`, template owner): changes the default for **new** documents only. `BlueprintDto` and `BlueprintSummaryDto` gain `validationEnabled`.
+- **`POST /api/doccreation/instances`** takes an optional `validationEnabled`; when it's missing, the template's default is used.
+- **`PUT /api/doccreation/instances/{id}/validation-setting {enabled}`** (`DOC_WRITE`, owner) works only while the document is editable (SUBMITTED or RELEASED → 409).
+  - **Switching on:** a DRAFT stays a DRAFT. A VALIDATED or GENERATED document that was produced with validation off goes back to DRAFT, with its hash and validated fields cleared, so it has to pass Save & validate again; a GENERATED PDF is then stale.
+  - **Switching off:** the status is kept.
+  - The reply is `InstanceDto`.
+- **`InstanceDto` and `InstanceSummaryDto`** gain `validationEnabled`. With validation off, `validationState` is `OFF` and `errorCount` is 0.
+
+### Gates with validation off
+- `generate` and `download` skip the `NOT_VALIDATED` and rules-changed gates. Generate moves DRAFT → GENERATED.
+- `submit` still needs GENERATED and not stale.
+- `validate` can still be called; it records the result but is not needed.
+- `fieldChecks` and `wouldFail` are still returned, as information.
+
+**Audit:** `DOC_VALIDATION_SETTING_CHANGED`.
+
+### Frontend
+- **PDF template:** a header switch "Validate documents from this template". When it's off, the steps are Upload / Map fields / Documents.
+- **New document:** a "Validate this document" checkbox, ticked from the template's default.
+- **Builder:** a header switch "Validation on/off". When it's off, the steps are Choose data / Fill fields / Download, Save only saves, and nothing is gated on validation.
+- **My documents:** the Validation column shows "Off", and Download is enabled for those documents.

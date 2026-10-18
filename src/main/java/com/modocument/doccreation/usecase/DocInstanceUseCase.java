@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.modocument.application.audit.AuditActions;
 import com.modocument.application.port.AuditEventSpec;
 import com.modocument.application.port.AuditRecorder;
 import com.modocument.application.port.FileStore;
@@ -99,6 +100,12 @@ import java.util.stream.Collectors;
  * validate lock the document row. New documents start with the fields'
  * default values; values are drawn in the PDF with the fields' date and
  * number formats.
+ *
+ * <p>ws34 (docs/doccreation/data-templates-contract.md §8): validation can be
+ * switched off per document (the template sets the default for new ones).
+ * Without validation, generate and download are not gated on it and generate
+ * moves a DRAFT or VALIDATED document to GENERATED; submit still needs
+ * GENERATED and not stale.
  */
 @Service
 public class DocInstanceUseCase {
@@ -182,10 +189,20 @@ public class DocInstanceUseCase {
 
     /**
      * A new document on the template's current version, starting with the
-     * fields' default values; a DRAFT template is a 409.
+     * fields' default values; a DRAFT template is a 409. Validated as the
+     * template's default says.
      */
     @Transactional
     public CreatedInstanceDto create(int blueprintId, String title) {
+        return create(blueprintId, title, null);
+    }
+
+    /**
+     * {@link #create(int, String)} with the document's own validation choice
+     * (§8); {@code validationEnabled} null takes the template's default.
+     */
+    @Transactional
+    public CreatedInstanceDto create(int blueprintId, String title, Boolean validationEnabled) {
         DocBlueprint blueprint = ownership.requireTemplate(blueprintId);
         requireTitle(title);
         if (TemplateVersions.isDraft(blueprint)) {
@@ -199,6 +216,7 @@ public class DocInstanceUseCase {
         instance.setBlueprintVersion(blueprint.getCurrentVersion());
         instance.setTitle(title.strip());
         instance.setStatus(DocInstance.STATUS_DRAFT);
+        instance.setValidationEnabled(validationEnabled == null ? blueprint.isValidationEnabled() : validationEnabled);
         instance.setCreatedDate(LocalDateTime.now());
         instance.setUpdatedDate(instance.getCreatedDate());
         List<TemplateRegion> regionList = templates.regions(blueprint, instance.getBlueprintVersion());
@@ -639,13 +657,53 @@ public class DocInstanceUseCase {
             instance.setValidatedRulesRevision(blueprint.getRulesRevision());
             instance.setValidatedHash(contentHash(values, version, imageRows));
         } else {
-            instance.setStatus(DocInstance.STATUS_DRAFT);
+            // §8: without validation the result is information only; a
+            // GENERATED document (its PDF still current) stays GENERATED.
+            if (instance.isValidationEnabled() || !DocInstance.STATUS_GENERATED.equals(instance.getStatus())) {
+                instance.setStatus(DocInstance.STATUS_DRAFT);
+            }
             clearValidation(instance);
         }
         instance.setValidationJson(writeValidation(new ValidationResultDto(result.state(),
                 passed ? now : null, result.rulesRevision(), false, result.errors(), result.warnings(),
                 result.setupWarnings(), true)));
         instances.save(instance);
+        return toDto(instance, blueprint);
+    }
+
+    /**
+     * {@code PUT /instances/{id}/validation-setting} (data-templates-contract
+     * §8): switches validation on or off for this document while it is
+     * editable (SUBMITTED/RELEASED 409). Switching on sends a VALIDATED or
+     * GENERATED document back to DRAFT with its validation cleared (it must
+     * pass Save &amp; validate again; a generated PDF becomes stale); a DRAFT
+     * stays a DRAFT. Switching off keeps the status. Unchanged: nothing is
+     * stored or audited. Audited DOC_VALIDATION_SETTING_CHANGED (no values).
+     */
+    @Transactional
+    public InstanceDto setValidationEnabled(int instanceId, boolean enabled) {
+        DocInstance instance = lockOwned(instanceId);
+        if (instance.getBankId() != ownership.requireBankId()) {
+            throw new NoSuchElementException("Document " + instanceId + " not found.");
+        }
+        DocBlueprint blueprint = templateOf(instance);
+        requireEditable(instance);
+        if (instance.isValidationEnabled() == enabled) {
+            return toDto(instance, blueprint);
+        }
+        String before = instance.getStatus();
+        instance.setValidationEnabled(enabled);
+        if (enabled && (DocInstance.STATUS_VALIDATED.equals(before)
+                || DocInstance.STATUS_GENERATED.equals(before))) {
+            markChanged(instance);
+        }
+        instances.save(instance);
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("target", "DOCUMENT");
+        values.put("enabled", enabled);
+        values.put("status", instance.getStatus());
+        audit.success(AuditActions.DOC_VALIDATION_SETTING_CHANGED, "DocInstance", String.valueOf(instanceId),
+                Map.of("status", before), values);
         return toDto(instance, blueprint);
     }
 
@@ -709,8 +767,12 @@ public class DocInstanceUseCase {
      * <p>ws34 (data-templates-contract §5): a VALIDATED or GENERATED
      * document validated with an older rules revision than the template's
      * (its rules, data template or mapping changed since) is refused too.
+     * §8: a document without validation passes.
      */
     private void requireValidated(DocInstance instance, DocBlueprint blueprint) {
+        if (!instance.isValidationEnabled()) {
+            return;
+        }
         String status = instance.getStatus();
         if (DocInstance.STATUS_SUBMITTED.equals(status) || DocInstance.STATUS_RELEASED.equals(status)) {
             return;
@@ -844,6 +906,10 @@ public class DocInstanceUseCase {
      * <p>ws33: only a validated document generates (409 NOT_VALIDATED, see
      * {@link #requireValidated}); a VALIDATED one becomes GENERATED, unless
      * it changed while rendering (409, generate again).
+     *
+     * <p>§8: a document without validation is not gated and a DRAFT or
+     * VALIDATED one becomes GENERATED; switching its validation while
+     * rendering is a change too (409).
      */
     public GenerationResultDto generate(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
@@ -879,12 +945,14 @@ public class DocInstanceUseCase {
         DocInstance fresh = ownership.requireInstance(instanceId);
         // The output must show what was validated: a change while rendering
         // (an autosave) refuses it.
-        if (!Objects.equals(fresh.getUpdatedDate(), instance.getUpdatedDate())) {
+        if (!Objects.equals(fresh.getUpdatedDate(), instance.getUpdatedDate())
+                || fresh.isValidationEnabled() != instance.isValidationEnabled()) {
             throw new IllegalStateException("The document changed while it was being generated; generate again.");
         }
         // The release states (ws11) survive a regeneration: only a VALIDATED
-        // document moves to GENERATED here.
-        if (DocInstance.STATUS_VALIDATED.equals(fresh.getStatus())) {
+        // document (or, without validation, a DRAFT one) moves to GENERATED here.
+        if (DocInstance.STATUS_VALIDATED.equals(fresh.getStatus())
+                || (!fresh.isValidationEnabled() && DocInstance.STATUS_DRAFT.equals(fresh.getStatus()))) {
             fresh.setStatus(DocInstance.STATUS_GENERATED);
         }
         fresh.setAiComposed(false);
@@ -900,7 +968,8 @@ public class DocInstanceUseCase {
     /**
      * The generated PDF; regenerates first when nothing was generated yet or
      * the document changed since. ws33: only a validated document (409
-     * NOT_VALIDATED, checked before the stale check).
+     * NOT_VALIDATED, checked before the stale check); §8: any document
+     * without validation.
      */
     public PdfDownload download(int instanceId) {
         DocInstance instance = ownership.requireInstance(instanceId);
@@ -1067,7 +1136,7 @@ public class DocInstanceUseCase {
                 instance.getReviewComment(), sourceRecordDtos(instance), canEditLayout, blueprintEdits, null,
                 validationOf(instance, blueprint), regionProps, BundledFonts.names(),
                 fieldChecks.build(blueprint, regionList, props, rules, effective.dataTemplateName()),
-                blueprint.getRulesRevision(), canEditLayout);
+                blueprint.getRulesRevision(), canEditLayout, instance.isValidationEnabled());
     }
 
     /** The records the document was filled from, with their template's name (null when it is gone). */

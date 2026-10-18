@@ -9,17 +9,50 @@ import { ValidationStateTag } from '../doc/validationState';
 const instanceIdOf = (row) => row.instanceId ?? row.id;
 
 /**
+ * "Validate this document" for a new document (contract §8): ticked from the
+ * template's default; unticked, the document skips the validation steps.
+ */
+export function ValidateCheckbox({ checked, onChange, templateDefault, disabled = false }) {
+  const hintId = useId();
+  return (
+    <div className="basis-full text-sm">
+      <label className="inline-flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.checked)}
+          aria-describedby={hintId}
+        />
+        Validate this document
+      </label>
+      <p id={hintId} className="mt-0.5 text-xs text-muted">
+        {checked
+          ? 'It has to pass its checks before it can be downloaded.'
+          : 'Its fields are filled from the flow and nothing is checked; the validation step is skipped.'}{' '}
+        The template’s default is {templateDefault ? 'on' : 'off'}.
+      </p>
+    </div>
+  );
+}
+
+/**
  * A PDF template's Documents step: "Create a document" (it opens on the
  * builder's first step, Choose data) and the documents made from this
- * template, with their validation state.
+ * template, with their validation state. "Validate this document" starts
+ * from the template's default (`defaultValidation`, contract §8) and is
+ * sent with the new document.
  */
-export default function DocumentsStep({ blueprintId, blueprintName, readOnly = false }) {
+export default function DocumentsStep({ blueprintId, blueprintName, readOnly = false, defaultValidation = true }) {
   const navigate = useNavigate();
   const toast = useToast();
   const formId = useId();
   const [docs, setDocs] = useState(null);
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
+  // null: follow the template's default (which the header switch may change meanwhile).
+  const [validateChoice, setValidateChoice] = useState(null);
+  const validate = validateChoice ?? defaultValidation !== false;
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -41,7 +74,7 @@ export default function DocumentsStep({ blueprintId, blueprintName, readOnly = f
     if (!title.trim()) return;
     setCreating(true);
     try {
-      const created = await toast.promise(() => createInstance(Number(blueprintId), title.trim()), {
+      const created = await toast.promise(() => createInstance(Number(blueprintId), title.trim(), validate), {
         loading: 'Creating document…',
         success: 'Document created',
         error: (err) => err.message,
@@ -73,6 +106,11 @@ export default function DocumentsStep({ blueprintId, blueprintName, readOnly = f
             <Button type="submit" disabled={creating || !title.trim()}>
               {creating ? 'Creating…' : 'Create a document'}
             </Button>
+            <ValidateCheckbox
+              checked={validate}
+              onChange={setValidateChoice}
+              templateDefault={defaultValidation !== false}
+            />
           </form>
         </Card>
       )}

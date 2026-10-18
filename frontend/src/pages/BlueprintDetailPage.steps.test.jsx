@@ -91,6 +91,7 @@ const blueprint = (overrides = {}) => ({
   edits: [],
   warnings: [],
   fonts: [],
+  validationEnabled: true,
   ...overrides,
 });
 
@@ -365,7 +366,7 @@ describe('BlueprintDetailPage — the steps of a PDF template', () => {
 
     await userEvent.type(screen.getByLabelText(/^Title/), 'Loan — Ann');
     await userEvent.click(screen.getByRole('button', { name: 'Create a document' }));
-    expect(createInstance).toHaveBeenCalledWith(4, 'Loan — Ann');
+    expect(createInstance).toHaveBeenCalledWith(4, 'Loan — Ann', true);
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('?step=data'));
   });
 });

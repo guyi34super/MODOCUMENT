@@ -3,6 +3,7 @@ import { isCompatible, saveDataMapping } from '../../api/dataTemplates';
 import { useToast } from '../../context/ToastContext';
 import PageView from '../pdf/PageView';
 import { boxStyle } from '../pdf/RegionBox';
+import ScrollBox from '../ScrollBox';
 import { KIND_LABELS } from '../pdf/geometry';
 import { Button, ErrorBanner, Tag, inputClass } from '../ui';
 
@@ -121,68 +122,70 @@ export default function FieldMatcher({ blueprintId, mapping, pages = [], pagePat
       <ErrorBanner message={error} onDismiss={() => setError('')} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_16rem]">
-        <table className="w-full text-left text-sm">
-          <caption className="sr-only">PDF fields and their data fields</caption>
-          <thead className="text-xs text-muted">
-            <tr>
-              <th className="p-1 font-medium">PDF field</th>
-              <th className="p-1 font-medium">Data field</th>
-              <th className="p-1 font-medium">Match</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              const options = optionsFor(row);
-              const value = draft[row.regionKey] || '';
-              const badge = matchBadge(row, value);
-              const name = row.label || row.regionKey;
-              const suggestionHint =
-                !value && row.suggestion?.field && options.some((f) => f.name === row.suggestion.field)
-                  ? `suggestion: ${fieldLabel(row.suggestion.field)}`
-                  : '';
-              return (
-                <tr
-                  key={row.regionKey}
-                  data-testid={`match-row-${row.regionKey}`}
-                  className={`border-t border-line align-top ${focused?.regionKey === row.regionKey ? 'bg-pill/40' : ''}`}
-                  onMouseEnter={() => setFocusKey(row.regionKey)}
-                >
-                  <td className="p-1">
-                    <span className="font-medium">{name}</span>
-                    <span className="block text-xs text-muted">
-                      {KIND_LABELS[row.kind] || row.kind} · page {(row.page ?? 0) + 1}
-                    </span>
-                  </td>
-                  <td className="p-1">
-                    {options.length === 0 ? (
-                      <span className="text-xs text-muted">No data field of a fitting kind</span>
-                    ) : (
-                      <select
-                        className={`${inputClass} !py-1`}
-                        aria-label={`Data field for ${name}`}
-                        value={value}
-                        disabled={readOnly}
-                        onFocus={() => setFocusKey(row.regionKey)}
-                        onChange={(e) => setDraft((d) => ({ ...d, [row.regionKey]: e.target.value }))}
-                      >
-                        <option value="">Not mapped</option>
-                        {options.map((f) => (
-                          <option key={f.name} value={f.name}>
-                            {f.label && f.label !== f.name ? `${f.label} (${f.name})` : f.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </td>
-                  <td className="p-1">
-                    {options.length > 0 && <Tag tone={badge.tone}>{badge.text}</Tag>}
-                    {suggestionHint && <span className="block text-xs text-muted">{suggestionHint}</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <ScrollBox label="PDF fields and their data fields" maxHeight="max-h-[60vh]" stickyHeader testId="match-scroll">
+          <table className="w-full min-w-[28rem] text-left text-sm">
+            <caption className="sr-only">PDF fields and their data fields</caption>
+            <thead className="text-xs text-muted">
+              <tr>
+                <th className="p-1 font-medium">PDF field</th>
+                <th className="p-1 font-medium">Data field</th>
+                <th className="p-1 font-medium">Match</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const options = optionsFor(row);
+                const value = draft[row.regionKey] || '';
+                const badge = matchBadge(row, value);
+                const name = row.label || row.regionKey;
+                const suggestionHint =
+                  !value && row.suggestion?.field && options.some((f) => f.name === row.suggestion.field)
+                    ? `suggestion: ${fieldLabel(row.suggestion.field)}`
+                    : '';
+                return (
+                  <tr
+                    key={row.regionKey}
+                    data-testid={`match-row-${row.regionKey}`}
+                    className={`border-t border-line align-top ${focused?.regionKey === row.regionKey ? 'bg-pill/40' : ''}`}
+                    onMouseEnter={() => setFocusKey(row.regionKey)}
+                  >
+                    <td className="p-1">
+                      <span className="font-medium">{name}</span>
+                      <span className="block text-xs text-muted">
+                        {KIND_LABELS[row.kind] || row.kind} · page {(row.page ?? 0) + 1}
+                      </span>
+                    </td>
+                    <td className="p-1">
+                      {options.length === 0 ? (
+                        <span className="text-xs text-muted">No data field of a fitting kind</span>
+                      ) : (
+                        <select
+                          className={`${inputClass} !py-1`}
+                          aria-label={`Data field for ${name}`}
+                          value={value}
+                          disabled={readOnly}
+                          onFocus={() => setFocusKey(row.regionKey)}
+                          onChange={(e) => setDraft((d) => ({ ...d, [row.regionKey]: e.target.value }))}
+                        >
+                          <option value="">Not mapped</option>
+                          {options.map((f) => (
+                            <option key={f.name} value={f.name}>
+                              {f.label && f.label !== f.name ? `${f.label} (${f.name})` : f.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+                    <td className="p-1">
+                      {options.length > 0 && <Tag tone={badge.tone}>{badge.text}</Tag>}
+                      {suggestionHint && <span className="block text-xs text-muted">{suggestionHint}</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </ScrollBox>
 
         {focused && page && (
           <figure className="space-y-1" data-testid="match-preview">

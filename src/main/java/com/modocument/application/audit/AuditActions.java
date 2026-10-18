@@ -60,6 +60,8 @@ public final class AuditActions {
     public static final String DOC_DATA_TEMPLATE_COPIED = "DOC_DATA_TEMPLATE_COPIED";
     /** ws34: a PDF template's data template or field mapping was saved (counts only). */
     public static final String DOC_BLUEPRINT_DATA_MAPPING_SAVED = "DOC_BLUEPRINT_DATA_MAPPING_SAVED";
+    /** ws34: validation was switched on or off for a PDF template (its default) or a document. */
+    public static final String DOC_VALIDATION_SETTING_CHANGED = "DOC_VALIDATION_SETTING_CHANGED";
 
     /**
      * A refusal outside method security: an AccessDeniedException raised
@@ -143,7 +145,8 @@ public final class AuditActions {
                 "DOC_RELEASE_REJECTED", "DOC_BLUEPRINT_CREATED", "DOC_BLUEPRINT_VERSION_SAVED",
                 "DOC_LEGACY_PURGED", DOC_BLUEPRINT_MAPPING_SAVED, DOC_FILLED_FROM_RECORD,
                 DOC_FIELD_RULES_SAVED, DOC_FIELD_RULES_IMPORTED, DOC_VALIDATED, DOC_DATA_TEMPLATE_SAVED,
-                DOC_DATA_TEMPLATE_DELETED, DOC_DATA_TEMPLATE_COPIED, DOC_BLUEPRINT_DATA_MAPPING_SAVED);
+                DOC_DATA_TEMPLATE_DELETED, DOC_DATA_TEMPLATE_COPIED, DOC_BLUEPRINT_DATA_MAPPING_SAVED,
+                DOC_VALIDATION_SETTING_CHANGED);
         add(c, "Privacy", SENSITIVE_DATA_VIEWED, TEMPLATE_RECORDS_SEARCHED, "DSR_SEARCH", "DSR_EXPORTED",
                 "DSR_ERASED", "RETENTION_PURGE_COMPLETED");
         add(c, "Audit", AUDIT_LOG_VIEWED, AUDIT_LOG_EXPORTED);

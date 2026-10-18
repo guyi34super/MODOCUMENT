@@ -6,11 +6,12 @@ import {
   getBlueprint,
   listBlueprintVersions,
   saveOverlay,
+  setBlueprintValidation,
   uploadEditImage,
 } from '../api/doccreation';
 import Modal from '../components/Modal';
 import PageHeader from '../components/PageHeader';
-import { Button, Callout, Card, ErrorBanner, Field, Spinner, Tag, inputClass } from '../components/ui';
+import { Button, Callout, Card, ErrorBanner, Field, Spinner, Switch, Tag, inputClass } from '../components/ui';
 import { useToast } from '../context/ToastContext';
 import useUnsavedGuard from '../hooks/useUnsavedGuard';
 import PageView from '../components/pdf/PageView';
@@ -59,6 +60,28 @@ const STEPS = [
   { value: 'documents', label: 'Documents' },
 ];
 const TAB_TO_STEP = { layout: 'upload', rules: 'validation', sources: 'mapping' };
+// Validation switched off for the template (data-templates contract §8): no Validation step.
+const STEPS_OFF = STEPS.filter((s) => s.value !== 'validation');
+export const VALIDATION_OFF_NOTE = 'Validation is off — fields are filled from the flow, nothing is checked.';
+
+/**
+ * "Validate documents from this template" (contract §8): the default for NEW
+ * documents; each document can still switch it. Saved at once.
+ */
+function TemplateValidationSwitch({ idPrefix, checked, onChange, disabled }) {
+  const labelId = `${idPrefix}-validation-label`;
+  return (
+    <span className="inline-flex items-center gap-2 text-sm" data-testid={`${idPrefix}-validation-switch`}>
+      <Switch id={`${idPrefix}-validation-switch`} checked={checked} onChange={onChange} labelledBy={labelId} disabled={disabled} />
+      <span id={labelId} className="text-ink">
+        Validate documents from this template
+      </span>
+      <span aria-hidden="true" className="text-xs text-muted">
+        {checked ? 'on' : 'off'}
+      </span>
+    </span>
+  );
+}
 
 /** The step a URL asks for: `?step=`, else the older `?tab=`, else Upload. */
 export function stepFromParams(params) {
@@ -417,6 +440,7 @@ export default function BlueprintDetailPage() {
   const [rulesFocus, setRulesFocus] = useState(() => searchParams.get('field'));
   const [mapping, setMapping] = useState(null);
   const [mappingError, setMappingError] = useState('');
+  const [savingValidation, setSavingValidation] = useState(false);
   const propertiesRef = useRef(null);
 
   const editorEnabled =
@@ -537,7 +561,11 @@ export default function BlueprintDetailPage() {
   // Data sources and field rules belong to a confirmed template; an older version shows them
   // read-only. A draft shows the tabs too (deep links land on them), each asking to confirm first.
   const showTabs = blueprint?.status === 'READY' || isDraft;
-  const activeTab = showTabs ? step : 'upload';
+  // Validation on/off for new documents (contract §8): an older server without the field means on.
+  const validationOn = blueprint?.validationEnabled !== false;
+  // Off: a `?step=validation` link (or "Edit rules") lands on Map fields, with a note.
+  const validationFallback = !validationOn && step === 'validation';
+  const activeTab = showTabs ? (validationFallback ? 'mapping' : step) : 'upload';
   const savedRegions = useMemo(() => (blueprint?.regions || []).filter((r) => !r.suggested), [blueprint]);
   const readOnly = Boolean(
     blueprint && !isDraft && requestedVersion != null && blueprint.version !== blueprint.currentVersion
@@ -755,6 +783,26 @@ export default function BlueprintDetailPage() {
     }
   };
 
+  /** The template's validation switch: saved at once (PUT validation-setting), then a toast. */
+  const changeValidation = async (enabled) => {
+    setSavingValidation(true);
+    try {
+      const dto = await toast.promise(() => setBlueprintValidation(id, enabled), {
+        loading: enabled ? 'Turning validation on…' : 'Turning validation off…',
+        success: enabled
+          ? 'Validation is on — new documents from this template are validated'
+          : 'Validation is off — new documents from this template skip the validation steps',
+        error: (err) => err.message,
+      });
+      // Only the switch changes: unsaved template edits stay as they are.
+      setBlueprint((bp) => (bp ? { ...bp, validationEnabled: dto?.validationEnabled ?? enabled } : bp));
+    } catch {
+      // The error toast is already shown.
+    } finally {
+      setSavingValidation(false);
+    }
+  };
+
   const reloadAfterConflict = async () => {
     setConflict(false);
     await load();
@@ -817,7 +865,15 @@ export default function BlueprintDetailPage() {
         }
         actions={
           blueprint && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {!isDraft && (
+                <TemplateValidationSwitch
+                  idPrefix="header"
+                  checked={validationOn}
+                  onChange={changeValidation}
+                  disabled={savingValidation || readOnly}
+                />
+              )}
               {!readOnly && (
                 <Button onClick={save} disabled={saving || keyBlocking} title={keyBlocking ? 'Fix the field keys first' : undefined}>
                   {saving ? 'Saving…' : isDraft ? 'Confirm template' : 'Save as new version'}
@@ -857,6 +913,14 @@ export default function BlueprintDetailPage() {
                   ? 'The filled-in data was found and marked for removal (hatched boxes). Check each removal and field, then confirm.'
                   : 'The places to fill in were found on the page. Check each field, then confirm.'}{' '}
                 Nothing is saved until you press “Confirm template”.
+                <div className="mt-2">
+                  <TemplateValidationSwitch
+                    idPrefix="confirm"
+                    checked={validationOn}
+                    onChange={changeValidation}
+                    disabled={savingValidation}
+                  />
+                </div>
                 {suggestions.length > 0 && (
                   <>
                     {' '}
@@ -892,7 +956,7 @@ export default function BlueprintDetailPage() {
               current={activeTab}
               onSelect={selectStep}
               panelId={(value) => `blueprint-panel-${value}`}
-              steps={STEPS.map((option) => ({
+              steps={(validationOn ? STEPS : STEPS_OFF).map((option) => ({
                 id: option.value,
                 label: option.label,
                 done:
@@ -961,10 +1025,33 @@ export default function BlueprintDetailPage() {
             </div>
           ) : activeTab === 'mapping' ? (
             <div role="tabpanel" id="blueprint-panel-mapping" aria-labelledby="blueprint-tab-mapping" className="space-y-4">
+              {validationFallback && (
+                <p className="rounded bg-pill/50 px-3 py-2 text-sm" role="note" data-testid="validation-step-off">
+                  Validation is off for this template, so there is no Validation step — showing Map fields instead.
+                </p>
+              )}
+              {!validationOn && (
+                <Callout variant="info" title="Validation is off">
+                  <p data-testid="validation-off-note">{VALIDATION_OFF_NOTE}</p>
+                </Callout>
+              )}
               <ErrorBanner message={mappingError} onDismiss={() => setMappingError('')} />
+              {/* Off, there is no Validation step: the data template is chosen here. */}
+              {!validationOn && mapping && (
+                <DataTemplateChooser
+                  blueprintId={id}
+                  mapping={mapping}
+                  readOnly={readOnly}
+                  onChanged={(dto) => {
+                    setMapping(dto);
+                    fieldRules.load();
+                  }}
+                />
+              )}
               {!mapping ? (
                 mappingError ? null : <Spinner label="Loading the mapping…" />
               ) : mapping.dataTemplateId == null ? (
+                validationOn ? (
                 <Callout variant="info" title="Choose a data template first">
                   <p>The PDF fields are mapped onto the fields of a data template, chosen on the Validation step.</p>
                   <div className="mt-2">
@@ -973,6 +1060,7 @@ export default function BlueprintDetailPage() {
                     </Button>
                   </div>
                 </Callout>
+                ) : null
               ) : (
                 <Card padding="compact">
                   <FieldMatcher
@@ -1017,7 +1105,12 @@ export default function BlueprintDetailPage() {
             </div>
           ) : activeTab === 'documents' ? (
             <div role="tabpanel" id="blueprint-panel-documents" aria-labelledby="blueprint-tab-documents">
-              <DocumentsStep blueprintId={id} blueprintName={blueprint.name} readOnly={readOnly} />
+              <DocumentsStep
+                blueprintId={id}
+                blueprintName={blueprint.name}
+                readOnly={readOnly}
+                defaultValidation={validationOn}
+              />
             </div>
           ) : (
           <div

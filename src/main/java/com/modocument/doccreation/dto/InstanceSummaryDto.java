@@ -18,6 +18,10 @@ import java.time.LocalDateTime;
  * {@link #STATE_NOT_CHECKED} for a DRAFT never checked, or checked (passed)
  * and changed since; {@code errorCount} is the number of errors of that
  * failed check (0 otherwise).
+ *
+ * <p>§8: {@code validationEnabled} is the document's own choice; with
+ * validation off {@code validationState} is {@link #STATE_OFF} and
+ * {@code errorCount} 0.
  */
 public record InstanceSummaryDto(int id,
                                  int instanceId,
@@ -33,12 +37,15 @@ public record InstanceSummaryDto(int id,
                                  String reviewComment,
                                  int pageCount,
                                  String validationState,
-                                 int errorCount) {
+                                 int errorCount,
+                                 boolean validationEnabled) {
 
     public static final String STATE_NOT_CHECKED = "NOT_CHECKED";
     public static final String STATE_ERRORS = "ERRORS";
     public static final String STATE_VALIDATED = "VALIDATED";
     public static final String STATE_RULES_CHANGED = "RULES_CHANGED";
+    /** §8: the document is not validated (validation switched off). */
+    public static final String STATE_OFF = "OFF";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -56,11 +63,15 @@ public record InstanceSummaryDto(int id,
                 instance.getBlueprintId(), blueprintName, instance.getStatus(),
                 instance.getLastGeneratedDate(), instance.getCreatedDate(),
                 instance.isAiComposed(), instance.getSubmittedAt(),
-                instance.getReleasedAt(), instance.getReviewComment(), pageCount, state, errors);
+                instance.getReleasedAt(), instance.getReviewComment(), pageCount, state, errors,
+                instance.isValidationEnabled());
     }
 
     /** The {@code validationState} of a document (class comment). */
     public static String validationState(DocInstance instance, Integer blueprintRulesRevision) {
+        if (!instance.isValidationEnabled()) {
+            return STATE_OFF;
+        }
         String status = instance.getStatus();
         if (DocInstance.STATUS_SUBMITTED.equals(status) || DocInstance.STATUS_RELEASED.equals(status)) {
             return STATE_VALIDATED;
