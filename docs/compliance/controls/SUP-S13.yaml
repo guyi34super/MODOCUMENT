@@ -21,9 +21,9 @@ roadmap:
   action: "Sign the C11 residual-risk acceptance; Day 60: decide the production model location, record provider settings if external, enforce HTTPS for external endpoints."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: null
 to_confirm:
   - "Written acceptance of the AI residual risks (C11) by Reezvi Pydiah: TO CONFIRM (organisational)"

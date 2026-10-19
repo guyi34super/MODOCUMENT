@@ -24,9 +24,9 @@ roadmap:
   action: "Argon2id parameters (Day 30); apply Secrets Manager (Day 60); automated rotation or IAM DB auth (Day 90)."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 5
+  residual: Medium
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): Secrets Manager entries, their resource policies and rotation records."

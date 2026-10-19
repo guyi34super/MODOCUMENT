@@ -21,9 +21,9 @@ roadmap:
   action: "Pre-go-live (workbook date to set): external probes, dashboards, burn-rate alerts, paging, status page."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 3
+  residual: Medium
 policy_document: docs/compliance/policies/post-incident-review-template.md
 to_confirm:
   - "NOT IN REPO (live cloud): dashboards, probe-to-page timing, first post-incident review"

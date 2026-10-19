@@ -21,9 +21,9 @@ roadmap:
   action: "Restore CI, enforce protections, narrow staging trust; Day 60: provenance attestation; Day 90: A8 drill."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 5
+  residual: High
 policy_document: null
 to_confirm:
   - "Applied branch and tag rulesets and production environment reviewers: NOT IN REPO (live cloud)"

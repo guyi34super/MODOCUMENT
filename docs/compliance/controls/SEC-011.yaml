@@ -24,9 +24,9 @@ roadmap:
   action: Central authorisation middleware, matrix as data and route-coverage test are built; retire the shared account (organisational).
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 4
+  residual: Low
 policy_document: docs/compliance/mo-018-rbac-role-permission-matrix.md
 to_confirm:
 - 'TO CONFIRM (organisational): the shared pre-production team account is deleted.'

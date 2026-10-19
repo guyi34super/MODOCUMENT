@@ -21,9 +21,9 @@ roadmap:
   action: "Pre-go-live (workbook date to set): expiry alerts, connector rotation variables, live rotation drill in staging."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 3
+  residual: Medium
 policy_document: docs/security/key-certificate-register.md
 to_confirm:
   - "NOT IN REPO (live cloud): live certificate expiry dates, ACM renewal status, live rotation drill"

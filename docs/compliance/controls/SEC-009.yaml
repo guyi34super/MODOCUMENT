@@ -24,9 +24,9 @@ roadmap:
   action: "Fix the open Critical/High library CVEs and restore CI scanning (2026-10-22 proposed); monthly VA report; PT budget decision by 2026-10-31 (Reezvi Pydiah); PT + retest Q1 2027."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 4
+  residual: High
 policy_document: null
 to_confirm:
   - "TO CONFIRM (organisational): penetration-test vendor, scope, budget and dates"

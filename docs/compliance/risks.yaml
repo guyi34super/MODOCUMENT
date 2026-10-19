@@ -1,0 +1,806 @@
+# MO-031 Technology Risk Register as structured data. Generated with the register;
+# keep in step with docs/compliance/mo-031-technology-risk-register.md.
+# likelihood / impact are the RESIDUAL ratings (1-5); residual is the band
+# (score L x I: 1-4 Low, 5-9 Medium, 10-16 High, 20-25 Critical).
+# scripts/compliance/update_workbooks.py writes these into the Risk Register sheets.
+risks:
+- id: R-PRIV-002
+  title: "Bulk data theft proceeds unnoticed"
+  controls: [PRIV-002, SEC-032]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Connect the alert phone path (SEC-032); add AUDIT_LOG_EXPORTED to an alert rule; egress allow-list under R-TECH-11."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-PRIV-011
+  title: "One CIA pillar left unmanaged"
+  controls: [PRIV-011]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Reezvi Pydiah approves the table; restore drill (gate D6) fills the availability column."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-009
+  title: "Exploitable vulnerabilities unknown to us but findable by attackers"
+  controls: [SEC-009, SEC-026]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Budget decision and external penetration test with retest; monthly VA report."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SEC-013
+  title: "A compromised ordinary account yields broad data access"
+  controls: [SEC-013, SEC-011]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "First quarterly recertification at go-live; time-limited elevation; IAM policy lint in CI."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-015
+  title: "Admin abuse or error cannot be reconstructed"
+  controls: [SEC-015, SEC-035]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Apply CloudTrail and Session Manager; add pgAudit; rebuild one admin session from locked logs."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-017
+  title: "Unknown or shared admin accounts operate unwatched"
+  controls: [SEC-017, SEC-013]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Grant record approved by Reezvi Pydiah; separate admin identities; first monthly review; add PLATFORM_ADMIN to the admin-login alert."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SEC-031
+  title: "The bank is blind to events inside the platform"
+  controls: [SEC-031, SEC-034]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Reference-SIEM test on staging; structured logs in the ECS task."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-031b
+  title: "Bank SIEM feed contains other banks' events"
+  controls: [SEC-031]
+  likelihood: 1
+  impact: 5
+  residual: Medium
+  status: "Open (avoided: no bank SIEM connected)"
+  mitigation: "Keep the avoidance: connect no bank SIEM until the scoping proof is accepted by the bank."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-032
+  title: "Attacks proceed for days; first notice comes from the bank"
+  controls: [SEC-032, SUP-S11]
+  likelihood: 4
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "On-call relay; pass MODOCUMENT_ALERTS_* in the ECS task; trip a HIGH rule out of hours with a written record; approve the escalation policy."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SEC-040
+  title: "Threats without a detective control; roles with unreviewed power"
+  controls: [SEC-040]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Detective control or written acceptance for the 8 remaining threats; approve both matrices."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-041
+  title: "Gaps acknowledged but never scheduled"
+  controls: [SEC-041]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Set budget lines; confirm proposed dates; minute the monthly director review."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S12
+  title: "A reporter with a critical finding has no safe route"
+  controls: [SUP-S12]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Create the mailbox to the directors; real address in security.txt; publish the policy; CERT-MU subscription."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-PEOPLE-02
+  title: "One person owns almost every remediation action"
+  controls: [SEC-041]
+  likelihood: 4
+  impact: 4
+  residual: High
+  status: "Accepted (management decision)"
+  mitigation: "Assign a second named owner for at least the Day 30 items; Board reviews the load quarterly (MO-032)."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-PRIV-004
+  title: "Unnecessary personal data accumulates"
+  controls: [PRIV-004]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "DPO sign-off of the DPIA; API-wide canary PII test; update the data inventory."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-PRIV-013
+  title: "An unanswered subject request becomes a complaint naming the bank"
+  controls: [PRIV-013]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Extend erase to titles and photos; cover or forbid the Mongo store; confirm the statutory period with the DPO."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-PRIV-017
+  title: "Ex-staff or over-privileged accounts keep access"
+  controls: [PRIV-017, SEC-013]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Delete the shared account; ticket per joiner; first quarterly review at go-live."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-006
+  title: "Shadow interfaces without security review"
+  controls: [SEC-006]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Restore CI (R-TECH-09); deploy the sandbox; publish a versioned spec."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-007
+  title: "Broken object-level authorisation or unthrottled endpoints leak data"
+  controls: [SEC-007, SEC-011]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Authenticated ZAP API scan in staging; shared rate-limit store or WAF decision."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-008
+  title: "Capacity discovered in production during a real peak"
+  controls: [SEC-008, SEC-002, SEC-003]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Business states the expected peak; re-run MO-016 on staging at 2× that peak with a 1-hour soak (gate E7) and re-issue MO-017."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-010
+  title: "Vulnerabilities and secrets merge unexamined"
+  controls: [SEC-010, SEC-025, SUP-S05]
+  likelihood: 4
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Apply the ruleset without bypass; second code owner; export approvals quarterly."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SEC-011
+  title: "Unmapped endpoints default open"
+  controls: [SEC-011]
+  likelihood: 1
+  impact: 4
+  residual: Low
+  status: "Open (control effective)"
+  mitigation: "Keep the coverage test as a required check once CI runs; quarterly matrix review."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-012
+  title: "Staff receive supervisor rights because no finer role exists"
+  controls: [SEC-012]
+  likelihood: 1
+  impact: 3
+  residual: Low
+  status: "Open (control effective)"
+  mitigation: "Annual role catalogue review."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-014
+  title: "One phished password gives admin takeover"
+  controls: [SEC-014]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Step-up TOTP on approve/role/export; require amr/acr for ADMIN OIDC; MFA for APPROVER."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-016
+  title: "Reports export what the UI would deny"
+  controls: [SEC-016]
+  likelihood: 1
+  impact: 4
+  residual: Low
+  status: "Open (control effective)"
+  mitigation: "Privileged-activity view on the dashboards."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-018
+  title: "A repository leak yields production credentials"
+  controls: [SEC-018]
+  likelihood: 1
+  impact: 5
+  residual: Medium
+  status: "Open"
+  mitigation: "Restore CI scanning (R-TECH-09); raise Argon2id parameters; rotation or IAM DB auth."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-019
+  title: "Log aggregation becomes a password database"
+  controls: [SEC-019]
+  likelihood: 1
+  impact: 4
+  residual: Low
+  status: "Open (control effective)"
+  mitigation: "30-day canary search after go-live."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-020
+  title: "Insider impersonation of users without trace"
+  controls: [SEC-020]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Expire temporary passwords; dumped-table sign-in test."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-021
+  title: "Password spraying succeeds"
+  controls: [SEC-021]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Larger breached list or k-anonymity lookup; Keycloak blacklist."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-022
+  title: "A stolen reset link or OTP works days later"
+  controls: [SEC-022]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "72-hour expiry of unused temporary passwords."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-023
+  title: "One user changes limits or configuration alone"
+  controls: [SEC-023]
+  likelihood: 1
+  impact: 4
+  residual: Low
+  status: "Open (control effective)"
+  mitigation: "Correct docs/security/maker-checker.md (stale onboarding text)."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-024
+  title: "Toxic permission combinations accumulate"
+  controls: [SEC-024]
+  likelihood: 1
+  impact: 3
+  residual: Low
+  status: "Open (control effective)"
+  mitigation: "Keep monthly SOD_SCAN_COMPLETED evidence after go-live; DPO decision on DSR dual control."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-025
+  title: "Untraceable production changes; failed changes without rollback"
+  controls: [SEC-025, SUP-S05]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Restore CI; ruleset without bypass; first tagged release on staging; approve the change procedure."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SEC-027
+  title: "Capabilities presented inconsistently"
+  controls: [SEC-027]
+  likelihood: 1
+  impact: 2
+  residual: Low
+  status: "Open (control effective)"
+  mitigation: "Human approval; add the reference check to CI."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-028
+  title: "An unencrypted hop or backup becomes the plaintext source"
+  controls: [SEC-028, SEC-029]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "TLS to containers or written acceptance; refuse non-TLS bank targets; own CMKs for backups and logs."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-029
+  title: "Legacy cryptography persists unnoticed"
+  controls: [SEC-029]
+  likelihood: 1
+  impact: 3
+  residual: Low
+  status: "Open"
+  mitigation: "Restore CI; explicit KMS key policies; approve the standard."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-034
+  title: "An investigation cannot connect call, session and data change"
+  controls: [SEC-034]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Request id in nginx and agent; ALB/CloudFront/WAF logs; structured logs in ECS."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-035
+  title: "A malicious admin edits history through the application account"
+  controls: [SEC-035]
+  likelihood: 1
+  impact: 4
+  residual: Low
+  status: "Open"
+  mitigation: "Make ExtractionAuditEvent append-only."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-042
+  title: "A Log4Shell-class event with no way to know exposure"
+  controls: [SEC-042]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Restore CI; fix the frontend SBOM; licence gate; Trivy fs scan of the Maven tree."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S01
+  title: "Session hijack or script injection in the bank-facing UI"
+  controls: [SUP-S01]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Access token in memory; ZAP report; CSRF regression test."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S02
+  title: "A leaked token outlives the compromise"
+  controls: [SUP-S02]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "iss/aud claims; asymmetric keys with kid."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S05
+  title: "A compromised CI secret or action deploys attacker code"
+  controls: [SUP-S05, SEC-025]
+  likelihood: 2
+  impact: 5
+  residual: High
+  status: "Open"
+  mitigation: "Restrict trust to environments; remove the transitional main subject; provenance attestation; ruleset (R-TECH-09)."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SUP-S07
+  title: "A dev-environment compromise reaches production data"
+  controls: [SUP-S07]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Create the accounts; pin account ids; run the replay and reachability tests."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S13
+  title: "Bank data leaves jurisdiction into a model provider; cross-tenant leakage through model output"
+  controls: [SUP-S13, PRIV-002]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Decide the production model location; if external, provider terms and DPA, transfer assessment, egress allow-list entry."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-AI-01
+  title: "Non-adopted AI controls: prompt injection, model-written figures, untested model changes"
+  controls: [SUP-S13]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Pending written acceptance"
+  mitigation: "Reezvi Pydiah signs the C11 acceptance of the four residual risks."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SHARED-01
+  title: "Team shares one pre-production account"
+  controls: [SEC-011, SEC-020, SEC-035]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Accepted (interim, to 21 Oct)"
+  mitigation: "Delete the account on 2026-10-21 and record it."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SCHED-01
+  title: "Many due dates fall on one owner at once"
+  controls: [SEC-041]
+  likelihood: 4
+  impact: 3
+  residual: High
+  status: "Open"
+  mitigation: "Re-plan with buffered external dates; weekly status check."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-PRIV-003
+  title: "One compromised admin credential encrypts production and backups"
+  controls: [PRIV-003, PRIV-006]
+  likelihood: 2
+  impact: 5
+  residual: High
+  status: "Open"
+  mitigation: "Restore drill, then enforce_backup_locks = true; lock account; file-store copy; GuardDuty features."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-PRIV-006
+  title: "Backup failure discovered only during a real incident"
+  controls: [PRIV-006, SEC-004]
+  likelihood: 3
+  impact: 5
+  residual: High
+  status: "Open"
+  mitigation: "Timed restore drill (gate D6) in staging and production; then quarterly; agree one RTO."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SEC-001
+  title: "Undocumented architecture hides single points of failure"
+  controls: [SEC-001]
+  likelihood: 2
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Fix DEF-1; bring DNS, certificates and model servers into IaC or scope them out; drift-free plan."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-002
+  title: "A traffic spike cascades into full outage"
+  controls: [SEC-002, SUP-S03]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Bounded queues for generation and ingestion (429 or 202 when full); shared rate-limit store; apply the WAF."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-003
+  title: "Saturation during peaks"
+  controls: [SEC-003, SEC-008]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Fix the memory headroom (F-04); apply staging and record a scale-out event with zero 5xx under MO-016 load."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-004
+  title: "A zone or node failure causes an outage"
+  controls: [SEC-004]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Zone-failure and forced-failover test in staging, then production."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-REGION-01
+  title: "Loss of the whole AWS Cape Town region"
+  controls: [SEC-004, PRIV-006]
+  likelihood: 1
+  impact: 5
+  residual: Medium
+  status: "Pending written acceptance"
+  mitigation: "Document the region-loss procedure and RTO in the DR plan; test once a year."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SEC-005
+  title: "Disputes over outages without an authoritative measurement"
+  controls: [SEC-005, SUP-S11]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "External probe with alarm; status page; agreed SLA clause; monthly uptime report."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SEC-026
+  title: "Known-exploited vulnerabilities stay open for months"
+  controls: [SEC-026, SEC-009]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Approve the patch policy and one critical limit; instance refresh; monthly patch report."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SEC-033
+  title: "Evidence needed for an investigation has rotated away"
+  controls: [SEC-033, SEC-035]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Ship log groups and daily AuditEvent export to the archive; enable locks after the drill; yearly rehydration test."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S03
+  title: "A rented DDoS takes the service offline"
+  controls: [SUP-S03, SEC-002]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Deploy the edge; origin-bypass and flood tests; edge logs; Shield Advanced decision."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S04
+  title: "One compromised container pivots across the cluster"
+  controls: [SUP-S04]
+  likelihood: 1
+  impact: 4
+  residual: Low
+  status: "Open"
+  mitigation: "Image signing and verification; read-only root filesystems; digest-pinned bases."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S06
+  title: "A reachable database or shared account defeats application controls"
+  controls: [SUP-S06, SEC-013]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Run Flyway outside the service task; personal audited DB accounts; negative connection tests."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S08
+  title: "A forgotten certificate expires; a lost key orphans data"
+  controls: [SUP-S08]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Expiry alerts at 30/14/7 days; key escrow; staging rotation drill."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-SUP-S09
+  title: "A stolen unencrypted laptop is a reportable breach"
+  controls: [SUP-S09]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Choose and deploy MDM and EDR; approve the device/BYOD policy."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SUP-S10
+  title: "Attackers phish the bank from our domain"
+  controls: [SUP-S10]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Confirm or publish SPF, DKIM, DMARC; MTA-STS; registrar lock."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SPOOF-01
+  title: "Company domain spoofed during MauBank due diligence"
+  controls: [SUP-S10]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "SPF/DKIM/DMARC (overdue since 2026-10-09); phone confirmation meanwhile."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-SUP-S11
+  title: "Silent degradation; the bank learns first"
+  controls: [SUP-S11, SEC-005]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Synthetics canaries, dashboard, burn-rate alarms, paging; fix DEF-2."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-TECH-01
+  title: "Go-live environment never built or rehearsed"
+  controls: [SEC-001, SEC-004, SUP-S07, PRIV-006]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Create the AWS accounts; apply staging first; run plan, drills and the go-live gate tests in staging."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-TECH-02
+  title: "Critical providers managed without contracts, DPAs or exit plans on record"
+  controls: [SUP-S13, SEC-025]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Vendor register with owner, contract, DPA, data location, exit plan; billing alerts on GitHub and AWS."
+  owner: "Bhavish Nobeen (RACI row 24: R); Reezvi Pydiah (A)"
+  acceptance_required: true
+- id: R-TECH-03
+  title: "Wrong AI-produced values reach bank documents"
+  controls: [SUP-S13, SEC-024]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Golden test set for extraction and generation with an accuracy threshold per release; pin model versions."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-TECH-04
+  title: "Privacy governance not yet in place"
+  controls: [PRIV-004, PRIV-013]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Confirm the DPO (MO-038); DPO signs the DPIA; add the DPO step to breach notification; record the controller/processor position."
+  owner: "Reezvi Pydiah (A); the DPO"
+  acceptance_required: true
+- id: R-TECH-05
+  title: "Cross-border transfer without a recorded legal basis"
+  controls: [PRIV-006, SUP-S13]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "DPO records the transfer basis or the region is changed before go-live."
+  owner: "Reezvi Pydiah (A); the DPO"
+  acceptance_required: false
+- id: R-TECH-06
+  title: "Incident response plan is a stub"
+  controls: [SEC-032, SUP-S11]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Write pack-09; run a tabletop before go-live."
+  owner: "Rushal (incident owner, RACI row 11); Reezvi Pydiah (A)"
+  acceptance_required: true
+- id: R-TECH-07
+  title: "Staff confidentiality and awareness not evidenced"
+  controls: [PRIV-017]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Signed undertaking before access; yearly security and privacy training with a record."
+  owner: "Board of Directors"
+  acceptance_required: false
+- id: R-TECH-08
+  title: "Eleven critical library CVEs unpatched past the 72-hour limit (issue #52)"
+  controls: [SEC-026, SEC-009]
+  likelihood: 4
+  impact: 5
+  residual: Critical
+  status: "Open — overdue"
+  mitigation: "Upgrade Spring Boot and libraries, rebuild, re-scan; written acceptance for any CVE without a 6.2.x fix."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-TECH-09
+  title: "CI not running and branch protection not enforced"
+  controls: [SEC-010, SEC-025, SUP-S05, SEC-042, SEC-009]
+  likelihood: 5
+  impact: 4
+  residual: Critical
+  status: "Open"
+  mitigation: "Restore billing and runners; re-run CI on main; apply the ruleset without bypass; second code owner."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-TECH-10
+  title: "Audit trail has no tamper evidence against a database superuser"
+  controls: [SEC-035, SEC-033]
+  likelihood: 2
+  impact: 4
+  residual: Medium
+  status: "Open"
+  mitigation: "Per-bank SHA-256 hash chain with daily verification and anchoring to the Object-Lock archive; govern the RDS master credential."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-TECH-11
+  title: "Network egress from production not restricted"
+  controls: [PRIV-002, SUP-S13, SEC-001]
+  likelihood: 3
+  impact: 4
+  residual: High
+  status: "Open"
+  mitigation: "Sign off the allow-list (gate D3); narrow the CIDRs; fix DEF-8; alert on new destinations."
+  owner: "Security — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-TECH-12
+  title: "Terraform defects not caught by validation (DEF-1 to DEF-13)"
+  controls: [SEC-001, SUP-S11, PRIV-003, PRIV-006, SEC-033, SUP-S06, SUP-S08]
+  likelihood: 4
+  impact: 3
+  residual: High
+  status: "Open"
+  mitigation: "Fix DEF-1 and DEF-2 first; add tfsec/Checkov and a plan job to CI."
+  owner: "IT Infrastructure — Bhavish Nobeen"
+  acceptance_required: true
+- id: R-TECH-13
+  title: "Pack evidence not yet independently reviewed or approved"
+  controls: [SEC-041, PRIV-011, SEC-027]
+  likelihood: 4
+  impact: 3
+  residual: High
+  status: "Open"
+  mitigation: "Name the Pack 07 reviewer; Rushal re-performs the Bhavish-owned tests; Taj Aundoo review; Board approval."
+  owner: "Taj Aundoo (risk and control review, RACI row 19)"
+  acceptance_required: true
+- id: R-TECH-14
+  title: "Conflicting commitments in documents"
+  controls: [SEC-005, PRIV-006, SEC-026]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "Board fixes one RTO, one patch limit and the owners when it approves MO-001."
+  owner: "Board of Directors"
+  acceptance_required: false
+- id: R-TECH-15
+  title: "Colleagues see raw personal data on bank-shared records"
+  controls: [PRIV-004, SEC-016]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "DPO decision: mask colleagues' records or accept with a documented purpose."
+  owner: "The DPO; Software Engineering — Bhavish Nobeen"
+  acceptance_required: false
+- id: R-TECH-16
+  title: "Capacity limits found by the stress test (MO-017 F-01 to F-09)"
+  controls: [SEC-008, SEC-002, SEC-003]
+  likelihood: 3
+  impact: 3
+  residual: Medium
+  status: "Open"
+  mitigation: "F-04 memory headroom; F-01 paged job rows; F-02/F-05 bounded queues; F-03 batched re-index; F-06 to F-08 later; re-test on staging."
+  owner: "Software Engineering — Bhavish Nobeen"
+  acceptance_required: false

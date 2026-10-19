@@ -21,9 +21,9 @@ roadmap:
   action: "Pre-go-live (workbook date to set): deploy, negative connection tests, separate migration account, human access path, bucket and vault policies."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): parameter export, live grants listing, password hashing method, negative connection tests"

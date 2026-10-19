@@ -24,9 +24,9 @@ roadmap:
   action: "Approve the catalogue and put the reference check in CI."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 2
+  residual: Low
 policy_document: docs/security/security-feature-catalogue.md
 to_confirm:
   - "Human sign-off of the catalogue: TO CONFIRM (organisational)"

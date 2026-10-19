@@ -24,9 +24,9 @@ roadmap:
   action: "Enforce the network egress allow-list (gate D3) with an alert on new destinations; route export alerts to the on-call phone (SEC-032)."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): egress allow-list in production, VPC flow logs, GuardDuty"

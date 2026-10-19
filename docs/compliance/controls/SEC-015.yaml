@@ -24,9 +24,9 @@ roadmap:
   action: "Session Manager recording and CloudTrail live, pgAudit on RDS, rebuild a test admin session from locked logs."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 3
+  residual: Medium
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): CloudTrail trail, Session Manager recordings, locked bucket state"

@@ -21,9 +21,9 @@ roadmap:
   action: "Security mailbox live with 48 h acknowledgement, real address in security.txt, public policy URL, CERT-MU subscription, weekly review notes filed."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 3
+  residual: Medium
 policy_document: docs/compliance/policies/vulnerability-disclosure-policy.md
 to_confirm:
   - "TO CONFIRM (organisational): real security contact address and mailbox, and its owner (Taj Aundoo per SECURITY.md, Bhavish Nobeen per the workbook)"

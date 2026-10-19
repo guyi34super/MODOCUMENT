@@ -21,9 +21,9 @@ roadmap:
   action: "Audience/issuer validation and in-memory access token (Day 60); asymmetric keys with kid rotation (Day 90)."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: docs/compliance/policies/token-and-otp-specification.md
 to_confirm:
   - "NOT IN REPO (live cloud): MODOCUMENT_JWT_SECRET held in AWS Secrets Manager and its 180-day rotation record (key register K1)."

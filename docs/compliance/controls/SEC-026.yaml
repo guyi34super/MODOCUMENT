@@ -24,9 +24,9 @@ roadmap:
   action: "Patch release for issue #52, restore scheduled scans, approve the patch policy; node refresh and RDS version pin before go-live."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 4
+  residual: High
 policy_document: docs/compliance/policies/patch-management-policy.md
 to_confirm:
   - "NOT IN REPO (live cloud): OS and database patch status"

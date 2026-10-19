@@ -24,9 +24,9 @@ roadmap:
   action: "Explicit KMS key policies and CMKs for backups and logs; Day 30: restore CI and approve the standard; Day 90: SSL scan at go-live."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 3
+  residual: Low
 policy_document: docs/security/crypto-standard.md
 to_confirm:
   - "SSL scan of the public endpoint: NOT IN REPO (live cloud)"

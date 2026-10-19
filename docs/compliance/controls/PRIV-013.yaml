@@ -24,9 +24,9 @@ roadmap:
   action: "Extend erase to document titles and photos; confirm statutory period; bank restriction/objection procedure."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: docs/compliance/policies/dsr-request-register-template.md
 to_confirm:
   - "TO CONFIRM (organisational): statutory response period (pack 09)."

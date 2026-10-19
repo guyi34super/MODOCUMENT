@@ -24,9 +24,9 @@ roadmap:
   action: "Larger breached list or k-anonymity lookup; Keycloak passwordBlacklist."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: null
 to_confirm:
   - "TO CONFIRM (organisational): each bank's Entra ID password policy (banned-password list, length)."

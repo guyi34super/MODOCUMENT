@@ -24,9 +24,9 @@ roadmap:
   action: Release step requiring an Approver who is not the author, runtime approver != author check and nightly scan delivered; collect a production nightly report.
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 3
+  residual: Low
 policy_document: null
 to_confirm:
 - 'NOT IN REPO (live cloud): a nightly SOD_SCAN_COMPLETED record from a deployed environment.'

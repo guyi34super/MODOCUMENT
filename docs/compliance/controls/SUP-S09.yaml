@@ -21,9 +21,9 @@ roadmap:
   action: "Choose MDM and EDR, approve the device/BYOD policy, enrol in-scope devices before bank data arrives."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 4
+  residual: High
 policy_document: docs/compliance/policies/endpoint-device-policy.md
 to_confirm:
   - "TO CONFIRM (organisational): MDM and EDR products"

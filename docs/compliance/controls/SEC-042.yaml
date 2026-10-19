@@ -24,9 +24,9 @@ roadmap:
   action: "Restore CI, fix frontend SBOM, licence deny-list in dependency-review; Day 60: Trivy fs scan, h2 scope, ojdbc11 decision, agent pins."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: docs/compliance/policies/open-source-licence-policy.md
 to_confirm:
   - "Legal approval for redistributing ojdbc11 in the agent image: TO CONFIRM (organisational)"

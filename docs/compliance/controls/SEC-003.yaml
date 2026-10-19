@@ -24,9 +24,9 @@ roadmap:
   action: "Apply staging, observe and record a scale-out event with zero 5xx under MO-016 load; shared rate-limit store; task memory headroom."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 3
+  residual: Medium
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): applied scaling policy and a scaling-event graph with the 5xx count from a staging load test."

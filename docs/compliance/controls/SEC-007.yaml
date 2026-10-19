@@ -24,9 +24,9 @@ roadmap:
   action: "ZAP baseline and API scan evidence (Day 30); shared rate limits and S28 decision (Day 60)."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: null
 to_confirm:
   - "TO CONFIRM (organisational): ZAP baseline/API scan report and run link once Actions runs jobs."

@@ -21,9 +21,9 @@ roadmap:
   action: "Pack 07 applicability decision; digest-pinned base images; then image signing and read-only filesystems."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 4
+  residual: Low
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): running tasks' effective user and capabilities"

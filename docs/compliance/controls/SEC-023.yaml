@@ -24,9 +24,9 @@ roadmap:
   action: Pending-change workflow with self-approval hard-blocked and two-admin onboarding delivered; correct the stale documentation section.
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 4
+  residual: Low
 policy_document: null
 to_confirm:
 - 'TO CONFIRM (organisational): screen recording of the Approvals flow on staging.'

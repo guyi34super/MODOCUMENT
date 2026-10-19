@@ -24,9 +24,9 @@ roadmap:
   action: "Dumped-table test; temporary-password expiry; shared account deletion."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: docs/compliance/policies/credential-storage-and-reset-design.md
 to_confirm:
   - "TO CONFIRM (organisational): the shared pre-production account (R-SHARED-01) has been deleted."
