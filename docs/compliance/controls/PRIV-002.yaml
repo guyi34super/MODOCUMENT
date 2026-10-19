@@ -1,0 +1,33 @@
+id: PRIV-002
+status: Partially Implemented
+current_state: "Per-role export row caps exist and are tested (ExportGuard: READ_WRITE 5,000, ADMIN 50,000, API_CLIENT 50,000, other roles 0; per-bank settings for READ_WRITE and ADMIN). Above the cap an export is refused (403 EXPORT_CAP_EXCEEDED) unless the user states a reason of at most 500 characters. Every export, refusal and reason is in the append-only audit trail (EXPORT_RUN, EXPORT_BLOCKED, EXPORT_OVER_CAP_WITH_REASON, EXPORT_DOWNLOADED) and the SIEM feed. Alert rules export-blocked (HIGH), export-over-cap (INFO) and export-burst (MEDIUM) fire on these rows. Application-level egress control: OutboundHostPolicy refuses internal targets for user URLs; BankEgressGuard allows private bank destinations only through approved egress rules. AI model endpoint defaults to a local endpoint. The network egress allow-list is not enforced: the app security group allows HTTPS to 0.0.0.0/0 by default and the D3 NACL is off."
+gap: "Network-level egress allow-list not enforced and no alert on a new egress destination; alerts are not yet routed to a person (SEC-032); the audit-log CSV export has no alert rule."
+gap_type: Config
+required_action: "Enforce the signed-off egress allow-list (narrow app_egress_https_cidrs, enforce_egress_nacl = true) and alert on new destinations; connect the alert phone path (SEC-032); add AUDIT_LOG_EXPORTED to an alert rule."
+action_owner: "Security — Bhavish Nobeen"
+target_date: 2026-11-13
+evidence:
+  id: PRIV-002-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/PRIV-002.md; src/main/resources/application.yml (modocument.export.caps); src/main/java/com/modocument/infrastructure/export/ExportGuard.java; docs/compliance/evidence/A5-scans-and-tests.md (triggered export-blocked alert, 2026-10-19); src/main/java/com/modocument/infrastructure/net/OutboundHostPolicy.java; infra/terraform/modules/network/main.tf"
+question:
+  final_answer: "Every export is checked against a per-role row limit before any data leaves the system (5,000 rows for normal users, 50,000 for administrators, both configurable per bank). An export above the limit is refused unless the user states a business reason; the refusal raises a high-severity security alert immediately, and an allowed over-limit export raises an informational alert. Every export, refusal and stated reason is recorded in the append-only audit trail with user, job and row count, and is available to the bank's SIEM. In our automated test of 19 October 2026, a 10,000-row export by a normal user was refused and the alert was raised within 13 milliseconds. Outbound connections to internal networks are blocked in the application, bank network destinations need approval by two platform administrators, and AI processing uses a locally hosted model by default. The network-level egress allow-list will be enforced before go-live (target 13 November 2026). Evidence PRIV-002-E01."
+  confidence: High
+test:
+  id: PRIV-002-T01
+  actual_result: "ExportCapGateD2Test re-run on 2026-10-19: 5 tests, 0 failures. A 10,000-row export by a READ_WRITE user was refused (403 EXPORT_CAP_EXCEEDED, cap 5,000), audited EXPORT_BLOCKED, and the export-blocked alert was raised 9-13 ms after the audit row and accepted by the log and test-webhook channels within 43 ms. Nothing was exported. Delivery to a person's phone is not in the test (see SEC-032)."
+  result: Pass
+  tester: "Agent A5 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Enforce the network egress allow-list (gate D3) with an alert on new destinations; route export alerts to the on-call phone (SEC-032)."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): egress allow-list in production, VPC flow logs, GuardDuty"
+  - "TO CONFIRM (organisational): signed-off list of allowed outbound destinations (gate D3)"

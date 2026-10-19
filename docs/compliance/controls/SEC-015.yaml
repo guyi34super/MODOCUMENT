@@ -1,0 +1,33 @@
+id: SEC-015
+status: Partially Implemented
+current_state: "In-app privileged actions are written to the append-only AuditEvent table with actor id, e-mail, role, session id, request id, IP, action, target and old/new values, in the same transaction as the change; UPDATE/DELETE/TRUNCATE are revoked and blocked by triggers (V14). User administration, maker/checker, settings, platform changes, DSR actions and audit-log reads are audited (tests pass 2026-10-19) and reviewable in the audit viewer and the SIEM feed; admin sign-in and privileged changes alert. Infrastructure: CloudTrail with log-file validation to an Object-Lock bucket and Session Manager recording are written in Terraform but not applied; nodes have no SSH key. The RDS parameter group logs DDL and connections only; pgAudit is not configured."
+gap: "No database statement audit (pgAudit); session recording and CloudTrail not live; CloudTrail bucket in the same account until the lock account exists."
+gap_type: Config
+required_action: "Add pgAudit to the RDS parameter group; apply the Terraform; rebuild one test admin session from the locked logs; create the separate log-archive account."
+action_owner: "Security — Bhavish Nobeen"
+target_date: 2026-11-13
+evidence:
+  id: SEC-015-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-015.md; src/main/resources/db/migration/V14__audit_event.sql; src/main/java/com/modocument/domain/entity/AuditEvent.java; infra/terraform/modules/security-monitoring/main.tf; infra/terraform/modules/rds/main.tf; docs/compliance/evidence/A5-scans-and-tests.md"
+question:
+  final_answer: "Every privileged action in the application is written to an append-only audit trail with who, when, from which address and session, what was changed and the before and after values. The database itself refuses updates and deletes on that table, including by the database owner, and every privileged action is also streamed to the bank's SIEM; reading the audit log is itself audited. Administrator sign-ins and privileged changes raise security alerts. For the AWS infrastructure we use no SSH: server access goes through AWS Session Manager with session recording to write-once storage, and CloudTrail records all control-plane activity with log-file validation. These infrastructure controls are defined as code and are switched on with our first production deployment; database statement-level audit logging (pgAudit) is planned for 13 November 2026. Evidence SEC-015-E01."
+  confidence: Medium
+test:
+  id: SEC-015-T01
+  actual_result: "In-app: admin-action tests pass (UserAdminIntegrationTest, MakerCheckerIntegrationTest, AuditViewAuditQaTest, JpaAuditRecorderTest, AuditLogApiTest, AuditTrailGapsTest; 2026-10-19) and rows carry session id and request id, so a session's actions can be listed in order; append-only enforced by V14 (AuditAppendOnlyPgIT not re-run, no Docker). Infrastructure: nothing deployed, so no admin session could be rebuilt; no pgAudit."
+  result: Partial
+  tester: "Agent A5 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Session Manager recording and CloudTrail live, pgAudit on RDS, rebuild a test admin session from locked logs."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): CloudTrail trail, Session Manager recordings, locked bucket state"
+  - "TO CONFIRM (organisational): date of the separate log-archive account; any Azure footprint and its Activity Log settings"
