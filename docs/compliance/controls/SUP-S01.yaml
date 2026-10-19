@@ -1,0 +1,30 @@
+id: SUP-S01
+status: Partially Implemented
+current_state: "Strict CSP without unsafe-inline/eval, nosniff, X-Frame-Options DENY, no-referrer, HSTS 1 year, Permissions-Policy, COOP/CORP on every nginx static location (frontend/security-headers.conf) and a strict API set from Spring Security (HeaderContractTest); scripts/check-nginx-headers.sh in CI; stateless Bearer API with CSRF filter off by design and the only cookie HttpOnly/Secure/SameSite=Strict path-scoped; uploads checked by extension allow-list, magic bytes, size caps and server-chosen names; weekly ZAP baseline workflow."
+gap: "No ZAP result or external A-grade header scan on file; ZAP job is passive only; no dedicated CSRF regression test; access token in localStorage."
+gap_type: Config
+required_action: "Restore Actions runners and archive a ZAP report; scan the first HTTPS deployment for header grade; add a ZAP active/API scan in staging; add a CSRF regression test; keep the access token in memory."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-06
+evidence:
+  id: SUP-S01-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SUP-S01.md; docs/security/web-hardening.md; frontend/security-headers.conf; scripts/check-nginx-headers.sh; docs/compliance/evidence/A6-test-runs.md"
+test:
+  id: SUP-S01-T01
+  actual_result: "2026-10-19: check-nginx-headers.sh OK on frontend/nginx.conf (7 locations) and nginx.mtls-dev.conf (3 locations); HeaderContractTest 5/5, TrustedProxyIntegrationTest 4/4, UploadContentCheckerTest 8/8, UploadContentGateSec030Test 7/7, UploadOwnershipEnforcementTest 4/4, OpenApiContractTest 7/7 (no route accepts a request without the Bearer header); 0 failures. ZAP and external header-grade scan not run."
+  result: Partial
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "ZAP report and header-grade scan, CSRF regression test (Day 30); active scan and in-memory token (Day 60)."
+  status: Not started
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): external header scan grade (A or better) against the deployed HTTPS URL."
+  - "TO CONFIRM (organisational): ZAP baseline run link and report once GitHub Actions runs jobs again."

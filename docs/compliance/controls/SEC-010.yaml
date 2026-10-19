@@ -1,0 +1,35 @@
+id: SEC-010
+status: Partially Implemented
+current_state: "Review design in the repository: PR template with security and privacy checklists, CODEOWNERS, branch-protection reference and A8 drill runbook; CI gates (build/test, PostgreSQL, frontend, e2e), gitleaks full history, Semgrep OWASP, dependency review, npm audit, SBOM, Trivy, ZAP baseline, Dependabot; actions SHA-pinned. Quarterly report from git (2026-07-01 to 2026-10-19): 32 merges through GitHub by one account, 6 direct pushes to main (last 2026-10-15), PRs #63-#66 merged on a local gate because GitHub Actions is not starting jobs (no runner assigned)."
+gap: "Branch protection not enforced; GitHub Actions not running jobs since PR #63; one code owner and no evidence of independent approval; no A8 drill run link; dependency-review not runnable on the private repository; very large and AI-only PRs."
+gap_type: Config
+required_action: "Apply branch protection without bypass; restore runners and re-run CI; add a second code owner and export approvals; enable GitHub Code Security; run the A8 drill; adopt a PR size guide with a named human reviewer."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-10-24
+evidence:
+  id: SEC-010-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-010.md; docs/compliance/policies/code-review-report-2026-Q4.md; .github/workflows/ci.yml; .github/workflows/security.yml; .github/pull_request_template.md; .github/CODEOWNERS"
+question:
+  final_answer: "MoDocument's review process is defined in the repository: every change is meant to go through a pull request with a security and privacy checklist, approval by a code owner, and automated gates for build and tests, secret scanning (gitleaks over the full history), static analysis (Semgrep with the OWASP rule set), dependency and container scanning, and a weekly DAST baseline. The latest code review report (2026 Q4 to date) shows that these controls are designed but not yet operating consistently: six commits reached the main branch without a pull request (the last on 15 October 2026), GitHub Actions has not run jobs since 16 October 2026 (four pull requests were merged on local test runs), and independent approval cannot yet be shown. Branch protection, a second code owner and restored CI runners are being put in place. Evidence: SEC-010-E01."
+  confidence: High
+test:
+  id: SEC-010-T01
+  actual_result: "2026-10-19 re-performance from git history of origin/main since 2026-07-01: 32 GitHub merges all by account Bhavish11; 6 direct pushes (2 on 2026-10-15); PRs #63-#66 merged on a local gate while GitHub Actions assigned no runner; single CODEOWNER; no A8 drill evidence; approvals not visible in git."
+  result: Fail
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Enforce branch protection, restore CI runners, second code owner, A8 drill, Code Security."
+  status: Not started
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/code-review-report-2026-Q4.md
+to_confirm:
+  - "TO CONFIRM (organisational): branch-protection / ruleset settings of main (screenshot or export)."
+  - "TO CONFIRM (organisational): PR approvals for the period and who holds the accounts Bhavish11 and guyi34super."
+  - "TO CONFIRM (organisational): the PR number of merge 3bc44e2."
+  - "TO CONFIRM (organisational): the cause of the runner outage and the date CI runs again."

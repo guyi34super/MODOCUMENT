@@ -158,7 +158,8 @@ No other cookie is issued (stateless API; nginx sets none).
 | Stored under a server-chosen name (last path segment only, truncated, timestamp-suffixed); resolution normalised inside the uploads folder (no traversal) | `UploadStorage` |
 | Per-owner access to stored files (ws02) | `UploadOwnershipEnforcementTest` |
 | Exports and data downloads served as `Content-Disposition: attachment` | `IngestionExportController`, `DataSubjectController`, `UserAdminController` |
-| Image previews served `inline` only with a content type sniffed from the bytes (image formats only), Bearer-only (not navigable), under the API's `default-src 'none'` CSP + `nosniff` | `DocInstanceController#assetContent`, `DocInstanceUseCase` |
+| Document photos accepted only as PNG or JPEG by their sniffed bytes, and served `inline` with that sniffed type, Bearer-only (not navigable), under the API's `default-src 'none'` CSP + `nosniff` (ws31 replaced the old asset routes) | `DocInstanceController#imageContent` (`GET /api/doccreation/instances/{id}/images/{imageId}/content`), `DocInstanceUseCase.sniffImageContentType` |
+| PDF templates refused unless the bytes are a PDF (`400 NOT_A_PDF`) | `POST /api/doccreation/blueprints` (`docs/api/versioning-policy.md` §8) |
 | Uploads deleted after 30 days | `RetentionPurgeJob` — `docs/security/retention-and-dsr.md` |
 
 ## 5. Platform hardening
@@ -396,14 +397,14 @@ the template and on the rendered config of each mode.
 | Evidence | How | Status |
 |---|---|---|
 | API header contract | `HeaderContractTest` (in `mvn verify`) | automated |
-| SPA header coverage per nginx location | `scripts/check-nginx-headers.sh` (CI frontend job) | automated |
+| SPA header coverage per nginx location | `scripts/check-nginx-headers.sh` (CI frontend job, on `frontend/nginx.conf` and `frontend/nginx.mtls-dev.conf`) | automated; re-run for the compliance pack on 2026-10-19: OK, 7 locations and 3 locations (`docs/compliance/evidence/A6-test-runs.md`) |
 | `<NAME>_FILE` behaviour, no value in logs | `SecretFileEnvironmentPostProcessorTest` | automated |
 | DB URL / sslmode shared by app and Flyway | `DatabaseTlsConfigTest`; production-style first boot on real PostgreSQL: `ProductionBootPgIT` (`-Ppostgres-it`) | automated |
 | RDS CA bundle in the image (`verify-full`) | build-time check in the `rds-ca` stage (fails on anything but PEM Amazon RDS CA certificates); pgjdbc probe against a local TLS server (§5d) | build gate; probe manual, done 9 Oct 2026 |
 | Proxy chain behind ALB/CloudFront | rendered-config diff + `nginx -t` + live spoofing matrix in all three modes (§5e) | manual, done 9 Oct 2026; live AWS confirmation pending |
 | CSP does not break the SPA | nginx + headless Chromium against the built `dist/` (recipe below) | manual, done for ws16 |
-| Header scan grade **A** | Run securityheaders.com and Mozilla HTTP Observatory against the deployed HTTPS URL. With the set above (all six graded headers, CSP without `unsafe-inline`/`unsafe-eval`, HSTS ≥ 1 year, secure cookie flags) the expected result is A or better on both. Archive the report with the release evidence. | on first HTTPS deployment |
-| DAST baseline | The ws19 ZAP baseline workflow (separate branch) scans the running stack. Acceptance: no Medium/High alerts. Expected informational/low noise: "Storable and Cacheable Content" on the hashed assets, Spectre-isolation hints (no `Cross-Origin-Embedder-Policy` — deliberately unset; nothing needs cross-origin isolation and COEP risks breaking image loads). | with ws19 |
+| Header scan grade **A** | Run securityheaders.com and Mozilla HTTP Observatory against the deployed HTTPS URL. With the set above (all six graded headers, CSP without `unsafe-inline`/`unsafe-eval`, HSTS ≥ 1 year, secure cookie flags) the expected result is A or better on both. Archive the report with the release evidence. | on first HTTPS deployment — not in the repository (no deployment yet) |
+| DAST baseline | `.github/workflows/zap-baseline.yml` (on `main`; weekly and on demand) scans the compose stack with the rules in `.zap/rules.tsv` and the integration-API seed hook, and uploads `zap-baseline-report`. It is a passive baseline, not an active scan. No report is on file: GitHub Actions has not started jobs since 2026-10-16 (`docs/compliance/policies/code-review-report-2026-Q4.md`, finding F2). Acceptance: no Medium/High alerts. Expected informational/low noise: "Storable and Cacheable Content" on the hashed assets, Spectre-isolation hints (no `Cross-Origin-Embedder-Policy` — deliberately unset; nothing needs cross-origin isolation and COEP risks breaking image loads). | defined; not yet run (needs Actions runners) |
 
 **CSP re-check recipe** (no Docker needed): `npm run build`; render
 `frontend/nginx.conf` first, as the image does in edge mode

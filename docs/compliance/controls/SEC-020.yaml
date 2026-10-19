@@ -1,0 +1,33 @@
+id: SEC-020
+status: Partially Implemented
+current_state: "Only hash columns hold user credentials: AppUsers.PasswordHash (Argon2id, V1/V40), RecoveryCode.CodeHash, RefreshToken.TokenHash, ApiClientSecret.SecretHash; TOTP secrets AES-256-GCM with a key outside the database. UserDto/AdminUserDto carry no password or hash; pending changes strip passwordHash. Resets are admin-issued temporary passwords under maker/checker, stored as hash, forcing a change at first sign-in and ending all sessions."
+gap: "Dumped-table demonstration not automated; temporary password known to the requesting admin until first sign-in and never expires; shared pre-production account removal not evidenced."
+gap_type: Build
+required_action: "Add a dumped-table sign-in test; expire temporary passwords; delete the shared pre-production account and record it."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-06
+evidence:
+  id: SEC-020-E01
+  status: Complete
+  location: "docs/compliance/controls/SEC-020.md; docs/compliance/policies/credential-storage-and-reset-design.md; docs/compliance/evidence/A6-test-runs.md"
+question:
+  final_answer: "No. MoDocument never stores a password in readable form: only a salted Argon2id hash is kept, and no screen, API or report shows a password or its hash. Passwords cannot be recovered, only reset. A reset is requested by one bank administrator and approved by a second; it sets a temporary password that the user must change at first sign-in, and it ends all of the user's existing sessions. Users who sign in through Microsoft Entra ID or Keycloak have no MoDocument password at all. Evidence: SEC-020-E01."
+  confidence: High
+test:
+  id: SEC-020-T01
+  actual_result: "2026-10-19: migration review found no plaintext password column. H2 run: UserAdminIntegrationTest 10/10 (approved joiner must change password first), UserAdminUseCaseTest 22/22, AuthUseCaseTest 37/37, BootstrapAdminRunnerTest 13/13, UserAdminActionsIntegrationTest 9/9; 0 failures. Dumped-table sign-in demonstration not run."
+  result: Partial
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Dumped-table test; temporary-password expiry; shared account deletion."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/credential-storage-and-reset-design.md
+to_confirm:
+  - "TO CONFIRM (organisational): the shared pre-production account (R-SHARED-01) has been deleted."
+  - "TO CONFIRM (organisational): the channel used to hand a temporary password to the user."

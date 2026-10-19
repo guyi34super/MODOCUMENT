@@ -116,7 +116,9 @@ works in their own bank only; every step is audited.
      the trimmed value — erasure must not take neighbouring subjects
      with it;
    * unstructured text (extraction raw bodies, document paragraphs and
-     captions, file names) matches on **case-insensitive contains**.
+     captions, PDF-template document values — ws31 `docValues`, file
+     names) matches on **case-insensitive contains**.
+   The identifier must be at least 3 characters.
    The response is a per-store hit summary (ids and row counts, no
    values). Audited `DSR_SEARCH` (counts only; the subject is referenced
    by a SHA-256 prefix, never by value).
@@ -176,6 +178,40 @@ works in their own bank only; every step is audited.
   in the request ticket.
 * The subject's identifier never enters the audit trail or the
   application log; audit rows reference a SHA-256 prefix.
+
+## Rights covered (PRIV-013, checked against the code 2026-10-19)
+
+| Right | How it is met | State |
+|---|---|---|
+| Access (SAR) | Search → export ZIP (`dsr-export.json` + `dsr-export.txt`) | Built (`DataSubjectUseCase`, `DataSubjectRightsGateC12Test`) |
+| Portability | `dsr-export.json` is machine-readable, every matching row in full, per store | Built |
+| Erasure | Erase across the stores below; closure = a repeated search returning 0 | Built, with the manual items below |
+| Rectification | The normal edit flows (`PUT /api/ingestion/jobs/{id}/rows`, document values `PUT /api/doccreation/instances/{id}/values`); audited as `INGESTION_ROWS_EDITED` with counts, deliberately without old/new values (no PII in the audit trail) | Built (no dedicated DSR step) |
+| Restriction, objection | No feature. The bank stops processing by not submitting the subject's data and, if needed, by erasure or job deletion | Not built — organisational procedure of the bank |
+| Statutory deadline | Tracked per request in the register: [`dsr-request-register-template.md`](../compliance/policies/dsr-request-register-template.md) | Period `TO CONFIRM` (pack 09) |
+
+## Erasure propagation checklist
+
+Check every row when closing an erasure request. "Automatic" means the erase call reaches it.
+
+| Store | Reached by erase | Notes |
+|---|---|---|
+| Ingestion job parsed/mapped rows (`IngestionJob`) | Automatic | Subject rows filtered out; validation checkpoint cleared |
+| Original uploads of matched jobs + export copies | Automatic | Whole file deleted (binary cannot be row-filtered); retried after commit, `PendingFileDelete` if the store fails |
+| Import payloads (`ImportDetails.RawJson`) | Automatic | Column nulled |
+| Extraction raw/processed records (SQL store) | Automatic | Records deleted |
+| Uploads whose file name is the identifier | Automatic | File and row deleted |
+| Legacy document blocks and their image assets (`DocContentBlock`, `DocImageAsset`) | Automatic | Blocks whose text or caption names the subject |
+| PDF-template document values (`DocInstance.ValuesJson`) + generated PDF | Automatic | Matching values removed; PDF deleted and regenerated on next download |
+| Flow record index (`TemplateRecord`, `TemplateRecordKey`) | Automatic | Equality match on values |
+| AI result cache (`AiResultCache`) | Automatic | The bank's whole cache is cleared |
+| **Document title** (`DocInstance.Title`) | **Not reached** | Titles are not searched and the retention purge keeps the instance shell with its title. If the title names the subject, rename or delete the document by hand (gap, PRIV-013) |
+| **Document photos** (`DocInstanceImage` + `DocImageAsset` of a PDF-template document) | **Not reached** | Photos are binary and their original file names are not searched; a document whose values matched keeps its photos until the 30-day purge. Delete them by hand when they show the subject (gap, PRIV-013) |
+| Agent staging buffer (`IntegrationRun.StagedRecordsJson`) | Not reached | Transient: cleared when the run finishes |
+| MongoDB extraction store (scale build only, `EXTRACTION_STORE=mongo`) | Not reached | The default build has no MongoDB; the scale build is outside DSR and retention coverage |
+| Copies already sent to bank systems (webhooks, database exports, SFTP, integration API results) | Not reached | Outside MoDocument; the bank propagates the erasure in its own systems |
+| Audit trail, alert log | Not applicable | Hold ids and counts, never values (`docs/security/audit-events.md`) |
+| Backups | Expire within 90 days | Re-erase after any restore |
 
 ## Sign-off
 
