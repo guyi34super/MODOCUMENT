@@ -1,0 +1,31 @@
+id: SUP-S11
+status: Partially Implemented
+current_state: "Public synthetic probe GET /api/probe/synthetic built and tested (3/3 passed 2026-10-19). Terraform alarms (ALB 5xx, ECS CPU, RDS free storage, account-lockout burst) and GuardDuty findings to one SNS topic; Container Insights on; WAF metrics. App security alerts with delivery records (ws18). Request IDs in every log line; redacted logs. In-app announcements (INFO, MAINTENANCE, RELEASE) as status communication. Post-incident review template written. Missing: external probes, dashboards, burn-rate alerts, paging, external status page; alarm delivery blocked by the AWS-managed SNS key (DEF-2)."
+gap: "No external journey probes, dashboards, burn-rate alerts, paging or external status page; alert delivery defect; no post-incident review yet."
+gap_type: Build
+required_action: "Add Synthetics canaries for login and report generation plus the probe endpoint; CloudWatch dashboard; burn-rate alarms on the 99.5% objective; customer-managed KMS key on the topic and a paging subscription; hosted status page; first post-incident review after go-live."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SUP-S11-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SUP-S11.md; infra/terraform/modules/security-monitoring/main.tf; src/main/java/com/modocument/api/controller/SyntheticProbeController.java; src/main/java/com/modocument/api/controller/AnnouncementController.java; docs/compliance/policies/post-incident-review-template.md"
+test:
+  id: SUP-S11-T01
+  actual_result: "SyntheticProbeTest passed 3/3 (2026-10-19); no external probe, probe alarm or paging integration exists, and alarm delivery is blocked by DEF-2; probe-failure-to-page timing not testable without AWS."
+  result: Partial
+  tester: "Agent A8 (re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): external probes, dashboards, burn-rate alerts, paging, status page."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/post-incident-review-template.md
+to_confirm:
+  - "NOT IN REPO (live cloud): dashboards, probe-to-page timing, first post-incident review"
+  - "TO CONFIRM (organisational): status page service and URL"
+  - "TO CONFIRM (organisational): paging tool and on-call rota"

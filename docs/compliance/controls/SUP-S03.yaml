@@ -1,0 +1,30 @@
+id: SUP-S03
+status: Partially Implemented
+current_state: "Pre-production; Terraform validated, not deployed. Production: CloudFront with AWS WAF (AWS common, known bad inputs, IP reputation; per-IP rate rule 2000/5 min and 100/5 min on /api/auth/), Shield Standard by AWS default, ALB locked to the CloudFront origin-facing prefix list plus a secret origin header with 403 for everything else. App limits per IP, e-mail, user and LLM quota. Autoscaling capped at 8 tasks / 4 nodes. DDoS runbook written. Gaps: staging has no WAF; the optional mTLS listener bypasses the WAF; no WAF/ALB/CloudFront logs."
+gap: "Edge not deployed; origin-bypass and flood tests not run; no edge logs; Shield Advanced/support level undecided."
+gap_type: Config
+required_action: "Deploy the production edge; run the origin-bypass and single-IP flood tests; enable WAF, ALB and CloudFront logging; tabletop the DDoS runbook; decide on Shield Advanced."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SUP-S03-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SUP-S03.md; docs/compliance/policies/ddos-runbook.md; infra/terraform/modules/edge/main.tf; infra/terraform/modules/edge/variables.tf; src/test/java/com/modocument/api/ApiRateLimitIntegrationTest.java"
+test:
+  id: SUP-S03-T01
+  actual_result: "Static: prefix-list ingress, origin-header rule, 403 default rule and WAF rate rules present in code; terraform validate passed (2026-10-19). Origin-bypass and flood tests not run: no AWS environment; staging has no WAF."
+  result: Partial
+  tester: "Agent A8 (static re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): deploy edge, origin-bypass and flood tests, edge logging, runbook tabletop."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/ddos-runbook.md
+to_confirm:
+  - "NOT IN REPO (live cloud): WAF metrics; origin-bypass and flood test results; Shield Standard coverage"
+  - "TO CONFIRM (organisational): Shield Advanced and AWS support plan"

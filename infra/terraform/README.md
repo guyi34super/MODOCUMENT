@@ -12,7 +12,10 @@ GitHub-OIDC deploys with no static cloud keys.
 > blocker fixes; re-validated 10 Oct 2026 with the ws24 release changes
 > below). `terraform plan/apply` still need AWS credentials and are
 > **pending** — run them per env before anything goes live. Nothing here has
-> touched any cloud account.
+> touched any cloud account. Re-validated on 19 Oct 2026 for the
+> technology-risk pack (same versions), which also lists defects that
+> `validate` cannot catch:
+> [`docs/compliance/evidence/A8-infra-checks.md`](../../docs/compliance/evidence/A8-infra-checks.md) §4.
 
 ## Layout
 
@@ -133,11 +136,11 @@ one run. Operationally, the sequence that avoids dead ends:
    as in step 5. Default `false`: an install without a platform owner yet
    simply skips the seeding.
    Re-enable only to seed a rebuilt, empty database.
-6. **After the restore drill passes (gate D6):** set
+7. **After the restore drill passes (gate D6):** set
    `enforce_backup_locks=true` in production tfvars and re-apply — vault
    lock + Object Lock COMPLIANCE are **irreversible** past their cooling-off
    windows, which is exactly the point (D5).
-7. **After the egress allow-list is signed off (gate D3):** narrow
+8. **After the egress allow-list is signed off (gate D3):** narrow
    `app_egress_https_cidrs`, set `enforce_egress_nacl=true` +
    `egress_allowlist_cidrs`, re-apply.
 

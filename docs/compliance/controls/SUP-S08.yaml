@@ -1,0 +1,32 @@
+id: SUP-S08
+status: Partially Implemented
+current_state: "Key and certificate register (docs/security/key-certificate-register.md) updated 2026-10-19 with 24 rows, each with an owner and an expiry or rotation rule; values never recorded. KMS CMKs rotate yearly; ACM renews certificates; RDS manages the master password. Code supports connector-key versions with retired keys and API client secret rotation with overlap; rotation tests passed 2026-10-19 (ConnectorSecretVaultTest 13/13, IntegrationApiSecurityTest 15/15). No expiry alerting exists; Terraform does not inject the connector key version and retired keys; MFA-key re-encryption is a procedure only; no live rotation drill."
+gap: "No expiry alerts at 30/14/7 days; connector rotation variables not injected; no live rotation drill; MFA-key re-encryption not implemented."
+gap_type: Config
+required_action: "Route ACM expiry events to the alert topic and set reminders for bank CA and agent certificates; inject MODOCUMENT_CONNECTOR_KEY_VERSION and MODOCUMENT_CONNECTOR_RETIRED_KEYS; run and record a live rotation drill in staging; implement the MFA-key re-encryption run."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SUP-S08-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SUP-S08.md; docs/security/key-certificate-register.md; docs/compliance/evidence/A8-infra-checks.md; src/test/java/com/modocument/infrastructure/integration/secrets/ConnectorSecretVaultTest.java; src/test/java/com/modocument/api/integration/IntegrationApiSecurityTest.java"
+test:
+  id: SUP-S08-T01
+  actual_result: "Register compared with Terraform and app configuration: seven missing items added as K18-K24, zero unknown owners. Rotation tests passed (28 run, 0 failed, 2026-10-19). No expiry alerting exists; no production certificates exist yet, so none is within 30 days of expiry."
+  result: Partial
+  tester: "Agent A8 (re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): expiry alerts, connector rotation variables, live rotation drill in staging."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/security/key-certificate-register.md
+to_confirm:
+  - "NOT IN REPO (live cloud): live certificate expiry dates, ACM renewal status, live rotation drill"
+  - "TO CONFIRM (organisational): reminder tool for bank CA and agent certificate expiry"
+  - "TO CONFIRM (organisational): owner of the MFA-key re-encryption run"
+  - "TO CONFIRM (organisational): DKIM key details for the company e-mail domain"
