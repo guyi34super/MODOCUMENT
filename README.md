@@ -259,7 +259,8 @@ no LLM involved.
   [docs/security/audit-events.md](docs/security/audit-events.md).
 - **OpenAPI** generated from code at `/v3/api-docs` (all profiles); Swagger UI at `/swagger-ui` (`local` only).
 - `local` profile: same PostgreSQL + Flyway as production, plus dev conveniences
-  (Swagger, in-memory extraction). The JWT signing key is **not** committed —
+  (Swagger UI, admin MFA not forced, template changes without maker/checker;
+  extraction persists in the same PostgreSQL). The JWT signing key is **not** committed —
   supply `MODOCUMENT_JWT_SECRET` or a gitignored `application-local-secrets.yml`.
 - **Docker**: multi-stage `Dockerfile` + `docker-compose.yml` (nginx frontend +
   app + PostgreSQL, optional Ollama/docling/Keycloak/Mongo+Kafka profiles); every
@@ -461,7 +462,8 @@ MODOCUMENT_AI_BASE_URL=https://openrouter.ai/api \
 MODOCUMENT_AI_API_KEY=<your-key> \
 MODOCUMENT_AI_MODEL=<model-id> docker compose up --build
 
-# dev mode against the same PostgreSQL (dev JWT secret, Swagger enabled)
+# dev mode against the same PostgreSQL (Swagger enabled; the JWT secret still
+# comes from MODOCUMENT_JWT_SECRET — no dev secret is committed)
 APP_PROFILES=local docker compose up --build
 
 # extraction at scale: MongoDB store + Kafka work distribution
@@ -497,7 +499,10 @@ npm test             # unit tests (Vitest + React Testing Library)
 All API endpoints (except the login entry points `/api/auth/login`,
 `/api/auth/refresh`, `/api/auth/mfa/verify`, `/api/auth/providers`, the
 health check `/actuator/health` and the public synthetic probe
-`/api/probe/synthetic`) require a JWT Bearer token. Public self-registration is
+`/api/probe/synthetic`) require a JWT Bearer token. Machine callers are the
+other exception: `POST /api/integration/oauth/token` authenticates the API
+client itself and `POST /api/agent/v1/enroll` takes a one-time enrolment
+token (see `SecurityConfig`). Public self-registration is
 disabled: the first administrator is created at startup from
 `MODOCUMENT_BOOTSTRAP_ADMIN_EMAIL` / `MODOCUMENT_BOOTSTRAP_ADMIN_PASSWORD`
 (required when the user table is empty), and further accounts are
@@ -600,7 +605,7 @@ install it once, and again after changing it
 | S3 file store | `modocument.storage.s3.*`: `bucket`, `prefix`, `region`, `kms-key-id`, `temp-cache-mb` (`MODOCUMENT_STORAGE_S3_*`) | bucket required with `s3`; region from the AWS chain; KMS = bucket default; 512 MiB local-copy cache |
 | JVM flags (image) | `JAVA_TOOL_OPTIONS` (appended after the image defaults), `JAVA_OPTS` (command line), `MODOCUMENT_CDS=off` | `-XX:MaxRAMPercentage=70 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError` + the AppCDS archive |
 | Profile | `SPRING_PROFILES_ACTIVE` | default (PostgreSQL); `local` adds dev conveniences, `scale` adds Mongo+Kafka extraction (needs a `-Pscale` build) |
-| Extraction store | `extraction.store` / `EXTRACTION_STORE` | `memory`; set `mongo` (or the `scale` profile) for multi-instance runs |
+| Extraction store | `extraction.store` / `EXTRACTION_STORE` | `sql` (the primary database); `memory` is for tests; set `mongo` (or the `scale` profile) for multi-instance runs |
 | MongoDB URI | `spring.data.mongodb.uri` / `EXTRACTION_MONGO_URI` | `mongodb://localhost:27017/modocument`; **required** (authenticated URI) on the `scale` profile |
 | Kafka distribution | `extraction.kafka.enabled` / `EXTRACTION_KAFKA_ENABLED` | `false` (workers poll the store queue) |
 | Kafka brokers | `spring.kafka.bootstrap-servers` / `EXTRACTION_KAFKA_SERVERS` | `localhost:9092` |
@@ -674,7 +679,7 @@ follow [docs/api/versioning-policy.md](docs/api/versioning-policy.md), and the h
 |---|---|
 | `GET /api/ingestion/jobs/{id}/export/file?format=csv\|json\|xlsx\|tsv\|xml` | Download validated rows (copy archived in `wwwroot/exports/`) |
 | `POST /api/ingestion/jobs/{id}/export/file` | Same download with `{format, reason}` in the body (over-cap reason, ws18) |
-| `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied PostgreSQL/H2 database (`reason` above the role cap) |
+| `POST /api/ingestion/jobs/{id}/export/database` | Insert validated rows into a user-supplied PostgreSQL, Oracle, SQL Server or MariaDB database (`reason` above the role cap) |
 
 ### Data extraction
 
@@ -747,6 +752,11 @@ upload ──> PARSED ──────> MAPPED ─────────> VA
            + LLM
 ```
 
+The calls below are shortened: each one also needs
+`-H "Authorization: Bearer $TOKEN"` (see "Authentication"), and they assume
+the app is reachable on `localhost:8080` (`mvn spring-boot:run`; the compose
+stack publishes only `localhost:3000`, which proxies the same paths).
+
 ```bash
 # 1. create a template with a custom regex rule
 curl -X POST localhost:8080/Templates/CreateWithFields -H 'Content-Type: application/json' -d '{
@@ -765,7 +775,7 @@ curl -X PUT  localhost:8080/api/ingestion/jobs/1/mapping -H 'Content-Type: appli
      -d '{"mapping": {"Full Name": "FullName", "email": "Email", "Age": null}}'
 curl -X POST localhost:8080/api/ingestion/jobs/1/revalidate
 
-# 4. optionally edit via chat (needs an OpenAI key)
+# 4. optionally edit via chat (needs a reachable AI endpoint: local Ollama by default)
 curl -X POST localhost:8080/api/ingestion/jobs/1/chat-edit -H 'Content-Type: application/json' \
      -d '{"instruction": "Capitalize all names"}'
 
@@ -845,6 +855,8 @@ com.modocument
 │                    extraction (Mongo + in-memory stores, lease queue, Kafka event
 │                    bus, worker pool, robots/rate-limit compliance, web/API/JDBC
 │                    connectors)
+├── doccreation      document creation (exact PDF templates): its own api/dto/
+│                    entity/repo/usecase layers plus pdftemplate, fields, rules
 └── api              REST controllers + web config (CORS, case-insensitive routes)
 ```
 
@@ -857,17 +869,20 @@ instance's tasks once their leases expire. Scale out by running more app instanc
 ## Database
 
 - **Production (PostgreSQL):** the schema is created and versioned by **Flyway**
-  (`src/main/resources/db/migration/` — `V1__baseline_schema.sql` +
-  `V2__lookup_seed.sql`) automatically on startup; Hibernate runs with
+  (`src/main/resources/db/migration/` — from `V1__baseline_schema.sql` and
+  `V2__lookup_seed.sql` up to `V334` at release 1.2.0, plus the
+  `afterMigrate__rls_enforce.sql` callback) automatically on startup; Hibernate runs with
   `ddl-auto: validate` and only checks the mapping. Point the app at your server
   with `MODOCUMENT_DB_URL` / `MODOCUMENT_DB_USERNAME` / `MODOCUMENT_DB_PASSWORD`.
   Only lookup data is seeded — no accounts, templates, or rules.
 - **Local development (PostgreSQL):** identical to production — the `local`
   profile inherits the datasource and Flyway migrations, so schema changes are
   exercised in dev exactly as they will run in prod. Ship a schema change as a
-  new `V<n>__description.sql` file under `src/main/resources/db/migration/`;
-  the backend applies pending migrations on the next start (see `V3__foreign_key_indexes.sql`
-  for an incremental example).
+  new file under `src/main/resources/db/migration/`, named
+  `V{n}__ws{NN}_{description}.sql` inside your workstream's range
+  (`src/main/resources/db/migration/RANGES.md`) and expand-only
+  ([docs/release/migration-policy.md](docs/release/migration-policy.md));
+  the backend applies pending migrations on the next start.
 - **Tests (H2):** the test suite keeps fast in-memory H2 — schema auto-created
   from the JPA entities and seeded from `src/main/resources/data.sql`
   (data-type and process-step lookups only); Flyway is disabled there.
@@ -890,10 +905,10 @@ export MODOCUMENT_JWT_SECRET="$(openssl rand -base64 48)"
 mvn spring-boot:run
 ```
 
-On the first boot the log shows Flyway applying `V1__baseline_schema`,
-`V2__lookup_seed` and `V3__foreign_key_indexes`, after which the tables are
-visible in Supabase's Table Editor; later boots print "Schema … is up to
-date." The same variables work for the Docker image and the compose `app`
+On the first boot the log shows Flyway applying the whole chain, from
+`V1__baseline_schema` to the newest migration (58 versioned migrations up to
+`V334` at release 1.2.0), after which the tables are visible in Supabase's
+Table Editor; later boots print "Schema … is up to date." The same variables work for the Docker image and the compose `app`
 service (the bundled `postgres` service is then unnecessary).
 
 ## Docker
@@ -920,8 +935,9 @@ service (the bundled `postgres` service is then unnecessary).
     [docling-serve](https://github.com/docling-project/docling-serve) on port 5001 for
     rich layout-aware conversion — not needed for the standard flow. The app
     image ships Tesseract (`tesseract-ocr` + English traineddata, v1.2.0) for the
-    local OCR fallback on scanned PDFs; with `AIFILES_OPENAI_APIKEY` set the
-    container also gets image/scan OCR via the vision model, even without docling.
+    local OCR fallback on scanned PDFs; with `OCR_VISION_ENABLED=true` and a
+    reachable vision-capable AI endpoint the container also gets image/scan OCR
+    via the vision model, even without docling (vision OCR is off by default).
   - `mongodb` + `kafka` (optional, `--profile extraction`): the extraction store and
     work-distribution bus. Run `APP_PROFILES=scale APP_MAVEN_PROFILES=scale docker
     compose --profile extraction up --build` to switch the app onto them: the
