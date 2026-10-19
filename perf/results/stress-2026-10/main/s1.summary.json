@@ -1,0 +1,838 @@
+{
+  "key": "s1",
+  "title": "S1 concurrent data entry",
+  "start": "2026-10-19T16:36:31.954Z",
+  "end": "2026-10-19T16:39:02.967Z",
+  "seconds": 151,
+  "total": {
+    "all": {
+      "requests": 6686,
+      "rps": 44.27,
+      "p50": 13.1,
+      "p90": 64.1,
+      "p95": 172.9,
+      "p99": 229.5,
+      "max": 1192.4,
+      "errors": 0,
+      "errorRate": 0,
+      "rateLimited": 0,
+      "statuses": {
+        "200": 6686
+      },
+      "avgBytes": 14606
+    },
+    "errorBudgetPass": true,
+    "latencyPass": true,
+    "classes": {
+      "write": {
+        "requests": 5850,
+        "rps": 38.74,
+        "p50": 13.7,
+        "p90": 84.7,
+        "p95": 178,
+        "p99": 235.2,
+        "max": 1192.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5850
+        },
+        "avgBytes": 15477,
+        "p95Limit": 1000,
+        "p99Limit": 3000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "read": {
+        "requests": 836,
+        "rps": 5.54,
+        "p50": 9.9,
+        "p90": 22.9,
+        "p95": 33.7,
+        "p99": 66.7,
+        "max": 101.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 836
+        },
+        "avgBytes": 8511,
+        "p95Limit": 500,
+        "p99Limit": 1500,
+        "p95Pass": true,
+        "p99Pass": true
+      }
+    },
+    "names": {
+      "doc.instance.get": {
+        "class": "read",
+        "requests": 786,
+        "rps": 5.2,
+        "p50": 9.6,
+        "p90": 22.1,
+        "p95": 32.1,
+        "p99": 66.7,
+        "max": 101.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 786
+        },
+        "avgBytes": 4600
+      },
+      "doc.values.autosave": {
+        "class": "write",
+        "requests": 4876,
+        "rps": 32.29,
+        "p50": 12.5,
+        "p90": 31.9,
+        "p95": 48.4,
+        "p99": 103.8,
+        "max": 189.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 4876
+        },
+        "avgBytes": 4600
+      },
+      "ingest.job.get": {
+        "class": "read",
+        "requests": 50,
+        "rps": 0.33,
+        "p50": 12.6,
+        "p90": 37.3,
+        "p95": 49.3,
+        "p99": 69.8,
+        "max": 69.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 50
+        },
+        "avgBytes": 69987
+      },
+      "ingest.revalidate": {
+        "class": "write",
+        "requests": 487,
+        "rps": 3.22,
+        "p50": 183.9,
+        "p90": 241.2,
+        "p95": 312.1,
+        "p99": 868.1,
+        "max": 1192.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 487
+        },
+        "avgBytes": 69936
+      },
+      "ingest.rows.edit": {
+        "class": "write",
+        "requests": 487,
+        "rps": 3.22,
+        "p50": 26.1,
+        "p90": 49.4,
+        "p95": 65.3,
+        "p99": 152.2,
+        "max": 292.1,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 487
+        },
+        "avgBytes": 69916
+      }
+    }
+  },
+  "resources": {
+    "samples": 150,
+    "javaCpuPct": {
+      "mean": 74.9,
+      "max": 170,
+      "last": 66
+    },
+    "javaRssMiB": {
+      "mean": 916.8,
+      "max": 952,
+      "last": 889
+    },
+    "javaThreads": {
+      "mean": 62.5,
+      "max": 72,
+      "last": 70
+    },
+    "sysCpuPct": {
+      "mean": 53.4,
+      "max": 99.5,
+      "last": 40.9
+    },
+    "load1": {
+      "mean": 5.9,
+      "max": 10.6,
+      "last": 4.15
+    },
+    "nodeCpuPct": {
+      "mean": 9.7,
+      "max": 20.7,
+      "last": 10.2
+    },
+    "dbConnTotal": {
+      "mean": 11.9,
+      "max": 17,
+      "last": 17
+    },
+    "dbConnActive": {
+      "mean": 0,
+      "max": 0,
+      "last": 0
+    }
+  },
+  "stages": [
+    {
+      "label": "10 users",
+      "vus": 10,
+      "start": "2026-10-19T16:36:31.955Z",
+      "seconds": 45,
+      "all": {
+        "requests": 671,
+        "rps": 14.91,
+        "p50": 16,
+        "p90": 66,
+        "p95": 173.1,
+        "p99": 218.4,
+        "max": 279.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 671
+        },
+        "avgBytes": 15071
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 584,
+          "rps": 12.98,
+          "p50": 17,
+          "p90": 100.6,
+          "p95": 180.5,
+          "p99": 219.1,
+          "max": 279.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 584
+          },
+          "avgBytes": 15517,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "read": {
+          "requests": 87,
+          "rps": 1.93,
+          "p50": 12.6,
+          "p90": 25.4,
+          "p95": 37.5,
+          "p99": 101.4,
+          "max": 101.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 87
+          },
+          "avgBytes": 12078,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "doc.instance.get": {
+          "class": "read",
+          "requests": 77,
+          "rps": 1.71,
+          "p50": 12.4,
+          "p90": 22.5,
+          "p95": 32.1,
+          "p99": 101.4,
+          "max": 101.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 77
+          },
+          "avgBytes": 4595
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 486,
+          "rps": 10.8,
+          "p50": 14.7,
+          "p90": 38.6,
+          "p95": 55.1,
+          "p99": 119,
+          "max": 146.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 486
+          },
+          "avgBytes": 4594
+        },
+        "ingest.job.get": {
+          "class": "read",
+          "requests": 10,
+          "rps": 0.22,
+          "p50": 22.1,
+          "p90": 39.1,
+          "p95": 59.3,
+          "p99": 59.3,
+          "max": 59.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 10
+          },
+          "avgBytes": 69696
+        },
+        "ingest.revalidate": {
+          "class": "write",
+          "requests": 49,
+          "rps": 1.09,
+          "p50": 183.4,
+          "p90": 233.2,
+          "p95": 234.8,
+          "p99": 279.3,
+          "max": 279.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 49
+          },
+          "avgBytes": 69693
+        },
+        "ingest.rows.edit": {
+          "class": "write",
+          "requests": 49,
+          "rps": 1.09,
+          "p50": 28.4,
+          "p90": 53,
+          "p95": 55.1,
+          "p99": 208.7,
+          "max": 208.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 49
+          },
+          "avgBytes": 69673
+        }
+      },
+      "probe": {
+        "requests": 22,
+        "rps": 0.49,
+        "p50": 4.8,
+        "p90": 9.4,
+        "p95": 12.6,
+        "p99": 23.8,
+        "max": 23.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 22
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 45,
+        "javaCpuPct": {
+          "mean": 59,
+          "max": 165.1,
+          "last": 28
+        },
+        "javaRssMiB": {
+          "mean": 928.9,
+          "max": 952,
+          "last": 932
+        },
+        "javaThreads": {
+          "mean": 55.3,
+          "max": 56,
+          "last": 55
+        },
+        "sysCpuPct": {
+          "mean": 46.7,
+          "max": 93.7,
+          "last": 27.1
+        },
+        "load1": {
+          "mean": 8.5,
+          "max": 10.6,
+          "last": 6.05
+        },
+        "nodeCpuPct": {
+          "mean": 4.1,
+          "max": 10.1,
+          "last": 8.5
+        },
+        "dbConnTotal": {
+          "mean": 10,
+          "max": 10,
+          "last": 10
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "25 users",
+      "vus": 25,
+      "start": "2026-10-19T16:37:16.956Z",
+      "seconds": 45,
+      "all": {
+        "requests": 1669,
+        "rps": 37.09,
+        "p50": 12.5,
+        "p90": 48,
+        "p95": 165.2,
+        "p99": 199.4,
+        "max": 276.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1669
+        },
+        "avgBytes": 14735
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 1455,
+          "rps": 32.33,
+          "p50": 12.9,
+          "p90": 67.2,
+          "p95": 171,
+          "p99": 201.2,
+          "max": 276.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1455
+          },
+          "avgBytes": 15551,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "read": {
+          "requests": 214,
+          "rps": 4.76,
+          "p50": 9.6,
+          "p90": 17.4,
+          "p95": 20.4,
+          "p99": 32.1,
+          "max": 50.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 214
+          },
+          "avgBytes": 9188,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "doc.instance.get": {
+          "class": "read",
+          "requests": 199,
+          "rps": 4.42,
+          "p50": 9.5,
+          "p90": 17,
+          "p95": 20.3,
+          "p99": 32.1,
+          "max": 50.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 199
+          },
+          "avgBytes": 4600
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 1211,
+          "rps": 26.91,
+          "p50": 12.2,
+          "p90": 21.7,
+          "p95": 32.2,
+          "p99": 82.5,
+          "max": 166,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1211
+          },
+          "avgBytes": 4599
+        },
+        "ingest.job.get": {
+          "class": "read",
+          "requests": 15,
+          "rps": 0.33,
+          "p50": 11.4,
+          "p90": 20.9,
+          "p95": 49.3,
+          "p99": 49.3,
+          "max": 49.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 15
+          },
+          "avgBytes": 70060
+        },
+        "ingest.revalidate": {
+          "class": "write",
+          "requests": 122,
+          "rps": 2.71,
+          "p50": 175.4,
+          "p90": 208.9,
+          "p95": 221.5,
+          "p99": 249.1,
+          "max": 276.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 122
+          },
+          "avgBytes": 69913
+        },
+        "ingest.rows.edit": {
+          "class": "write",
+          "requests": 122,
+          "rps": 2.71,
+          "p50": 24.1,
+          "p90": 42.7,
+          "p95": 48.2,
+          "p99": 80.9,
+          "max": 101.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 122
+          },
+          "avgBytes": 69893
+        }
+      },
+      "probe": {
+        "requests": 23,
+        "rps": 0.51,
+        "p50": 4.3,
+        "p90": 6.8,
+        "p95": 9.5,
+        "p99": 12.5,
+        "max": 12.5,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 23
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 45,
+        "javaCpuPct": {
+          "mean": 59.2,
+          "max": 111,
+          "last": 49
+        },
+        "javaRssMiB": {
+          "mean": 922.6,
+          "max": 938.4,
+          "last": 910.8
+        },
+        "javaThreads": {
+          "mean": 59.1,
+          "max": 60,
+          "last": 59
+        },
+        "sysCpuPct": {
+          "mean": 47.3,
+          "max": 95.2,
+          "last": 84.1
+        },
+        "load1": {
+          "mean": 4.7,
+          "max": 6,
+          "last": 4.11
+        },
+        "nodeCpuPct": {
+          "mean": 8.6,
+          "max": 13.8,
+          "last": 8.5
+        },
+        "dbConnTotal": {
+          "mean": 10,
+          "max": 10,
+          "last": 10
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "50 users",
+      "vus": 50,
+      "start": "2026-10-19T16:38:01.957Z",
+      "seconds": 60,
+      "all": {
+        "requests": 4346,
+        "rps": 72.43,
+        "p50": 13,
+        "p90": 68.9,
+        "p95": 175.6,
+        "p99": 241.2,
+        "max": 1192.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 4346
+        },
+        "avgBytes": 14485
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 3811,
+          "rps": 63.52,
+          "p50": 13.7,
+          "p90": 89.7,
+          "p95": 181.8,
+          "p99": 254.1,
+          "max": 1192.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 3811
+          },
+          "avgBytes": 15443,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "read": {
+          "requests": 535,
+          "rps": 8.92,
+          "p50": 9.6,
+          "p90": 25.8,
+          "p95": 41.7,
+          "p99": 68.9,
+          "max": 82.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 535
+          },
+          "avgBytes": 7660,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "doc.instance.get": {
+          "class": "read",
+          "requests": 510,
+          "rps": 8.5,
+          "p50": 9.4,
+          "p90": 25.8,
+          "p95": 40.8,
+          "p99": 68.2,
+          "max": 82.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 510
+          },
+          "avgBytes": 4602
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 3179,
+          "rps": 52.98,
+          "p50": 12,
+          "p90": 34.2,
+          "p95": 51,
+          "p99": 113.7,
+          "max": 189.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 3179
+          },
+          "avgBytes": 4602
+        },
+        "ingest.job.get": {
+          "class": "read",
+          "requests": 25,
+          "rps": 0.42,
+          "p50": 12.6,
+          "p90": 36.7,
+          "p95": 48.9,
+          "p99": 69.8,
+          "max": 69.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 25
+          },
+          "avgBytes": 70060
+        },
+        "ingest.revalidate": {
+          "class": "write",
+          "requests": 316,
+          "rps": 5.27,
+          "p50": 188,
+          "p90": 274.8,
+          "p95": 487.8,
+          "p99": 880.2,
+          "max": 1192.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 316
+          },
+          "avgBytes": 69983
+        },
+        "ingest.rows.edit": {
+          "class": "write",
+          "requests": 316,
+          "rps": 5.27,
+          "p50": 26.6,
+          "p90": 52.7,
+          "p95": 81.5,
+          "p99": 152.2,
+          "max": 292.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 316
+          },
+          "avgBytes": 69963
+        }
+      },
+      "probe": {
+        "requests": 30,
+        "rps": 0.5,
+        "p50": 5.3,
+        "p90": 12.5,
+        "p95": 15.3,
+        "p99": 18.2,
+        "max": 18.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 30
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 59,
+        "javaCpuPct": {
+          "mean": 99,
+          "max": 170,
+          "last": 109
+        },
+        "javaRssMiB": {
+          "mean": 903.5,
+          "max": 916,
+          "last": 889
+        },
+        "javaThreads": {
+          "mean": 70.3,
+          "max": 72,
+          "last": 70
+        },
+        "sysCpuPct": {
+          "mean": 63.5,
+          "max": 99.5,
+          "last": 49.7
+        },
+        "load1": {
+          "mean": 4.9,
+          "max": 5.4,
+          "last": 4.34
+        },
+        "nodeCpuPct": {
+          "mean": 14.7,
+          "max": 20.7,
+          "last": 14.2
+        },
+        "dbConnTotal": {
+          "mean": 14.6,
+          "max": 17,
+          "last": 17
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    }
+  ],
+  "extra": null
+}

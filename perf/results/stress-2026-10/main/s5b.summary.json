@@ -1,0 +1,1239 @@
+{
+  "key": "s5b",
+  "title": "S5b AI degradation and circuit breaker",
+  "start": "2026-10-19T16:43:55.027Z",
+  "end": "2026-10-19T16:44:26.120Z",
+  "seconds": 31.1,
+  "total": {
+    "all": {
+      "requests": 272,
+      "rps": 8.75,
+      "p50": 17.6,
+      "p90": 1058.7,
+      "p95": 6192.5,
+      "p99": 17553.8,
+      "max": 21579.7,
+      "errors": 0,
+      "errorRate": 0,
+      "rateLimited": 0,
+      "statuses": {
+        "200": 227,
+        "201": 10,
+        "202": 35
+      },
+      "avgBytes": 648
+    },
+    "errorBudgetPass": true,
+    "latencyPass": true,
+    "classes": {
+      "write": {
+        "requests": 10,
+        "rps": 0.32,
+        "p50": 11.8,
+        "p90": 25.1,
+        "p95": 34.1,
+        "p99": 34.1,
+        "max": 34.1,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "201": 10
+        },
+        "avgBytes": 703,
+        "p95Limit": 1000,
+        "p99Limit": 3000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "heavy": {
+        "requests": 35,
+        "rps": 1.13,
+        "p50": 79.3,
+        "p90": 202.5,
+        "p95": 209.1,
+        "p99": 210.2,
+        "max": 210.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "202": 35
+        },
+        "avgBytes": 667,
+        "p95Limit": 3000,
+        "p99Limit": 8000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "read": {
+        "requests": 192,
+        "rps": 6.18,
+        "p50": 13.6,
+        "p90": 31,
+        "p95": 37.3,
+        "p99": 40.6,
+        "max": 41.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 192
+        },
+        "avgBytes": 760,
+        "p95Limit": 500,
+        "p99Limit": 1500,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "job": {
+        "requests": 35,
+        "rps": 1.13,
+        "p50": 4058.5,
+        "p90": 15539.7,
+        "p95": 19565.8,
+        "p99": 21579.7,
+        "max": 21579.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 35
+        },
+        "avgBytes": 0,
+        "p95Limit": 60000,
+        "p99Limit": 120000,
+        "p95Pass": true,
+        "p99Pass": true
+      }
+    },
+    "names": {
+      "ai.ingest.upload": {
+        "class": "heavy",
+        "requests": 35,
+        "rps": 1.13,
+        "p50": 79.3,
+        "p90": 202.5,
+        "p95": 209.1,
+        "p99": 210.2,
+        "max": 210.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "202": 35
+        },
+        "avgBytes": 667
+      },
+      "ai.job.complete.after": {
+        "class": "job",
+        "requests": 5,
+        "rps": 0.16,
+        "p50": 1071.4,
+        "p90": 1075.2,
+        "p95": 1075.2,
+        "p99": 1075.2,
+        "max": 1075.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5
+        },
+        "avgBytes": 0
+      },
+      "ai.job.complete.failing": {
+        "class": "job",
+        "requests": 20,
+        "rps": 0.64,
+        "p50": 3074.3,
+        "p90": 6218.3,
+        "p95": 6234.3,
+        "p99": 7205.4,
+        "max": 7205.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 20
+        },
+        "avgBytes": 0
+      },
+      "ai.job.complete.slow": {
+        "class": "job",
+        "requests": 10,
+        "rps": 0.32,
+        "p50": 11395.6,
+        "p90": 19565.8,
+        "p95": 21579.7,
+        "p99": 21579.7,
+        "max": 21579.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 10
+        },
+        "avgBytes": 0
+      },
+      "ai.job.poll": {
+        "class": "read",
+        "requests": 192,
+        "rps": 6.18,
+        "p50": 13.6,
+        "p90": 31,
+        "p95": 37.3,
+        "p99": 40.6,
+        "max": 41.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 192
+        },
+        "avgBytes": 760
+      },
+      "setup.template.create": {
+        "class": "write",
+        "requests": 10,
+        "rps": 0.32,
+        "p50": 11.8,
+        "p90": 25.1,
+        "p95": 34.1,
+        "p99": 34.1,
+        "max": 34.1,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "201": 10
+        },
+        "avgBytes": 703
+      }
+    }
+  },
+  "resources": {
+    "samples": 31,
+    "javaCpuPct": {
+      "mean": 49.3,
+      "max": 129.9,
+      "last": 21
+    },
+    "javaRssMiB": {
+      "mean": 1417.9,
+      "max": 1496.8,
+      "last": 1355.9
+    },
+    "javaThreads": {
+      "mean": 74.5,
+      "max": 75,
+      "last": 74
+    },
+    "sysCpuPct": {
+      "mean": 80.5,
+      "max": 96.5,
+      "last": 69
+    },
+    "load1": {
+      "mean": 4.5,
+      "max": 4.8,
+      "last": 4.27
+    },
+    "nodeCpuPct": {
+      "mean": 2.2,
+      "max": 8.2,
+      "last": 2.3
+    },
+    "dbConnTotal": {
+      "mean": 18,
+      "max": 18,
+      "last": 18
+    },
+    "dbConnActive": {
+      "mean": 0,
+      "max": 0,
+      "last": 0
+    }
+  },
+  "stages": [
+    {
+      "label": "model slow (2 s per call), 10 concurrent uploads",
+      "vus": 10,
+      "start": "2026-10-19T16:43:55.204Z",
+      "seconds": 21.6,
+      "all": {
+        "requests": 140,
+        "rps": 6.49,
+        "p50": 17.4,
+        "p90": 199,
+        "p95": 7355,
+        "p99": 19565.8,
+        "max": 21579.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 130,
+          "202": 10
+        },
+        "avgBytes": 650
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "heavy": {
+          "requests": 10,
+          "rps": 0.46,
+          "p50": 192.6,
+          "p90": 209.1,
+          "p95": 210.2,
+          "p99": 210.2,
+          "max": 210.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 10
+          },
+          "avgBytes": 665,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "read": {
+          "requests": 120,
+          "rps": 5.56,
+          "p50": 15.2,
+          "p90": 36,
+          "p95": 37.8,
+          "p99": 40.6,
+          "max": 41.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 120
+          },
+          "avgBytes": 703,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "job": {
+          "requests": 10,
+          "rps": 0.46,
+          "p50": 11395.6,
+          "p90": 19565.8,
+          "p95": 21579.7,
+          "p99": 21579.7,
+          "max": 21579.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 10
+          },
+          "avgBytes": 0,
+          "p95Limit": 60000,
+          "p99Limit": 120000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "ai.ingest.upload": {
+          "class": "heavy",
+          "requests": 10,
+          "rps": 0.46,
+          "p50": 192.6,
+          "p90": 209.1,
+          "p95": 210.2,
+          "p99": 210.2,
+          "max": 210.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 10
+          },
+          "avgBytes": 665
+        },
+        "ai.job.complete.slow": {
+          "class": "job",
+          "requests": 10,
+          "rps": 0.46,
+          "p50": 11395.6,
+          "p90": 19565.8,
+          "p95": 21579.7,
+          "p99": 21579.7,
+          "max": 21579.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 10
+          },
+          "avgBytes": 0
+        },
+        "ai.job.poll": {
+          "class": "read",
+          "requests": 120,
+          "rps": 5.56,
+          "p50": 15.2,
+          "p90": 36,
+          "p95": 37.8,
+          "p99": 40.6,
+          "max": 41.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 120
+          },
+          "avgBytes": 703
+        }
+      },
+      "probe": {
+        "requests": 11,
+        "rps": 0.51,
+        "p50": 6.1,
+        "p90": 18.9,
+        "p95": 21.4,
+        "p99": 21.4,
+        "max": 21.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 11
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 22,
+        "javaCpuPct": {
+          "mean": 47.3,
+          "max": 100,
+          "last": 34
+        },
+        "javaRssMiB": {
+          "mean": 1443.5,
+          "max": 1496.8,
+          "last": 1351.5
+        },
+        "javaThreads": {
+          "mean": 74.5,
+          "max": 75,
+          "last": 74
+        },
+        "sysCpuPct": {
+          "mean": 85.8,
+          "max": 96.5,
+          "last": 65.2
+        },
+        "load1": {
+          "mean": 4.5,
+          "max": 4.8,
+          "last": 4.33
+        },
+        "nodeCpuPct": {
+          "mean": 2,
+          "max": 8.2,
+          "last": 0.5
+        },
+        "dbConnTotal": {
+          "mean": 18,
+          "max": 18,
+          "last": 18
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "model failing (HTTP 500), 10 users x 2 uploads",
+      "vus": 10,
+      "start": "2026-10-19T16:44:16.794Z",
+      "seconds": 8.2,
+      "all": {
+        "requests": 107,
+        "rps": 12.97,
+        "p50": 17.6,
+        "p90": 3074.3,
+        "p95": 6192.5,
+        "p99": 6234.3,
+        "max": 7205.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 87,
+          "202": 20
+        },
+        "avgBytes": 643
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "heavy": {
+          "requests": 20,
+          "rps": 2.43,
+          "p50": 46.3,
+          "p90": 121.4,
+          "p95": 124.5,
+          "p99": 129.9,
+          "max": 129.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 20
+          },
+          "avgBytes": 668,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "read": {
+          "requests": 67,
+          "rps": 8.12,
+          "p50": 11.8,
+          "p90": 21.6,
+          "p95": 23.4,
+          "p99": 38,
+          "max": 38,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 67
+          },
+          "avgBytes": 827,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "job": {
+          "requests": 20,
+          "rps": 2.43,
+          "p50": 3074.3,
+          "p90": 6218.3,
+          "p95": 6234.3,
+          "p99": 7205.4,
+          "max": 7205.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 20
+          },
+          "avgBytes": 0,
+          "p95Limit": 60000,
+          "p99Limit": 120000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "ai.ingest.upload": {
+          "class": "heavy",
+          "requests": 20,
+          "rps": 2.43,
+          "p50": 46.3,
+          "p90": 121.4,
+          "p95": 124.5,
+          "p99": 129.9,
+          "max": 129.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 20
+          },
+          "avgBytes": 668
+        },
+        "ai.job.complete.failing": {
+          "class": "job",
+          "requests": 20,
+          "rps": 2.43,
+          "p50": 3074.3,
+          "p90": 6218.3,
+          "p95": 6234.3,
+          "p99": 7205.4,
+          "max": 7205.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 20
+          },
+          "avgBytes": 0
+        },
+        "ai.job.poll": {
+          "class": "read",
+          "requests": 67,
+          "rps": 8.12,
+          "p50": 11.8,
+          "p90": 21.6,
+          "p95": 23.4,
+          "p99": 38,
+          "max": 38,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 67
+          },
+          "avgBytes": 827
+        }
+      },
+      "probe": {
+        "requests": 4,
+        "rps": 0.49,
+        "p50": 4.4,
+        "p90": 8.9,
+        "p95": 8.9,
+        "p99": 8.9,
+        "max": 8.9,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 4
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 8,
+        "javaCpuPct": {
+          "mean": 58.2,
+          "max": 129.9,
+          "last": 10
+        },
+        "javaRssMiB": {
+          "mean": 1355.3,
+          "max": 1355.9,
+          "last": 1355.8
+        },
+        "javaThreads": {
+          "mean": 74.5,
+          "max": 75,
+          "last": 74
+        },
+        "sysCpuPct": {
+          "mean": 67.5,
+          "max": 77.8,
+          "last": 69.9
+        },
+        "load1": {
+          "mean": 4.3,
+          "max": 4.4,
+          "last": 4.27
+        },
+        "nodeCpuPct": {
+          "mean": 2.9,
+          "max": 5.2,
+          "last": 1.9
+        },
+        "dbConnTotal": {
+          "mean": 18,
+          "max": 18,
+          "last": 18
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "model healthy again, breaker open",
+      "vus": 10,
+      "start": "2026-10-19T16:44:25.043Z",
+      "seconds": 1.1,
+      "all": {
+        "requests": 15,
+        "rps": 13.95,
+        "p50": 60,
+        "p90": 1072.6,
+        "p95": 1075.2,
+        "p99": 1075.2,
+        "max": 1075.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 10,
+          "202": 5
+        },
+        "avgBytes": 625
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "heavy": {
+          "requests": 5,
+          "rps": 4.65,
+          "p50": 60,
+          "p90": 61.7,
+          "p95": 61.7,
+          "p99": 61.7,
+          "max": 61.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 5
+          },
+          "avgBytes": 666,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "read": {
+          "requests": 5,
+          "rps": 4.65,
+          "p50": 10.4,
+          "p90": 13.6,
+          "p95": 13.6,
+          "p99": 13.6,
+          "max": 13.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 5
+          },
+          "avgBytes": 1209,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "job": {
+          "requests": 5,
+          "rps": 4.65,
+          "p50": 1071.4,
+          "p90": 1075.2,
+          "p95": 1075.2,
+          "p99": 1075.2,
+          "max": 1075.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 5
+          },
+          "avgBytes": 0,
+          "p95Limit": 60000,
+          "p99Limit": 120000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "ai.ingest.upload": {
+          "class": "heavy",
+          "requests": 5,
+          "rps": 4.65,
+          "p50": 60,
+          "p90": 61.7,
+          "p95": 61.7,
+          "p99": 61.7,
+          "max": 61.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 5
+          },
+          "avgBytes": 666
+        },
+        "ai.job.complete.after": {
+          "class": "job",
+          "requests": 5,
+          "rps": 4.65,
+          "p50": 1071.4,
+          "p90": 1075.2,
+          "p95": 1075.2,
+          "p99": 1075.2,
+          "max": 1075.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 5
+          },
+          "avgBytes": 0
+        },
+        "ai.job.poll": {
+          "class": "read",
+          "requests": 5,
+          "rps": 4.65,
+          "p50": 10.4,
+          "p90": 13.6,
+          "p95": 13.6,
+          "p99": 13.6,
+          "max": 13.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 5
+          },
+          "avgBytes": 1209
+        }
+      },
+      "probe": {
+        "requests": 1,
+        "rps": 0.93,
+        "p50": 4.4,
+        "p90": 4.4,
+        "p95": 4.4,
+        "p99": 4.4,
+        "max": 4.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 1,
+        "javaCpuPct": {
+          "mean": 21,
+          "max": 21,
+          "last": 21
+        },
+        "javaRssMiB": {
+          "mean": 1355.9,
+          "max": 1355.9,
+          "last": 1355.9
+        },
+        "javaThreads": {
+          "mean": 74,
+          "max": 74,
+          "last": 74
+        },
+        "sysCpuPct": {
+          "mean": 69,
+          "max": 69,
+          "last": 69
+        },
+        "load1": {
+          "mean": 4.3,
+          "max": 4.3,
+          "last": 4.27
+        },
+        "nodeCpuPct": {
+          "mean": 2.3,
+          "max": 2.3,
+          "last": 2.3
+        },
+        "dbConnTotal": {
+          "mean": 18,
+          "max": 18,
+          "last": 18
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    }
+  ],
+  "extra": {
+    "slow": {
+      "jobs": 10,
+      "validated": 10,
+      "outcomes": {
+        "VALIDATED/AI/-": 10
+      },
+      "llmCalls": 10
+    },
+    "failing": {
+      "jobs": 20,
+      "validated": 20,
+      "outcomes": {
+        "VALIDATED/CODE/ERROR": 6,
+        "VALIDATED/CODE/CIRCUIT_OPEN": 14
+      },
+      "llmCalls": 12,
+      "llmByMode": {
+        "error500": 12
+      }
+    },
+    "after": {
+      "jobs": 5,
+      "validated": 5,
+      "outcomes": {
+        "VALIDATED/CODE/CIRCUIT_OPEN": 5
+      },
+      "llmCalls": 0
+    },
+    "jobs": [
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 3290,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428238499
+      },
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 5256,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428240464
+      },
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 7355,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428242564
+      },
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 9321,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428244530
+      },
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 11396,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428246605
+      },
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 13469,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428248678
+      },
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 15540,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428250749
+      },
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 17554,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428252762
+      },
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 19566,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428254775
+      },
+      {
+        "phase": "slow",
+        "ok": true,
+        "ms": 21580,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "AI",
+        "reason": null,
+        "finishedAt": 1792428256789
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 2068,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "ERROR",
+        "finishedAt": 1792428258864
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 3114,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "ERROR",
+        "finishedAt": 1792428259910
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 4127,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "ERROR",
+        "finishedAt": 1792428260923
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 5130,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "ERROR",
+        "finishedAt": 1792428261925
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 4058,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428262923
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 1032,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428262957
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 3074,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428262984
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 6193,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "ERROR",
+        "finishedAt": 1792428262988
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 6200,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428262996
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 6202,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428262998
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 2077,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428263000
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 6218,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428263014
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 6234,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428263030
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 7205,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "ERROR",
+        "finishedAt": 1792428264001
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 1046,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428264034
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 1058,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428264056
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 1070,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428264066
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 1058,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428264072
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 1059,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428264089
+      },
+      {
+        "phase": "failing",
+        "ok": true,
+        "ms": 1039,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428265040
+      },
+      {
+        "phase": "after",
+        "ok": true,
+        "ms": 1028,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428266071
+      },
+      {
+        "phase": "after",
+        "ok": true,
+        "ms": 1038,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428266081
+      },
+      {
+        "phase": "after",
+        "ok": true,
+        "ms": 1071,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428266114
+      },
+      {
+        "phase": "after",
+        "ok": true,
+        "ms": 1073,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428266116
+      },
+      {
+        "phase": "after",
+        "ok": true,
+        "ms": 1075,
+        "step": "VALIDATED",
+        "status": "COMPLETED",
+        "parsedBy": "CODE",
+        "reason": "CIRCUIT_OPEN",
+        "finishedAt": 1792428266118
+      }
+    ]
+  }
+}

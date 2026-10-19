@@ -1,0 +1,74 @@
+{
+  "task": "MO-017",
+  "label": "retest-s5b",
+  "machine": {
+    "at": "2026-10-19T17:30:47.331Z",
+    "commit": "eb53e97",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      5.89,
+      11.35,
+      8.87
+    ]
+  },
+  "javaPid": 4220,
+  "jvm": {
+    "args": [
+      "-Xmx1971m",
+      "-XX:+UseG1GC"
+    ],
+    "affinity": "f"
+  },
+  "dbAppRole": "rls",
+  "rateLimitOverrides": {
+    "MODOCUMENT_RATELIMIT_UPLOADS": "200",
+    "MODOCUMENT_RATELIMIT_DOC_GENERATE": "300",
+    "MODOCUMENT_RATELIMIT_INGESTION": "600",
+    "MODOCUMENT_RATELIMIT_EXPORTS": "600"
+  },
+  "dbPoolMax": "20 (default)",
+  "thresholds": {
+    "p95": {
+      "read": 500,
+      "write": 1000,
+      "auth": 1000,
+      "heavy": 3000,
+      "job": 60000
+    },
+    "p99": {
+      "read": 1500,
+      "write": 3000,
+      "auth": 2000,
+      "heavy": 8000,
+      "job": 120000
+    },
+    "maxErrorRate": 0.01
+  },
+  "startedAt": "2026-10-19T17:30:47.341Z",
+  "scenarios": [
+    {
+      "key": "s5b",
+      "title": "S5b AI degradation and circuit breaker",
+      "start": "2026-10-19T17:31:05.530Z",
+      "end": "2026-10-19T17:31:23.478Z",
+      "requests": 210
+    }
+  ],
+  "endedAt": "2026-10-19T17:31:25.215Z",
+  "machineAtEnd": {
+    "at": "2026-10-19T17:31:25.236Z",
+    "commit": "eb53e97",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      4.85,
+      10.46,
+      8.68
+    ]
+  }
+}

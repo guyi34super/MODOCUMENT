@@ -1,0 +1,33 @@
+id: SEC-003
+status: Partially Implemented
+current_state: "Horizontal autoscaling is written in Terraform but not applied: ECS service target tracking on average CPU 60 percent, min 2 tasks across two AZs, hard max 8, cooldowns 60 s out and 300 s in; ASG of m6i.large nodes 2 to 4 with an ECS capacity provider and a placeability precondition; CPU alarm at the cap (infra/terraform/modules/ecs-app/main.tf, infra/terraform/modules/security-monitoring/main.tf). Vertical changes (task size, node type, RDS class) are Terraform variables changed through the release process; the JVM heap follows the container limit. Stress test 2026-10-19: one CPU (about one task) served 2x the assumed peak with 0 errors at 73 percent mean CPU, 236 req/s within thresholds, latency break at 150 fast users; 4 CPUs 715 req/s, break at 400 users; CPU saturates first, so CPU is the right scaling signal."
+gap: "Nothing is deployed, so no scale-out event has been observed; rate-limit counters and the ingestion queue are per instance; task memory headroom is small (RSS 2,656 MiB of a 2,816 MiB container); no written procedure for an RDS class change."
+gap_type: Config
+required_action: "Apply the staging Terraform, run MO-016 S4 and S6 against the ALB and record the scaling events and 5xx count; move rate-limit counters to a shared store and bound the job queue; adjust MaxRAMPercentage or app_memory; document the RDS class change procedure."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: 2027-01-31
+evidence:
+  id: SEC-003-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-003.md; infra/terraform/modules/ecs-app/main.tf; infra/terraform/modules/ecs-app/variables.tf; infra/terraform/envs/production/variables.tf; infra/terraform/modules/security-monitoring/main.tf; docs/compliance/mo-017-stress-testing-report.md; perf/results/stress-2026-10/one-cpu/"
+question:
+  final_answer: "MoDocument is designed to scale horizontally and automatically: the ECS service uses target-tracking autoscaling on average CPU (target 60 percent), with a minimum of 2 tasks across two availability zones and a hard maximum of 8 tasks, and the EC2 capacity behind it scales from 2 to 4 instances through an ECS capacity provider. Vertical scaling (task CPU and memory, node type, database class) is a planned change made through Terraform under the release process; the JVM heap follows the container size automatically. A stress test on 19 October 2026 confirmed that CPU is the resource that saturates first and that one production-sized instance handles twice the assumed peak (100 concurrent users) without errors at about 73 percent CPU, so the CPU signal triggers scale-out before users are affected. The environment is pre-production: the scaling configuration is in code but not yet deployed, and the scale-out event under load will be observed and recorded on the staging environment before go-live. Evidence: SEC-003-E01."
+  confidence: Medium
+test:
+  id: SEC-003-T01
+  actual_result: "Terraform inspected: CPU target 60 percent, min 2, max 8, cooldowns 60/300 s, ASG 2 to 4 nodes, placeability precondition. Test box 2026-10-19: one CPU 0 errors at 1x and 2x of the assumed peak (JVM CPU 53 and 73 percent mean), 236 req/s within thresholds, latency break at 150 users, 0 errors up to 300 users; 4 CPUs 715 req/s, break at 400 users, 0 errors. Scale-out event not observable: nothing deployed."
+  result: Partial
+  tester: "Agent A3 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 90
+  action: "Apply staging, observe and record a scale-out event with zero 5xx under MO-016 load; shared rate-limit store; task memory headroom."
+  status: Not started
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): applied scaling policy and a scaling-event graph with the 5xx count from a staging load test."
+  - "TO CONFIRM (organisational): expected peak, to check that 8 tasks is the right hard cap."
