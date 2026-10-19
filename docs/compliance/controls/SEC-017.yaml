@@ -24,9 +24,9 @@ roadmap:
   action: 'Bhavish: separate admin identities via role elevation; one-page grant record approved by Reezvi; monthly privileged-activity review (procedure written).'
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 4
+  residual: High
 policy_document: docs/compliance/policies/privileged-access-and-break-glass.md
 to_confirm:
 - 'TO CONFIRM (organisational): cloud administrators and the grant record approved by Reezvi Pydiah.'

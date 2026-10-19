@@ -21,9 +21,9 @@ roadmap:
   action: "Overdue (workbook: week of 2 Oct 2026); proposed 2026-10-30: DMARC at enforcement with reports, secure-exchange agreement."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 4
+  residual: High
 policy_document: null
 to_confirm:
   - "TO CONFIRM (organisational): company e-mail domain and current SPF, DKIM, DMARC records"

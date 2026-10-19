@@ -24,9 +24,9 @@ roadmap:
   action: Approver role and role catalogue with SoD conflict table delivered.
   status: Done
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 3
+  residual: Low
 policy_document: docs/security/role-catalogue-and-sod.md
 to_confirm:
 - 'TO CONFIRM (organisational): per-client mapping of bank job titles to roles in the client''s IdP.'

@@ -24,9 +24,9 @@ roadmap:
   action: "Post-go-live 30-day canary log search; record edge log formats."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 4
+  residual: Low
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): 30-day CloudWatch search for canary passwords."

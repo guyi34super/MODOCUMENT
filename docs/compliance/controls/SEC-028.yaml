@@ -24,9 +24,9 @@ roadmap:
   action: "Own CMKs for backups and logs; TLS to containers; TLS-only bank DB, webhook and SMTP targets; Day 90: SSL Labs and pg_stat_ssl at go-live."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: null
 to_confirm:
   - "SSL Labs grade and pg_stat_ssl evidence: NOT IN REPO (live cloud)"

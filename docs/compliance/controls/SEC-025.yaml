@@ -24,9 +24,9 @@ roadmap:
   action: "Restore CI, enforce branch protection without bypass, second code owner, approve the change procedure; Day 60: first tagged release trail and drift detection."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 4
+  residual: High
 policy_document: docs/compliance/policies/change-management-procedure.md
 to_confirm:
   - "Applied GitHub branch ruleset, production environment reviewers and tag ruleset: NOT IN REPO (live cloud)"

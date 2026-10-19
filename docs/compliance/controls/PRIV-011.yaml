@@ -24,9 +24,9 @@ roadmap:
   action: "Approve the CIA table; restore drill (gate D6) before go-live; settle the RTO figure."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: docs/security/cia-controls-table.md
 to_confirm:
   - "TO CONFIRM (organisational): whether the 3 Oct 2026 restore drill took place"

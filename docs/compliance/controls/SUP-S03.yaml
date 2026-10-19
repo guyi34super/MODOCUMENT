@@ -21,9 +21,9 @@ roadmap:
   action: "Pre-go-live (workbook date to set): deploy edge, origin-bypass and flood tests, edge logging, runbook tabletop."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: docs/compliance/policies/ddos-runbook.md
 to_confirm:
   - "NOT IN REPO (live cloud): WAF metrics; origin-bypass and flood test results; Shield Standard coverage"

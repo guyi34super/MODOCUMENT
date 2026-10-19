@@ -24,9 +24,9 @@ roadmap:
   action: "Pre-go-live (workbook date to set): archive pipeline for audit, app, DB and edge logs; enforce the lock after D6; yearly rehydration test."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 3
+  impact: 3
+  residual: Medium
 policy_document: docs/compliance/policies/log-retention-and-rehydration.md
 to_confirm:
   - "NOT IN REPO (live cloud): applied Object Lock and lifecycle configuration; rehydration test note"

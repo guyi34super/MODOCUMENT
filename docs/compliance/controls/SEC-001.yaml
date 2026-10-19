@@ -24,9 +24,9 @@ roadmap:
   action: "Pre-go-live (workbook date to set): fix DEF-1, complete IaC coverage, deploy with a drift-free plan, external review; CIS scan after deployment."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: docs/compliance/policies/security-architecture.md
 to_confirm:
   - "NOT IN REPO (live cloud): CIS scan result of the node image; drift-free terraform plan of the deployed environment"

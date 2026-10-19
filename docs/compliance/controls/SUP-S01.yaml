@@ -21,9 +21,9 @@ roadmap:
   action: "ZAP report and header-grade scan, CSRF regression test (Day 30); active scan and in-memory token (Day 60)."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): external header scan grade (A or better) against the deployed HTTPS URL."

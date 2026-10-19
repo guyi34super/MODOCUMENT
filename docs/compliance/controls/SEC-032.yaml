@@ -24,9 +24,9 @@ roadmap:
   action: "Route HIGH/CRITICAL alerts to the on-call phone; write up a live trip test (date, rule, time, recipient) and repeat out of hours; trip tests for untested rules."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 4
+  impact: 4
+  residual: High
 policy_document: null
 to_confirm:
   - "TO CONFIRM (organisational): on-call phone numbers, rotation calendar and paging/relay tool"

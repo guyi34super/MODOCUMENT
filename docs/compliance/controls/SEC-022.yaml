@@ -24,9 +24,9 @@ roadmap:
   action: "Expiry for admin-issued temporary passwords; document recovery-code lifetime."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: docs/compliance/policies/token-and-otp-specification.md
 to_confirm:
   - "TO CONFIRM (organisational): each bank's Entra ID authenticator and OTP settings."

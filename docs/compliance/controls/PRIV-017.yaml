@@ -24,9 +24,9 @@ roadmap:
   action: Individual logins, bank-admin user list with last-login export and two-admin onboarding are built; delete the shared account and run the first quarterly review.
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: docs/security/jml-runbook.md
 to_confirm:
 - 'TO CONFIRM (organisational): the shared team account is deleted.'

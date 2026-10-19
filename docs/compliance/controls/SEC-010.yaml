@@ -24,9 +24,9 @@ roadmap:
   action: "Enforce branch protection, restore CI runners, second code owner, A8 drill, Code Security."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 4
+  impact: 4
+  residual: High
 policy_document: docs/compliance/policies/code-review-report-2026-Q4.md
 to_confirm:
   - "TO CONFIRM (organisational): branch-protection / ruleset settings of main (screenshot or export)."

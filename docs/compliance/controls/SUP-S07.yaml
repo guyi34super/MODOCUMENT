@@ -21,9 +21,9 @@ roadmap:
   action: "Day 30: account pins, narrow staging trust, approve the test-data policy; Day 60: create accounts and run replay and reachability tests."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: docs/compliance/policies/test-data-policy.md
 to_confirm:
   - "Creation of the separate AWS accounts and who administers each: TO CONFIRM (organisational)"

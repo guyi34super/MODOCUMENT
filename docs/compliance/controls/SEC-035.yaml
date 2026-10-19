@@ -24,9 +24,9 @@ roadmap:
   action: "Hash chain with daily verification and anchoring; superuser governance; ExtractionAuditEvent append-only."
   status: Not started
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 1
+  impact: 4
+  residual: Low
 policy_document: null
 to_confirm:
   - "Who holds the RDS master credential and how its use is approved: TO CONFIRM (organisational)"

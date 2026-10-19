@@ -24,9 +24,9 @@ roadmap:
   action: "Pre-go-live (workbook date to set): deploy, restore drill, enforce locks, deletion test, GuardDuty features, file-store locked copy, EDR."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 5
+  residual: High
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): vault lock state, GuardDuty feature state, restore-drill result, deletion-test result"

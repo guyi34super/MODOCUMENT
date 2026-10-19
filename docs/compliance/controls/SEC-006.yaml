@@ -24,9 +24,9 @@ roadmap:
   action: "Deploy the sandbox and run the integrator acceptance; publish the spec per release."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: docs/api/versioning-policy.md
 to_confirm:
   - "TO CONFIRM (organisational): sandbox environment choice, request queue, secure channel for initial secrets, data-refresh schedule."

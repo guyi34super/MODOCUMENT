@@ -24,9 +24,9 @@ roadmap:
   action: "Pre-go-live (workbook date to set): deploy Multi-AZ, zone-failure test, region-loss RTO in the DR plan."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: null
 to_confirm:
   - "NOT IN REPO (live cloud): failover-test note; backup copy job history"

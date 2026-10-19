@@ -24,9 +24,9 @@ roadmap:
   action: "Confirm proposed dates; set budget lines starting with the penetration test; minute the monthly director review."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 3
+  residual: Medium
 policy_document: docs/security/security-roadmap.md
 to_confirm:
   - "TO CONFIRM (organisational): budget amounts for each roadmap line"
