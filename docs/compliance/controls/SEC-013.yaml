@@ -1,0 +1,34 @@
+id: SEC-013
+status: Partially Implemented
+current_state: 'Granular roles: read, export and modify are separate permissions; READ_ONLY holds 9 of 41 (no export, upload, AI or write). Owner scoping inside a bank; PLATFORM_ADMIN has no data permission. Application DB role modocument_app has DML only and NOBYPASSRLS (V12 migration). CI deploys with a short-lived GitHub OIDC role scoped to ECR, one ECS cluster and named task roles. API clients get scopes and an expiry. Access-review worksheet with inactive90d flag exists and was exercised live.'
+gap: No time-bound elevation of human admin rights; no quarterly recertification on record (pre-production); no IAM policy lint in CI; admins use everyday accounts (shared with SEC-017).
+gap_type: Build
+required_action: Build time-limited role grants under maker/checker; hold the first quarterly recertification at go-live; add an IAM/Terraform policy linter to CI; separate admin identities (SEC-017).
+action_owner: Security — Bhavish Nobeen
+target_date: 2026-11-30
+evidence:
+  id: SEC-013-E01
+  status: Partial — to collect
+  location: docs/compliance/controls/SEC-013.md; src/main/resources/db/migration/V12__app_role_grants.sql; infra/terraform/modules/ci-oidc/main.tf; docs/compliance/mo-018-rbac-role-permission-matrix.md; docs/compliance/evidence/A4-rbac-probe.md
+question:
+  final_answer: 'Least privilege is built into MoDocument''s role model: read, export and modify are separate permissions, read-only users cannot export, upload or change anything, and inside a bank users see only their own jobs, documents and private templates. MO Intelligence''s platform role has no access to any bank''s data. The application connects to its database as a restricted account that can only read and write data and is bound by row-level security; CI deploys with short-lived OIDC credentials and holds no long-lived cloud keys; machine integrations receive only their granted scopes with an expiry date. Administrators produce a recertification worksheet that flags any account unused for 90 days. Time-bound elevation of administrator rights and the first quarterly recertification are open actions, proposed for 30 November 2026. Evidence SEC-013-E01.'
+  confidence: Medium
+test:
+  id: SEC-013-T01
+  actual_result: Role, DB and CI grants are minimal as documented; the access-review worksheet flags 90-day inactive accounts (UserAdminIntegrationTest and live probe, 7 accounts listed). No production population and no recertification record exist, so the 90-day criterion cannot be re-performed; no time-bound elevation for human roles.
+  result: Partial
+  tester: Agent A4 (automated re-performance); human sign-off required
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: Same elevation fix as SEC-017; start quarterly permission recertification.
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+- 'TO CONFIRM (organisational): date and reviewer of the first quarterly recertification.'
+- 'TO CONFIRM (organisational): separate admin identities for the two administrators.'
+- 'NOT IN REPO (live cloud): IAM roles and policies and live database grants of the deployed environment.'

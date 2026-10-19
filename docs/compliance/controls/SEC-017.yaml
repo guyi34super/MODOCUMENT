@@ -1,0 +1,35 @@
+id: SEC-017
+status: Partially Implemented
+current_state: 'In the product: PLATFORM_ADMIN only in the platform bank (RoleAssignmentPolicy, V210 trigger), exactly two bootstrapped and never fewer than two active, no data permission; all grants, role changes, disables and resets are maker/checker with self-approval refused (live probe 409 for bank and platform); MFA always for PLATFORM_ADMIN and locked on for ADMIN; privileged-change, platform-change and admin-login alerts; privileged accounts enumerable via user list, CSV export and access-review worksheet. Outside the product: RDS master password in Secrets Manager, CloudTrail and RDS logging defined in Terraform but not applied. Owner statement (not verifiable here): two administrators (Bhavish Nobeen, Rushal), root sealed in a password manager.'
+gap: Everyday accounts double as admin accounts; no written grant record for the two existing administrators; no monthly review held; no role elevation (IAM Identity Center / PIM) in Terraform; admin-login alert excludes PLATFORM_ADMIN; BANK_ADMIN_ADD lets the platform maker choose the new ADMIN's temporary password.
+gap_type: Org
+required_action: Separate admin identities via role elevation; write the grant record for existing grants approved by Reezvi Pydiah; hold the first monthly privileged-activity review using docs/compliance/policies/privileged-access-and-break-glass.md; extend the admin-login alert to PLATFORM_ADMIN.
+action_owner: Security — Bhavish Nobeen
+target_date: 2026-10-30
+evidence:
+  id: SEC-017-E01
+  status: Partial — to collect
+  location: docs/compliance/policies/privileged-access-and-break-glass.md; docs/compliance/controls/SEC-017.md; docs/compliance/evidence/A4-rbac-probe.md; src/main/java/com/modocument/application/security/RoleAssignmentPolicy.java
+question:
+  final_answer: Privileged access is limited to a small named group and every grant is dual-controlled. In MoDocument, MO Intelligence's platform administrators sit in a dedicated platform tenant with no access to client data; there are always at least two, and each one's changes must be approved by the other. Each bank's administrators manage only their own bank, and every user or role change needs a second person's approval; self-approval is blocked by the system. Multi-factor authentication is mandatory for all administrators, and every privileged action is audited and raises an immediate alert. Cloud administration is held by the two named founders with root credentials sealed and alerted on use (to be confirmed with the infrastructure evidence). Separate administrator identities, the written grant record and the monthly privileged-activity review are being put in place, proposed for completion by 30 November 2026. Evidence SEC-017-E01.
+  confidence: Medium
+test:
+  id: SEC-017-T01
+  actual_result: In-product privileged population enumerable (user list, CSV export, access-review worksheet; 7 accounts in the test bank); self-approval refused for a bank change and a platform BANK_CREATE (409); own-role change refused (409); PLATFORM_ADMIN creation in a customer bank refused (400). No ticket mapping exists (no production population; grant record for the two cloud administrators not yet written).
+  result: Partial
+  tester: Agent A4 (automated re-performance); human sign-off required
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: 'Bhavish: separate admin identities via role elevation; one-page grant record approved by Reezvi; monthly privileged-activity review (procedure written).'
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/privileged-access-and-break-glass.md
+to_confirm:
+- 'TO CONFIRM (organisational): cloud administrators and the grant record approved by Reezvi Pydiah.'
+- 'TO CONFIRM (organisational): root/global-admin credentials sealed in the password manager with an alert on use.'
+- 'TO CONFIRM (organisational): first production monthly privileged-activity review record.'
+- 'NOT IN REPO (live cloud): CloudTrail, RDS logs and IAM Identity Center / PIM configuration.'
