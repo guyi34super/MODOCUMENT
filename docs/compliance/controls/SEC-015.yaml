@@ -15,7 +15,7 @@ question:
   confidence: Medium
 test:
   id: SEC-015-T01
-  actual_result: "In-app: admin-action tests pass (UserAdminIntegrationTest, MakerCheckerIntegrationTest, AuditViewAuditQaTest, JpaAuditRecorderTest, AuditLogApiTest, AuditTrailGapsTest; 2026-10-19) and rows carry session id and request id, so a session's actions can be listed in order; append-only enforced by V14 (AuditAppendOnlyPgIT not re-run, no Docker). Infrastructure: nothing deployed, so no admin session could be rebuilt; no pgAudit."
+  actual_result: "In-app: admin-action tests pass (UserAdminIntegrationTest, MakerCheckerIntegrationTest, AuditViewAuditQaTest, JpaAuditRecorderTest, AuditLogApiTest, AuditTrailGapsTest; 2026-10-19) and rows carry session id and request id, so a session's actions can be listed in order; append-only enforced by V14 (AuditAppendOnlyPgIT passed on PostgreSQL 16 on 2026-10-19, A7 run R3). Infrastructure: nothing deployed, so no admin session could be rebuilt; no pgAudit."
   result: Partial
   tester: "Agent A5 (automated re-performance); human sign-off required"
   date: 2026-10-19

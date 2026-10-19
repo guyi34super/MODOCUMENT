@@ -17,7 +17,7 @@ and [SEC-003](controls/SEC-003.md). Every number below comes from the archived r
 **Verdict on the test box: PASS for 1× and 2× the assumed peak, with findings.** One MoDocument
 instance (production profile, row-level security on, production heap size) on a shared 4-vCPU
 test machine served the realistic user mix at 1× (50 users), 2× (100 users) and a 4× spike
-(200 users) with **0 errors in 26,438 requests**, every request class inside its latency
+(200 users) with **0 errors in 26,438 requests across the S4 stages (26,439 including one request between stages)**, every request class inside its latency
 threshold, and full recovery after the spike. A 10-minute soak at 1× had 0 errors, resident memory
 between 1.35 and 1.43 GiB and no full garbage collection. The overload controls behaved as designed: every rate limit answered **429 with
 `Retry-After` exactly at its limit**, the AI circuit breaker opened after 5 failures and every
@@ -428,7 +428,7 @@ STRESS_LABEL=retest-s5b STRESS_USERS=20 STRESS_SCENARIOS=s5b \
   E2E_RUN_CMD='node perf/stress/run.mjs' e2e/run-local.sh
 ```
 
-The build was not redone: `target/modocument-1.2.0.jar` and `frontend/dist` were copied from the
+The build was not redone: `target/modocument-1.2.0.jar` and frontend/dist (build output, not committed) were copied from the
 main checkout's current build (`SKIP_BUILD=1`).
 
 ## Appendix B — Raw output

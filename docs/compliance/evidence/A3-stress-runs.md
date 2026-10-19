@@ -6,7 +6,7 @@ Runs made for this pack on 2026-10-19 by Agent A3, on the shared sandbox (4 vCPU
 (`e2e/run-local.sh`): fresh database per run, production profile, RLS role `modocument_app`,
 fake LLM; the database and run secrets are dropped at the end of each run.
 
-**Build under test.** `target/modocument-1.2.0.jar` and `frontend/dist` copied from the main
+**Build under test.** `target/modocument-1.2.0.jar` and frontend/dist (build output, not committed) copied from the main
 checkout's current build (`SKIP_BUILD=1`): jar built 2026-10-18 12:35 UTC from commit `660cff7`
 (`META-INF/build-info.properties`, `BOOT-INF/classes/git.properties` inside the jar),
 185,084,467 bytes. `git diff 660cff7 eb53e97 -- src frontend/src pom.xml` is empty, so the

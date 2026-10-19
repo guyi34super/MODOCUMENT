@@ -74,7 +74,7 @@ run in staging before go-live. Evidence PRIV-011-E01.
   `AuthFlowIntegrationTest`, `SiemFeedE6Test`, `OutboundHostPolicyTest`,
   `BankEgressGuardTest`). Cells marked 🏗️ name configuration with no runtime
   evidence; two cells name a gap (⛔ network egress, ⛔ restore drill) instead
-  of a control. PgIT tests were not run (no Docker in the sandbox).
+  of a control. The PostgreSQL tests (PgIT) were run on a scratch PostgreSQL 16 by the A4, A7 and A9 runs on 2026-10-19 and passed (`docs/compliance/evidence/A4-test-runs.md`, `docs/compliance/evidence/A7-runs.md`, `docs/compliance/evidence/A9-retest-runs.md`).
 - **Result:** Pass for the table criterion; the control stays Partially
   Implemented because availability is untested · tester: Agent A5 (automated
   re-performance; human sign-off required) · date: 2026-10-19.

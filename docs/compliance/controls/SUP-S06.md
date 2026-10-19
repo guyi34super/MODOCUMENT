@@ -61,7 +61,7 @@ only grants CloudTrail write access; it has no deny-non-TLS statement
 |---|---|---|
 | Network and parameter configuration | `infra/terraform/modules/network/main.tf`; `infra/terraform/modules/rds/main.tf` | repo |
 | Grants per account | `src/main/resources/db/migration/V12__app_role_grants.sql`; `src/main/resources/db/migration/V14__audit_event.sql`; `src/main/resources/db/migration/afterMigrate__rls_enforce.sql` | repo |
-| Grant and RLS tests | `src/test/java/com/modocument/pgit/AuditAppendOnlyPgIT.java`; `src/test/java/com/modocument/pgit/RlsPolicyCoveragePgIT.java` | repo (not re-run by A8: needs a PostgreSQL container) |
+| Grant and RLS tests | `src/test/java/com/modocument/pgit/AuditAppendOnlyPgIT.java`; `src/test/java/com/modocument/pgit/RlsPolicyCoveragePgIT.java` | run (both passed on a scratch PostgreSQL 16 on 2026-10-19: `docs/compliance/evidence/A4-test-runs.md`, `docs/compliance/evidence/A7-runs.md`) |
 | Backup/archive bucket policy | `infra/terraform/modules/security-monitoring/main.tf` (`aws_s3_bucket_policy.trail`) | repo |
 | Parameter export, grants listing from the live instance | `aws rds describe-db-parameters`; `\dp` on the instance | `NOT IN REPO (live cloud)` |
 

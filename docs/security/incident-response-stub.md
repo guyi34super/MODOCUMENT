@@ -53,7 +53,10 @@ lands. Do not represent this as the finished IR plan.
    export the relevant window via admin tooling (`GET /api/admin/audit`).
 5. **Notify**: Reezvi Pydiah decides bank/regulator/data-subject
    notification and deadlines (contractual + GDPR-equivalent); nothing goes
-   out without that decision.
+   out without that decision. For any incident involving personal data the
+   DPO is informed at once and advises on the notification decision before it
+   is made (RACI in `docs/compliance/mo-001-governance-structure.md`; who the
+   DPO is remains TO CONFIRM, task MO-038).
 6. **Communicate** during the incident: in-app MAINTENANCE or INFO
    announcement to the affected banks (`docs/release/runbook.md` §8); the
    external status page does not exist yet (`TO CONFIRM (organisational)`).
