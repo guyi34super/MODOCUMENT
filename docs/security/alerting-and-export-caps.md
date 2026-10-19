@@ -86,6 +86,13 @@ HIGH < CRITICAL), `enabled`.
 | `integration-failures` (ws25) | windowed | `INTEGRATION_RUN_FAILED` | bank | ≥ 5 / 1h | MEDIUM | `MODOCUMENT_ALERT_INTEGRATION_FAILURES_THRESHOLD` |
 | `integration-dead-letter` (ws25) | immediate | `INTEGRATION_DELIVERY_DEAD` | bank | – / 15m | HIGH | |
 | `agent-offline` (ws26) | immediate | `AGENT_OFFLINE` (written once per ONLINE → OFFLINE transition by the agent offline sweep, after the bank's `integration.agentHeartbeatTimeout`) | entity (the agent) | – / 30m | MEDIUM | |
+| `api-client-auth-failures` (ws26) | windowed | `API_CLIENT_AUTH_FAILED` (bad secret/key, unknown or untrusted certificate, revoked/expired client, CIDR mismatch) | ip | ≥ 10 / 5m | HIGH | `MODOCUMENT_ALERT_API_CLIENT_AUTH_FAILURES` |
+| `version-deployed` (ws24) | immediate | `VERSION_DEPLOYED` | bank | – / 1h | INFO | |
+| `announcement-change` (ws24) | immediate | `ANNOUNCEMENT_PUBLISHED`, `ANNOUNCEMENT_ARCHIVED` by role PLATFORM_ADMIN | actor | – / 5m | MEDIUM | |
+
+The table lists all **26** rules shipped in `src/main/resources/application.yml`
+(checked against the file on 2026-10-19). `access-denied-burst` groups by
+`ACTOR_OR_IP` (the actor when known, else the address).
 
 **Platform tuning (ws20).** Every windowed rule's threshold and window is
 also a platform setting (`alerts.<rule>.threshold` / `.window`, Security
@@ -214,3 +221,36 @@ push forwarder's bank-code lookup is the only other SYSTEM read.
 - Test profile: the scheduled sweep is off (`modocument.alerts.sweep.enabled:
   false`); immediate alerting stays on. Gate tests: `AlertingGateD1Test`,
   `ExportCapGateD2Test`, `SiemFeedE6Test`, `SyntheticProbeTest`.
+
+## Verification and open points — 2026-10-19
+
+Re-run for the technology-risk pack (commands, timings and results:
+`docs/compliance/evidence/A5-scans-and-tests.md`):
+
+- `ExportCapGateD2Test` (5 tests) and `AlertingGateD1Test` (4 tests) pass.
+  In that run, the 10,000-row export by a READ_WRITE user was refused (403)
+  and the `export-blocked` alert was raised 9–13 ms after the
+  `EXPORT_BLOCKED` audit row; both channels (log and the test webhook)
+  accepted it within 43 ms. Every immediate alert measured in the run was
+  raised within 108 ms and accepted by its channels within 346 ms.
+- Windowed rules: in tests the sweep is called by the test. In production
+  the worst case is one sweep interval (60 s) plus delivery.
+
+Open points (owners and dates in [security-roadmap.md](security-roadmap.md)):
+
+- **No person is paged yet.** The phone path is the webhook channel, and its
+  URL is deployment configuration (`MODOCUMENT_ALERTS_WEBHOOK_URL`). No
+  receiver (on-call relay, WhatsApp/SMS bridge) is configured anywhere in this
+  repository, so "reaches a person in under 5 minutes" is proven only up to
+  channel acceptance. The escalation rules are in
+  `docs/compliance/policies/alert-escalation-policy.md`.
+- **The organisational egress allow-list is not enforced.** The application
+  refuses internal targets for user-supplied URLs (`OutboundHostPolicy`) and
+  allows private bank destinations only through approved `BankEgressRule`
+  rows (`BankEgressGuard`). At the network layer, the app security group
+  still allows HTTPS to `0.0.0.0/0` (`app_egress_https_cidrs` default) and the
+  egress NACL is off (`enforce_egress_nacl = false`) until the allow-list is
+  signed off (gate D3). No alert fires on a new egress destination.
+- Bulk paths outside `ExportGuard`: the audit-log CSV export (hard cap 50,000
+  rows, masked, audited `AUDIT_LOG_EXPORTED`, no alert rule), the user-list
+  export and the DSR export (both audited and alerted by `privileged-change`).
