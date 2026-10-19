@@ -1,0 +1,30 @@
+id: SUP-S06
+status: Partially Implemented
+current_state: "Pre-production; Terraform validated, not deployed. RDS in private DB subnets with no internet route, publicly_accessible false, DB security group ingress 5432 from the app SG only and no egress. rds.force_ssl = 1; app connects with sslmode=verify-full against the baked RDS CA bundle. Parameter group logs DDL, connections and disconnections. Master password held by RDS in Secrets Manager. Runtime role modocument_app is NOBYPASSRLS with DML-only grants (V12), UPDATE/DELETE/TRUNCATE revoked on AuditEvent (V14), RLS enforced on every BankId table (afterMigrate). Gaps: the app task also holds the master (Flyway) credentials; no human access path; log-archive bucket has no TLS-only deny; no vault access policy."
+gap: "Not deployed; negative connection tests not run; master credentials in the running app task; no defined human access path; archive bucket and vault policies incomplete."
+gap_type: Config
+required_action: "Deploy and run the outside-subnet and non-TLS connection tests; run Flyway outside the service task and remove the master secret from it; define personal DB accounts with an audited path; add a TLS-only deny to the archive bucket and a vault access policy."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SUP-S06-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SUP-S06.md; infra/terraform/modules/network/main.tf; infra/terraform/modules/rds/main.tf; src/main/resources/db/migration/V12__app_role_grants.sql; src/main/resources/db/migration/V14__audit_event.sql; src/main/resources/db/migration/afterMigrate__rls_enforce.sql"
+test:
+  id: SUP-S06-T01
+  actual_result: "Static: network isolation, forced TLS, DML-only NOBYPASSRLS runtime role and audit revokes confirmed in code; found master credentials injected into the app task and no TLS-only deny on the archive bucket; terraform validate passed (2026-10-19). Negative connection tests not run: no AWS environment."
+  result: Partial
+  tester: "Agent A8 (static re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): deploy, negative connection tests, separate migration account, human access path, bucket and vault policies."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): parameter export, live grants listing, password hashing method, negative connection tests"
+  - "TO CONFIRM (organisational): human database access path and personal accounts"

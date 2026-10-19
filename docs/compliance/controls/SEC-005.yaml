@@ -1,0 +1,36 @@
+id: SEC-005
+status: Partially Implemented
+current_state: "Commitment documented in docs/security/sla-and-status.md: 99.5% monthly, Sunday 07:00-09:00 Mauritius maintenance window covering the RDS UTC windows, measurement by external probe, draft SLA clause and monthly uptime report template (updated 2026-10-19). Public probe GET /api/probe/synthetic built and tested (SyntheticProbeTest 3/3 passed 2026-10-19). No external monitor, status page, signed clause or measured history; ALB 5xx alarm in Terraform but alert delivery blocked by the AWS-managed SNS key (DEF-2). Pre-production."
+gap: "No external probe or dashboard, no status page, SLA clause not agreed, no measurement history, RTO conflict (2 h vs 4 h), alarm delivery defect."
+gap_type: Build
+required_action: "Deploy an external probe (Route 53 health check or Synthetics canary) on /api/probe/synthetic with an alarm to on call; publish a status page; agree the SLA clause and service credits; decide the RTO; fix the SNS key; start the monthly uptime report from the first production month."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SEC-005-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-005.md; docs/security/sla-and-status.md; src/main/java/com/modocument/api/controller/SyntheticProbeController.java; docs/compliance/evidence/A8-infra-checks.md"
+question:
+  final_answer: "MO Intelligence commits to 99.5% monthly availability for MoDocument (about 3 hours 39 minutes of unplanned downtime a month), excluding an announced Sunday maintenance window of 07:00-09:00 Mauritius time. Availability will be measured by an external monitor calling a public health endpoint that exercises the full path to the database every minute, and reported monthly. MoDocument is pre-production: the health endpoint is built and tested, and the monitoring service, the public status page and the weekly on-call rotation will be in place before go-live, so there is no measured history yet. Evidence: SEC-005-E01."
+  confidence: Low
+test:
+  id: SEC-005-T01
+  actual_result: "SyntheticProbeTest passed 3/3 (2026-10-19); maintenance window covers the RDS backup and maintenance windows in Terraform; no external probe exists in IaC; no availability history (no production, no monitor)."
+  result: Partial
+  tester: "Agent A8 (re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): external monitor, status page, SLA clause, start of the 12-month history."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/security/sla-and-status.md
+to_confirm:
+  - "NOT IN REPO (live cloud): external-probe dashboard; monthly uptime report; 12-month history"
+  - "TO CONFIRM (organisational): SLA clause wording and service credits"
+  - "TO CONFIRM (organisational): status page service and URL"
+  - "TO CONFIRM (organisational): on-call rota and paging tool"
+  - "TO CONFIRM (organisational): RTO value (2 h or 4 h)"

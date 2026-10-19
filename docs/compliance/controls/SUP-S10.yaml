@@ -1,0 +1,33 @@
+id: SUP-S10
+status: UNKNOWN - VALIDATION REQUIRED
+current_state: "Not provable from the repository: the company e-mail domain and DNS are not in Terraform (no Route 53 resources); README and security roadmap list SUP-S10 as DNS-level with no repo artifact. The workbook (2 Oct 2026) recorded the domain as unprotected with SPF, DKIM and DMARC due that week; whether this was done is unconfirmed. Security contact published in SECURITY.md and security.txt."
+gap: "SPF/DKIM/DMARC state unknown and the workbook date has passed; no secure-exchange agreement on record; no lookalike-domain monitoring."
+gap_type: Config
+required_action: "Confirm or publish SPF, DKIM on all senders and DMARC (p=none with reports, then quarantine/reject), MTA-STS and TLS-RPT, registrar MFA and transfer lock; agree the secure-exchange method with MauBank; monitor lookalike domains monthly."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: 2026-10-30
+evidence:
+  id: SUP-S10-E01
+  status: Missing
+  location: "docs/compliance/controls/SUP-S10.md; DNS provider records (TO CONFIRM)"
+test:
+  id: SUP-S10-T01
+  actual_result: "Not run: the company domain is not named in the repository; no DNS records could be checked."
+  result: Not run
+  tester: "Agent A8; human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Overdue (workbook: week of 2 Oct 2026); proposed 2026-10-30: DMARC at enforcement with reports, secure-exchange agreement."
+  status: Not started
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "TO CONFIRM (organisational): company e-mail domain and current SPF, DKIM, DMARC records"
+  - "TO CONFIRM (organisational): DMARC report mailbox and review owner"
+  - "TO CONFIRM (organisational): secure-exchange agreement with MauBank"
+  - "TO CONFIRM (organisational): owner (workbook Bhavish Nobeen, README Taj Aundoo)"
+  - "TO CONFIRM (organisational): security@ mailbox live (gate E5)"

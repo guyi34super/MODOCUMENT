@@ -22,7 +22,13 @@ lands. Do not represent this as the finished IR plan.
    `TOKEN_REFRESH_REUSE_DETECTED`, `EXPORT_BLOCKED`, denied events, `DSR_*`,
    `USER_*`; per bank also via the SIEM feed `GET /api/siem/events`), app
    logs (redacted; alerts carry the `SECURITY_ALERT` tag), and once applied,
-   GuardDuty/CloudTrail/alarms (`infra/terraform/modules/security-monitoring`).
+   GuardDuty/CloudTrail/alarms (`infra/terraform/modules/security-monitoring`;
+   fix DEF-2 in `docs/compliance/evidence/A8-infra-checks.md` first — as
+   written, the alert topic's AWS-managed key would stop GuardDuty findings
+   and alarms from being delivered). Availability incidents: the external
+   probe on `GET /api/probe/synthetic` once a monitor exists
+   ([sla-and-status.md](sla-and-status.md)); flood or abuse:
+   [ddos-runbook.md](../compliance/policies/ddos-runbook.md).
 3. **Contain** with controls that already exist:
    * compromised account → disable via maker/checker (break-glass: a second
      admin approves immediately); password change bumps the token version —
@@ -32,15 +38,28 @@ lands. Do not represent this as the finished IR plan.
      restart;
    * tenant-isolation suspicion → RLS is fail-closed; snapshot the DB
      before any change (evidence);
-   * destructive action → recovery points are in the (locked) backup vault;
-     restore procedure per the D6 drill runbook (pending).
-4. **Preserve evidence**: audit rows are append-only and 7-year retained;
-   do NOT purge manually; export the relevant window via admin tooling.
+   * destructive action or ransomware → database recovery points are in the
+     backup vault (locked only once `enforce_backup_locks = true` in
+     production) and in the ap-southeast-2 copy; restore procedures R1–R5
+     in [storage-backup-recovery-map.md](../compliance/policies/storage-backup-recovery-map.md)
+     (never rehearsed — gate D6 pending). The S3 file store has versioning
+     only, with a 7-day window, and no backup copy (DEF-4): act within days.
+4. **Preserve evidence**: audit rows are append-only (DB-enforced, V14) and
+   never purged by the application; the 7-year archive copy does not exist
+   yet (SEC-033,
+   [log-retention-and-rehydration.md](../compliance/policies/log-retention-and-rehydration.md)).
+   App logs stay 90 days in CloudWatch and flow logs 30 days — export what
+   the investigation needs before they expire. Do NOT purge manually;
+   export the relevant window via admin tooling (`GET /api/admin/audit`).
 5. **Notify**: Reezvi Pydiah decides bank/regulator/data-subject
    notification and deadlines (contractual + GDPR-equivalent); nothing goes
    out without that decision.
-6. **Close**: post-incident note (what, when, blast radius, fix, lesson)
-   filed in this folder.
+6. **Communicate** during the incident: in-app MAINTENANCE or INFO
+   announcement to the affected banks (`docs/release/runbook.md` §8); the
+   external status page does not exist yet (`TO CONFIRM (organisational)`).
+7. **Close**: post-incident review using
+   [post-incident-review-template.md](../compliance/policies/post-incident-review-template.md)
+   (what, when, blast radius, fix, lesson), filed in this folder.
 
 ## What pack-09 must add (open)
 

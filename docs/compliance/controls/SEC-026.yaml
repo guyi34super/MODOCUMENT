@@ -1,0 +1,35 @@
+id: SEC-026
+status: Partially Implemented
+current_state: "Dependabot weekly across Maven, npm, Actions, Docker and Terraform with immediate security updates; weekly image rebuild with Trivy and an automatic tracking issue; release pipeline fails on fixable HIGH/CRITICAL; 72-hour critical limit in docs/release/runbook.md; RDS automatic minor upgrades in the Sunday 03:00-04:00 UTC window; ECS AMI from the AWS recommended parameter, refreshed manually. Patch policy written (proposed). Observed: 11 fixable CRITICAL findings from the 2026-10-12 scan (issue #52) still unpatched on 2026-10-19; the 2026-10-19 scheduled scan did not start because of a GitHub billing problem."
+gap: "Critical findings older than the 72-hour limit; scheduled scans stopped; policy not approved; 24 h vs 72 h critical limit conflict; node refresh manual; RDS minor-version pin conflicts with automatic upgrades."
+gap_type: Build
+required_action: "Upgrade Spring Boot to a version carrying the fixed Tomcat, Spring Security and Spring Framework (Trivy lists Spring Framework fixes only in 7.0.9) and ship a patch release closing issue #52; restore GitHub Actions billing; approve the patch policy and one critical limit; add an ASG instance refresh; set engine_version to the major version; produce the monthly patch report."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: 2026-10-22
+evidence:
+  id: SEC-026-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-026.md; docs/compliance/policies/patch-management-policy.md; docs/compliance/evidence/A8-patch-report-2026-10.md; .github/dependabot.yml; .github/workflows/image-rebuild.yml; .github/workflows/release.yml"
+question:
+  final_answer: "MoDocument's application dependencies, container base images, CI actions and infrastructure providers are checked weekly by GitHub Dependabot, and both container images are rebuilt and vulnerability-scanned every week; a release cannot ship with a fixable high or critical finding. AWS patches the managed layers (RDS engine minor versions in our Sunday maintenance window, load balancer, CloudFront); we refresh the ECS server images and our container images. Routine patches follow a monthly cycle and critical fixes have an emergency path with a 72-hour limit. MoDocument is pre-production; our first weekly scan (12 October 2026) found critical issues in web-framework dependencies, which are tracked for a patch release (owner Bhavish Nobeen, proposed date 22 October 2026). The monthly patch report starts with October 2026. Evidence: SEC-026-E01."
+  confidence: Medium
+test:
+  id: SEC-026-T01
+  actual_result: "11 fixable CRITICAL findings from the 2026-10-12 weekly scan (Tomcat embed 10.1.42, Spring Security Web 6.5.1, Spring WebMVC/WebFlux 6.2.8; issue #52) remain unpatched on 2026-10-19 (pom.xml still Spring Boot 3.5.3), beyond the 72-hour limit; the 2026-10-19 scheduled scan did not start (GitHub billing). OS and DB layers not checkable (no AWS)."
+  result: Fail
+  tester: "Agent A8 (re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Patch release for issue #52, restore scheduled scans, approve the patch policy; node refresh and RDS version pin before go-live."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/patch-management-policy.md
+to_confirm:
+  - "NOT IN REPO (live cloud): OS and database patch status"
+  - "TO CONFIRM (organisational): critical patch limit, 24 h (design decision) or 72 h (runbook)"
+  - "TO CONFIRM (organisational): patch policy approver"
+  - "TO CONFIRM (organisational): owner of the GitHub Actions billing problem"

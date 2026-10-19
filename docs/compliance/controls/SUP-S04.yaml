@@ -1,0 +1,30 @@
+id: SUP-S04
+status: Partially Implemented
+current_state: "No Kubernetes (ECS on EC2): Kubernetes-specific items do not apply. Containers are hardened: non-root images (app uid 10001, nginx-unprivileged uid 101, distroless agent), task definition enforces the users, drops all capabilities and sets no-new-privileges, nodes disable privileged containers, IMDSv2 only; Trivy release gate and weekly rebuild scan; ECR scan on push and immutable tags; released images deployed by digest; per-task least-privilege roles; CPU/memory limits. Missing: image signing and verification, read-only root filesystems, base images pinned by digest."
+gap: "Workbook N/A decision pending pack 07 although the service is containerised; no image signing/verification; writable root filesystems; base images pinned by tag; open critical image findings (SEC-026)."
+gap_type: Build
+required_action: "Pack 07 decides applicability (K8s items N/A, container items in scope); sign release images and verify before deploy; read-only root filesystems with tmpfs; pin base images by digest; close the open critical findings."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SUP-S04-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SUP-S04.md; Dockerfile; frontend/Dockerfile; agent/Dockerfile; infra/terraform/modules/ecs-app/main.tf; .github/workflows/release.yml; .github/workflows/image-rebuild.yml"
+test:
+  id: SUP-S04-T01
+  actual_result: "A root-built image would still run as the non-root user set in the task definition; nothing rejects an unsigned image (no signing exists); read-only root filesystem not used. Live check not possible (no AWS)."
+  result: Partial
+  tester: "Agent A8 (static re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pack 07 applicability decision; digest-pinned base images; then image signing and read-only filesystems."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): running tasks' effective user and capabilities"
+  - "TO CONFIRM (organisational): pack 07 approval of the applicability decision (workbook marks Not Applicable)"

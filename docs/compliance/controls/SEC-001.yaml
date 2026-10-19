@@ -1,0 +1,36 @@
+id: SEC-001
+status: Partially Implemented
+current_state: "Architecture document with Mermaid diagrams written (docs/compliance/policies/security-architecture.md): hybrid model, AWS af-south-1 across two AZs (VPC with public/app/db subnets, NAT per AZ, CloudFront + WAF, ALB with optional mTLS listener, ECS on EC2, RDS Multi-AZ, S3 file store, Secrets Manager, KMS, GuardDuty/CloudTrail, CI OIDC) plus the outbound-only on-prem Connector Agent; every box mapped to a Terraform resource. Terraform fmt and validate pass for both envs (2026-10-19); not applied. DNS, ACM certificates and the GPU model servers are not in Terraform. No golden image and no CIS scan."
+gap: "Not deployed; DNS, ACM and GPU model servers outside Terraform; interface endpoint security-group defect (DEF-1); no CIS scan of the node image; no external review yet."
+gap_type: Build
+required_action: "Fix DEF-1; bring DNS, certificates and model servers into Terraform or record them as out of scope; deploy and run a drift-free terraform plan (gate A1); CIS-scan a node after deployment; external reviewer traces the request paths."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SEC-001-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-001.md; docs/compliance/policies/security-architecture.md; infra/terraform/; docs/compliance/evidence/A8-infra-checks.md"
+question:
+  final_answer: "MoDocument is a hybrid system. The application, API, database and file store run on AWS in Cape Town (af-south-1) across two availability zones, all defined in Terraform. Users reach it through Amazon CloudFront with AWS WAF and Shield Standard; the load balancer accepts traffic only from CloudFront; the application runs as non-root containers on ECS in private subnets; the PostgreSQL database is in private subnets with no internet route and accepts only TLS connections from the application. Banks that integrate their own systems may run our Connector Agent on their premises; it only makes outbound HTTPS connections. MoDocument is pre-production: the environment is written and validated as code but not yet deployed. The architecture diagram, the Terraform reference and the control at each hop are provided. Evidence: SEC-001-E01."
+  confidence: Medium
+test:
+  id: SEC-001-T01
+  actual_result: "Browser and bank machine request paths traced through the diagram with the control at each hop from Terraform; every box maps to a resource except DNS, ACM and GPU model servers; terraform validate passed (2026-10-19); DEF-1 found by code reading. Not compared with a deployed environment; no external reviewer yet."
+  result: Partial
+  tester: "Agent A8 (static re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): fix DEF-1, complete IaC coverage, deploy with a drift-free plan, external review; CIS scan after deployment."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/security-architecture.md
+to_confirm:
+  - "NOT IN REPO (live cloud): CIS scan result of the node image; drift-free terraform plan of the deployed environment"
+  - "TO CONFIRM (organisational): Entra ID tenant for Microsoft banks"
+  - "TO CONFIRM (organisational): GPU model server hosting (not in Terraform)"
+  - "TO CONFIRM (organisational): lock-account creation date"
+  - "TO CONFIRM (organisational): gate numbering A9-A20 cited by the workbook"
