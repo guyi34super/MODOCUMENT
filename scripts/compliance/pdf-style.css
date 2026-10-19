@@ -16,7 +16,10 @@ table { border-collapse: collapse; width: 100%; margin: 6pt 0 10pt; font-size: 8
 tr { page-break-inside: avoid; break-inside: avoid; }
 thead { display: table-header-group; }
 th { background: var(--accent); color: #fff; text-align: left; font-weight: 600; }
-th, td { border: 1px solid var(--rule); padding: 3pt 5pt; vertical-align: top; overflow-wrap: anywhere; }
+th, td { border: 1px solid var(--rule); padding: 3pt 5pt; vertical-align: top; overflow-wrap: break-word; word-break: normal; hyphens: auto; }
+th { min-width: 13mm; }
+td:first-child, th:first-child { min-width: 18mm; }
+td code { overflow-wrap: anywhere; }
 tbody tr:nth-child(even) td { background: #fafbfd; }
 blockquote { margin: 6pt 0; padding: 4pt 10pt; border-left: 3px solid var(--accent); background: var(--soft); color: var(--muted); }
 .diagram { page-break-inside: avoid; text-align: center; margin: 8pt 0; }
