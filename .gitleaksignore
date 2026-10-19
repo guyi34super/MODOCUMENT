@@ -68,3 +68,8 @@ b0a05cb88f1791ea02742c1d157cc0be0c6d5d82:src/test/java/com/modocument/api/integr
 # test types into every field to prove that validation messages never repeat a
 # value; not a credential.
 fbe95bdb8ee88ff24403b613ee369a20e9360738:src/test/java/com/modocument/doccreation/rules/DefaultDocRuleEvaluatorTest.java:generic-api-key:435
+
+# Compliance pack evidence (A8-infra-checks.md TF-61): the words "key pair" followed by
+# the ECS agent setting ECS_DISABLE_PRIVILEGED=true; reworded in the next commit, pinned
+# here for the commit that still holds the old wording. Not a credential.
+029532899558dc10bbe9a56cff9d4a360c24cf5e:docs/compliance/evidence/A8-infra-checks.md:generic-api-key:133
