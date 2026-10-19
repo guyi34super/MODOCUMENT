@@ -1,0 +1,33 @@
+id: SEC-024
+status: Fully Implemented
+current_state: 'Three SoD layers: assignment time (single role per user; role changes maker/checker; PLATFORM_ADMIN not assignable in a customer bank), runtime (SodPolicy.verifyDistinct on change approvals and document release/reject, even when the author holds APPROVER or ADMIN; 409 with DENIED audit), nightly (SodScanJob per bank, SOD_SCAN_COMPLETED and SOD_VIOLATION_FOUND with alert). Live probe: author ADMIN releasing own document 409; a different APPROVER released it 200.'
+gap: No nightly SoD report from a deployed environment (pre-production); DPO decision pending on dual control for data-subject export and erasure.
+gap_type: Org
+required_action: After go-live keep one SOD_SCAN_COMPLETED record per bank per month as evidence; record the DPO decision on DSR export/erasure.
+action_owner: Software Engineering — Bhavish Nobeen
+target_date: null
+evidence:
+  id: SEC-024-E01
+  status: Partial — to collect
+  location: docs/security/role-catalogue-and-sod.md; src/main/java/com/modocument/application/security/SodPolicy.java; src/main/java/com/modocument/infrastructure/sod/SodScanJob.java; src/test/java/com/modocument/api/DocReleaseSodIntegrationTest.java; docs/compliance/evidence/A4-rbac-probe.md
+question:
+  final_answer: MoDocument enforces separation of duties in the system at three levels. At assignment, each user holds exactly one role, so conflicting roles cannot be combined, and role changes need a second administrator's approval. At runtime, whoever prepares or submits a report can never release it, even if they also hold the Approver or Administrator role, and whoever requests a change can never approve it; these attempts are refused and recorded in the audit trail. Every night a scan re-checks all released reports and applied changes and raises an alert if any was released or approved by its own author. Automated tests demonstrate all three levels, and we confirmed the runtime refusals on a running system. Evidence SEC-024-E01.
+  confidence: High
+test:
+  id: SEC-024-T01
+  actual_result: 'SodPolicyTest, MakerCheckerIntegrationTest and DocReleaseSodIntegrationTest passed (18 tests): single-role structure, runtime self-approval and self-release refusals, nightly scan clean then finding a manufactured violation. Live: author ADMIN release 409, different APPROVER release 200.'
+  result: Pass
+  tester: Agent A4 (automated re-performance); human sign-off required
+  date: 2026-10-19
+roadmap:
+  phase: Day 90
+  action: Release step requiring an Approver who is not the author, runtime approver != author check and nightly scan delivered; collect a production nightly report.
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+- 'NOT IN REPO (live cloud): a nightly SOD_SCAN_COMPLETED record from a deployed environment.'
+- 'TO CONFIRM (organisational): DPO decision on dual control for data-subject export and erasure.'

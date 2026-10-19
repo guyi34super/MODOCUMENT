@@ -2,18 +2,24 @@
 
 Scope: application accounts in MoDocument (`AppUsers`). Every account belongs
 to exactly one bank; a bank **Admin** manages only their own bank's users
-(gate B6 — MoDocument staff cross-bank administration is out of scope). All
-operations below are available in the UI under **Administration → Users**
-(`/admin/users`) and over the API under `/api/admin/users` (permission
-`user:admin`, granted to the ADMIN role only). Every operation writes an
-append-only audit row; the audit trail is the JML evidence.
+(gate B6). All operations below are available in the UI under
+**Administration → Users** (`/admin/users`) and over the API under
+`/api/admin/users` (permission `user:admin`, held by the ADMIN role and, for
+the platform bank's own staff only, by `PLATFORM_ADMIN`). Platform admins
+never list or manage a customer bank's users: their only routes into a
+customer bank are onboarding its first users (`BANK_CREATE`) and the
+break-glass `BANK_ADMIN_ADD` (see *Bank onboarding and platform staff*
+below). Every operation writes an append-only audit row; the audit trail is
+the JML evidence.
 
-**Dual control (ws10, SEC-023):** creating a user, changing a role and
-disabling an account are maker/checker-gated — the request answers
-`202 Accepted` with a pending change, and a **different** user holding
-`change:approve` must approve it (**Administration → Approvals**,
+**Dual control (ws10, SEC-023):** creating a user, changing a role,
+disabling an account, resetting a password and resetting MFA are
+maker/checker-gated — the request answers `202 Accepted` with a pending
+change, and a **different** user holding `change:approve` (APPROVER or
+ADMIN of the same bank) must approve it (**Administration → Approvals**,
 `/api/admin/changes`) before anything happens. Self-approval is a hard 409.
-Only re-enabling applies directly. Details: `docs/security/maker-checker.md`.
+Re-enabling, unlocking and renaming apply directly (the lower-risk
+directions). Details: `docs/security/maker-checker.md`.
 
 ## Joiner
 
@@ -87,7 +93,10 @@ remaining active Admin.
 Evidence (PRIV-017): the `USER_DISABLED` audit row, plus the automated
 leaver test
 (`UserAdminIntegrationTest.disabledLeaverIsInertImmediatelyAfterApproval…`)
-that pins all three failure paths. Accounts are disabled, not deleted —
+that pins all three failure paths. The same leaver and mover checks were
+re-performed live on the production-profile stack for the compliance pack
+(`docs/compliance/evidence/A4-rbac-probe.md`, JML scenarios). Accounts are
+disabled, not deleted —
 their identity stays referenceable from the audit trail (B1).
 
 Re-joining: re-enable with `{"disabled": false}` (`USER_ENABLED` audited) —
@@ -119,6 +128,38 @@ From *Administration → Users*, on any user of your bank except yourself:
 * **Edit** (`PATCH /api/admin/users/{id}`, direct): display name only — the
   email is the sign-in identity and cannot be changed. Evidence:
   `USER_UPDATED` with old/new name.
+
+## Bank onboarding and platform staff (phase 2, ws21)
+
+* **A new bank's first users** come from the platform owner's
+  `BANK_CREATE` (`POST /api/platform/banks`, maker/checker between two
+  platform admins): 2–20 users, at least one ADMIN and at least two
+  ADMIN/APPROVER, each with a temporary password and `MustChangePassword`;
+  ADMINs must enrol TOTP at first sign-in. From then on the bank's own
+  admins run joiners, movers and leavers as above. Evidence:
+  `BANK_ONBOARDED` (both banks) and one `USER_CREATED` per user.
+* **Platform staff (MO Intelligence)** are `PLATFORM_ADMIN` users of the
+  platform bank. The first two come from `BootstrapPlatformRunner`
+  (deployment configuration, once); later joiners, movers and leavers use
+  the same *Administration → Users* screens inside the platform bank, with
+  a second platform admin approving. MFA is always enforced. Disabling or
+  demoting a platform admin that would leave fewer than two active ones is
+  refused (409).
+* **Break-glass for a customer bank** that has lost its administrators:
+  `BANK_ADMIN_ADD` (`POST /api/platform/banks/{id}/admins`, maker/checker,
+  audited in the customer bank as well). Follow
+  `docs/compliance/policies/privileged-access-and-break-glass.md`.
+* **Bank suspension** (`BANK_SUSPEND`) signs every user of the bank out at
+  once and refuses new sign-ins; it is the whole-bank leaver switch.
+
+## Machine identities (ws26)
+
+API clients and connector agents are not users, but follow the same
+lifecycle under **Administration → Integrations**: creating an API client
+(`API_CLIENT_CREATE`) or registering an agent (`AGENT_REGISTER`) is
+maker/checker; revoking either is direct and immediate (audit
+`API_CLIENT_REVOKED` / `AGENT_REVOKED`). Review the client list
+(`GET /api/admin/integrations/api-clients`) in the same quarterly review.
 
 ## Quarterly access recertification (SEC-013)
 

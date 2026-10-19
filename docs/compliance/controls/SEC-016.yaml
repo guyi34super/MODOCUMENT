@@ -1,0 +1,33 @@
+id: SEC-016
+status: Partially Implemented
+current_state: 'Every report and dashboard is an authorised, tenant-scoped API route: admin dashboard (metrics:read, bank-scoped), audit trail and CSV export (audit:read), alerts (user:admin), records search (masked by role), exports (masked for every role), platform overview (counts only). Live probe: the same records report returned raw values to owner/APPROVER/ADMIN, masked NIC to READ_ONLY, 404 to another bank and 403 to PLATFORM_ADMIN; the export file held no raw NIC. Privileged actions raise privileged-change and platform-change alerts and are filterable in the audit log.'
+gap: No dedicated privileged-activity dashboard page; admin-login alert does not cover PLATFORM_ADMIN sign-ins; DPO decision pending on raw working-screen values of bank-shared records.
+gap_type: Build
+required_action: Add a privileged-activity view to the admin and platform dashboards based on the audit actions in the monthly review procedure; add PLATFORM_ADMIN to the admin-login alert rule.
+action_owner: Software Engineering — Bhavish Nobeen
+target_date: 2026-11-30
+evidence:
+  id: SEC-016-E01
+  status: Partial — to collect
+  location: docs/compliance/controls/SEC-016.md; docs/compliance/evidence/A4-rbac-probe.md; src/test/java/com/modocument/api/AdminDashboardIsolationTest.java; src/test/java/com/modocument/api/MaskingGateC2Test.java
+question:
+  final_answer: 'Reports and dashboards in MoDocument go through the same permission checks and bank isolation as the rest of the application; there is no separate reporting path to the database. Each user sees only their own bank''s data and only the reports their role allows (the admin dashboard and alerts for administrators, the audit trail for administrators and approvers). Personal data in reports and exports is masked for every role; on screens, read-only users see it masked while preparers and approvers see it in full. We tested the same records report with five roles across two banks: it returned full values, masked values or no access as the role required. Privileged actions raise immediate alerts and can be filtered in the audit trail; a dedicated privileged-activity dashboard page is planned. Evidence SEC-016-E01.'
+  confidence: Medium
+test:
+  id: SEC-016-T01
+  actual_result: 'Same records report: owner, APPROVER and ADMIN 200 with raw NIC; READ_ONLY 200 with ********; bank B ADMIN 404; PLATFORM_ADMIN 403. Export file 200 with no raw NIC. Dashboard isolation tests passed (3 H2 + 2 PostgreSQL).'
+  result: Pass
+  tester: Agent A4 (automated re-performance); human sign-off required
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: Route report queries through the authorisation middleware with tenant and role filters (done); build the privileged-activity dashboard page.
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+- 'TO CONFIRM (organisational): dashboard screenshot from a deployed environment.'
+- 'TO CONFIRM (organisational): DPO decision on raw working-screen values of bank-shared records (MO-019 X-03).'

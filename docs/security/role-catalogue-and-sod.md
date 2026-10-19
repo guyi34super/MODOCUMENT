@@ -20,15 +20,15 @@ to banking job functions:
 | Role         | Banking job function                                                                 | Permission profile (full matrix: [CSV](role-permission-matrix.csv)) |
 |--------------|--------------------------------------------------------------------------------------|---------------------------------------------------------------------|
 | `READ_ONLY`  | Auditors, controllers, second-line risk — people who must SEE operations, never move them. | Every domain `*:read` + self-service. No writes, exports, uploads or LLM spend (PRIV-005). |
-| `READ_WRITE` | Operations staff / report authors — the makers: they design templates, ingest data, author and generate documents. | `READ_ONLY` plus every `*:write`, uploads, AI use, exports, extraction runs, `doc:generate`. |
-| `APPROVER`   | Supervisors / four-eyes checkers — they review, they do not author.                   | `READ_ONLY` plus the two approval verbs: `change:approve` (ws10) and `doc:release` (ws11). |
-| `ADMIN`      | The bank's application owner / IT administration — user management, bank settings, integrations, governance functions (retention run, SoD scan). | Everything a bank can hold, including `user:admin`, `settings:*`, `integration:admin`. Not the platform-owner permissions (incl. `lookup:admin`: the lookup tables are shared by every bank) and not the API-client scopes. |
+| `READ_WRITE` | Operations staff / report authors — the makers: they design templates, ingest data, author and generate documents. | `READ_ONLY` plus every `*:write`, uploads, AI use, exports, extraction runs, `doc:generate` and `integration:run` (trigger an enabled integration flow and read run history). |
+| `APPROVER`   | Supervisors / four-eyes checkers — they review, they do not author.                   | `READ_ONLY` plus the two approval verbs, `change:approve` (ws10) and `doc:release` (ws11), and `audit:read`, the bank's audit trail they review against. |
+| `ADMIN`      | The bank's application owner / IT administration — user management, bank settings, integrations, governance functions (retention run, SoD scan, data-subject requests, alerts). | Everything a bank can hold (31 of the 41 permissions), including `user:admin`, `settings:*`, `integration:admin`, `template:publish`, `metrics:read`, `siem:read`. Not the platform-owner permissions (incl. `lookup:admin`: the lookup tables are shared by every bank) and not the API-client scopes. |
 
 **Phase-2 roles outside the bank catalogue**
 
 | Role | Who | Permission profile |
 |---|---|---|
-| `PLATFORM_ADMIN` (ws21) | MO Intelligence staff, only in the single platform bank (enforced by a DB trigger and `RoleAssignmentPolicy`). | `platform:*` + `lookup:admin`, plus managing their own platform-bank users, approving platform changes, the platform bank's audit feed, the version. **No domain permission**: no bank's templates, jobs or data. Platform changes (bank onboarding/suspension, platform settings, egress rules) are maker/checker between two platform admins. |
+| `PLATFORM_ADMIN` (ws21) | MO Intelligence staff, only in the single platform bank (enforced by a DB trigger and `RoleAssignmentPolicy`). | `platform:*` + `lookup:admin`, plus managing their own platform-bank users, approving platform changes, the platform bank's audit feed, the version. **No domain permission**: no bank's templates, jobs or data. Platform changes (bank onboarding/suspension, platform settings, egress rules) are maker/checker between two platform admins. `platform:banks` also covers the break-glass `BANK_ADMIN_ADD` (a new ADMIN in a customer bank) — the one product path by which platform staff create access inside a bank; it is dual-controlled, alerted (`platform-change`) and audited in the customer bank too. Procedure: [privileged-access-and-break-glass.md](../compliance/policies/privileged-access-and-break-glass.md). |
 | `API_CLIENT` (ws26) | A bank system's machine principal, never an `AppUsers` row. | Only the `integration:*` / `agent:connect` scopes, further narrowed by the client's granted scopes; bound to one bank. |
 
 Which roles a user may hold follows the kind of their bank
@@ -47,6 +47,12 @@ the fallback; see [identity-providers.md](identity-providers.md)). The
 four-role catalogue is the enforcement vocabulary; the IdP owns who holds
 which job function, and ws10's maker/checker gate covers role changes made
 inside MoDocument.
+
+The mapping of the business roles named in the governance checklist
+(MOI admin, MOI developer/support, client admin, data-entry user,
+reviewer, read-only) onto these six roles, the full role × permission
+matrix by business capability and the personal-data view per role are in
+[MO-018](../compliance/mo-018-rbac-role-permission-matrix.md).
 
 ## 2. SoD conflict table (SEC-012)
 
