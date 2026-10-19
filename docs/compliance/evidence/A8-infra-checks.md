@@ -130,7 +130,7 @@ the control pages and policies.
 | ID | Fact | Resource / setting |
 |---|---|---|
 | TF-60 | ECS nodes use the AWS ECS-optimised Amazon Linux 2023 AMI, read from the SSM parameter `/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id` at plan time. | `data.aws_ssm_parameter.ecs_ami`, `aws_launch_template.this` |
-| TF-61 | Launch template: IMDSv2 required (hop limit 2), root EBS 60 GB gp3 encrypted, no SSH key pair, `ECS_DISABLE_PRIVILEGED=true`, instance type `m6i.large`. | `aws_launch_template.this` |
+| TF-61 | Launch template: IMDSv2 required (hop limit 2), root EBS 60 GB gp3 encrypted, no SSH login configured; privileged containers disabled (`ECS_DISABLE_PRIVILEGED` set to true), instance type `m6i.large`. | `aws_launch_template.this` |
 | TF-62 | Auto Scaling group across both private app subnets, min 2 / max 4 nodes (production defaults), launch template `$Latest`, no `instance_refresh` block. | `aws_autoscaling_group.this` |
 | TF-63 | Container Insights on for the cluster. | `aws_ecs_cluster.this` |
 | TF-64 | Nodes reach the shell only through Session Manager (`AmazonSSMManagedInstanceCore`). | `aws_iam_role_policy_attachment.instance_ssm` |
