@@ -1,0 +1,29 @@
+id: SUP-S02
+status: Partially Implemented
+current_state: "HS256 access tokens of 15 minutes (5-15 setting) with minimal claims (sub, jti, roles, bank_id, token_ver); algorithm pinned in the decoder; 256-bit refresh tokens stored as SHA-256, rotated on every use with reuse detection that revokes the family; idle 12 h and absolute 7-day limits; revocation by jti denylist on logout and by TokenVersion on password change, admin reset, role change, disable, MFA reset and bank suspension (JwtService, RevocationValidator, AuthUseCase, V15)."
+gap: "Tokens carry no iss/aud and are not audience-separated; one shared HS256 key without kid, so key rotation ends every session at once; access token kept in localStorage."
+gap_type: Build
+required_action: "Add iss/aud claims and validators; move to asymmetric keys with kid and an overlap window held in Secrets Manager/KMS; keep the access token in memory only."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-20
+evidence:
+  id: SUP-S02-E01
+  status: Complete
+  location: "docs/compliance/controls/SUP-S02.md; docs/compliance/policies/token-and-otp-specification.md; docs/compliance/evidence/A6-test-runs.md"
+test:
+  id: SUP-S02-T01
+  actual_result: "2026-10-19 H2 run: AuthFlowIntegrationTest 10/10 (refresh reuse revokes the family, logout and password change kill tokens), UserAdminIntegrationTest 10/10 (approved role change kills outstanding tokens), RevocationValidatorTest 7/7, JwtServiceTest 4/4, AuthUseCaseTest 37/37, MfaUseCaseTest 10/10; 0 failures. Design review: no iss/aud, single HS256 key."
+  result: Pass
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Audience/issuer validation and in-memory access token (Day 60); asymmetric keys with kid rotation (Day 90)."
+  status: Not started
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/token-and-otp-specification.md
+to_confirm:
+  - "NOT IN REPO (live cloud): MODOCUMENT_JWT_SECRET held in AWS Secrets Manager and its 180-day rotation record (key register K1)."

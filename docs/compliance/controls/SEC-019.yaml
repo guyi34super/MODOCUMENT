@@ -1,0 +1,33 @@
+id: SEC-019
+status: Partially Implemented
+current_state: "Passwords stored only as Argon2id hashes (temporary passwords hashed at submit); never returned by any API; all console, stack-trace and structured logs pass through PiiPatterns-based redaction (%mask/%maskEx, RedactingJsonMembersCustomizer) masking password/secret/token/authorization values, Bearer tokens and JWTs; no request-body logger or external error tracker; TLS 1.2+ at the edge. LogRedactionCanaryTest seeds a canary password through a real sign-in and asserts it never reaches log output."
+gap: "The workbook acceptance (30-day search of aggregated production logs for canaries) cannot run before deployment; ALB/CloudFront log formats not yet checked."
+gap_type: Config
+required_action: "After go-live, seed a canary per release and run a saved 30-day CloudWatch Logs Insights query; record the ALB/CloudFront log formats."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-20
+evidence:
+  id: SEC-019-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-019.md; src/main/resources/logback-spring.xml; src/main/java/com/modocument/application/privacy/PiiPatterns.java; src/test/java/com/modocument/infrastructure/logging/LogRedactionCanaryTest.java; docs/compliance/evidence/A6-test-runs.md"
+question:
+  final_answer: "No. MoDocument never stores or logs a password in plain text. Passwords are kept only as salted Argon2id hashes, are sent only over TLS, and are never returned by any screen or API. All application log output, including error stack traces, passes through a redaction layer that masks password, secret and token values; an automated test sends a sign-in with a seeded canary password and fails the build if the canary appears anywhere in the log output. For users who sign in through Microsoft Entra ID or Keycloak, MoDocument never receives the password at all. Evidence: SEC-019-E01."
+  confidence: High
+test:
+  id: SEC-019-T01
+  actual_result: "2026-10-19 H2 run: LogRedactionCanaryTest 1/1 (canary password, JWT, refresh cookie, NIC, account and e-mail absent from all captured log output; mask present), RedactingConverterTest 15/15, StructuredLogRedactionTest 2/2; 0 failures. Live 30-day log search not possible before deployment."
+  result: Pass
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Post-go-live 30-day canary log search; record edge log formats."
+  status: Not started
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): 30-day CloudWatch search for canary passwords."
+  - "TO CONFIRM (organisational): go-live date that starts the 30-day window."

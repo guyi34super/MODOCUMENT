@@ -10,10 +10,36 @@ Workstream 07 — gate items **B2** (two login paths), **B3** provider side
 | **Entra ID** | Banks on Microsoft 365 / Azure | Microsoft Entra ID (Azure AD) | Entra **Conditional Access** policy requiring MFA |
 | **Keycloak** | Everyone else | Self-hosted open-source Keycloak | Realm **Configure OTP** default required action (TOTP, 6 digits / 30 s) |
 
-Local password login (`POST /api/auth/login`) stays available as the
-**break-glass** path (bootstrap admin, recovery when an IdP is down). Bank
-users are expected to come in via OIDC; the login page shows a provider
+Local password login (`POST /api/auth/login`) is the third path. It is the
+**only** path for platform accounts (`PLATFORM_ADMIN`: OIDC is refused for
+them), the break-glass path for bank admins (bootstrap admin, recovery when an
+IdP is down), and the normal path for a bank that uses no IdP. It has its own
+built-in TOTP second factor (next section). The login page shows a provider
 button for every configured registration (`GET /api/auth/providers`).
+
+## MoDocument's own MFA on local sign-in (SEC-014, checked 2026-10-19)
+
+A correct password returns only a 5-minute MFA challenge when a second factor
+is owed; tokens are issued after the TOTP or recovery code verifies
+(`AuthUseCase`, `MfaUseCase`). Who owes one (`AuthUseCase.mustEnrolMfa`):
+
+| Role | Local sign-in | OIDC sign-in |
+|---|---|---|
+| `PLATFORM_ADMIN` | Always TOTP; no setting turns it off | Refused |
+| `ADMIN` | TOTP: bank setting `security.mfa.requireForAdmins` is locked to `true` (yml `modocument.security.mfa.require-for-admin`, default `true`) | The IdP's MFA (Keycloak OTP / Entra Conditional Access) |
+| `APPROVER`, `READ_WRITE`, `READ_ONLY` | TOTP when the bank turns on `security.mfa.requireForAllRoles` (default off); otherwise optional | The IdP's MFA |
+
+Known gaps (tracked in `docs/compliance/controls/SEC-014.md`):
+
+* MoDocument does **not** check the ID token's `amr`/`acr` claim, so an OIDC
+  admin is let in on the IdP's word; a Conditional Access gap at the bank
+  becomes a single-factor admin session.
+* `docker-compose.yml` defaults `MODOCUMENT_MFA_REQUIRE_FOR_ADMIN` to `false`
+  (PR #54). The locked setting then only logs a WARN; ECS sets
+  `MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS=true`, which refuses to boot with it
+  off. `application-local.yml` also turns it off for local development.
+* No step-up re-authentication before critical actions; dual control
+  (maker/checker) applies instead.
 
 ### Bridge pattern — the app keeps issuing its own tokens
 
@@ -61,6 +87,10 @@ On every OIDC login (`OidcLoginService`):
    the existing/default role.
 5. Display name is refreshed from the ID token; email is never changed by
    the IdP (unique account key).
+6. **Refusals (ws21):** a provider whose `bank-code` names the platform bank
+   provisions nobody; an identity that resolves to a `PLATFORM_ADMIN` or any
+   platform-bank account is refused; a user of a SUSPENDED bank is refused
+   (audited `LOGIN_FAILED`, reason `bank_suspended`).
 
 Successful logins are audited `LOGIN_SUCCESS` with
 `NewValues {"method":"oidc","provider":"<id>"}`; every failure (handshake or
@@ -109,7 +139,10 @@ provisioning) is `LOGIN_FAILED` and the browser only ever sees
 2. **Realm import** — the `modocument` realm is imported automatically from
    `docker/keycloak/modocument-realm.json` (`start-dev --import-realm`;
    import runs on first start only). It ships with:
-   * password policy `length(12) and notUsername and notEmail`,
+   * password policy `length(12) and notUsername and notEmail` (no
+     breached-password list yet — the app's own list,
+     `src/main/resources/security/common-passwords.txt`, does not apply to
+     Keycloak users; gap SEC-021), brute-force protection on,
    * TOTP policy 6 digits / 30 s and **Configure OTP as a DEFAULT required
      action** — every user must enroll an authenticator on first login
      (MFA enforced, gate B3),

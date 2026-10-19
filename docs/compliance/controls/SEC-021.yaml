@@ -1,0 +1,34 @@
+id: SEC-021
+status: Partially Implemented
+current_state: "PasswordPolicy applies everywhere a password is set: minimum 12 characters (bank setting 12-128), passphrases accepted, breached/common list check (common-passwords.txt, 11,384 entries) and e-mail local-part check; lockout after 5 wrong attempts (3-10) with 1-minute lock doubling to 30 minutes; 30/address and 10/account sign-in attempts per 15 min. Keycloak realm: length(12), notUsername, notEmail, brute-force protection."
+gap: "Breached list is a local 11,384-entry list (no k-anonymity lookup); Keycloak realm has no breached-password list; no optional password-history rule."
+gap_type: Build
+required_action: "Extend the breached list or add a k-anonymity lookup; add passwordBlacklist to the Keycloak realm; add password history only if a bank policy requires it."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-20
+evidence:
+  id: SEC-021-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-021.md; src/main/java/com/modocument/application/security/PasswordPolicy.java; src/main/resources/security/common-passwords.txt; docs/compliance/evidence/A6-test-runs.md"
+question:
+  final_answer: "Yes. MoDocument enforces a password policy based on NIST SP 800-63B for every password it holds: at least 12 characters (each bank can raise this up to 128), long passphrases allowed, and rejection of passwords on a built-in list of common and breached passwords and of passwords that contain the user's own e-mail name. After five wrong attempts the account locks, for 1 minute at first and doubling up to 30 minutes; each bank can tune these values within fixed limits. Users who sign in through Keycloak get the same minimum length plus username and e-mail checks; users who sign in through Microsoft Entra ID follow their bank's Entra password policy. Evidence: SEC-021-E01."
+  confidence: High
+test:
+  id: SEC-021-T01
+  actual_result: "2026-10-19 H2 run: PasswordPolicyTest 8/8 (Password123 and e-mail local part rejected, minimum length enforced and configurable), AccountLockoutIntegrationTest 2/2 (sixth wrong attempt locks, backoff doubles), LoginLockoutPolicyTest 4/4, KeycloakRealmConfigTest 6/6; 0 failures."
+  result: Pass
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Larger breached list or k-anonymity lookup; Keycloak passwordBlacklist."
+  status: Not started
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "TO CONFIRM (organisational): each bank's Entra ID password policy (banned-password list, length)."
+  - "TO CONFIRM (organisational): whether a bank policy requires password history or maximum age."
+  - "NOT IN REPO (live cloud): settings-screen screenshot from a deployed environment."

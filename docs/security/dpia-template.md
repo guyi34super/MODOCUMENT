@@ -3,9 +3,14 @@
 Data Protection Impact Assessment template for MoDocument processing
 activities. Complete one per new processing purpose, new data category, new
 recipient (e.g. a new LLM provider/model), or new storage location. File the
-completed assessment beside this template as
-`dpia-<yyyy-mm>-<short-name>.md`; the sign-off is the risk owner's (Reezvi
-Pydiah) written approval.
+completed assessment in `docs/compliance/policies/` as
+`dpia-<short-name>.md`; the sign-off is the DPO's review plus the risk
+owner's (Reezvi Pydiah) written approval. Leave likelihood, impact and the
+residual-risk decision to them; the author fills the facts with proof paths.
+
+Completed so far: [`dpia-modocument.md`](../compliance/policies/dpia-modocument.md)
+— standing DPIAs (1) and (3) below, draft of 2026-10-19 awaiting the DPO's
+and the risk owner's sign-off.
 
 Pre-filled pointers reference the standing evidence so each DPIA stays
 short: [data-inventory.md](data-inventory.md),
@@ -63,10 +68,14 @@ short: [data-inventory.md](data-inventory.md),
 | Residual risk | Low / Medium / High + rationale |
 | Measures to implement before go-live of this processing | |
 | Risk owner sign-off (name, date) | Reezvi Pydiah, |
+| DPO sign-off (name, date) | the DPO, |
 | Review date | +12 months or on change |
 
 ---
 
 *Standing DPIAs to complete first (known processing):* (1) document
 ingestion & LLM extraction, (2) web/API/DB data extraction, (3) document
-creation & release, (4) retention & DSR handling itself.
+creation & release, (4) retention & DSR handling itself. (1) and (3) are
+drafted together in `docs/compliance/policies/dpia-modocument.md`; (2) and
+(4) are still to do. Since phase 2, add (5) the bank integration hub
+(integration API, connectors, webhooks, Connector Agent).
