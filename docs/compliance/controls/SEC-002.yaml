@@ -1,0 +1,34 @@
+id: SEC-002
+status: Partially Implemented
+current_state: "Per-user rate limits answer 429 with Retry-After on every expensive route (ApiRateLimitInterceptor, modocument.ratelimit.* in application.yml, editable bank settings with hard limits); sign-in throttles per IP and e-mail (AuthRateLimiter); LLM quota 60 per user per hour; AI circuit breaker (5 failures, 2 minutes) with code fallback for ingestion; DB pool bounded at 20 per instance. Edge WAF per-IP rate rules, ECS CPU target-tracking autoscaling (2 to 8 tasks) and 5xx/CPU alarms are written in infra/terraform but not applied. Degradation runbook in docs/compliance/policies/degradation-runbook.md. Stress test of 2026-10-19 (test box, one instance): 0 errors at 1x, 2x and a 4x spike of an assumed 50-user peak; all limits returned 429 at the limit; AI outage gave 20 of 20 completed jobs; pool saturation queued without errors (MO-017)."
+gap: "Report generation is synchronous (no queue); ingestion runner has 2 threads and an unbounded queue; rate-limit counters are per instance; WAF, autoscaling and alarms are not applied; no staging test at the real expected peak, which is not yet stated."
+gap_type: Build
+required_action: "Add a bounded queue for report generation and for the ingestion runner (429 or 202 when full); move rate-limit counters to a shared store before scaling out; apply the staging Terraform and run the loadtest/ k6 scenarios and MO-016 at 2x the confirmed peak; business to state the expected peak."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: 2026-12-15
+evidence:
+  id: SEC-002-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-002.md; src/main/resources/application.yml; src/main/java/com/modocument/infrastructure/ratelimit/ApiRateLimitInterceptor.java; src/main/java/com/modocument/infrastructure/ai/AiCircuitBreaker.java; infra/terraform/modules/edge/main.tf; infra/terraform/modules/ecs-app/main.tf; docs/compliance/policies/degradation-runbook.md; docs/compliance/mo-017-stress-testing-report.md; perf/results/stress-2026-10/"
+question:
+  final_answer: "MoDocument protects itself from overload at three layers. At the edge, the design puts a WAF per-IP rate rule in front of the application (CloudFront and AWS WAF, Terraform). In the application, every expensive operation (uploads, ingestion runs, exports, document generation, extraction, AI calls, sign-in) has a per-user or per-IP limit that answers HTTP 429 with a Retry-After header, so one user or script cannot exhaust the service; an AI circuit breaker stops calling a failing model after 5 consecutive failures and the ingestion pipeline completes jobs with its code extractor instead. The service runs on ECS with CPU-based autoscaling between 2 and 8 tasks (hard cap). A stress test on 19 October 2026 (synthetic data, one application instance on a shared 4-vCPU test machine) ran a realistic user mix at 1x, 2x and 4x an assumed peak of 50 concurrent users with 0 errors in 26,438 requests, p95 latency under 50 ms for reads at 2x peak, and full recovery after the spike; every rate limit returned 429 with Retry-After exactly at its limit while other users were unaffected. Production-environment confirmation (staging load test, applied WAF and scaling) is scheduled before go-live. Evidence: SEC-002-E01."
+  confidence: Medium
+test:
+  id: SEC-002-T01
+  actual_result: "2026-10-19 test box, one instance: 2x peak (100 VUs, 180 s) 11,103 requests, 0 errors, p95 read 21.3 ms, write 51.7 ms, heavy 66.7 ms; spike 200 VUs 0 errors, recovery to the 1x level; default limits: 429 with Retry-After exactly at the limit for doc-generate, ingestion, exports, uploads and sign-in per e-mail, other user unaffected, 429 cost 4 to 10 ms; AI model failing: 20 of 20 jobs VALIDATED (6 ERROR, 14 CIRCUIT_OPEN fallbacks), model calls stopped, AI used again after 2 minutes; 200 no-think VUs: pool at its 20-connection maximum, 0 errors, read p95 1,205 ms; breakpoint: 0 errors up to 400 VUs. WAF, autoscaling and staging run not testable yet."
+  result: Partial
+  tester: "Agent A3 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Bounded queues for generation and ingestion; shared rate-limit counters; staging load test at 2x the confirmed peak with applied WAF and autoscaling."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/degradation-runbook.md
+to_confirm:
+  - "TO CONFIRM (organisational): expected production peak (the test used 50 concurrent users as 1x)."
+  - "NOT IN REPO (live cloud): applied WAF rate rules, ECS scaling policy and CloudWatch alarms; staging load test through CloudFront, ALB and nginx."
+  - "TO CONFIRM (organisational): approval of the MO-016 latency thresholds as SLOs."

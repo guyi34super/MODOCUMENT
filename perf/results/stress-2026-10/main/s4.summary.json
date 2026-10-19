@@ -1,0 +1,2847 @@
+{
+  "key": "s4",
+  "title": "S4 peak mixed load (1x, 2x, spike, recovery)",
+  "start": "2026-10-19T16:44:31.147Z",
+  "end": "2026-10-19T16:54:03.746Z",
+  "seconds": 572.6,
+  "total": {
+    "all": {
+      "requests": 26439,
+      "rps": 46.17,
+      "p50": 9.2,
+      "p90": 47.3,
+      "p95": 127.6,
+      "p99": 2040.1,
+      "max": 2545,
+      "errors": 0,
+      "errorRate": 0,
+      "rateLimited": 0,
+      "statuses": {
+        "200": 24992,
+        "201": 420,
+        "202": 1027
+      },
+      "avgBytes": 12795
+    },
+    "errorBudgetPass": true,
+    "latencyPass": true,
+    "classes": {
+      "read": {
+        "requests": 15478,
+        "rps": 27.03,
+        "p50": 7.3,
+        "p90": 17.3,
+        "p95": 28.4,
+        "p99": 63.5,
+        "max": 453.9,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 15478
+        },
+        "avgBytes": 19076,
+        "p95Limit": 500,
+        "p99Limit": 1500,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "heavy": {
+        "requests": 3699,
+        "rps": 6.46,
+        "p50": 18.5,
+        "p90": 58.7,
+        "p95": 76.6,
+        "p99": 145.1,
+        "max": 533.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2672,
+          "202": 1027
+        },
+        "avgBytes": 4725,
+        "p95Limit": 3000,
+        "p99Limit": 8000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "write": {
+        "requests": 6001,
+        "rps": 10.48,
+        "p50": 10.9,
+        "p90": 46.8,
+        "p95": 89.4,
+        "p99": 228.3,
+        "max": 579,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5581,
+          "201": 420
+        },
+        "avgBytes": 4240,
+        "p95Limit": 1000,
+        "p99Limit": 3000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "job": {
+        "requests": 1027,
+        "rps": 1.79,
+        "p50": 2031,
+        "p90": 2067.3,
+        "p95": 2086.1,
+        "p99": 2227.1,
+        "max": 2545,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1027
+        },
+        "avgBytes": 0,
+        "p95Limit": 60000,
+        "p99Limit": 120000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "auth": {
+        "requests": 234,
+        "rps": 0.41,
+        "p50": 57.8,
+        "p90": 102.8,
+        "p95": 116.7,
+        "p99": 211.4,
+        "max": 333.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 234
+        },
+        "avgBytes": 443,
+        "p95Limit": 1000,
+        "p99Limit": 2000,
+        "p95Pass": true,
+        "p99Pass": true
+      }
+    },
+    "names": {
+      "auth.login": {
+        "class": "auth",
+        "requests": 215,
+        "rps": 0.38,
+        "p50": 57.9,
+        "p90": 106.7,
+        "p95": 117.5,
+        "p99": 211.4,
+        "max": 333.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 215
+        },
+        "avgBytes": 443
+      },
+      "auth.login.refresh": {
+        "class": "auth",
+        "requests": 19,
+        "rps": 0.03,
+        "p50": 55.9,
+        "p90": 95,
+        "p95": 102.8,
+        "p99": 102.8,
+        "max": 102.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 19
+        },
+        "avgBytes": 443
+      },
+      "doc.download": {
+        "class": "heavy",
+        "requests": 1019,
+        "rps": 1.78,
+        "p50": 7.5,
+        "p90": 16,
+        "p95": 19.8,
+        "p99": 40.2,
+        "max": 190.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1019
+        },
+        "avgBytes": 7388
+      },
+      "doc.generate": {
+        "class": "heavy",
+        "requests": 1019,
+        "rps": 1.78,
+        "p50": 41,
+        "p90": 83,
+        "p95": 105.4,
+        "p99": 167.5,
+        "max": 290.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1019
+        },
+        "avgBytes": 112
+      },
+      "doc.validate": {
+        "class": "write",
+        "requests": 1019,
+        "rps": 1.78,
+        "p50": 12.9,
+        "p90": 31.2,
+        "p95": 49.8,
+        "p99": 102.4,
+        "max": 284.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1019
+        },
+        "avgBytes": 4574
+      },
+      "doc.values.autosave": {
+        "class": "write",
+        "requests": 4562,
+        "rps": 7.97,
+        "p50": 10.1,
+        "p90": 25.8,
+        "p95": 40.2,
+        "p99": 90.9,
+        "max": 301.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 4562
+        },
+        "avgBytes": 4553
+      },
+      "ingest.export.csv": {
+        "class": "heavy",
+        "requests": 634,
+        "rps": 1.11,
+        "p50": 17.1,
+        "p90": 43.2,
+        "p95": 56.3,
+        "p99": 119.1,
+        "max": 456.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 634
+        },
+        "avgBytes": 14389
+      },
+      "ingest.job.complete": {
+        "class": "job",
+        "requests": 1027,
+        "rps": 1.79,
+        "p50": 2031,
+        "p90": 2067.3,
+        "p95": 2086.1,
+        "p99": 2227.1,
+        "max": 2545,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1027
+        },
+        "avgBytes": 0
+      },
+      "ingest.job.get": {
+        "class": "read",
+        "requests": 2704,
+        "rps": 4.72,
+        "p50": 8,
+        "p90": 19.4,
+        "p95": 33,
+        "p99": 68.7,
+        "max": 435.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2704
+        },
+        "avgBytes": 69971
+      },
+      "ingest.job.poll": {
+        "class": "read",
+        "requests": 1027,
+        "rps": 1.79,
+        "p50": 9.6,
+        "p90": 23.6,
+        "p95": 37.9,
+        "p99": 62.4,
+        "max": 213.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1027
+        },
+        "avgBytes": 73798
+      },
+      "ingest.upload": {
+        "class": "heavy",
+        "requests": 1027,
+        "rps": 1.79,
+        "p50": 18.4,
+        "p90": 43.1,
+        "p95": 59.8,
+        "p99": 201.9,
+        "max": 533.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "202": 1027
+        },
+        "avgBytes": 693
+      },
+      "ui.announcements": {
+        "class": "read",
+        "requests": 1626,
+        "rps": 2.84,
+        "p50": 2.9,
+        "p90": 7.5,
+        "p95": 10.6,
+        "p99": 36.8,
+        "max": 124.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1626
+        },
+        "avgBytes": 349
+      },
+      "ui.blueprints.list": {
+        "class": "read",
+        "requests": 1004,
+        "rps": 1.75,
+        "p50": 6.5,
+        "p90": 17.1,
+        "p95": 26.9,
+        "p99": 51.6,
+        "max": 228,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1004
+        },
+        "avgBytes": 340
+      },
+      "ui.dashboard": {
+        "class": "read",
+        "requests": 3046,
+        "rps": 5.32,
+        "p50": 9.2,
+        "p90": 21.3,
+        "p95": 32.8,
+        "p99": 78.4,
+        "max": 453.9,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 3046
+        },
+        "avgBytes": 3945
+      },
+      "ui.docs.list": {
+        "class": "read",
+        "requests": 2045,
+        "rps": 3.57,
+        "p50": 6.2,
+        "p90": 16.5,
+        "p95": 26.9,
+        "p99": 56.4,
+        "max": 248.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2045
+        },
+        "avgBytes": 2452
+      },
+      "ui.jobs.list": {
+        "class": "read",
+        "requests": 2400,
+        "rps": 4.19,
+        "p50": 6.8,
+        "p90": 16,
+        "p95": 26.8,
+        "p99": 61.7,
+        "max": 241.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2400
+        },
+        "avgBytes": 5021
+      },
+      "ui.me": {
+        "class": "read",
+        "requests": 1626,
+        "rps": 2.84,
+        "p50": 4.8,
+        "p90": 13.5,
+        "p95": 24.1,
+        "p99": 53.8,
+        "max": 274.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1626
+        },
+        "avgBytes": 171
+      },
+      "vu.instance.create": {
+        "class": "write",
+        "requests": 420,
+        "rps": 0.73,
+        "p50": 95.1,
+        "p90": 236.8,
+        "p95": 286.8,
+        "p99": 384.1,
+        "max": 579,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "201": 420
+        },
+        "avgBytes": 27
+      }
+    }
+  },
+  "resources": {
+    "samples": 573,
+    "javaCpuPct": {
+      "mean": 59.4,
+      "max": 230,
+      "last": 1
+    },
+    "javaRssMiB": {
+      "mean": 1267.1,
+      "max": 1395.6,
+      "last": 1325.9
+    },
+    "javaThreads": {
+      "mean": 101.1,
+      "max": 155,
+      "last": 154
+    },
+    "sysCpuPct": {
+      "mean": 29.6,
+      "max": 94.2,
+      "last": 2
+    },
+    "load1": {
+      "mean": 1.9,
+      "max": 4.1,
+      "last": 0.99
+    },
+    "nodeCpuPct": {
+      "mean": 8.1,
+      "max": 40,
+      "last": 0.4
+    },
+    "dbConnTotal": {
+      "mean": 19.2,
+      "max": 20,
+      "last": 20
+    },
+    "dbConnActive": {
+      "mean": 0,
+      "max": 0,
+      "last": 0
+    }
+  },
+  "stages": [
+    {
+      "label": "warm-up 25",
+      "vus": 25,
+      "start": "2026-10-19T16:44:31.147Z",
+      "seconds": 60,
+      "all": {
+        "requests": 899,
+        "rps": 14.98,
+        "p50": 10.3,
+        "p90": 37.3,
+        "p95": 125.6,
+        "p99": 2043.5,
+        "max": 2189.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 862,
+          "202": 37
+        },
+        "avgBytes": 13416
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "read": {
+          "requests": 541,
+          "rps": 9.02,
+          "p50": 8.6,
+          "p90": 14,
+          "p95": 17.3,
+          "p99": 111.3,
+          "max": 234.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 541
+          },
+          "avgBytes": 19340,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "heavy": {
+          "requests": 114,
+          "rps": 1.9,
+          "p50": 19.4,
+          "p90": 48.7,
+          "p95": 69.8,
+          "p99": 116.3,
+          "max": 169.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 77,
+            "202": 37
+          },
+          "avgBytes": 5801,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "write": {
+          "requests": 203,
+          "rps": 3.38,
+          "p50": 11.6,
+          "p90": 17.5,
+          "p95": 23.3,
+          "p99": 125.6,
+          "max": 136.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 203
+          },
+          "avgBytes": 4605,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "job": {
+          "requests": 37,
+          "rps": 0.62,
+          "p50": 2033.1,
+          "p90": 2094.5,
+          "p95": 2102.9,
+          "p99": 2189.2,
+          "max": 2189.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 37
+          },
+          "avgBytes": 0,
+          "p95Limit": 60000,
+          "p99Limit": 120000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "auth": {
+          "requests": 4,
+          "rps": 0.07,
+          "p50": 54.7,
+          "p90": 116.1,
+          "p95": 116.1,
+          "p99": 116.1,
+          "max": 116.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 4
+          },
+          "avgBytes": 443,
+          "p95Limit": 1000,
+          "p99Limit": 2000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "auth.login": {
+          "class": "auth",
+          "requests": 4,
+          "rps": 0.07,
+          "p50": 54.7,
+          "p90": 116.1,
+          "p95": 116.1,
+          "p99": 116.1,
+          "max": 116.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 4
+          },
+          "avgBytes": 443
+        },
+        "doc.download": {
+          "class": "heavy",
+          "requests": 26,
+          "rps": 0.43,
+          "p50": 8.3,
+          "p90": 16.6,
+          "p95": 17.1,
+          "p99": 25.7,
+          "max": 25.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 26
+          },
+          "avgBytes": 10518
+        },
+        "doc.generate": {
+          "class": "heavy",
+          "requests": 26,
+          "rps": 0.43,
+          "p50": 39.1,
+          "p90": 69.8,
+          "p95": 70.9,
+          "p99": 86.8,
+          "max": 86.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 26
+          },
+          "avgBytes": 112
+        },
+        "doc.validate": {
+          "class": "write",
+          "requests": 26,
+          "rps": 0.43,
+          "p50": 13.6,
+          "p90": 20.6,
+          "p95": 21,
+          "p99": 49.8,
+          "max": 49.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 26
+          },
+          "avgBytes": 4645
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 177,
+          "rps": 2.95,
+          "p50": 11.2,
+          "p90": 15.6,
+          "p95": 28.5,
+          "p99": 136.5,
+          "max": 136.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 177
+          },
+          "avgBytes": 4599
+        },
+        "ingest.export.csv": {
+          "class": "heavy",
+          "requests": 25,
+          "rps": 0.42,
+          "p50": 18.7,
+          "p90": 25.5,
+          "p95": 99.4,
+          "p99": 116.3,
+          "max": 116.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 25
+          },
+          "avgBytes": 14376
+        },
+        "ingest.job.complete": {
+          "class": "job",
+          "requests": 37,
+          "rps": 0.62,
+          "p50": 2033.1,
+          "p90": 2094.5,
+          "p95": 2102.9,
+          "p99": 2189.2,
+          "max": 2189.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 37
+          },
+          "avgBytes": 0
+        },
+        "ingest.job.get": {
+          "class": "read",
+          "requests": 104,
+          "rps": 1.73,
+          "p50": 8.9,
+          "p90": 13.8,
+          "p95": 16.3,
+          "p99": 58.2,
+          "max": 133.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 104
+          },
+          "avgBytes": 69901
+        },
+        "ingest.job.poll": {
+          "class": "read",
+          "requests": 36,
+          "rps": 0.6,
+          "p50": 10.5,
+          "p90": 37.8,
+          "p95": 43.1,
+          "p99": 50.8,
+          "max": 50.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 36
+          },
+          "avgBytes": 73247
+        },
+        "ingest.upload": {
+          "class": "heavy",
+          "requests": 37,
+          "rps": 0.62,
+          "p50": 20.3,
+          "p90": 46.7,
+          "p95": 57.1,
+          "p99": 169.4,
+          "max": 169.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 37
+          },
+          "avgBytes": 691
+        },
+        "ui.announcements": {
+          "class": "read",
+          "requests": 50,
+          "rps": 0.83,
+          "p50": 3.2,
+          "p90": 5.5,
+          "p95": 6.5,
+          "p99": 90.9,
+          "max": 90.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 50
+          },
+          "avgBytes": 349
+        },
+        "ui.blueprints.list": {
+          "class": "read",
+          "requests": 43,
+          "rps": 0.72,
+          "p50": 7.8,
+          "p90": 11.3,
+          "p95": 16.5,
+          "p99": 111.3,
+          "max": 111.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 43
+          },
+          "avgBytes": 341
+        },
+        "ui.dashboard": {
+          "class": "read",
+          "requests": 97,
+          "rps": 1.62,
+          "p50": 12.3,
+          "p90": 17.1,
+          "p95": 20,
+          "p99": 234.7,
+          "max": 234.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 97
+          },
+          "avgBytes": 2699
+        },
+        "ui.docs.list": {
+          "class": "read",
+          "requests": 69,
+          "rps": 1.15,
+          "p50": 7.5,
+          "p90": 10.5,
+          "p95": 11.8,
+          "p99": 107.2,
+          "max": 107.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 69
+          },
+          "avgBytes": 1166
+        },
+        "ui.jobs.list": {
+          "class": "read",
+          "requests": 92,
+          "rps": 1.53,
+          "p50": 8.5,
+          "p90": 10.5,
+          "p95": 11.9,
+          "p99": 136.2,
+          "max": 136.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 92
+          },
+          "avgBytes": 1884
+        },
+        "ui.me": {
+          "class": "read",
+          "requests": 50,
+          "rps": 0.83,
+          "p50": 5.3,
+          "p90": 7.3,
+          "p95": 8,
+          "p99": 113.8,
+          "max": 113.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 50
+          },
+          "avgBytes": 171
+        }
+      },
+      "probe": {
+        "requests": 30,
+        "rps": 0.5,
+        "p50": 3.9,
+        "p90": 5.9,
+        "p95": 6.5,
+        "p99": 14.6,
+        "max": 14.6,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 30
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 60,
+        "javaCpuPct": {
+          "mean": 25.4,
+          "max": 99,
+          "last": 16
+        },
+        "javaRssMiB": {
+          "mean": 1228.3,
+          "max": 1380.8,
+          "last": 1210.8
+        },
+        "javaThreads": {
+          "mean": 74.2,
+          "max": 76,
+          "last": 74
+        },
+        "sysCpuPct": {
+          "mean": 19.2,
+          "max": 72.9,
+          "last": 9.7
+        },
+        "load1": {
+          "mean": 2.7,
+          "max": 3.9,
+          "last": 1.95
+        },
+        "nodeCpuPct": {
+          "mean": 4,
+          "max": 9.1,
+          "last": 3
+        },
+        "dbConnTotal": {
+          "mean": 18,
+          "max": 18,
+          "last": 18
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "1x peak 50",
+      "vus": 50,
+      "start": "2026-10-19T16:45:31.148Z",
+      "seconds": 180,
+      "all": {
+        "requests": 5529,
+        "rps": 30.72,
+        "p50": 8.5,
+        "p90": 29.4,
+        "p95": 56.8,
+        "p99": 2032.1,
+        "max": 2215.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5316,
+          "202": 213
+        },
+        "avgBytes": 12455
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "read": {
+          "requests": 3282,
+          "rps": 18.23,
+          "p50": 6.9,
+          "p90": 10.7,
+          "p95": 13.1,
+          "p99": 27.6,
+          "max": 105.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 3282
+          },
+          "avgBytes": 17965,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "write": {
+          "requests": 1164,
+          "rps": 6.47,
+          "p50": 10.1,
+          "p90": 14.9,
+          "p95": 19,
+          "p99": 44.9,
+          "max": 150.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1164
+          },
+          "avgBytes": 4610,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "heavy": {
+          "requests": 820,
+          "rps": 4.56,
+          "p50": 17.1,
+          "p90": 41.6,
+          "p95": 56.1,
+          "p99": 80,
+          "max": 204.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 607,
+            "202": 213
+          },
+          "avgBytes": 5508,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "job": {
+          "requests": 213,
+          "rps": 1.18,
+          "p50": 2028,
+          "p90": 2037.6,
+          "p95": 2046.9,
+          "p99": 2088.6,
+          "max": 2215.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 213
+          },
+          "avgBytes": 0,
+          "p95Limit": 60000,
+          "p99Limit": 120000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "auth": {
+          "requests": 50,
+          "rps": 0.28,
+          "p50": 50.9,
+          "p90": 64.1,
+          "p95": 71.9,
+          "p99": 333.2,
+          "max": 333.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 50
+          },
+          "avgBytes": 443,
+          "p95Limit": 1000,
+          "p99Limit": 2000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "auth.login": {
+          "class": "auth",
+          "requests": 50,
+          "rps": 0.28,
+          "p50": 50.9,
+          "p90": 64.1,
+          "p95": 71.9,
+          "p99": 333.2,
+          "max": 333.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 50
+          },
+          "avgBytes": 443
+        },
+        "doc.download": {
+          "class": "heavy",
+          "requests": 241,
+          "rps": 1.34,
+          "p50": 6.9,
+          "p90": 11.3,
+          "p95": 13.7,
+          "p99": 18.4,
+          "max": 19.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 241
+          },
+          "avgBytes": 10548
+        },
+        "doc.generate": {
+          "class": "heavy",
+          "requests": 241,
+          "rps": 1.34,
+          "p50": 36.3,
+          "p90": 61.5,
+          "p95": 71.6,
+          "p99": 86.7,
+          "max": 107.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 241
+          },
+          "avgBytes": 112
+        },
+        "doc.validate": {
+          "class": "write",
+          "requests": 241,
+          "rps": 1.34,
+          "p50": 12.3,
+          "p90": 17.1,
+          "p95": 28.3,
+          "p99": 46.3,
+          "max": 63.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 241
+          },
+          "avgBytes": 4645
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 923,
+          "rps": 5.13,
+          "p50": 9.8,
+          "p90": 13.7,
+          "p95": 16.8,
+          "p99": 43.7,
+          "max": 150.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 923
+          },
+          "avgBytes": 4601
+        },
+        "ingest.export.csv": {
+          "class": "heavy",
+          "requests": 125,
+          "rps": 0.69,
+          "p50": 16.6,
+          "p90": 28.7,
+          "p95": 36.4,
+          "p99": 53.2,
+          "max": 87.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 125
+          },
+          "avgBytes": 14398
+        },
+        "ingest.job.complete": {
+          "class": "job",
+          "requests": 213,
+          "rps": 1.18,
+          "p50": 2028,
+          "p90": 2037.6,
+          "p95": 2046.9,
+          "p99": 2088.6,
+          "max": 2215.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 213
+          },
+          "avgBytes": 0
+        },
+        "ingest.job.get": {
+          "class": "read",
+          "requests": 562,
+          "rps": 3.12,
+          "p50": 7.7,
+          "p90": 11.4,
+          "p95": 13.3,
+          "p99": 22.7,
+          "max": 34.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 562
+          },
+          "avgBytes": 69977
+        },
+        "ingest.job.poll": {
+          "class": "read",
+          "requests": 211,
+          "rps": 1.17,
+          "p50": 9.4,
+          "p90": 14.2,
+          "p95": 17.1,
+          "p99": 42.4,
+          "max": 69.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 211
+          },
+          "avgBytes": 73532
+        },
+        "ingest.upload": {
+          "class": "heavy",
+          "requests": 213,
+          "rps": 1.18,
+          "p50": 17.3,
+          "p90": 26.3,
+          "p95": 31.2,
+          "p99": 76.5,
+          "max": 204.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 213
+          },
+          "avgBytes": 692
+        },
+        "ui.announcements": {
+          "class": "read",
+          "requests": 342,
+          "rps": 1.9,
+          "p50": 2.8,
+          "p90": 4.4,
+          "p95": 6.2,
+          "p99": 9.3,
+          "max": 17.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 342
+          },
+          "avgBytes": 349
+        },
+        "ui.blueprints.list": {
+          "class": "read",
+          "requests": 192,
+          "rps": 1.07,
+          "p50": 6.5,
+          "p90": 10,
+          "p95": 12.2,
+          "p99": 31.1,
+          "max": 44.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 192
+          },
+          "avgBytes": 341
+        },
+        "ui.dashboard": {
+          "class": "read",
+          "requests": 672,
+          "rps": 3.73,
+          "p50": 8.6,
+          "p90": 12.4,
+          "p95": 14.6,
+          "p99": 30.8,
+          "max": 58.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 672
+          },
+          "avgBytes": 3125
+        },
+        "ui.docs.list": {
+          "class": "read",
+          "requests": 435,
+          "rps": 2.42,
+          "p50": 6.1,
+          "p90": 8.7,
+          "p95": 11.5,
+          "p99": 35.2,
+          "max": 54.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 435
+          },
+          "avgBytes": 1139
+        },
+        "ui.jobs.list": {
+          "class": "read",
+          "requests": 526,
+          "rps": 2.92,
+          "p50": 6.4,
+          "p90": 9.1,
+          "p95": 10.9,
+          "p99": 26.8,
+          "max": 62.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 526
+          },
+          "avgBytes": 2434
+        },
+        "ui.me": {
+          "class": "read",
+          "requests": 342,
+          "rps": 1.9,
+          "p50": 4.7,
+          "p90": 6.3,
+          "p95": 7.1,
+          "p99": 25.6,
+          "max": 105.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 342
+          },
+          "avgBytes": 171
+        }
+      },
+      "probe": {
+        "requests": 90,
+        "rps": 0.5,
+        "p50": 3.5,
+        "p90": 5.1,
+        "p95": 7.1,
+        "p99": 27.3,
+        "max": 27.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 90
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 180,
+        "javaCpuPct": {
+          "mean": 36.2,
+          "max": 113,
+          "last": 57
+        },
+        "javaRssMiB": {
+          "mean": 1236.4,
+          "max": 1346.6,
+          "last": 1245
+        },
+        "javaThreads": {
+          "mean": 74,
+          "max": 75,
+          "last": 74
+        },
+        "sysCpuPct": {
+          "mean": 21.1,
+          "max": 52.7,
+          "last": 36.1
+        },
+        "load1": {
+          "mean": 1.1,
+          "max": 1.9,
+          "last": 0.72
+        },
+        "nodeCpuPct": {
+          "mean": 5.6,
+          "max": 12.1,
+          "last": 4.1
+        },
+        "dbConnTotal": {
+          "mean": 18,
+          "max": 18,
+          "last": 18
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "2x peak 100",
+      "vus": 100,
+      "start": "2026-10-19T16:48:31.149Z",
+      "seconds": 180,
+      "all": {
+        "requests": 11103,
+        "rps": 61.68,
+        "p50": 8.7,
+        "p90": 37.9,
+        "p95": 76.9,
+        "p99": 2035.8,
+        "max": 2313.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 10554,
+          "201": 120,
+          "202": 429
+        },
+        "avgBytes": 12549
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 2548,
+          "rps": 14.16,
+          "p50": 10.3,
+          "p90": 29.1,
+          "p95": 51.7,
+          "p99": 90.4,
+          "max": 171.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 2428,
+            "201": 120
+          },
+          "avgBytes": 4340,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "read": {
+          "requests": 6424,
+          "rps": 35.69,
+          "p50": 6.9,
+          "p90": 13.9,
+          "p95": 21.3,
+          "p99": 43,
+          "max": 129.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 6424
+          },
+          "avgBytes": 18839,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "heavy": {
+          "requests": 1593,
+          "rps": 8.85,
+          "p50": 17.2,
+          "p90": 51.3,
+          "p95": 66.7,
+          "p99": 96.6,
+          "max": 305.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1164,
+            "202": 429
+          },
+          "avgBytes": 4521,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "job": {
+          "requests": 429,
+          "rps": 2.38,
+          "p50": 2028.8,
+          "p90": 2053.5,
+          "p95": 2072.2,
+          "p99": 2126,
+          "max": 2313.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 429
+          },
+          "avgBytes": 0,
+          "p95Limit": 60000,
+          "p99Limit": 120000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "auth": {
+          "requests": 109,
+          "rps": 0.61,
+          "p50": 55.8,
+          "p90": 83.2,
+          "p95": 92.4,
+          "p99": 112.6,
+          "max": 119,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 109
+          },
+          "avgBytes": 443,
+          "p95Limit": 1000,
+          "p99Limit": 2000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "auth.login": {
+          "class": "auth",
+          "requests": 90,
+          "rps": 0.5,
+          "p50": 55.1,
+          "p90": 79.3,
+          "p95": 90.6,
+          "p99": 119,
+          "max": 119,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 90
+          },
+          "avgBytes": 443
+        },
+        "auth.login.refresh": {
+          "class": "auth",
+          "requests": 19,
+          "rps": 0.11,
+          "p50": 55.9,
+          "p90": 95,
+          "p95": 102.8,
+          "p99": 102.8,
+          "max": 102.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 19
+          },
+          "avgBytes": 443
+        },
+        "doc.download": {
+          "class": "heavy",
+          "requests": 450,
+          "rps": 2.5,
+          "p50": 7.1,
+          "p90": 13.5,
+          "p95": 16.6,
+          "p99": 30.2,
+          "max": 60,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 450
+          },
+          "avgBytes": 6786
+        },
+        "doc.generate": {
+          "class": "heavy",
+          "requests": 450,
+          "rps": 2.5,
+          "p50": 39.6,
+          "p90": 73.5,
+          "p95": 86,
+          "p99": 113.6,
+          "max": 128.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 450
+          },
+          "avgBytes": 112
+        },
+        "doc.validate": {
+          "class": "write",
+          "requests": 450,
+          "rps": 2.5,
+          "p50": 12.4,
+          "p90": 19.8,
+          "p95": 29.2,
+          "p99": 62.4,
+          "max": 83.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 450
+          },
+          "avgBytes": 4562
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 1978,
+          "rps": 10.99,
+          "p50": 9.6,
+          "p90": 20.5,
+          "p95": 31.2,
+          "p99": 55.8,
+          "max": 171.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1978
+          },
+          "avgBytes": 4551
+        },
+        "ingest.export.csv": {
+          "class": "heavy",
+          "requests": 264,
+          "rps": 1.47,
+          "p50": 16.1,
+          "p90": 27.8,
+          "p95": 42.7,
+          "p99": 56.1,
+          "max": 69.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 264
+          },
+          "avgBytes": 14396
+        },
+        "ingest.job.complete": {
+          "class": "job",
+          "requests": 429,
+          "rps": 2.38,
+          "p50": 2028.8,
+          "p90": 2053.5,
+          "p95": 2072.2,
+          "p99": 2126,
+          "max": 2313.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 429
+          },
+          "avgBytes": 0
+        },
+        "ingest.job.get": {
+          "class": "read",
+          "requests": 1107,
+          "rps": 6.15,
+          "p50": 7.6,
+          "p90": 15.1,
+          "p95": 21.7,
+          "p99": 42.4,
+          "max": 79.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1107
+          },
+          "avgBytes": 69977
+        },
+        "ingest.job.poll": {
+          "class": "read",
+          "requests": 429,
+          "rps": 2.38,
+          "p50": 9.2,
+          "p90": 16.9,
+          "p95": 23.9,
+          "p99": 46.3,
+          "max": 68.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 429
+          },
+          "avgBytes": 73741
+        },
+        "ingest.upload": {
+          "class": "heavy",
+          "requests": 429,
+          "rps": 2.38,
+          "p50": 17.2,
+          "p90": 31.3,
+          "p95": 48.7,
+          "p99": 86.5,
+          "max": 305.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 429
+          },
+          "avgBytes": 693
+        },
+        "ui.announcements": {
+          "class": "read",
+          "requests": 680,
+          "rps": 3.78,
+          "p50": 2.7,
+          "p90": 6.3,
+          "p95": 7.6,
+          "p99": 18.9,
+          "max": 36.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 680
+          },
+          "avgBytes": 349
+        },
+        "ui.blueprints.list": {
+          "class": "read",
+          "requests": 452,
+          "rps": 2.51,
+          "p50": 5.9,
+          "p90": 12.1,
+          "p95": 19.7,
+          "p99": 37.1,
+          "max": 61.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 452
+          },
+          "avgBytes": 335
+        },
+        "ui.dashboard": {
+          "class": "read",
+          "requests": 1264,
+          "rps": 7.02,
+          "p50": 8.7,
+          "p90": 16.3,
+          "p95": 26,
+          "p99": 46.3,
+          "max": 105.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1264
+          },
+          "avgBytes": 4112
+        },
+        "ui.docs.list": {
+          "class": "read",
+          "requests": 827,
+          "rps": 4.59,
+          "p50": 5.7,
+          "p90": 11.7,
+          "p95": 21.5,
+          "p99": 47.9,
+          "max": 82.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 827
+          },
+          "avgBytes": 2017
+        },
+        "ui.jobs.list": {
+          "class": "read",
+          "requests": 985,
+          "rps": 5.47,
+          "p50": 6.5,
+          "p90": 15.2,
+          "p95": 22.9,
+          "p99": 43,
+          "max": 129.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 985
+          },
+          "avgBytes": 4623
+        },
+        "ui.me": {
+          "class": "read",
+          "requests": 680,
+          "rps": 3.78,
+          "p50": 4.4,
+          "p90": 10.4,
+          "p95": 19.4,
+          "p99": 44.1,
+          "max": 112.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 680
+          },
+          "avgBytes": 171
+        },
+        "vu.instance.create": {
+          "class": "write",
+          "requests": 120,
+          "rps": 0.67,
+          "p50": 70.5,
+          "p90": 96.9,
+          "p95": 111.6,
+          "p99": 127.8,
+          "max": 132,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "201": 120
+          },
+          "avgBytes": 27
+        }
+      },
+      "probe": {
+        "requests": 90,
+        "rps": 0.5,
+        "p50": 3.9,
+        "p90": 7.4,
+        "p95": 13.8,
+        "p99": 40.8,
+        "max": 40.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 90
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 180,
+        "javaCpuPct": {
+          "mean": 81,
+          "max": 187,
+          "last": 33
+        },
+        "javaRssMiB": {
+          "mean": 1237.9,
+          "max": 1313.8,
+          "last": 1297.3
+        },
+        "javaThreads": {
+          "mean": 92.1,
+          "max": 94,
+          "last": 92
+        },
+        "sysCpuPct": {
+          "mean": 38.7,
+          "max": 76.9,
+          "last": 25.7
+        },
+        "load1": {
+          "mean": 1.9,
+          "max": 2.5,
+          "last": 1.66
+        },
+        "nodeCpuPct": {
+          "mean": 10.3,
+          "max": 18,
+          "last": 11.2
+        },
+        "dbConnTotal": {
+          "mean": 20,
+          "max": 20,
+          "last": 20
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "spike 200",
+      "vus": 200,
+      "start": "2026-10-19T16:51:31.150Z",
+      "seconds": 60,
+      "all": {
+        "requests": 7552,
+        "rps": 125.86,
+        "p50": 12.2,
+        "p90": 89.4,
+        "p95": 235.2,
+        "p99": 2063.6,
+        "max": 2545,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 6951,
+          "201": 300,
+          "202": 301
+        },
+        "avgBytes": 13096
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 1786,
+          "rps": 29.77,
+          "p50": 16.5,
+          "p90": 124.7,
+          "p95": 186.3,
+          "p99": 301.7,
+          "max": 579,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1486,
+            "201": 300
+          },
+          "avgBytes": 3754,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "read": {
+          "requests": 4417,
+          "rps": 73.62,
+          "p50": 8.5,
+          "p90": 31.5,
+          "p95": 46.6,
+          "p99": 146.9,
+          "max": 453.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 4417
+          },
+          "avgBytes": 19974,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "heavy": {
+          "requests": 985,
+          "rps": 16.42,
+          "p50": 25.6,
+          "p90": 83.9,
+          "p95": 121.6,
+          "p99": 235.7,
+          "max": 533.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 684,
+            "202": 301
+          },
+          "avgBytes": 4000,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "auth": {
+          "requests": 63,
+          "rps": 1.05,
+          "p50": 79.5,
+          "p90": 123.1,
+          "p95": 156.4,
+          "p99": 305.6,
+          "max": 305.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 63
+          },
+          "avgBytes": 443,
+          "p95Limit": 1000,
+          "p99Limit": 2000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "job": {
+          "requests": 301,
+          "rps": 5.02,
+          "p50": 2044.4,
+          "p90": 2088,
+          "p95": 2111.1,
+          "p99": 2313.5,
+          "max": 2545,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 301
+          },
+          "avgBytes": 0,
+          "p95Limit": 60000,
+          "p99Limit": 120000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "auth.login": {
+          "class": "auth",
+          "requests": 63,
+          "rps": 1.05,
+          "p50": 79.5,
+          "p90": 123.1,
+          "p95": 156.4,
+          "p99": 305.6,
+          "max": 305.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 63
+          },
+          "avgBytes": 443
+        },
+        "doc.download": {
+          "class": "heavy",
+          "requests": 253,
+          "rps": 4.22,
+          "p50": 10,
+          "p90": 21.8,
+          "p95": 30.7,
+          "p99": 146.3,
+          "max": 190.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 253
+          },
+          "avgBytes": 4515
+        },
+        "doc.generate": {
+          "class": "heavy",
+          "requests": 253,
+          "rps": 4.22,
+          "p50": 60.5,
+          "p90": 125.8,
+          "p95": 158.5,
+          "p99": 235.7,
+          "max": 290.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 253
+          },
+          "avgBytes": 112
+        },
+        "doc.validate": {
+          "class": "write",
+          "requests": 253,
+          "rps": 4.22,
+          "p50": 16.3,
+          "p90": 64.1,
+          "p95": 98.3,
+          "p99": 243.7,
+          "max": 284.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 253
+          },
+          "avgBytes": 4508
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 1233,
+          "rps": 20.55,
+          "p50": 12.6,
+          "p90": 45.9,
+          "p95": 63.4,
+          "p99": 172.8,
+          "max": 301.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1233
+          },
+          "avgBytes": 4506
+        },
+        "ingest.export.csv": {
+          "class": "heavy",
+          "requests": 178,
+          "rps": 2.97,
+          "p50": 24,
+          "p90": 78.1,
+          "p95": 106.9,
+          "p99": 241.6,
+          "max": 456.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 178
+          },
+          "avgBytes": 14381
+        },
+        "ingest.job.complete": {
+          "class": "job",
+          "requests": 301,
+          "rps": 5.02,
+          "p50": 2044.4,
+          "p90": 2088,
+          "p95": 2111.1,
+          "p99": 2313.5,
+          "max": 2545,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 301
+          },
+          "avgBytes": 0
+        },
+        "ingest.job.get": {
+          "class": "read",
+          "requests": 791,
+          "rps": 13.18,
+          "p50": 9.8,
+          "p90": 38,
+          "p95": 59.7,
+          "p99": 183.4,
+          "max": 435.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 791
+          },
+          "avgBytes": 69979
+        },
+        "ingest.job.poll": {
+          "class": "read",
+          "requests": 295,
+          "rps": 4.92,
+          "p50": 12.1,
+          "p90": 43.7,
+          "p95": 51.9,
+          "p99": 82.5,
+          "max": 213.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 295
+          },
+          "avgBytes": 74135
+        },
+        "ingest.upload": {
+          "class": "heavy",
+          "requests": 301,
+          "rps": 5.02,
+          "p50": 24.6,
+          "p90": 64.6,
+          "p95": 82.5,
+          "p99": 281.3,
+          "max": 533.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 301
+          },
+          "avgBytes": 695
+        },
+        "ui.announcements": {
+          "class": "read",
+          "requests": 475,
+          "rps": 7.92,
+          "p50": 3.9,
+          "p90": 13.5,
+          "p95": 22.1,
+          "p99": 87,
+          "max": 124.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 475
+          },
+          "avgBytes": 349
+        },
+        "ui.blueprints.list": {
+          "class": "read",
+          "requests": 274,
+          "rps": 4.57,
+          "p50": 8,
+          "p90": 27.1,
+          "p95": 39.1,
+          "p99": 77.1,
+          "max": 228,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 274
+          },
+          "avgBytes": 340
+        },
+        "ui.dashboard": {
+          "class": "read",
+          "requests": 855,
+          "rps": 14.25,
+          "p50": 10.9,
+          "p90": 39,
+          "p95": 56.3,
+          "p99": 189.3,
+          "max": 453.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 855
+          },
+          "avgBytes": 4389
+        },
+        "ui.docs.list": {
+          "class": "read",
+          "requests": 602,
+          "rps": 10.03,
+          "p50": 7.4,
+          "p90": 30.3,
+          "p95": 40.6,
+          "p99": 98.1,
+          "max": 248.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 602
+          },
+          "avgBytes": 3800
+        },
+        "ui.jobs.list": {
+          "class": "read",
+          "requests": 650,
+          "rps": 10.83,
+          "p50": 7.9,
+          "p90": 27.8,
+          "p95": 44.8,
+          "p99": 132.4,
+          "max": 241.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 650
+          },
+          "avgBytes": 7110
+        },
+        "ui.me": {
+          "class": "read",
+          "requests": 475,
+          "rps": 7.92,
+          "p50": 5.8,
+          "p90": 25.1,
+          "p95": 37.8,
+          "p99": 108.9,
+          "max": 274.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 475
+          },
+          "avgBytes": 171
+        },
+        "vu.instance.create": {
+          "class": "write",
+          "requests": 300,
+          "rps": 5,
+          "p50": 124.9,
+          "p90": 264.3,
+          "p95": 303.8,
+          "p99": 422.6,
+          "max": 579,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "201": 300
+          },
+          "avgBytes": 27
+        }
+      },
+      "probe": {
+        "requests": 30,
+        "rps": 0.5,
+        "p50": 6,
+        "p90": 39.7,
+        "p95": 48.4,
+        "p99": 50.8,
+        "max": 50.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 30
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 60,
+        "javaCpuPct": {
+          "mean": 166.6,
+          "max": 230,
+          "last": 173
+        },
+        "javaRssMiB": {
+          "mean": 1347.5,
+          "max": 1360.2,
+          "last": 1360.2
+        },
+        "javaThreads": {
+          "mean": 154.1,
+          "max": 155,
+          "last": 154
+        },
+        "sysCpuPct": {
+          "mean": 69,
+          "max": 94.2,
+          "last": 67.5
+        },
+        "load1": {
+          "mean": 3,
+          "max": 4.1,
+          "last": 4.06
+        },
+        "nodeCpuPct": {
+          "mean": 19.4,
+          "max": 40,
+          "last": 22.8
+        },
+        "dbConnTotal": {
+          "mean": 20,
+          "max": 20,
+          "last": 20
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "recovery 25",
+      "vus": 25,
+      "start": "2026-10-19T16:52:31.151Z",
+      "seconds": 90,
+      "all": {
+        "requests": 1355,
+        "rps": 15.06,
+        "p50": 9.1,
+        "p90": 19.9,
+        "p95": 43.2,
+        "p99": 2029.7,
+        "max": 2040.5,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1308,
+          "202": 47
+        },
+        "avgBytes": 14065
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "heavy": {
+          "requests": 187,
+          "rps": 2.08,
+          "p50": 16.5,
+          "p90": 39.3,
+          "p95": 43.5,
+          "p99": 75.4,
+          "max": 92.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 140,
+            "202": 47
+          },
+          "avgBytes": 6190,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "read": {
+          "requests": 813,
+          "rps": 9.03,
+          "p50": 7.6,
+          "p90": 10.8,
+          "p95": 12.7,
+          "p99": 16.6,
+          "max": 40.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 813
+          },
+          "avgBytes": 20313,
+          "p95Limit": 500,
+          "p99Limit": 1500,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "write": {
+          "requests": 300,
+          "rps": 3.33,
+          "p50": 10.5,
+          "p90": 14.4,
+          "p95": 18.6,
+          "p99": 25.6,
+          "max": 58.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 300
+          },
+          "avgBytes": 4607,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "job": {
+          "requests": 47,
+          "rps": 0.52,
+          "p50": 2027.8,
+          "p90": 2035.3,
+          "p95": 2036.5,
+          "p99": 2040.5,
+          "max": 2040.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 47
+          },
+          "avgBytes": 0,
+          "p95Limit": 60000,
+          "p99Limit": 120000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "auth": {
+          "requests": 8,
+          "rps": 0.09,
+          "p50": 51,
+          "p90": 55.8,
+          "p95": 55.8,
+          "p99": 55.8,
+          "max": 55.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 8
+          },
+          "avgBytes": 442,
+          "p95Limit": 1000,
+          "p99Limit": 2000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "auth.login": {
+          "class": "auth",
+          "requests": 8,
+          "rps": 0.09,
+          "p50": 51,
+          "p90": 55.8,
+          "p95": 55.8,
+          "p99": 55.8,
+          "max": 55.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 8
+          },
+          "avgBytes": 442
+        },
+        "doc.download": {
+          "class": "heavy",
+          "requests": 49,
+          "rps": 0.54,
+          "p50": 7.4,
+          "p90": 12.9,
+          "p95": 16.2,
+          "p99": 18.7,
+          "max": 18.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 49
+          },
+          "avgBytes": 10543
+        },
+        "doc.generate": {
+          "class": "heavy",
+          "requests": 49,
+          "rps": 0.54,
+          "p50": 36.6,
+          "p90": 60.8,
+          "p95": 66.8,
+          "p99": 92.3,
+          "max": 92.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 49
+          },
+          "avgBytes": 112
+        },
+        "doc.validate": {
+          "class": "write",
+          "requests": 49,
+          "rps": 0.54,
+          "p50": 12.4,
+          "p90": 21.6,
+          "p95": 25.6,
+          "p99": 58.8,
+          "max": 58.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 49
+          },
+          "avgBytes": 4645
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 251,
+          "rps": 2.79,
+          "p50": 10.3,
+          "p90": 13.3,
+          "p95": 15.2,
+          "p99": 19.9,
+          "max": 28.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 251
+          },
+          "avgBytes": 4600
+        },
+        "ingest.export.csv": {
+          "class": "heavy",
+          "requests": 42,
+          "rps": 0.47,
+          "p50": 15.9,
+          "p90": 19.7,
+          "p95": 20.2,
+          "p99": 30,
+          "max": 30,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 42
+          },
+          "avgBytes": 14351
+        },
+        "ingest.job.complete": {
+          "class": "job",
+          "requests": 47,
+          "rps": 0.52,
+          "p50": 2027.8,
+          "p90": 2035.3,
+          "p95": 2036.5,
+          "p99": 2040.5,
+          "max": 2040.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 47
+          },
+          "avgBytes": 0
+        },
+        "ingest.job.get": {
+          "class": "read",
+          "requests": 140,
+          "rps": 1.56,
+          "p50": 7.9,
+          "p90": 10.6,
+          "p95": 13.5,
+          "p99": 23.7,
+          "max": 31.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 140
+          },
+          "avgBytes": 69906
+        },
+        "ingest.job.poll": {
+          "class": "read",
+          "requests": 55,
+          "rps": 0.61,
+          "p50": 9.3,
+          "p90": 11,
+          "p95": 11.8,
+          "p99": 15.5,
+          "max": 15.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 55
+          },
+          "avgBytes": 73811
+        },
+        "ingest.upload": {
+          "class": "heavy",
+          "requests": 47,
+          "rps": 0.52,
+          "p50": 16.8,
+          "p90": 25.4,
+          "p95": 26.8,
+          "p99": 27.8,
+          "max": 27.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "202": 47
+          },
+          "avgBytes": 695
+        },
+        "ui.announcements": {
+          "class": "read",
+          "requests": 79,
+          "rps": 0.88,
+          "p50": 2.8,
+          "p90": 4.9,
+          "p95": 5.8,
+          "p99": 8.7,
+          "max": 8.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 79
+          },
+          "avgBytes": 349
+        },
+        "ui.blueprints.list": {
+          "class": "read",
+          "requests": 43,
+          "rps": 0.48,
+          "p50": 6.8,
+          "p90": 9.4,
+          "p95": 15.4,
+          "p99": 32,
+          "max": 32,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 43
+          },
+          "avgBytes": 378
+        },
+        "ui.dashboard": {
+          "class": "read",
+          "requests": 158,
+          "rps": 1.76,
+          "p50": 9.8,
+          "p90": 13.6,
+          "p95": 14.9,
+          "p99": 16.8,
+          "max": 17.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 158
+          },
+          "avgBytes": 4469
+        },
+        "ui.docs.list": {
+          "class": "read",
+          "requests": 112,
+          "rps": 1.24,
+          "p50": 6.5,
+          "p90": 9.2,
+          "p95": 9.8,
+          "p99": 12.1,
+          "max": 13.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 112
+          },
+          "avgBytes": 4303
+        },
+        "ui.jobs.list": {
+          "class": "read",
+          "requests": 147,
+          "rps": 1.63,
+          "p50": 7.6,
+          "p90": 10.4,
+          "p95": 11.4,
+          "p99": 30.5,
+          "max": 40.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 147
+          },
+          "avgBytes": 9676
+        },
+        "ui.me": {
+          "class": "read",
+          "requests": 79,
+          "rps": 0.88,
+          "p50": 4.8,
+          "p90": 7.5,
+          "p95": 9.8,
+          "p99": 11,
+          "max": 11,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 79
+          },
+          "avgBytes": 171
+        }
+      },
+      "probe": {
+        "requests": 44,
+        "rps": 0.49,
+        "p50": 3.5,
+        "p90": 4.5,
+        "p95": 5,
+        "p99": 6.7,
+        "max": 6.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 44
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 90,
+        "javaCpuPct": {
+          "mean": 15.5,
+          "max": 70,
+          "last": 15
+        },
+        "javaRssMiB": {
+          "mean": 1356.9,
+          "max": 1395.6,
+          "last": 1325.9
+        },
+        "javaThreads": {
+          "mean": 154,
+          "max": 154,
+          "last": 154
+        },
+        "sysCpuPct": {
+          "mean": 10.2,
+          "max": 39.8,
+          "last": 11.9
+        },
+        "load1": {
+          "mean": 2.3,
+          "max": 4.1,
+          "last": 1.07
+        },
+        "nodeCpuPct": {
+          "mean": 4,
+          "max": 12.5,
+          "last": 3.2
+        },
+        "dbConnTotal": {
+          "mean": 20,
+          "max": 20,
+          "last": 20
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    }
+  ],
+  "extra": null
+}

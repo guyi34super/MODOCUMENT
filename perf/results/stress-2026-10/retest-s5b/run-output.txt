@@ -1,0 +1,10 @@
+2026-10-19T17:30:47.341Z [stress] label=retest-s5b java pid=4220 affinity=f jvm=-Xmx1971m -XX:+UseG1GC overrides={"MODOCUMENT_RATELIMIT_UPLOADS":"200","MODOCUMENT_RATELIMIT_DOC_GENERATE":"300","MODOCUMENT_RATELIMIT_INGESTION":"600","MODOCUMENT_RATELIMIT_EXPORTS":"600"}
+2026-10-19T17:30:58.792Z [stress] seeded 10/20 users
+2026-10-19T17:31:00.508Z [stress] seeded 20/20 users
+2026-10-19T17:31:00.528Z [stress] seeded 20 users in 13 s (initial logins 765 ms)
+2026-10-19T17:31:00.528Z [stress] === s5b: S5b AI degradation and circuit breaker
+2026-10-19T17:31:23.478Z [stress]   circuit: {"slow":{"jobs":10,"validated":10,"outcomes":{"VALIDATED/AI/-":10},"llmCalls":10},"failing":{"jobs":20,"validated":20,"outcomes":{"VALIDATED/CODE/ERROR":6,"VALIDATED/CODE/CIRCUIT_OPEN":14},"llmCalls":12,"llmByMode":{"error500":12}},"after":{"jobs":5,"validated":5,"outcomes":{"VALIDATED/CODE/CIRCUIT_OPEN":5},"llmCalls":0}}
+2026-10-19T17:31:23.484Z [stress]   model slow (2 s per call), 10 concurrent uploads: 90 req 7.94/s p50 18.9 p95 7220 p99 11331.7 max 11331.7 err 0.00% 429=0 cpu 48.1/133.8% rss 1221.6 MiB db 10
+2026-10-19T17:31:23.484Z [stress]   model failing (HTTP 500), 10 users x 2 uploads: 86 req 16.23/s p50 34.2 p95 4164.6 p99 4207.3 max 4207.3 err 0.00% 429=0 cpu 89.6/192.9% rss 1243.1 MiB db 10
+2026-10-19T17:31:23.484Z [stress]   model healthy again, breaker open: 15 req 13.72/s p50 58.7 p95 1092.3 p99 1092.3 max 1092.3 err 0.00% 429=0 cpu 104/104% rss 975.7 MiB db 10
+2026-10-19T17:31:25.237Z [stress] done; results in perf/results/stress-2026-10/retest-s5b

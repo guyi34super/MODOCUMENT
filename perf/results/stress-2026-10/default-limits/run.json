@@ -1,0 +1,69 @@
+{
+  "task": "MO-017",
+  "label": "default-limits",
+  "machine": {
+    "at": "2026-10-19T17:12:35.562Z",
+    "commit": "eb53e97",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      6.32,
+      9.72,
+      6.62
+    ]
+  },
+  "javaPid": 1836,
+  "jvm": {
+    "args": [
+      "-Xmx1971m",
+      "-XX:+UseG1GC"
+    ],
+    "affinity": "f"
+  },
+  "dbAppRole": "rls",
+  "rateLimitOverrides": {},
+  "dbPoolMax": "20 (default)",
+  "thresholds": {
+    "p95": {
+      "read": 500,
+      "write": 1000,
+      "auth": 1000,
+      "heavy": 3000,
+      "job": 60000
+    },
+    "p99": {
+      "read": 1500,
+      "write": 3000,
+      "auth": 2000,
+      "heavy": 8000,
+      "job": 120000
+    },
+    "maxErrorRate": 0.01
+  },
+  "startedAt": "2026-10-19T17:12:35.576Z",
+  "scenarios": [
+    {
+      "key": "s5a",
+      "title": "S5a rate limiting with default limits",
+      "start": "2026-10-19T17:12:47.282Z",
+      "end": "2026-10-19T17:13:07.822Z",
+      "requests": 401
+    }
+  ],
+  "endedAt": "2026-10-19T17:13:09.356Z",
+  "machineAtEnd": {
+    "at": "2026-10-19T17:13:09.377Z",
+    "commit": "eb53e97",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      4.24,
+      8.85,
+      6.44
+    ]
+  }
+}

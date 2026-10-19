@@ -1,0 +1,263 @@
+{
+  "key": "s5b-recovery",
+  "title": "S5b circuit recovery after the open duration",
+  "start": "2026-10-19T17:04:17.636Z",
+  "end": "2026-10-19T17:04:19.195Z",
+  "seconds": 1.6,
+  "total": {
+    "all": {
+      "requests": 3,
+      "rps": 1.92,
+      "p50": 518.5,
+      "p90": 518.8,
+      "p95": 518.8,
+      "p99": 518.8,
+      "max": 518.8,
+      "errors": 0,
+      "errorRate": 0,
+      "rateLimited": 0,
+      "statuses": {
+        "200": 3
+      },
+      "avgBytes": 1198
+    },
+    "errorBudgetPass": true,
+    "latencyPass": true,
+    "classes": {
+      "heavy": {
+        "requests": 3,
+        "rps": 1.92,
+        "p50": 518.5,
+        "p90": 518.8,
+        "p95": 518.8,
+        "p99": 518.8,
+        "max": 518.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 3
+        },
+        "avgBytes": 1198,
+        "p95Limit": 3000,
+        "p99Limit": 8000,
+        "p95Pass": true,
+        "p99Pass": true
+      }
+    },
+    "names": {
+      "ai.ingest.recovery": {
+        "class": "heavy",
+        "requests": 3,
+        "rps": 1.92,
+        "p50": 518.5,
+        "p90": 518.8,
+        "p95": 518.8,
+        "p99": 518.8,
+        "max": 518.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 3
+        },
+        "avgBytes": 1198
+      }
+    }
+  },
+  "resources": {
+    "samples": 2,
+    "javaCpuPct": {
+      "mean": 7,
+      "max": 8,
+      "last": 8
+    },
+    "javaRssMiB": {
+      "mean": 1330.8,
+      "max": 1330.8,
+      "last": 1330.8
+    },
+    "javaThreads": {
+      "mean": 154,
+      "max": 154,
+      "last": 154
+    },
+    "sysCpuPct": {
+      "mean": 63,
+      "max": 63.6,
+      "last": 62.3
+    },
+    "load1": {
+      "mean": 4.4,
+      "max": 4.4,
+      "last": 4.37
+    },
+    "nodeCpuPct": {
+      "mean": 0.6,
+      "max": 0.6,
+      "last": 0.5
+    },
+    "dbConnTotal": {
+      "mean": 9,
+      "max": 9,
+      "last": 9
+    },
+    "dbConnActive": {
+      "mean": 0,
+      "max": 0,
+      "last": 0
+    }
+  },
+  "stages": [
+    {
+      "label": "recovery uploads",
+      "vus": 1,
+      "start": "2026-10-19T17:04:17.639Z",
+      "seconds": 1.6,
+      "all": {
+        "requests": 3,
+        "rps": 1.93,
+        "p50": 518.5,
+        "p90": 518.8,
+        "p95": 518.8,
+        "p99": 518.8,
+        "max": 518.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 3
+        },
+        "avgBytes": 1198
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "heavy": {
+          "requests": 3,
+          "rps": 1.93,
+          "p50": 518.5,
+          "p90": 518.8,
+          "p95": 518.8,
+          "p99": 518.8,
+          "max": 518.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 3
+          },
+          "avgBytes": 1198,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "ai.ingest.recovery": {
+          "class": "heavy",
+          "requests": 3,
+          "rps": 1.93,
+          "p50": 518.5,
+          "p90": 518.8,
+          "p95": 518.8,
+          "p99": 518.8,
+          "max": 518.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 3
+          },
+          "avgBytes": 1198
+        }
+      },
+      "probe": {
+        "requests": 1,
+        "rps": 0.64,
+        "p50": 3.4,
+        "p90": 3.4,
+        "p95": 3.4,
+        "p99": 3.4,
+        "max": 3.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 2,
+        "javaCpuPct": {
+          "mean": 7,
+          "max": 8,
+          "last": 8
+        },
+        "javaRssMiB": {
+          "mean": 1330.8,
+          "max": 1330.8,
+          "last": 1330.8
+        },
+        "javaThreads": {
+          "mean": 154,
+          "max": 154,
+          "last": 154
+        },
+        "sysCpuPct": {
+          "mean": 63,
+          "max": 63.6,
+          "last": 62.3
+        },
+        "load1": {
+          "mean": 4.4,
+          "max": 4.4,
+          "last": 4.37
+        },
+        "nodeCpuPct": {
+          "mean": 0.6,
+          "max": 0.6,
+          "last": 0.5
+        },
+        "dbConnTotal": {
+          "mean": 9,
+          "max": 9,
+          "last": 9
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    }
+  ],
+  "extra": {
+    "results": [
+      {
+        "status": 200,
+        "step": "VALIDATED",
+        "parsedBy": "AI",
+        "reason": null,
+        "ms": 518
+      },
+      {
+        "status": 200,
+        "step": "VALIDATED",
+        "parsedBy": "AI",
+        "reason": null,
+        "ms": 516
+      },
+      {
+        "status": 200,
+        "step": "VALIDATED",
+        "parsedBy": "AI",
+        "reason": null,
+        "ms": 519
+      }
+    ],
+    "llmCalls": 3
+  }
+}
