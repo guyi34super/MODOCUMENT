@@ -1,0 +1,33 @@
+id: SEC-034
+status: Partially Implemented
+current_state: "RequestIdFilter gives every request one id (safe inbound X-Request-Id or a UUIDv7), puts it on the MDC with ip, echoes it in the response and error bodies; IdentityContextFilter and TenantContext add userId, role and bankId; TenantTaskDecorator carries them to async threads; every AuditEvent row stores requestId, actor, role, bank, session jti, IP and old/new values. Log pattern prints [requestId] [u:userId b:bankId]; a structured-logs profile emits ECS JSON with the same fields; redaction on all log paths. Coverage matrix on the control page covers authentication, business, admin/config, refusals, machine API, background jobs, AI, data changes, alerts, deploys and infrastructure (CloudTrail, flow logs, GuardDuty in Terraform). RequestTraceabilityE9Test proves response, log line and audit row share the id. Not correlated: CloudFront/WAF and ALB (no access logs configured), nginx (default log format), Connector Agent (sends no id); JSON logging not switched on in the ECS task."
+gap: "No request id at the edge, ALB, nginx or agent; no ALB/CloudFront/WAF access logs; structured JSON logs not enabled in ECS; no live trace (nothing deployed)."
+gap_type: Build
+required_action: "Set and log the request id in nginx; enable ALB, CloudFront and WAF logs; set spring_profiles=structured-logs in both environments; agent sends and logs X-Request-Id; capture one live trace at go-live."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-30
+evidence:
+  id: SEC-034-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-034.md; src/test/java/com/modocument/api/RequestTraceabilityE9Test.java; src/main/resources/logback-spring.xml; docs/security/audit-events.md; docs/compliance/evidence/A7-runs.md"
+question:
+  final_answer: "Every request to MoDocument gets one request ID (taken from the caller when it is safe, otherwise generated). The ID is returned in the response, printed on every application log line together with the user and the bank, included in error messages, and stored on every audit record together with the user, role, bank, session, IP address and the old and new values. Authentication, user actions, administrative and configuration changes, access refusals, machine API calls, background jobs, AI calls and deployments are all recorded in the append-only audit trail, so one search by request ID reconstructs what a user did and what changed; an automated test proves this end to end. Infrastructure activity is captured by AWS CloudTrail, VPC flow logs and GuardDuty, defined as code for go-live. Before go-live we will add the request ID to the web-server and load-balancer logs and switch on structured JSON logging in the cloud deployment (evidence SEC-034-E01)."
+  confidence: Medium
+test:
+  id: SEC-034-T01
+  actual_result: "Run R1 (2026-10-19): 14 tests, 0 failures (JpaAuditRecorderTest 8, RequestTraceabilityE9Test 3, StructuredLogRedactionTest 2, LogRedactionCanaryTest 1). One request id links the response header, log lines (requestId, userId, bankId) and the audit row (request id, actor, role, bank, old/new values, session jti). Inspection: edge, ALB and nginx do not log the id; the agent sends none; JSON logging is off in the ECS task."
+  result: Partial
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Request id in nginx and agent, ALB/CloudFront/WAF logs; Day 30: structured-logs profile in ECS; Day 90: live trace."
+  status: Not started
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "Live cross-service trace in CloudWatch: NOT IN REPO (live cloud)"
+  - "Where agent logs are collected on bank hosts: TO CONFIRM (organisational)"

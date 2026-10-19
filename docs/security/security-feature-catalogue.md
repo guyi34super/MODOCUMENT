@@ -1,86 +1,128 @@
 # Security feature catalogue — SEC-027
 
 The one answer that frames all others: **every security control MoDocument
-implements, with the code, test and document that prove it.** Everything
-listed here exists in this repository today; items that are *designed but
-not yet executed* (cloud build-out, external exercises) are explicitly in
-the README's "Implement later" table, not here. Last reviewed: 2026-10-09
-(integration of workstreams 16–20).
+implements, with the code, test and document that prove it.** Everything in
+the tables exists in this repository today. Items that are *designed but not
+executed* (cloud build-out, external exercises) are marked 🏗️ (Terraform
+written, not applied) or listed in the README "Implement later" table.
+Known gaps found while re-checking this catalogue are listed in §9.
+
+Last reviewed: **2026-10-19** against `main` at `23647fe` (after PR #66):
+phase 2 (v1.1.0), the optimization release v1.2.0 and the document-creation
+work (ws31–ws34). Reviewer: Agent A7 for the SEC-027 evidence pack
+(`docs/compliance/controls/SEC-027.md`); human sign-off required.
 
 Paths are relative to the repo root; `…/` abbreviates
-`src/main/java/com/modocument/` and tests live under `src/test/java/`.
+`src/main/java/com/modocument/`. Tests live under `src/test/java/` (agent
+tests under `agent/src/test/java/`). Every path and test class named here was
+checked to exist by the SEC-027 test (T01).
 
-## 1. Identity & authentication (gate B)
-
-| Gate/control | Feature | Code | Test / evidence |
-|---|---|---|---|
-| B1 | JWT bearer auth on every endpoint except the login entry points, `/actuator/health` and the public ws18 synthetic probe; 15-min access TTL; rotating 7-day httpOnly refresh cookie scoped to `/api/auth/refresh`; logout revokes the jti and every refresh token; password change bumps the token version (all sessions die) | `…infrastructure/security/JwtService.java`, `…application/usecase/AuthUseCase.java`, V15 migration | `AuthFlowIntegrationTest`, `JwtServiceTest`, `RevocationValidatorTest`; audit `LOGIN_SUCCESS`/`LOGIN_FAILED`/`TOKEN_VERSION_BUMPED` |
-| B1 | Fail-fast secret hygiene: boot refuses a missing/short/known-default `MODOCUMENT_JWT_SECRET`; no secret committed for local dev | `…api/config/SecurityConfig.java`, `application-local-secrets.yml.example` | boot check; README "Authentication" |
-| B2/B3 | OIDC SSO (Entra ID / Keycloak) — IdP authenticates (incl. provider MFA), app issues its own tokens; no token in URLs; password login stays break-glass; shipped Keycloak realm enforces password policy + TOTP enrolment | `…infrastructure/security/oidc/*`, `docker/keycloak/modocument-realm.json`, `application-oidc.yml.example` | `KeycloakRealmConfigTest`, `AuthProvidersConfiguredTest`; audit `USER_PROVISIONED_OIDC`, `USER_ROLE_MAPPED_OIDC`, `IDENTITY_LINKED`; [identity-providers.md](identity-providers.md) |
-| B3 | Local TOTP MFA with AES-256-GCM-encrypted secrets, recovery codes (Argon2id-hashed, shown once), challenge tokens (5-min TTL); **MFA mandatory for ADMIN** (`require-for-admin`, default true) | `…application/usecase/MfaUseCase.java`, `…infrastructure/security/MfaSecretCipher.java`, `totp/Totp.java`, V41 | `MfaFlowIntegrationTest`, `MfaSecretCipherTest`, `TotpTest`; audit `MFA_ENROLLED`/`MFA_ENABLED`/`MFA_DISABLED`/`RECOVERY_CODE_USED` |
-| B4 | Account lockout: 5 wrong passwords, exponential lock (1→30 min cap); constant-cost dummy Argon2id match for unknown emails and locked accounts (no user enumeration, no timing oracle) | `…application/usecase/AuthUseCase.java`, `UserSecurityService.java`, V40 | `AccountLockoutIntegrationTest`, `LoginLockoutPolicyTest`; audit `ACCOUNT_LOCKED` |
-| SEC-021 | Password policy: min length 12 (configurable), breached-list + email-local-part checks always on; Argon2id hashing with transparent BCrypt upgrade | `…api/config/SecurityConfig.java`, `application.yml` | `UserSecurityServiceTest`; audit `PASSWORD_CHANGED`/`PASSWORD_REHASHED`; [crypto-standard.md](crypto-standard.md) |
-| SEC-002 / SEC-007 | Rate limiting: per-IP (30/15 min) + per-email (10/15 min) on the open auth endpoints; per-user LLM quota (60/h) on AI endpoints; **ws17**: per-user hourly buckets on every expensive endpoint (uploads, ingestion, transform, exports — incl. ws18's POST export twin —, doc generation, extraction, DSR, password change, MFA codes, admin sweeps), chosen from the matched route pattern so casing/HEAD cannot dodge them, ADMIN not exempt → 429 with Retry-After | `…infrastructure/ratelimit/ApiRateLimitInterceptor.java`, `ApiRateLimitProperties.java`, `application.yml` (`modocument.ratelimit.*`) | `FixedWindowRateLimiterTest`, `LlmQuotaRetryAfterIntegrationTest`, `ApiRateLimitIntegrationTest`; [owasp-api-top10.md](owasp-api-top10.md) |
-
-## 2. Authorization, roles & dual control (gates B5–B8, C10)
-
-| Gate/control | Feature | Code | Test / evidence |
-|---|---|---|---|
-| B8 / SEC-012 | Four-role catalogue (ADMIN / APPROVER / READ_WRITE / READ_ONLY) × 25 permissions (incl. ws18's ADMIN-only `siem:read`); **every route** mapped to a permission, the public allowlist limited to the login entry points and the ws18 synthetic probe | `RolePermissions`, route security config | `RolePermissionMatrixTest` (pins [role-permission-matrix.csv](role-permission-matrix.csv) byte-for-byte), `RoutePermissionCoverageTest` (no unmapped route); [role-catalogue-and-sod.md](role-catalogue-and-sod.md) |
-| B7 / SEC-023 | Maker/checker on user create / role change / disable and template update/delete: 202 + pending change, approval by a **different** holder of `change:approve`, self-approval always 409; user-security changes never exempt | `…application/usecase/PendingChangeUseCase.java`, V80 | `MakerCheckerIntegrationTest`, `TemplateMakerCheckerConfigOffIntegrationTest`; audit `CHANGE_REQUESTED/APPROVED/REJECTED/CANCELLED/APPLY_FAILED`; [maker-checker.md](maker-checker.md) |
-| B5/B6 / PRIV-017 | JML: admin-created accounts only (no self-registration), bootstrap admin seeded once; movers via role change (dual control); leavers via disable (dual control) — all per-bank | `…application/usecase/UserAdminUseCase.java`, `…infrastructure/bootstrap/BootstrapAdminRunner.java`, V70 | `UserAdminIntegrationTest`, `BootstrapAdminRunnerTest`; audit `USER_CREATED`/`USER_ROLE_CHANGED`/`BOOTSTRAP_ADMIN_CREATED`; [jml-runbook.md](jml-runbook.md) |
-| C10 / SEC-024 | Separation of duties: author ≠ releaser on document release; SoD conflict policy as data + scheduled scan with audited findings | `SodPolicy`, `…infrastructure/sod/SodScanJob.java`, `…doccreation/usecase/DocReleaseUseCase.java`, V90 | `SodPolicyTest`, `DocReleaseSodIntegrationTest`; audit `DOC_SUBMITTED`/`DOC_RELEASED`/`DOC_RELEASE_REJECTED`, `SOD_SCAN_COMPLETED`/`SOD_VIOLATION_FOUND` |
-| SEC-025 | Periodic access review export (reviewable user/role listing, itself audited) | `…application/usecase/AccessReviewUseCase.java` | `AccessReviewUseCaseTest`; audit `ACCESS_REVIEW_GENERATED`, `USER_LIST_EXPORTED` |
-
-## 3. Tenant isolation & data protection (gate C)
-
-| Gate/control | Feature | Code | Test / evidence |
-|---|---|---|---|
-| C1 | **Two layers**: application owner/bank scoping on every query, plus PostgreSQL **row-level security** on every BankId table, fail-closed (no tenant bound → zero rows). The app connects as `modocument_app` (NOBYPASSRLS); Flyway migrates as the schema owner. An `afterMigrate` callback re-applies the policy to every new tenant table automatically | V11–V13, `afterMigrate__rls_enforce.sql`, `docker/postgres-init/01-app-role.sh`, `TenantAwareDataSource` | `TenantIsolationGatePgIT`, `RlsPolicyCoveragePgIT` (real PostgreSQL via Testcontainers in CI), `CrossUserAccessTest`, `ExtractionCrossUserAccessTest`, `UploadOwnershipEnforcementTest`, `DocCreationOwnershipIntegrationTest` |
-| C2 / PRIV-004/005 | PII masking: per-field `PiiKind` classification (explicit tag wins, heuristic otherwise, persisted + correctable); channel × role masking policy applied at each channel's choke point; NIC/account numbers masked for every role in screens/reports/exports | `…application/privacy/*` (`PiiClassifier`, `MaskingPolicy`, `PiiMaskingService`, `Masker`), V100 | `MaskingGateC2Test`, `MaskerTest`, `MaskingMatrixDocTest` (doc pinned to code); [masking-matrix.md](masking-matrix.md) |
-| C4 / SEC-028 | Encryption at rest and in transit: RDS KMS storage encryption, forced DB TLS, ALB TLS 1.2+/1.3, HSTS from the app behind the trusted proxy | `infra/terraform/modules/{rds,ecs-app,edge}`, `…api/config/SecurityConfig.java`, `frontend/nginx.conf` | `TrustedProxyIntegrationTest`; [crypto-standard.md](crypto-standard.md) |
-| C5 / PRIV-013 | Retention: daily per-bank purge (30-day customer data, 7-year audit), manual run endpoint, per-bank audited sweep with zero counts as proof | `…infrastructure/retention/RetentionPurger.java`, V120 | `RetentionPurgeGateC5Test`; audit `RETENTION_PURGE_COMPLETED`; [retention-and-dsr.md](retention-and-dsr.md) |
-| C6 / SEC-030 | Integrity: DB constraints hardening (V30), SHA-256 upload hashes (V31), upload content-type/structure gate (magic-byte checks, not extension trust) | V30/V31, `UploadContentChecker` | `IntegrityGateC6Test`, `IntegrityConstraintsPgIT`, `UploadContentGateSec030Test`, `UploadContentCheckerTest` |
-| C7 / SEC-033 | Append-only audit trail: UUIDv7 ids, immutable entity, SUCCESS events join the business transaction (**no change commits unaudited**), DENIED/FAILED commit independently; actor, bank, jti, requestId, IP enriched; 64 KB payload truncation keeps rows valid | `…infrastructure/audit/{JpaAuditRecorder,AuditEventWriter}.java`, `…api/security/AuthorizationDeniedAuditListener.java`, V14 | `JpaAuditRecorderTest`, `AuditAppendOnlyPgIT` (append-only enforced in PostgreSQL); 7-year retention: [retention-and-dsr.md](retention-and-dsr.md), archive IaC `infra/terraform/modules/backups` |
-| D2 / PRIV-002 | **Export caps with reason (ws18):** per-role row caps (READ_WRITE 5,000, ADMIN 50,000; unlisted role = 0, fail closed) counted *before* anything is exported on both the file and database paths; above the cap 403 `EXPORT_CAP_EXCEEDED` unless the user states a reason (≤ 500 chars, POST body so it never sits in a URL) — every export, refusal and override audited (`EXPORT_RUN`/`EXPORT_BLOCKED`/`EXPORT_OVER_CAP_WITH_REASON`) and alerted | `…infrastructure/export/ExportGuard.java`, `…api/controller/IngestionExportController.java`, `frontend/src/pages/IngestionJobPage.jsx` | `ExportCapGateD2Test`, `ExportGuardTest`; [alerting-and-export-caps.md](alerting-and-export-caps.md) |
-| C12 | Data-subject rights: admin DSR search/export/erase per bank, audited | `…application/usecase/DataSubjectUseCase.java` | `DataSubjectRightsGateC12Test`; audit `DSR_SEARCH`/`DSR_EXPORTED`/`DSR_ERASED`; [retention-and-dsr.md](retention-and-dsr.md) |
-
-## 4. AI-specific controls
+## 1. Identity and authentication
 
 | Control | Feature | Code | Test / evidence |
 |---|---|---|---|
-| PII tokenization | Sensitive cells replaced by stable placeholders before any prompt leaves the backend; mapping held server-side per request; placeholders swapped back in the answer (blind-patch). Fail-closed default (`aifiles.privacy.tokenize-pii=true`) | `…application/privacy/`, prompt strategies | README "Privacy: PII tokenization" (incl. honest boundary list: raw-document extraction and vision OCR inherently see content) |
-| Data minimisation | LLM automapper sees column/field **names only**, never data; chat-edit sends only failing rows; mapping LLM fallback disable-able | mapping pipeline, `ChatEditScopeResolver` | `AutoMappingPromptTest`, `ChatEditScopeResolverTest`, `TableExtractionPromptTest` |
-| Output validation | Structured output enforced; invented mapping targets discarded; generated PDF documents refused unless pixel-identical to the template outside the filled regions (exactness self-check, ws31) | `LlmStructuredJsonParser`, `DocInstanceUseCase` | `LlmStructuredJsonParserTest`, `DocCreationPdfApiTest` |
-| AI gateway (ws15, C8–C10) | One gateway for every model call: pseudonymised prompts, the one-bank rule, output scanning (strict/lenient per purpose), local Ollama by default with external endpoints an explicit opt-in, vision OCR off by default; a guard test fails the build on direct `ChatModel` use (mirrored by the ws19 Semgrep rule) | `…infrastructure/ai/AiGateway.java`, `AiOutputScanner.java`, `SpringAiConfig.java` | `AiGatewayC9Test`, `AiGatewayC8LoggingTest`, `AiOutputPolicyC10Test`, `AiOutputScannerTest`, `NoDirectChatModelAccessGuardTest`; [ai-controls.md](ai-controls.md) |
-| Cost/abuse caps | Per-user LLM quota (60/h → 429); vision-OCR page budget (20 pages/PDF) | `application.yml` rate-limit + `ocr.vision.max-pages` | `LlmQuotaRetryAfterIntegrationTest`, `VisionOcrServiceTest` |
-| Graceful degradation | Every LLM path degrades (no key → feature off, outage → unmapped/heuristic), never fails open | readers, mapper, PDF template detection (code always runs, AI only adds) | `CompositeDocumentParserTest`, `DocCreationPdfApiTest` |
+| B1 | JWT bearer auth on every endpoint except the login entry points, `/actuator/health`, the agent enrolment route and the public synthetic probe; 15-min access TTL; rotating 7-day httpOnly refresh cookie scoped to `/api/auth/refresh`; logout revokes the jti and every refresh token; a password change bumps the token version | `…infrastructure/security/JwtService.java`, `…application/usecase/AuthUseCase.java`, `…infrastructure/security/RevocationValidator.java` | `AuthFlowIntegrationTest`, `JwtServiceTest`, `RevocationValidatorTest` |
+| B1 | Fail-fast secrets: the app refuses to boot with a missing, short or known-default `MODOCUMENT_JWT_SECRET`; secrets can be files (`<NAME>_FILE`) | `…api/config/SecurityConfig.java`, `…infrastructure/security/SecretFileEnvironmentPostProcessor.java` | `SecretFileEnvironmentPostProcessorTest` |
+| B2/B3 | OIDC SSO (Entra ID / Keycloak): the IdP authenticates (incl. its MFA), the app issues its own tokens; password login stays break-glass; no IdP path into the platform bank | `…infrastructure/security/oidc/`, `docker/keycloak/modocument-realm.json` | `KeycloakRealmConfigTest`, `AuthProvidersConfiguredTest`; [identity-providers.md](identity-providers.md) |
+| B3 | Local TOTP MFA: AES-256-GCM-encrypted secrets, Argon2id-hashed recovery codes shown once, 5-min challenge tokens; MFA required for `ADMIN` (`require-for-admin`, default true in `src/main/resources/application.yml`; compose and the `local` profile switch it off) and always for `PLATFORM_ADMIN` | `…application/usecase/MfaUseCase.java`, `…infrastructure/security/MfaSecretCipher.java`, `…infrastructure/security/totp/Totp.java` | `MfaFlowIntegrationTest`, `MfaSecretCipherTest`, `TotpTest` |
+| B4 | Lockout after 5 wrong passwords, exponential lock up to 30 min; constant-cost dummy Argon2id match for unknown or locked accounts (no user enumeration) | `…application/usecase/AuthUseCase.java` | `AccountLockoutIntegrationTest`, `LoginLockoutPolicyTest` |
+| SEC-021 | Password policy (min length 12, breached-list and e-mail checks); Argon2id hashing with transparent BCrypt upgrade | `…api/config/SecurityConfig.java` | `UserSecurityServiceTest`; [crypto-standard.md](crypto-standard.md) |
+| SEC-002/007 | Rate limits: per-IP and per-e-mail on login; per-user hourly buckets on every expensive route (uploads, ingestion, exports, doc generation, DSR, MFA) chosen from the matched route pattern; per-user LLM quota (60/h) → 429 with `Retry-After` | `…infrastructure/ratelimit/ApiRateLimitInterceptor.java`, `…infrastructure/ratelimit/LlmQuotaInterceptor.java` | `ApiRateLimitIntegrationTest`, `LlmQuotaRetryAfterIntegrationTest`, `FixedWindowRateLimiterTest` |
 
-Residual AI risks pending written acceptance (gate C11) are listed in the
-README "Implement later" table.
-
-## 5. Platform & operational controls
+## 2. Authorization, roles and dual control
 
 | Control | Feature | Code | Test / evidence |
 |---|---|---|---|
-| Trusted-proxy model | App port never published; nginx is the single entry and **overwrites** `X-Forwarded-*` (rate-limit keys, audit IPs, HSTS unspoofable) | `docker-compose.yml`, `frontend/nginx.conf` | `TrustedProxyIntegrationTest`; README Docker section |
-| Log hygiene (SEC-026) | Redacting converters on every log pattern + structured JSON members; PII/credential patterns scrubbed, including exceptions | `…infrastructure/logging/Redacting*`, `…application/privacy/LogSafe.java` | `LogRedactionCanaryTest`, `StructuredLogRedactionTest` |
-| Request traceability | Request-id filter + MDC (requestId, ip) carried onto async threads; stamped into every audit row | `…infrastructure/security/RequestIdFilter.java`, `ClientIps.java` | `JpaAuditRecorderTest` |
-| Extraction compliance | Domain allow-list, robots.txt fail-closed, per-host rate limiter, honest bot UA, 401/402/403 terminal skips, queryable audit trail; per-run credentials never persisted | `…infrastructure/extraction/web/CompliantWebAccess.java` | `CompliantWebAccessTest`, `RobotsTxtParserTest`, `ExtractionSourceAuthEnvVarTest` |
-| Export safety | DB-export identifiers strictly validated and quoted; row values only as bound parameters; one-shot credentials never persisted/logged | `…infrastructure/` database export | `DatabaseExportServiceTest` |
-| Supply chain / CI (ws19, A7/A8/E3/E8) | `mvn -B verify` (+ JaCoCo summary) + real-PostgreSQL IT suite + frontend tests + nginx header check on every push/PR; gitleaks over full history, Semgrep (registry packs + custom crypto/AI-gateway/env-var rules), dependency review, `npm audit --audit-level=high`; CycloneDX SBOMs; weekly Trivy-scanned image rebuilds and ZAP baseline; Dependabot; every action SHA-pinned with least-privilege permissions; CODEOWNERS + PR template. ECR scan-on-push + immutable tags and no static cloud keys (OIDC deploy roles) are IaC 🏗️ | `.github/workflows/{ci,security,sbom,image-rebuild,zap-baseline}.yml`, `.semgrep/modocument.yml`, `.gitleaks.toml`, `.github/dependabot.yml`, `infra/terraform/modules/ci-oidc` | CI runs; [branch-protection.md](branch-protection.md) (required checks, seeded-PR drill). Branch-protection settings themselves are applied in GitHub by a repo admin (README later-table) |
-| Non-root runtime (ws16, SUP-S04) | App image runs as uid 10001 from the first instruction, frontend is nginx-unprivileged (uid 101, port 8080); compose drops all capabilities and sets no-new-privileges; the ECS task pins the same users and hardening 🏗️; IMDSv2-only, SSH-less (Session Manager) nodes 🏗️ | `Dockerfile`, `frontend/Dockerfile`, `docker-compose.yml`, `infra/terraform/modules/ecs-app` | `docker compose config`; runtime `id` checks on a Docker host are **pending** ([web-hardening.md](web-hardening.md) "What is not verified without Docker"); SEC-015 session logging IaC |
-| Web & platform hardening (ws16, E1 / SEC-018 / C4) | Security headers on the SPA (strict CSP, HSTS, Permissions-Policy, COOP) and on every API response, nginx fallback set for responses nginx itself generates; secrets as files via `<NAME>_FILE` (Docker/Kubernetes secrets); no compose defaults for any secret; DB TLS client side (`MODOCUMENT_DB_SSLMODE`, one URL for app + Flyway); production first boot on an empty PostgreSQL proven end to end | `frontend/security-headers.conf`, `frontend/nginx.conf`, `scripts/check-nginx-headers.sh`, `…infrastructure/security/SecretFileEnvironmentPostProcessor.java`, `…api/config/SecurityConfig.java` | `HeaderContractTest`, `SecretFileEnvironmentPostProcessorTest`, `DatabaseTlsConfigTest`, `ProductionBootPgIT`; [web-hardening.md](web-hardening.md) |
-| API contract (ws17, SEC-006 / E2) | OpenAPI 3.1 generated from code at `/v3/api-docs` (bearer-protected outside dev), route inventory pinned in CI, stable operationIds + tags, 401 proven for every secured operation, 429 documented on every rate-limited one; versioning & deprecation policy | `…api/config/OpenApiConfig.java`, `docs/api/openapi-routes.txt` | `OpenApiContractTest`, `ApiDocsExposureTest`; [versioning-policy.md](../api/versioning-policy.md), [owasp-api-top10.md](owasp-api-top10.md) |
-| Detection & monitoring (ws18, D1 / E6 / SEC-031/032 / SUP-S11) | Alert framework over the audit trail (immediate + per-minute windowed rules, one alert per rule window) delivered to log, HMAC-signed webhook and e-mail with an `AlertLog` evidence record and an admin view; bank-scoped SIEM pull feed (NDJSON, ECS-mapped, cursor-paged) behind `siem:read` plus an optional single-bank webhook push; public, per-IP rate-limited synthetic probe (version + DB round trip only) | `…infrastructure/alerting/*`, `…infrastructure/siem/*`, `…api/controller/{AlertAdminController,SiemFeedController,SyntheticProbeController}.java`, V160/V161 | `AlertingGateD1Test`, `AlertRuleCatalogueTest`, `AlertServiceTest`, `SiemFeedE6Test`, `SyntheticProbeTest`, `ProductionBootPgIT` (probe on real PostgreSQL); [alerting-and-export-caps.md](alerting-and-export-caps.md), [siem-event-schema.md](siem-event-schema.md) |
-| Load testing (ws17, E7 prep) | k6 scenarios for login/refresh, upload+ingest, job polling, export and a mixed profile — **written, not executed** (execution is gate E7, README later-table) | `loadtest/` | [loadtest/README.md](../../loadtest/README.md) |
+| B8 / SEC-012 | Six roles (`ADMIN`, `APPROVER`, `READ_WRITE`, `READ_ONLY`, `PLATFORM_ADMIN`, and `API_CLIENT` for machines) × 41 permissions; **every route** mapped to a permission | `…domain/model/Role.java`, `…domain/model/Permission.java` | `RolePermissionMatrixTest` (pins [role-permission-matrix.csv](role-permission-matrix.csv)), `RoutePermissionCoverageTest`; [role-catalogue-and-sod.md](role-catalogue-and-sod.md) |
+| B7 / SEC-023 | Maker/checker for 17 change types (user create/role/disable/password reset/MFA reset, template update/delete, bank and platform security settings, bank create/suspend/break-glass admin, integration connections, outbound flows, API clients, agents, egress rules): a **different** holder of `change:approve` approves; self-approval is 409 and audited | `…domain/model/ChangeType.java`, `…application/usecase/PendingChangeUseCase.java`, `…application/security/ChangeAudience.java` | `MakerCheckerIntegrationTest`, `SettingsMakerCheckerIntegrationTest`, `PendingChangeAudienceTest`; [maker-checker.md](maker-checker.md) |
+| B5/B6 | Joiner/mover/leaver: admin-created accounts only, bootstrap admin seeded once, role change and disable under dual control | `…application/usecase/UserAdminUseCase.java`, `…infrastructure/bootstrap/BootstrapAdminRunner.java` | `UserAdminIntegrationTest`, `BootstrapAdminRunnerTest`; [jml-runbook.md](jml-runbook.md) |
+| C10 / SEC-024 | Separation of duties: document releaser ∉ {author, submitter}; SoD policy as data plus a nightly scan | `…application/security/SodPolicy.java`, `…infrastructure/sod/SodScanJob.java` | `SodPolicyTest`, `DocReleaseSodIntegrationTest` |
+| Access review | Reviewable user/role export (itself audited, `ACCESS_REVIEW_GENERATED`) | `…application/usecase/AccessReviewUseCase.java` | `AccessReviewUseCaseTest` |
+| Platform owner (ws21) | One platform bank; `PLATFORM_ADMIN` exists only there and has **no domain permission**; platform permissions need the role **and** a token of the platform bank; cross-bank reads return counts only; two-admin minimum; DB triggers back the role rule | `…application/security/RoleAssignmentPolicy.java`, `…application/usecase/PlatformBankUseCase.java`, `src/main/resources/db/migration/V210__ws21_platform_bank.sql` | `PermissionCheckerPlatformGuardTest`, `PlatformBoundaryQaTest`, `PlatformRoleTriggerPgIT`, `RoleAssignmentPolicyTest`; [platform-owner.md](../platform/platform-owner.md) |
 
-## 6. Where the rest lives
+## 3. Tenant isolation and data protection
 
-* Deployment topology & gate items executed as IaC: [`infra/terraform/README.md`](../../infra/terraform/README.md)
-* Threats × controls, with honest tested/pending flags: [threat-control-matrix.md](threat-control-matrix.md)
-* C/I/A one-pager: [cia-controls-table.md](cia-controls-table.md)
-* What is DONE vs OPEN, with owners and dates: [security-roadmap.md](security-roadmap.md)
-* Data inventory & flows: [data-inventory.md](data-inventory.md)
-* Items not executable from this repository: README →
-  "Implement later (cloud & organisational)".
+| Control | Feature | Code | Test / evidence |
+|---|---|---|---|
+| C1 | Two layers: owner/bank scoping in every query **and** PostgreSQL row-level security on every `BankId` table, fail-closed; the app connects as `modocument_app` (NOBYPASSRLS); an `afterMigrate` callback applies the policy to every new tenant table | `src/main/resources/db/migration/afterMigrate__rls_enforce.sql`, `…infrastructure/persistence/` | `TenantIsolationGatePgIT`, `RlsPolicyCoveragePgIT`, `CrossUserAccessTest` |
+| C2 / PRIV-004/005 | PII masking: per-field `PiiKind`, channel × role policy at each channel's choke point (screen, report, export, audit viewer, integration outbound) | `…application/privacy/PiiMaskingService.java`, `…application/privacy/MaskingPolicy.java` | `MaskingGateC2Test`, `MaskingMatrixDocTest`; [masking-matrix.md](masking-matrix.md) |
+| C4 / SEC-028 | Encryption at rest and in transit — full inventory in `docs/compliance/controls/SEC-028.md` | see [crypto-standard.md](crypto-standard.md) | `DatabaseTlsConfigTest`, `TrustedProxyIntegrationTest`, `ConnectorSecretVaultTest` |
+| C5 / PRIV-013 | Retention: daily per-bank purge (30-day customer data), housekeeping of tokens, integration history and idempotency keys | `…infrastructure/retention/RetentionPurger.java`, `…infrastructure/housekeeping/` | `RetentionPurgeGateC5Test`, `HousekeepingJobTest`; [retention-and-dsr.md](retention-and-dsr.md) |
+| C6 / SEC-030 | Integrity: DB constraints, SHA-256 upload hashes, upload content gate (magic bytes) | `…infrastructure/file/` | `IntegrityGateC6Test`, `UploadContentGateSec030Test` |
+| D2 / PRIV-002 | Export caps per role with a stated reason above the cap; every export, refusal and override audited and alerted | `…infrastructure/export/ExportGuard.java` | `ExportCapGateD2Test`, `ExportGuardTest`; [alerting-and-export-caps.md](alerting-and-export-caps.md) |
+| C12 | Data-subject rights per bank (search, export, erase — also clears the bank's AI result cache) | `…application/usecase/DataSubjectUseCase.java` | `DataSubjectRightsGateC12Test` |
+| v1.2.0 | **S3 file store**: one `FileStore` port for uploads, exports and document assets; S3 backend with SSE-KMS on every PUT and keys under `bank/{id}/`; path traversal refused 🏗️ (bucket) | `…infrastructure/file/store/S3FileStore.java`, `…infrastructure/file/store/FileStoreKeys.java`, `infra/terraform/modules/file-store/main.tf` | `S3FileStoreTest`, `FileStoreTraversalQaTest`, CI job `storage-s3` |
+
+## 4. Audit trail and monitoring
+
+| Control | Feature | Code | Test / evidence |
+|---|---|---|---|
+| C7 / SEC-033/035 | Append-only `AuditEvent`: UUIDv7 ids; actor, bank, role, session jti, request id, IP, old/new values; success events commit with the business change, refusals commit on their own; UPDATE/DELETE/TRUNCATE revoked from the app role **and** blocked by triggers | `…infrastructure/audit/JpaAuditRecorder.java`, `src/main/resources/db/migration/V14__audit_event.sql` | `JpaAuditRecorderTest`, `AuditAppendOnlyPgIT`; [audit-events.md](audit-events.md) |
+| v1.2.0 | **Audit viewer**: `GET /api/admin/audit` (filters, keyset paging, CSV export up to 50,000 rows, masked) and `/api/platform/audit`; pages `/admin/audit`, `/platform/audit`; permission `audit:read`; viewing and exporting are themselves audited (`AUDIT_LOG_VIEWED`, `AUDIT_LOG_EXPORTED`) | `…api/controller/AuditLogController.java`, `frontend/src/pages/AuditLogPage.jsx` | `AuditLogApiTest`, `AuditViewAuditQaTest` |
+| v1.2.0 | **Read audit** `SENSITIVE_DATA_VIEWED` (once per actor, entity and hour); aggregated `ACCESS_DENIED`; gap-fill of template, upload, ingestion-edit and document events | `…application/audit/AuditActions.java` | `AuditTrailGapsTest`, `JpaAuditRecorderThrottleTest`, `AccessDeniedBurstAlertTest` |
+| E9 / SEC-034 | One request id per request: honoured or minted, on every log line (MDC), echoed in `X-Request-Id`, in error bodies and on every audit row; carried onto async threads | `…infrastructure/security/RequestIdFilter.java`, `src/main/resources/logback-spring.xml` | `RequestTraceabilityE9Test` |
+| SEC-026 | Log redaction on every log path, including exceptions and structured JSON | `…infrastructure/logging/RedactingConverter.java`, `…infrastructure/logging/RedactingJsonMembersCustomizer.java` | `LogRedactionCanaryTest`, `StructuredLogRedactionTest` |
+| D1 / E6 | Alert rules over the audit trail (immediate and windowed), delivered to log, HMAC-signed webhook and e-mail; bank-scoped SIEM feed; synthetic probe | `…infrastructure/alerting/`, `…infrastructure/siem/` | `AlertingGateD1Test`, `SiemFeedE6Test`, `SyntheticProbeTest`; [siem-event-schema.md](siem-event-schema.md) |
+
+## 5. Settings guardrails (phase 2, ws20)
+
+| Feature | Code | Test / evidence |
+|---|---|---|
+| Every setting in a code catalogue with type, scope, tier and **hard limits** from the go-live gate; no value can leave them; `MODOCUMENT_SETTINGS_ENFORCE_GUARDRAILS=true` (staging/production) refuses to boot with an out-of-limit default | `…infrastructure/settings/SettingDefinitions.java`, `…infrastructure/settings/SettingsStartupCheck.java` | `SettingsGuardrailTest`, `SettingsStartupCheckTest`, `SettingsCatalogueDocTest`; [settings catalogue](../settings/catalogue.md) |
+| SECURITY-tier settings need maker/checker; platform-set settings are read-only for banks; optimistic versions (409 on a stale write) | `…infrastructure/settings/SettingsStore.java` | `SettingsMakerCheckerIntegrationTest`, `PlatformControlledSettingsIntegrationTest` |
+| Change history: every setting change is audited with old and new values and shown in the audit viewer category "Settings" | `…application/audit/AuditActions.java` | `AuditLogApiTest` |
+
+## 6. Integration hub security (phase 2, ws25/ws26)
+
+| Feature | Code | Test / evidence |
+|---|---|---|
+| **API clients** for bank systems: OAuth2 client credentials, API keys or mTLS; secrets stored only as Argon2id hashes; short-lived client tokens (`integration.clientTokenTtl`, 5–15 min); allowed methods platform-set per bank; creation under maker/checker | `…infrastructure/security/client/ApiClientAuthenticator.java`, `…infrastructure/security/client/ClientTokenService.java`, `src/main/resources/db/migration/V260__ws26_machine_identity.sql` | `ApiClientProvisioningTest`, `ApiClientAuthPgIT`, `IntegrationHubSecurityQaTest` |
+| **mTLS** for machine clients: optional ALB mutual-TLS listener with a CA trust store 🏗️; nginx strips client-certificate headers on the browser port; the certificate's SHA-256 fingerprint binds the client (RFC 8705) | `…infrastructure/security/client/MtlsClientCertificates.java`, `infra/terraform/modules/ecs-app/mtls.tf`, `frontend/nginx.conf` | `RestApiMtlsTest`, `AgentMtlsTest`; `scripts/check-nginx-headers.sh` |
+| **Connector Agent** (on-premises): no inbound port, dials out over HTTPS only; enrolment by a single-use 256-bit token valid 15 min, stored as a SHA-256 hash; registration under maker/checker; bank credentials never leave the bank host | `…application/usecase/AgentEnrolmentService.java`, `agent/src/main/java/com/modocument/agent/cloud/CloudClient.java` | `AgentEnrolmentTokenTest`, `AgentProtocolSecurityChainTest`; [agent.md](../integration/agent.md) |
+| **SecretVault**: connection secrets sealed with AES-256-GCM under `MODOCUMENT_CONNECTOR_KEY`, a **per-bank key derived by HKDF-SHA256**, the bank id and key version as associated data, key rotation with retired keys | `…infrastructure/integration/secrets/ConnectorSecretVault.java` | `ConnectorSecretVaultTest`; [secrets.md](../integration/secrets.md) |
+| **Egress rules**: outbound targets must pass the host policy (no private, loopback or metadata addresses; every redirect re-checked); a bank's private destination needs an egress rule approved by a second platform admin | `…infrastructure/net/OutboundHostPolicy.java`, `…infrastructure/integration/egress/BankEgressGuard.java`, `…application/usecase/EgressRuleUseCase.java` | `OutboundHostPolicyTest`, `BankEgressGuardTest`, `EgressRuleIntegrationTest`, `EgressRulePgIT` |
+| Outbound PII masking on by default (`integration.outboundPiiMasking`, SECURITY tier); webhooks HMAC-signed; SFTP host keys pinned by fingerprint; plain `http://` targets refused in deployed environments | `connector-core/src/main/java/com/modocument/connector/core/webhook/WebhookConnector.java`, `connector-core/src/main/java/com/modocument/connector/core/sftp/SftpConnector.java`, `…infrastructure/integration/connector/IntegrationConnectorProperties.java` | `WebhookIntegrationConnectorTest`, `SftpConnectorTest`, `IntegrationSettingsTest` |
+
+## 7. AI controls
+
+Full detail: [ai-controls.md](ai-controls.md).
+
+| Control | Feature | Code | Test / evidence |
+|---|---|---|---|
+| C9 | One gateway for every model call; one bank per prompt; pseudonymised prompts; raw identifiers in an assembled prompt are blocked; a build guard fails on direct chat-model use | `…infrastructure/ai/AiGateway.java` | `AiGatewayC9Test`, `NoDirectChatModelAccessGuardTest` |
+| C10 | Output scanning on every completion (strict or lenient per purpose) | `…infrastructure/ai/AiOutputScanner.java` | `AiOutputScannerTest`, `AiOutputPolicyC10Test` |
+| C8 | Local model by default; vision OCR off by default; prompts and completions never stored or logged | `…infrastructure/ai/SpringAiConfig.java` | `AiGatewayC8LoggingTest` |
+| ws23 | Per-bank AI switch (`ai.enabled`, SECURITY tier), circuit breaker, timeouts, code fallback | `…infrastructure/ai/AiCircuitBreaker.java`, `…infrastructure/ai/AiPreflight.java` | `AiCircuitBreakerTest`, `AiPreflightTest`, `IngestionParseStepImplTest` |
+| ws28 | Bank-scoped AI result cache (RLS), purged with customer data and by a DSR erase | `…infrastructure/ai/AiResultCache.java` | `AiResultCacheRlsPgIT` |
+
+## 8. Document creation (ws31–ws34)
+
+| Feature | Code | Test / evidence |
+|---|---|---|
+| **Validation before download**: a document whose template has validation on (the default, `ValidationEnabled` defaults to true in V334) generates only when `VALIDATED` (409 `NOT_VALIDATED`); switching validation off is audited (`DOC_VALIDATION_SETTING_CHANGED`) | `…doccreation/usecase/DocInstanceUseCase.java`, `src/main/resources/db/migration/V334__ws34_doc_validation_switch.sql` | `DocValidationApiTest`, `DocValidationSwitchApiTest` |
+| **PII masking in generated documents**: the REPORT masking channel is applied to the values drawn into a generated PDF; stored values and the owner's preview stay raw | `…doccreation/usecase/DocInstanceUseCase.java` | `MaskingGateC2Test` (`reportChannelMasksPiiShapesInGeneratedDocuments`) |
+| Flow records used to fill documents are bank-scoped (RLS) and masked per role; searches audited with a query hash and count only | `…doccreation/usecase/TemplateRecordUseCase.java` | `FlowRecordsApiTest`, `DocPdfTemplateRlsPgIT` |
+| Generated PDFs are refused unless identical to the template outside the filled regions (exactness check) | `…doccreation/usecase/DocInstanceUseCase.java` | `DocCreationPdfApiTest` |
+| AI help for PDF templates sees masked text runs only and answers with ids that are re-validated | `…doccreation/pdftemplate/AiRegionAdvisor.java` | `AiRegionAdvisorTest` |
+
+## 9. Platform, pipeline and supply chain
+
+| Control | Feature | Code | Test / evidence |
+|---|---|---|---|
+| Trusted proxy | nginx is the single entry and overwrites `X-Forwarded-*`; the app port is never published | `frontend/nginx.conf`, `docker-compose.yml` | `TrustedProxyIntegrationTest` |
+| E1 / SEC-018 | Security headers on SPA and API (CSP, HSTS, nosniff, frame-ancestors) | `frontend/security-headers.conf`, `…api/config/SecurityConfig.java` | `HeaderContractTest`; [web-hardening.md](web-hardening.md) |
+| SUP-S04 | Non-root containers (app uid 10001, nginx uid 101), capabilities dropped | `Dockerfile`, `frontend/Dockerfile` | [web-hardening.md](web-hardening.md) |
+| SUP-S05 / SEC-042 | CI: build and tests, PostgreSQL ITs, gitleaks (full history), Semgrep with repo rules, dependency review, `npm audit`; CycloneDX SBOMs; Trivy-gated release images built once and deployed by digest; Dependabot; all 58 action references SHA-pinned; OIDC deploy roles per environment 🏗️ | `.github/workflows/ci.yml`, `.github/workflows/security.yml`, `.github/workflows/sbom.yml`, `.github/workflows/release.yml`, `.github/dependabot.yml`, `infra/terraform/modules/ci-oidc/main.tf` | `docs/compliance/evidence/A7-runs.md` (R10); [branch-protection.md](branch-protection.md) |
+| SEC-025 | Release pipeline with staging soak and production reviewers; rollback workflow; expand-only migrations; deployed version audited | `.github/workflows/release.yml`, `.github/workflows/deploy.yml`, `…infrastructure/release/DeployedVersionRecorder.java` | `MigrationPolicyTest`, `DeployedVersionRecorderTest`; [runbook](../release/runbook.md) |
+
+### Gaps found in this review (2026-10-19)
+
+These are open; owners and dates are on the control pages in `docs/compliance/controls/`.
+
+1. GitHub Actions has not started any job since PR #63 (16 Oct 2026); PRs #63–#66 merged on a local gate without review (SEC-025, SUP-S05).
+2. No hash chain or verification job on the audit trail; a database superuser can bypass the append-only triggers undetected (SEC-035).
+3. No build-provenance attestation; release images are built with `--provenance=false` (SUP-S05).
+4. The CI frontend SBOM omits `react`, `react-dom` and `scheduler`; no licence gate in CI (SEC-042).
+5. Internal hop ALB → task is plain HTTP inside the VPC; backup vaults and the log archive use AWS-managed keys, not own CMKs; KMS keys have no explicit key policy (SEC-028, SEC-029).
+6. nginx does not log or set the request id; structured JSON logs are opt-in and the ECS task does not switch them on (SEC-034).
+7. The staging CI deploy role trusts any branch of the repository (`repo:<owner>/<repo>:*`) (SUP-S05, SUP-S07).

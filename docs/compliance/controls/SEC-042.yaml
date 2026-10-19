@@ -1,0 +1,34 @@
+id: SEC-042
+status: Partially Implemented
+current_state: "CycloneDX SBOMs generated for version 1.2.0 on 2026-10-19 (backend 209 components incl. connector-core, agent 34, frontend 35) and committed under docs/compliance/evidence/sbom/. CI defines SBOMs per push to main and per release (sbom.yml; Trivy image SBOMs attached to the GitHub Release in release.yml), dependency-review on PRs, npm audit at high, Trivy gate on release images, weekly image rebuild scan, Dependabot for Maven, npm, Actions, Docker and Terraform. Licence policy written with the actual distribution (no strong copyleft; LGPL/EPL libraries restricted to unmodified use; Oracle FUTC ojdbc11 needs approval). npm audit: 0 vulnerabilities. Defects: CI frontend SBOM omits react, react-dom and scheduler; dependency-review fails on every PR and has no licence list; GitHub Actions has started no job since 2026-10-16; no release has ever attached SBOMs; h2 ships in the production jar."
+gap: "CI down so no SBOM or scan for current main; incomplete CI frontend SBOM; no automated licence gate; backend and image CVE status not produced outside a release; h2 runtime scope, Oracle FUTC approval and server/agent driver version drift."
+gap_type: Config
+required_action: "Restore CI; switch the frontend SBOM to cyclonedx-npm; enable the dependency graph and add deny-licenses to dependency-review; add a Trivy fs scan of the Maven tree to security.yml; move h2 to test scope, get a legal decision on ojdbc11 and align agent driver pins."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-13
+evidence:
+  id: SEC-042-E01
+  status: Partial — to collect
+  location: "docs/compliance/evidence/sbom/A7-backend-1.2.0.cdx.json; docs/compliance/evidence/sbom/A7-agent-1.2.0.cdx.json; docs/compliance/evidence/sbom/A7-frontend-1.2.0.cdx.json; docs/compliance/evidence/A7-sbom-summary.md; docs/compliance/policies/open-source-licence-policy.md; .github/workflows/security.yml; .github/workflows/sbom.yml; .github/workflows/release.yml"
+question:
+  final_answer: "MoDocument keeps a machine-readable inventory (CycloneDX SBOM) of every open-source component in each deliverable: the backend, the web front end and the on-premises connector agent. SBOMs are generated automatically on every change to the main branch and for every release, including SBOMs of the exact container images, which are attached to the release. Dependencies are scanned continuously: pull requests are checked for vulnerable new dependencies, the front-end tree must pass npm audit at the high level, and release images are blocked if they contain fixable high or critical vulnerabilities; Dependabot proposes updates weekly and security updates immediately, with a 72-hour patch target for critical CVEs. A written licence policy allows permissive licences, allows weak-copyleft libraries only unmodified, requires approval for proprietary or undeclared licences and forbids strong copyleft. The SBOM of version 1.2.0 (278 components across the three deliverables) shows no strong-copyleft component and no known high or critical vulnerability in the front end. Our review on 19 Oct 2026 found that the CI service has been down since 16 Oct and that the automated licence check is not yet enforced; both are scheduled for correction before go-live (evidence SEC-042-E01)."
+  confidence: Medium
+test:
+  id: SEC-042-T01
+  actual_result: "Runs R7, R7b, R8, R9 (2026-10-19): SBOMs generated (backend 209, agent 34, frontend 35 components) with licences listed; no strong copyleft; LGPL/EPL libraries and Oracle FUTC flagged. CI frontend SBOM step re-performed: 32 components, react, react-dom and scheduler missing. npm audit: 0 vulnerabilities. Backend and image CVE status not determined (no Trivy here, CI down). dependency-review fails on every PR; no licence gate."
+  result: Partial
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Restore CI, fix frontend SBOM, licence deny-list in dependency-review; Day 60: Trivy fs scan, h2 scope, ojdbc11 decision, agent pins."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/policies/open-source-licence-policy.md
+to_confirm:
+  - "Legal approval for redistributing ojdbc11 in the agent image: TO CONFIRM (organisational)"
+  - "GitHub dependency graph and code-security settings: NOT IN REPO (live cloud)"
+  - "CVE status of the release images: NOT IN REPO (live cloud) until a release runs"
