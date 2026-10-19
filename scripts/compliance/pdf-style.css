@@ -1,0 +1,40 @@
+/* Default house style for the documentation pack PDFs (replaced/extended by the company template). */
+@page { size: A4; }
+:root { --ink: #1d2733; --muted: #5b6673; --accent: #1f4e79; --rule: #c9d3de; --soft: #f2f5f8; }
+html { font-family: "Liberation Sans", Helvetica, Arial, sans-serif; font-size: 9.6pt; color: var(--ink); line-height: 1.42; }
+body { margin: 0; }
+h1, h2, h3, h4 { color: var(--accent); line-height: 1.2; page-break-after: avoid; break-after: avoid; }
+h1 { font-size: 18pt; margin: 0 0 10pt; border-bottom: 2px solid var(--accent); padding-bottom: 4pt; }
+h2 { font-size: 13pt; margin: 16pt 0 6pt; }
+h3 { font-size: 11pt; margin: 12pt 0 4pt; }
+h4 { font-size: 10pt; margin: 10pt 0 4pt; color: var(--ink); }
+p, li { orphans: 3; widows: 3; }
+code { font-family: "Liberation Mono", Menlo, monospace; font-size: 8.2pt; background: var(--soft); padding: 0 2px; border-radius: 2px; overflow-wrap: anywhere; }
+pre.code { background: var(--soft); border: 1px solid var(--rule); padding: 6pt 8pt; white-space: pre-wrap; font-size: 8pt; page-break-inside: avoid; }
+pre.code code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 6pt 0 10pt; font-size: 8.4pt; page-break-inside: auto; }
+tr { page-break-inside: avoid; break-inside: avoid; }
+thead { display: table-header-group; }
+th { background: var(--accent); color: #fff; text-align: left; font-weight: 600; }
+th, td { border: 1px solid var(--rule); padding: 3pt 5pt; vertical-align: top; overflow-wrap: anywhere; }
+tbody tr:nth-child(even) td { background: #fafbfd; }
+blockquote { margin: 6pt 0; padding: 4pt 10pt; border-left: 3px solid var(--accent); background: var(--soft); color: var(--muted); }
+.diagram { page-break-inside: avoid; text-align: center; margin: 8pt 0; }
+.diagram svg { max-width: 100%; height: auto; }
+.ref { color: var(--accent); }
+.part.break { page-break-before: always; break-before: page; }
+.cover { height: 247mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; break-after: page; }
+.cover-org { font-size: 12pt; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+.cover-product { font-size: 11pt; color: var(--accent); margin-top: 2pt; }
+.cover-title { font-size: 26pt; border: none; margin: 18pt 0 6pt; }
+.cover-subtitle { font-size: 11.5pt; color: var(--muted); margin-bottom: 22pt; max-width: 150mm; }
+.cover-meta { width: auto; font-size: 9.5pt; }
+.cover-meta th { background: none; color: var(--muted); border: none; padding: 2pt 14pt 2pt 0; font-weight: 400; }
+.cover-meta td { border: none; padding: 2pt 0; background: none !important; }
+.cover-note { margin-top: 26pt; font-size: 8.5pt; color: var(--muted); max-width: 150mm; }
+.toc { page-break-after: always; break-after: page; }
+.toc ul { list-style: none; padding: 0; }
+.toc li { margin: 2pt 0; }
+.toc .toc-l2 { padding-left: 12pt; font-size: 9pt; }
+.toc .toc-l3 { padding-left: 24pt; font-size: 8.6pt; color: var(--muted); }
+.toc a { color: var(--ink); text-decoration: none; }
