@@ -4,8 +4,51 @@ How MoDocument keeps customer data away from language models while still using
 them. Scope: every LLM call in the backend — document table extraction, the
 legacy transform endpoints, auto-mapping, chat table edits, record cleaning,
 schema inference, extraction summaries, template classification, blueprint
-section breakdown, AI document composition, the diagnostics prompt endpoint,
-and vision OCR.
+section breakdown, AI document composition, PDF-template region and data
+detection, and vision OCR.
+
+Last reviewed: **2026-10-19** against `main` at `23647fe`, for the SUP-S13
+evidence pack (`docs/compliance/controls/SUP-S13.md`). The tests named in
+"Evidence" ran green on that date (`docs/compliance/evidence/A7-runs.md`,
+runs R2 and R3).
+
+## Control summary
+
+| Control | Mechanism | Proof |
+|---|---|---|
+| One internal gateway, never direct from clients | `AiGateway` is the only class that may use the Spring AI chat types; the browser never calls a model | `src/main/java/com/modocument/infrastructure/ai/AiGateway.java`, `NoDirectChatModelAccessGuardTest`, Semgrep rule `modocument-raw-chatmodel-outside-ai-gateway` |
+| Pseudonymisation / tokenizer | `PiiTokenizer` replaces values with `[ID_1]`-style tokens before the prompt; mapping in memory per call; detokenized locally | `src/main/java/com/modocument/application/privacy/PiiTokenizer.java`, `PiiTokenizerTest`, `AiGatewayC9Test` |
+| Tenant guard (one bank per prompt) | Bound tenant = envelope bank = every part's bank, else refused and audited | `AiGatewayC9Test` (`promptMixingTwoBanksIsRefusedAndAudited`, `envelopeBankDifferentFromBoundTenantIsRefused`, `missingTenantContextIsRefusedAndAudited`) |
+| Leak scan on the way out | Assembled prompt re-scanned for NIC, account and e-mail shapes; a hit blocks the call | `AiGatewayC9Test` (`rawIdentifierShapesInTheAssembledPromptAreBlockedBeforeTheModel`) |
+| Output scan | Every completion scanned (identifier leak, injection echo), strict or lenient per purpose | `src/main/java/com/modocument/infrastructure/ai/AiOutputScanner.java`, `AiOutputScannerTest`, `AiOutputPolicyC10Test` |
+| Local-first | Default endpoint is a local Ollama; external endpoints are an explicit operator opt-in; vision OCR off by default | `src/main/resources/application.yml` (`spring.ai.openai.base-url`), `AiGatewayC8LoggingTest` |
+| Per-bank AI switch | `ai.enabled` (Data protection tab), SECURITY tier, so switching it needs maker/checker; off → no model call for that bank | `src/main/java/com/modocument/domain/model/settings/SettingKeys.java`, `AiPreflightTest`, `AiCircuitBreakerTest`; [settings catalogue](../settings/catalogue.md) |
+| Feature switches | `doccreation.sectionAiEnabled`, `doccreation.generateAiEnabled` (bank, operational) on top of `ai.enabled` | [settings catalogue](../settings/catalogue.md) |
+| Quota | Per-user LLM quota, 60 calls per hour by default (`modocument.security.rate-limit.llm.per-user-max`) on the interactive AI routes → 429 with `Retry-After`; ingestion has its own hourly bucket | `src/main/java/com/modocument/infrastructure/ratelimit/LlmQuotaInterceptor.java`, `LlmQuotaRetryAfterIntegrationTest` |
+| Circuit breaker and timeouts | Opens after 5 counted failures for 2 min; 5 s connect / 120 s read timeout; one retry on 5xx | `src/main/java/com/modocument/infrastructure/ai/AiCircuitBreaker.java`, `AiCircuitBreakerTest` |
+| Result cache (ws28, V286) | Re-parsing an unchanged document reuses the stored AI result; bank-scoped under RLS (`AiResultCache` table), switch `ai.resultCache.enabled`, purged with customer data and by a DSR erase; never audited, only counted | `src/main/java/com/modocument/infrastructure/ai/AiResultCache.java`, `AiResultCacheRlsPgIT` (`anotherBankNeverHitsABanksCachedResult`), `DataSubjectRightsGateC12Test` |
+| Nothing stored or logged | Prompts and completions are not persisted (except the pure extraction result in the bank's own cache, above) and never logged | `AiGatewayC8LoggingTest` |
+| Audit | `AI_CALL` (purpose, model, sizes), `AI_PROMPT_REFUSED`, `AI_PROMPT_BLOCKED_PII`, `AI_OUTPUT_BLOCKED`, `AI_OUTPUT_FLAGGED`, `AI_CIRCUIT_OPENED` — no content | `src/main/java/com/modocument/application/audit/AuditActions.java` |
+
+## Provider settings
+
+There is no provider console in the product. The model endpoint, key and
+model name are deployment settings:
+
+| Setting | Default | Where |
+|---|---|---|
+| `MODOCUMENT_AI_BASE_URL` | `http://localhost:11434` (local Ollama) | `src/main/resources/application.yml` |
+| `MODOCUMENT_AI_API_KEY` | `ollama` (no real key needed locally) | `src/main/resources/application.yml` |
+| `MODOCUMENT_AI_MODEL`, `MODOCUMENT_CHAT_EDIT_MODEL`, `MODOCUMENT_EXTRACTION_MODEL` | `qwen2.5` | `src/main/resources/application.yml` |
+| `OCR_VISION_ENABLED` | `false` | `src/main/resources/application.yml` |
+
+The Terraform task definition sets no AI endpoint
+(`infra/terraform/modules/ecs-app/main.tf`), so where the model runs in AWS
+is not decided in the repository: `TO CONFIRM (organisational)`. If an
+external provider is ever used, its retention, training-on-data, region and
+DPA settings must be recorded in the third-party register (PRIV-022) before
+the endpoint is configured, and the destination must be added to the
+egress allow-list: `TO CONFIRM (organisational)`.
 
 ## One gateway, no raw paths (C9)
 
@@ -165,7 +208,8 @@ What happens to each feature when the model cannot be used:
 | Document creation: section breakdown, composition | The heuristic parser and the deterministic engine. |
 | LLM record cleaning while bridging | The original rows are kept. |
 | Vision OCR | Tesseract. |
-| Chat table edits, schema inference, run summaries, `/api/automapper/generate` | **No non-AI path**: 503. The heuristic schema inference and summaries are planned for phase 2, wave 4. |
+| Schema inference, run summaries | Computed in code from the sample values and counters (`generatedBy: CODE` with the `fallbackReason`), see the call-site table above. |
+| Chat table edits, `/api/automapper/generate` | **No non-AI path**: 503. |
 
 Falling back to code never sends data anywhere: the code extractor runs
 locally and its notes carry no cell values. A prompt the gateway refused

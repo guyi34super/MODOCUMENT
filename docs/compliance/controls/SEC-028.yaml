@@ -1,0 +1,35 @@
+id: SEC-028
+status: Partially Implemented
+current_state: "Encryption inventory on the control page. At rest (Terraform, not applied): RDS storage and backups with a dedicated CMK (yearly rotation); S3 file store SSE-KMS with its own CMK enforced by bucket policy and named on every PUT by the app; log archive SSE-KMS with the AWS-managed key; Secrets Manager, CloudWatch, EBS and ECR with AWS-managed keys; AWS Backup vaults with no own CMK. Field level: TOTP seeds AES-256-GCM; connection secrets AES-256-GCM with per-bank HKDF keys; credentials only as Argon2id or SHA-256 hashes. In transit: CloudFront TLSv1.2_2021, ALB ELBSecurityPolicy-TLS13-1-2-2021-06, optional ALB mTLS, rds.force_ssl=1 plus sslmode=verify-full with the RDS CA in the image, S3 TLS-only bucket policy, HTTPS-only bank REST targets, pinned SFTP host keys, agent HTTPS with optional mTLS, HSTS. Not encrypted: ALB to ECS task (HTTP inside the VPC); bank DB targets may set sslmode=disable; agent to bank-internal APIs may use HTTP; alert webhook and SMTP TLS not enforced."
+gap: "Infrastructure not deployed, so the SSL Labs grade and pg_stat_ssl check cannot be produced; ALB to task hop is plain HTTP; backup vaults and log archive have no separate CMK; TLS to bank databases, alert webhooks and SMTP not enforced."
+gap_type: Build
+required_action: "Add TLS between the ALB and the containers (or a written acceptance); own CMKs with explicit key policies for backup vaults, log archive and CloudWatch; refuse non-TLS bank DB targets, webhooks and SMTP in deployed environments; at go-live run an SSL Labs scan and record pg_stat_ssl for app sessions."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-30
+evidence:
+  id: SEC-028-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-028.md; infra/terraform/modules/rds/main.tf; infra/terraform/modules/file-store/main.tf; infra/terraform/modules/ecs-app/main.tf; infra/terraform/modules/edge/main.tf; docs/security/crypto-standard.md; docs/compliance/evidence/A7-runs.md"
+question:
+  final_answer: "All MoDocument data stores are encrypted at rest: the PostgreSQL database and its automated backups with a dedicated, yearly-rotated KMS key; the document file store (S3) with its own KMS key enforced by bucket policy; logs, secrets and server disks with AWS-managed keys. Credentials stored by the application are additionally encrypted field by field with AES-256-GCM (MFA seeds; bank connection secrets with a separate key per bank) or stored only as Argon2id/SHA-256 hashes. In transit, users and bank systems reach MoDocument over TLS 1.2 or 1.3 only (optionally with mutual TLS for bank systems); the application connects to the database over TLS that the server enforces and the client verifies against the AWS certificate authority; file transfers use HTTPS or SFTP with a pinned host key. MoDocument is pre-production and the infrastructure is defined as code but not yet deployed, so the external TLS grade and the live database TLS check will be produced at go-live. Two hardening items are planned before go-live: TLS between the load balancer and the application containers, and dedicated keys for the backup vaults and log archive (evidence SEC-028-E01)."
+  confidence: Medium
+test:
+  id: SEC-028-T01
+  actual_result: "Runs R2 and R5 (2026-10-19): 52 encryption and transport tests in eight classes, 0 failures (ConnectorSecretVaultTest, SecretFileEnvironmentPostProcessorTest, MfaSecretCipherTest, HeaderContractTest, TrustedProxyIntegrationTest, DatabaseTlsConfigTest, RestApiMtlsTest, AgentMtlsTest). Inspection: every store encrypted at rest; edge and database hops TLS-enforced; ALB to task is plain HTTP; backup vaults and log archive use AWS default keys. SSL Labs and pg_stat_ssl not run because nothing is deployed."
+  result: Partial
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Own CMKs for backups and logs; TLS to containers; TLS-only bank DB, webhook and SMTP targets; Day 90: SSL Labs and pg_stat_ssl at go-live."
+  status: Not started
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "SSL Labs grade and pg_stat_ssl evidence: NOT IN REPO (live cloud)"
+  - "Effective encryption of AWS Backup recovery points and cross-region copies: NOT IN REPO (live cloud)"
+  - "Full-disk encryption of staff laptops with production access: TO CONFIRM (organisational)"
+  - "Where the AI model runs in AWS and over which transport: TO CONFIRM (organisational)"

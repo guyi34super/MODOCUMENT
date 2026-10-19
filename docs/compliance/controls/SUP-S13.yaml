@@ -1,0 +1,31 @@
+id: SUP-S13
+status: Partially Implemented
+current_state: "Every model call goes through AiGateway (build guard and Semgrep rule forbid other use). PiiTokenizer replaces sensitive values with tokens before the prompt and detokenizes locally; the assembled prompt is re-scanned and blocked on raw NIC, account or e-mail shapes; tenant guard enforces one bank per prompt; every completion is output-scanned (strict reject or lenient scrub); local Ollama endpoint by default, external only by explicit configuration; vision OCR off by default; per-bank ai.enabled switch (SECURITY tier, maker/checker); per-user LLM quota 60/h; circuit breaker with timeouts and code fallback; bank-scoped AI result cache under RLS; prompts and completions never logged. Design note docs/security/ai-controls.md updated 2026-10-19. Technical tests pass. Open: written acceptance of the four residual risks (C11); production model location and any external provider settings undecided."
+gap: "Residual-risk acceptance (C11) not signed; production AI endpoint and, if external, provider retention, training, region and DPA not recorded; HTTPS not enforced for a non-local AI endpoint."
+gap_type: Org
+required_action: "Reezvi Pydiah signs the acceptance of the four residual risks; decide the production model location and, if external, record provider settings and DPA (PRIV-022) and the transfer assessment (PRIV-014) and add the endpoint to the egress allow-list; refuse non-HTTPS non-loopback AI endpoints when guardrails are enforced."
+action_owner: "Risk acceptance — Reezvi Pydiah; technical — Bhavish Nobeen"
+target_date: 2026-11-02
+evidence:
+  id: SUP-S13-E01
+  status: Partial — to collect
+  location: "docs/security/ai-controls.md; docs/compliance/controls/SUP-S13.md; src/main/java/com/modocument/infrastructure/ai/AiGateway.java; src/test/java/com/modocument/infrastructure/ai/AiGatewayC9Test.java; src/test/java/com/modocument/pgit/AiResultCacheRlsPgIT.java; docs/settings/catalogue.md; docs/compliance/evidence/A7-runs.md"
+test:
+  id: SUP-S13-T01
+  actual_result: "Run R2 (2026-10-19): 100 AI-control tests in 12 classes, 0 failures; AiGatewayC9Test shows seeded real-format NIC and account numbers leave the gateway as tokens only and that two-bank prompts, tenant mismatches and missing tenants are refused and audited. Run R3: AiResultCacheRlsPgIT, another bank never hits a bank's cached result. Technical controls pass; C11 written acceptance missing."
+  result: Pass
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Sign the C11 residual-risk acceptance; Day 60: decide the production model location, record provider settings if external, enforce HTTPS for external endpoints."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: null
+to_confirm:
+  - "Written acceptance of the AI residual risks (C11) by Reezvi Pydiah: TO CONFIRM (organisational)"
+  - "Production AI endpoint and, if external, the provider's retention, training, region and DPA settings: TO CONFIRM (organisational)"
+  - "Provider settings screenshot from a running environment: NOT IN REPO (live cloud)"
