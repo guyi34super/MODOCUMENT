@@ -24,9 +24,9 @@ roadmap:
   action: "Re-run MO-016 on staging (production-sized) at 2x the confirmed peak and re-issue MO-017 before go-live."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: docs/compliance/mo-017-stress-testing-report.md
 to_confirm:
   - "NOT IN REPO (live cloud): staging environment and the k6 run on it (gate E7)."

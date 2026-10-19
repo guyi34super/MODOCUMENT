@@ -27,20 +27,19 @@ This report tests every control in the internal control matrix (`docs/compliance
 | Overall rating | Controls | Share |
 |---|---|---|
 | Effective | 9 | 12 % |
-| Partially effective | 33 | 44 % |
+| Partially effective | 35 | 47 % |
 | Not effective | 11 | 15 % |
-| Not tested | 19 | 25 % |
-| Pending (A3) | 3 | 4 % |
+| Not tested | 20 | 27 % |
 | **Total** | **75** | |
 
-| Group | Effective | Partially effective | Not effective | Not tested | Pending |
-|---|---|---|---|---|---|
-| 02 Security | 0 | 8 | 3 | 0 | 0 |
-| 03 Software Engineering | 8 | 18 | 2 | 1 | 1 |
-| 04 IT Infrastructure & Operations | 0 | 2 | 4 | 8 | 2 |
-| ICM (governance, organisational, data protection) | 1 | 5 | 2 | 10 | 0 |
+| Group | Effective | Partially effective | Not effective | Not tested |
+|---|---|---|---|---|
+| 02 Security | 0 | 8 | 3 | 0 |
+| 03 Software Engineering | 8 | 19 | 2 | 1 |
+| 04 IT Infrastructure & Operations | 0 | 3 | 4 | 9 |
+| ICM (governance, organisational, data protection) | 1 | 5 | 2 | 10 |
 
-Re-performance: **39 controls** had their cited tests re-run by A9 (465 test executions in 59 classes, 0 failures); **16 more** were re-checked by static inspection or a re-run script (Terraform validation, Semgrep, reference checks, code reads). Every control was rated. Corrective actions: **38** open (CA-01 … CA-39, CA-33 pending A3).
+Re-performance: **40 controls** had their cited tests re-run by A9 (465 test executions in 59 classes, 0 failures); **18 more** were re-checked by static inspection, a re-run script or a re-computation of raw output (Terraform validation, Semgrep, reference checks, code reads, MO-017 raw results). Every control was rated. Corrective actions: **39** open (CA-01 … CA-39).
 
 **Key messages for the Board.**
 
@@ -62,7 +61,7 @@ Re-performance: **39 controls** had their cited tests re-run by A9 (465 test exe
 4. **Re-compute** archived raw outputs against the report figures, for the Bhavish-owned RBAC report (MO-019) and the stress-testing report (MO-017).
 5. **Rate** design and operation, then the overall rating.
 
-**Sampling method.** Judgemental, risk-based. Every control with an executable test in the repository had at least one cited test class re-run; where a page cites many classes, the classes that prove the control objective were chosen (for example the gate tests `ExportCapGateD2Test`, `DataSubjectRightsGateC12Test`, `AlertingGateD1Test`). Population and selection: 59 classes covering 39 controls across all three workbooks and the ICM group (this audit set a minimum of 25). For records (merges, roadmap items, probe calls) the whole population was examined, not a sample: all 352 probe calls and 39 scenarios; all merges since 2026-07-01 as reported by A7.
+**Sampling method.** Judgemental, risk-based. Every control with an executable test in the repository had at least one cited test class re-run; where a page cites many classes, the classes that prove the control objective were chosen (for example the gate tests `ExportCapGateD2Test`, `DataSubjectRightsGateC12Test`, `AlertingGateD1Test`). Population and selection: 59 classes covering 40 controls across all three workbooks and the ICM group (this audit set a minimum of 25). For records (merges, roadmap items, probe calls) the whole population was examined, not a sample: all 352 probe calls and 39 scenarios; all merges since 2026-07-01 as reported by A7.
 
 **Rating criteria.**
 
@@ -99,7 +98,22 @@ Conclusion: the MO-019 figures are supported by the archived raw output. The liv
 
 ### 4.2 Stress testing (MO-017)
 
-A3 input pending: the stress testing report (MO-017) and its raw outputs are not yet in the pack. When they are merged, A9 re-computes the reported p95, error rate and throughput from the archived raw results.
+A9 re-computed the MO-017 figures from the archived per-request files (`perf/results/stress-2026-10/<run>/<scenario>.requests.csv.gz`), using each stage's start and length from the summary file and nearest-rank percentiles (script in the A9 scratch area; `docs/compliance/evidence/A9-retest-runs.md` §4).
+
+| Report figure (`docs/compliance/mo-017-stress-testing-report.md`) | Re-computed by A9 | Agrees? |
+|---|---|---|
+| S4 1× peak: p95 read 13.1, write 19.0, heavy 56.1, sign-in 71.9 ms; 0 errors | 13.1 / 19.0 / 56.1 / 71.9 ms; 0 errors | Yes |
+| S4 2× peak: p95 read 21.3, write 51.7, heavy 66.7, sign-in 92.4 ms | 21.3 / 51.7 / 66.7 / 92.4 ms | Yes |
+| S4 spike 200: read 46.6, write 186.3 ms; 0 errors | 46.6 / 186.3 ms; 0 errors | Yes |
+| S6 breakpoint: 300 users ≈ 715 req/s; 400 users 744 req/s, dashboard p95 608.9 ms, read p95 478.9 ms | 716.0 and 744.5 req/s; dashboard 608.9 ms; read 478.9 ms | Yes |
+| S5c: read p95 1,205 ms, write 855 ms, 0 errors | 1,205.3 / 854.8 ms; 0 errors | Yes |
+| S3: 50,000-row job VALIDATED in 5,780 ms; job read 765 ms / 17.9 MB | 5,780.4 ms; 764.9 ms / 17,945,399 bytes | Yes |
+| S5a: 429 at every limit (uploads 3, exports 3, generate 5, ingestion 5, sign-in 6) | 22 × 429 with the same split | Yes |
+| One CPU S4-lite 2×: read p95 93.2 ms, sign-in 622.3 ms; S6 100 users 236.4 req/s, 150 users read p95 907.7 ms | 93.2 / 622.3 ms; 236.9 req/s; 907.7 ms | Yes |
+| "0 errors" in every capacity run | 0 failed requests and 0 5xx in every per-request file checked (S4, S6, S5c, soak, one-CPU S4-lite and S6) | Yes |
+| "0 errors in 26,438 requests" (S4) | The S4 stages hold 26,438 requests; the scenario total is 26,439 (one request between stage windows); the per-request file also holds 286 probe calls that the summaries exclude | Yes (observation O-6) |
+
+Conclusion: every MO-017 figure checked is supported by the raw output. The test itself was not re-run (it needs about an hour of the shared machine); Rushal, as the human independent tester, should re-run one scenario (for example S4) with the commands in MO-017 Appendix A.
 
 ## 5. Results per control
 
@@ -125,7 +139,7 @@ Owner T01 = the control owner's own test result on the control page. A9 = what t
 | PRIV-017 | Pass | Effective | Partially effective | **Partially effective** | `UserAdminIntegrationTest` 10/10 (B1); probe re-check (X4) | Mechanism works. No quarterly review held; shared pre-production account not yet deleted; no ticket trail. | Pre-production; organisational steps outstanding. | CA-13 |
 | SEC-006 | Partial | Effective | Partially effective | **Partially effective** | `OpenApiContractTest` 7/7, `ApiDocsExposureTest` 3/3 (B3); route count 245 (X13) | Contract test does not gate merges while CI is down; sandbox not deployed. | CI outage (third-party billing). | CA-02, CA-36 |
 | SEC-007 | Partial | Partially effective | Partially effective | **Partially effective** | `CrossUserAccessTest` 5/5, `ApiRateLimitIntegrationTest` 16/16, `FixedWindowRateLimiterTest` 5/5, `IntegrationApiSecurityTest` 15/15 (B2, B3) | No ZAP or API scan on file; rate-limit counters per instance; legacy endpoints bind entities. | Scans depend on CI; design choice for counters. | CA-02, CA-34 |
-| SEC-008 | — | Pending (A3) | Pending (A3) | **Pending (A3)** | A3 input pending (MO-017) | A3 input pending (MO-017) | A3 input pending (MO-017) | CA-33 |
+| SEC-008 | Partial | Effective | Partially effective | **Partially effective** | Every stage p95 in MO-017 §4–§5 re-computed from `perf/results/stress-2026-10/` raw CSVs: all match (§4.2) | Run and reported with 9 findings; not on staging; expected peak unknown; report not approved. | Pre-production. | CA-33 |
 | SEC-010 | Fail | Partially effective | Not effective | **Not effective** | `.github/CODEOWNERS` has one account (X6); change trail (`docs/compliance/evidence/A7-github-change-trail.md`) | 32 merges by one account; 6 direct pushes; 0 reviews on sampled merges; four merges with red checks. | Ruleset not applied; one code owner; one-person engineering capacity. | CA-02, CA-03 |
 | SEC-011 | Pass | Effective | Effective | **Effective** | `RoutePermissionCoverageTest` 2/2, `RolePermissionMatrixTest` 2/2 (B1); `TenantIsolationGatePgIT` 5/5 (B4); probe 352/352 re-checked (X4) | None in the product. Quarterly matrix review not yet held. | — | CA-13 |
 | SEC-012 | Pass | Effective | Effective | **Effective** | `SodPolicyTest` 6/6, `RoleAssignmentPolicyTest` 6/6 (B1) | None. Annual catalogue review not yet held. | — | — |
@@ -153,8 +167,8 @@ Owner T01 = the control owner's own test result on the control page. A9 = what t
 | PRIV-003 | Partial | Partially effective | Not tested | **Not tested** | `terraform validate` (X1); lock default re-read (X7) | Locks off until the restore drill; GuardDuty runtime and malware features missing (DEF-3); file store not backed up (DEF-4). Nothing deployed. | Pre-production; drill (gate D6) not yet run. | CA-09, CA-10 |
 | PRIV-006 | Partial | Partially effective | Not tested | **Not tested** | `terraform validate` (X1) | No backup exists yet; restore never timed; file store has no backup copy (DEF-4); RTO 2 h vs 4 h unresolved. | Pre-production; drill not scheduled. | CA-09, CA-39 |
 | SEC-001 | Partial | Partially effective | Not tested | **Not tested** | `terraform fmt`/`validate` (X1); DEF-1 still present (X8) | DNS, ACM and GPU model servers outside Terraform; DEF-1 would stop the first production start; no external review. | Pre-production; IaC not planned against an account. | CA-10 |
-| SEC-002 | — | Pending (A3) | Pending (A3) | **Pending (A3)** | A3 input pending (MO-017) | A3 input pending (MO-017) | A3 input pending (MO-017) | CA-33 |
-| SEC-003 | — | Pending (A3) | Pending (A3) | **Pending (A3)** | A3 input pending (MO-017) | A3 input pending (MO-017) | A3 input pending (MO-017) | CA-33 |
+| SEC-002 | Partial | Partially effective | Partially effective | **Partially effective** | `ApiRateLimitIntegrationTest` 16/16, `FixedWindowRateLimiterTest` 5/5 (B3); MO-017 S5a raw output re-counted: 22 × 429 exactly at the limits (§4.2) | Limits and breaker work (MO-017 S5). Generation synchronous with no queue (F-05); ingestion queue unbounded (F-02); counters per instance (F-07); WAF not applied. | Design gaps; pre-production. | CA-33, CA-34 |
+| SEC-003 | Partial | Partially effective | Not tested | **Not tested** | `terraform validate` (X1); one-CPU stress figures re-computed from raw output (§4.2) | No scale-out observed (nothing deployed); memory headroom 160 MiB (F-04). | Pre-production. | CA-33 |
 | SEC-004 | Partial | Partially effective | Not tested | **Not tested** | `terraform validate` (X1) | Never failed over; region-loss RTO not documented; file store not replicated. | Pre-production. | CA-09 |
 | SEC-005 | Partial | Not effective | Not tested | **Not effective** | `SyntheticProbeTest` 3/3 (B3) | No external probe, status page, SLA clause or measurement history exists. | Monitoring service not chosen. | CA-05, CA-39 |
 | SEC-026 | Fail | Partially effective | Not effective | **Not effective** | Spring Boot 3.5.3 re-read in `pom.xml` (X5) | Issue #52: 11 Critical open since 2026-10-12, past the 72-hour limit; scheduled scans stopped; policy not approved. | Patch not prioritised; GitHub billing failure. | CA-01, CA-02, CA-19 |
@@ -222,6 +236,7 @@ These are errors or stale statements in other pack pages, found while testing. T
 | O-3 | `docs/security/threat-control-matrix.md` | Cites `infra/terraform/modules/{backups,security-monitoring}`, a brace pattern, not a path; both folders exist. | Reference checkers flag it. |
 | O-4 | `docs/security/incident-response-stub.md` | Gives Rushal a surname, against the pack naming rule (MO-001 name note), and names no DPO step (MO-001 F1). | Naming consistency; ICM-06 finding. |
 | O-5 | `docs/security/maker-checker.md` | Still says no bank-creation endpoint exists; `BANK_CREATE` exists (MO-001 F5, MO-019 X-07). | Stale documentation. |
+| O-6 | `docs/compliance/mo-017-stress-testing-report.md` §1 and `docs/compliance/controls/SEC-002.yaml` (answer) | "0 errors in 26,438 requests" is the sum of the S4 stages; `perf/results/stress-2026-10/main/s4.summary.json` gives 26,439 for the scenario (one request between stage windows). | None on the conclusion; state which count is meant. |
 
 A9 checked these numeric claims and found them correct: 26 alert rules, 11,384 breached-password entries, 58/58 SHA-pinned actions, 131 audit actions, 245 routes, four cited commits (X13, X15).
 
@@ -263,7 +278,7 @@ All actions are Open on 2026-10-19. Owners follow the RACI; a date marked propos
 | CA-30 | Create separate AWS accounts; `allowed_account_ids` in every provider; replay and reachability tests. | SUP-S07 | Bhavish Nobeen | Before the first `terraform apply` | Open |
 | CA-31 | Expiry alerts at 30/14/7 days; key escrow for MFA and connector keys; staging rotation drill. | SUP-S08 | Bhavish Nobeen | Before go-live | Open |
 | CA-32 | Confirm or publish SPF, DKIM and DMARC; MTA-STS; registrar MFA and lock. | SUP-S10 | Bhavish Nobeen (workbook) / Taj Aundoo (repo) — `TO CONFIRM (organisational)` | 2026-10-30 (proposed) | Open |
-| CA-33 | A3 input pending (MO-017) | SEC-002, SEC-003, SEC-008 | Bhavish Nobeen; Rushal (run) | A3 input pending (MO-017) | Pending A3 |
+| CA-33 | Fix stress findings F-01 to F-08 (paged job rows, bounded ingestion and generation queues, batched re-index, memory headroom, early shedding, streamed XLSX); business states the expected peak; re-run MO-016 on staging at 2× that peak with a 1-hour soak and an observed scale-out (gate E7). | SEC-002, SEC-003, SEC-008 | Bhavish Nobeen; Rushal (staging run) | 2026-11-30 (F-04); 2026-12-15 (F-01–F-03, F-05); before go-live (staging) | Open |
 | CA-34 | Authenticated ZAP API and active scan in staging; archive the reports; shared rate-limit store or WAF decision. | SEC-007, SUP-S01 | Bhavish Nobeen | 2026-11-06 | Open |
 | CA-35 | Sign release images and verify before deploy; read-only root filesystems; base images by digest. | SUP-S04 | Bhavish Nobeen | Before go-live | Open |
 | CA-36 | Deploy the API sandbox with synthetic data; publish a versioned spec with each release. | SEC-006 | Bhavish Nobeen | 2026-11-20 | Open |
@@ -273,7 +288,7 @@ All actions are Open on 2026-10-19. Owners follow the RACI; a date marked propos
 
 ## 8. Conclusion
 
-Of 75 controls, 9 are Effective, 33 Partially effective, 11 Not effective and 19 Not tested (3 pending A3). The application-level controls are in good shape. The control environment around them (change, patching, alerting, approvals and independent review) is not yet operating, and the infrastructure controls cannot be tested until AWS is deployed. The four Not effective engineering controls (SEC-009, SEC-010, SEC-025, SEC-026) are addressed by CA-01 to CA-03 and CA-08, all due within two weeks. This audit should be repeated after go-live, with operating evidence from the deployed environment.
+Of 75 controls, 9 are Effective, 35 Partially effective, 11 Not effective and 20 Not tested. The application-level controls are in good shape. The control environment around them (change, patching, alerting, approvals and independent review) is not yet operating, and the infrastructure controls cannot be tested until AWS is deployed. The four Not effective engineering controls (SEC-009, SEC-010, SEC-025, SEC-026) are addressed by CA-01 to CA-03 and CA-08, all due within two weeks. This audit should be repeated after go-live, with operating evidence from the deployed environment.
 
 ## 9. Review, independent testing and approval
 
@@ -290,4 +305,3 @@ Of 75 controls, 9 are Effective, 33 Partially effective, 11 Not effective and 19
 - `TO CONFIRM (organisational)`: the Pack 07 reviewer.
 - `TO CONFIRM (organisational)`: records held outside the repository (NDAs, training, contracts, minutes, DNS, MDM, GitHub settings).
 - `NOT IN REPO (live cloud)`: operating evidence of every Terraform-only control.
-- A3 input pending: SEC-002, SEC-003, SEC-008 and the stress re-check (§4.2).

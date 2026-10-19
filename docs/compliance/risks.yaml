@@ -187,13 +187,13 @@ risks:
 - id: R-SEC-008
   title: "Capacity discovered in production during a real peak"
   controls: [SEC-008, SEC-002, SEC-003]
-  likelihood: 3
+  likelihood: 2
   impact: 4
-  residual: High
+  residual: Medium
   status: "Open"
-  mitigation: "A3 input pending (MO-017)"
+  mitigation: "Business states the expected peak; re-run MO-016 on staging at 2× that peak with a 1-hour soak (gate E7) and re-issue MO-017."
   owner: "Software Engineering — Bhavish Nobeen"
-  acceptance_required: true
+  acceptance_required: false
 - id: R-SEC-010
   title: "Vulnerabilities and secrets merge unexamined"
   controls: [SEC-010, SEC-025, SUP-S05]
@@ -501,7 +501,7 @@ risks:
   impact: 4
   residual: Medium
   status: "Open"
-  mitigation: "A3 input pending (MO-017)"
+  mitigation: "Bounded queues for generation and ingestion (429 or 202 when full); shared rate-limit store; apply the WAF."
   owner: "IT Infrastructure — Bhavish Nobeen"
   acceptance_required: false
 - id: R-SEC-003
@@ -511,7 +511,7 @@ risks:
   impact: 3
   residual: Medium
   status: "Open"
-  mitigation: "A3 input pending (MO-017)"
+  mitigation: "Fix the memory headroom (F-04); apply staging and record a scale-out event with zero 5xx under MO-016 load."
   owner: "IT Infrastructure — Bhavish Nobeen"
   acceptance_required: false
 - id: R-SEC-004
@@ -795,12 +795,12 @@ risks:
   owner: "The DPO; Software Engineering — Bhavish Nobeen"
   acceptance_required: false
 - id: R-TECH-16
-  title: "Performance findings from the stress test"
+  title: "Capacity limits found by the stress test (MO-017 F-01 to F-09)"
   controls: [SEC-008, SEC-002, SEC-003]
   likelihood: 3
   impact: 3
   residual: Medium
   status: "Open"
-  mitigation: "A3 input pending (MO-017)"
+  mitigation: "F-04 memory headroom; F-01 paged job rows; F-02/F-05 bounded queues; F-03 batched re-index; F-06 to F-08 later; re-test on staging."
   owner: "Software Engineering — Bhavish Nobeen"
   acceptance_required: false

@@ -122,7 +122,7 @@ Roles come from the RACI in `docs/compliance/mo-001-governance-structure.md` §7
 | Hosting / infrastructure and third parties | Moderate | High (before go-live only) | Critical | Provider outage or billing stop not detected within one day |
 | Key-person dependency and delivery | Moderate | High | Critical | Two consecutive slipped dates on one owner (workbook R-PEOPLE-02 rule) |
 
-On 2026-10-19 the register holds 2 Critical and 23 High residual risks. Against this appetite, the Critical risks block go-live until treated, and each High confidentiality or regulatory risk needs a Board decision.
+On 2026-10-19 the register holds 2 Critical and 22 High residual risks. Against this appetite, the Critical risks block go-live until treated, and each High confidentiality or regulatory risk needs a Board decision.
 
 ## 6. Escalation
 
@@ -137,7 +137,7 @@ Any person may raise a risk to the risk owner or to Reezvi Pydiah. An incident w
 
 ## 7. Current risk profile (2026-10-19)
 
-The register holds 80 risks: 64 from the workbooks and 16 new. Residual bands: 2 Critical, 23 High, 45 Medium, 10 Low. Heat maps: MO-031 §3.
+The register holds 80 risks: 64 from the workbooks and 16 new. Residual bands: 2 Critical, 22 High, 46 Medium, 10 Low. Heat maps: MO-031 §3.
 
 ## 8. Top ten risks and treatment plans
 
@@ -158,7 +158,23 @@ Linked corrective actions in MO-034 §7: R-TECH-08 → CA-01; R-TECH-09 → CA-0
 
 ## 9. Stress-test findings (MO-017)
 
-A3 input pending: the stress testing report (MO-017, Stress Testing Report) is not yet in the pack. When it is merged, this section lists its findings, the p95 latency and error rate at the planned load, the breaking point, and the treatment of each finding, and re-rates R-SEC-008, R-SEC-002, R-SEC-003 and R-TECH-16 in MO-031.
+Source: `docs/compliance/mo-017-stress-testing-report.md` (run 2026-10-19 on a shared 4-vCPU test box, one instance, synthetic data; raw output in `perf/results/stress-2026-10/`). A9 re-computed the reported p95 figures from the raw per-request files and they match (MO-034 §4.2).
+
+**Result.** One instance served 1×, 2× and a 4× spike of an assumed 50-user peak with 0 errors; capacity within the thresholds was about 715 req/s at 300 users on 4 CPUs (latency break at 400 users) and about 236 req/s at 100 users on one CPU (break at 150). Overload controls held: 429 with `Retry-After` at every limit, AI outage absorbed by the circuit breaker, full database pool queued without errors. **What it does not prove:** production capacity. The expected peak is `TO CONFIRM (organisational)` and the staging run (gate E7) is still to do.
+
+| Finding (MO-017 §7) | Severity | Risk effect | Treatment | Owner | Proposed date |
+|---|---|---|---|---|---|
+| F-01 Full job read returns every row (17.9 MB, 765 ms for 50,000 rows) | Medium | R-TECH-16 | Page the rows; counts only in the default view | Bhavish Nobeen | 2026-12-15 |
+| F-02 Ingestion: 2 threads, unbounded queue | Medium | R-TECH-16, R-SEC-002 | Configurable pool; bounded queue with 429 | Bhavish Nobeen | 2026-12-15 |
+| F-03 Large re-index holds a thread and a DB connection ~35 s | Medium | R-TECH-16 | Batched indexing on its own executor | Bhavish Nobeen | 2026-12-15 |
+| F-04 RSS 2,656 MiB, 160 MiB under the container limit | Medium | R-TECH-16, R-SEC-003 | Lower `MaxRAMPercentage` or raise `app_memory`; re-measure on staging | Bhavish Nobeen | 2026-11-30 |
+| F-05 Report generation synchronous, CPU-bound, no queue | Medium | R-SEC-002, R-TECH-16 | Bounded generation executor; 202 + poll or 429 | Bhavish Nobeen | 2026-12-15 |
+| F-06 No early shedding under saturation | Low | R-SEC-002 | Align Tomcat threads with the pool; concurrency limiter; autoscaling | Bhavish Nobeen | 2027-01-31 |
+| F-07 Rate-limit counters per instance | Low | R-SEC-002, R-SEC-007 | Shared counter store before scaling out | Bhavish Nobeen | 2027-01-31 |
+| F-08 XLSX export ~4× slower than CSV | Low | R-TECH-16 | Streamed workbook | Bhavish Nobeen | 2027-01-31 |
+| F-09 Soak drift caused by a noisy neighbour | Info | R-SEC-008 | 1-hour soak on staging | Bhavish Nobeen | before go-live |
+
+Effect on the register: R-SEC-008 residual 2×4 = 8 Medium (tested, not on staging); R-SEC-002 2×4 = 8 Medium; R-SEC-003 3×3 = 9 Medium; R-TECH-16 3×3 = 9 Medium. Corrective action CA-33 in MO-034 tracks all of them.
 
 ## 10. Privacy risks (DPO, MO-048)
 
@@ -192,9 +208,9 @@ Values on 2026-10-19 come from the cited files. Thresholds are proposed — conf
 | K5 Alert trip tests | Alert rules tripped end to end by a test; months since a HIGH alert reached a person out of hours | **10 of 26 rules**; never reached a person | 26/26 and ≤ 1 month / ≥ 20 / otherwise → **Red** | `docs/compliance/controls/SEC-032.md` | Bhavish Nobeen | Monthly |
 | K6 Access review completion | Banks and platform with the quarterly recertification done on time | **None held** (pre-production) | 100 % / ≥ 90 % / < 90 % → not yet due | `docs/security/jml-runbook.md` | Bank ADMINs; Bhavish Nobeen | Quarterly |
 | K7 Restore drill age | Days since the last timed restore met the RTO | **Never run** | ≤ 90 / 91–120 / > 120 or never → **Red** | `docs/compliance/policies/storage-backup-recovery-map.md` | Rushal | Quarterly |
-| K8 Stress-test p95 | p95 latency of the core journeys at the planned peak load, against the target in MO-016 | A3 input pending (MO-017) | within target / up to 20 % over / more than 20 % over | MO-017 | Bhavish Nobeen; Rushal (run) | Before go-live; each major release |
+| K8 Stress-test p95 | p95 of read requests at 2× the assumed peak against the 500 ms threshold (MO-016 §7) | **21 ms** (4 CPUs) / **93 ms** (one CPU), test box only; staging not run | ≤ 500 ms on staging / ≤ 500 ms on the test box only / > 500 ms → **Amber** (no staging run) | `docs/compliance/mo-017-stress-testing-report.md` | Bhavish Nobeen; Rushal (run) | Before go-live; each major release |
 | K9 Overdue roadmap items | Roadmap items past their workbook date | **7** re-proposed | 0 / 1–3 / > 3 → **Red** | `docs/security/security-roadmap.md` | Bhavish Nobeen | Monthly |
-| K10 Unaccepted High/Critical | Residual High or Critical risks with no written acceptance | **24 of 25** (R-PEOPLE-02: management acceptance recorded in the workbook) | 0 / 1–3 / > 3 → **Red** | `docs/compliance/mo-031-technology-risk-register.md` §9 | Reezvi Pydiah | Monthly |
+| K10 Unaccepted High/Critical | Residual High or Critical risks with no written acceptance | **23 of 24** (R-PEOPLE-02: management acceptance recorded in the workbook) | 0 / 1–3 / > 3 → **Red** | `docs/compliance/mo-031-technology-risk-register.md` §9 | Reezvi Pydiah | Monthly |
 | K11 Corrective actions overdue | MO-034 corrective actions past their target date | **0 of 39** (all set on 2026-10-19) | 0 / 1–3 / > 3 | `docs/compliance/mo-034-internal-control-audit-report.md` §7 | Taj Aundoo | Monthly |
 | K12 Privileged accounts without a grant record | Cloud and platform admins with no approved grant | **2** (owner statement, `TO CONFIRM (organisational)`) | 0 / — / ≥ 1 → **Red** | `docs/compliance/controls/SEC-017.md` | Bhavish Nobeen | Monthly |
 

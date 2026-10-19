@@ -161,3 +161,14 @@ MODOCUMENT_IT_JDBC_URL=jdbc:postgresql://127.0.0.1:55432/postgres MODOCUMENT_IT_
 | Trivy, OWASP ZAP, OWASP dependency-check | No tool or no feed access in the sandbox; latest CI results are from 2026-10-12/13 (`docs/compliance/evidence/A5-vulnerability-assessment-report-2026-10.md`) |
 | Live RBAC probe (`scripts/compliance/rbac-probe.mjs`) | Not re-run; its archived raw output was re-checked line by line instead (X4) |
 | Anything in AWS, GitHub settings, DNS, MDM or HR records | `NOT IN REPO (live cloud)` or `TO CONFIRM (organisational)` |
+
+## 4. Stress-test raw output re-computed (MO-017)
+
+| Item | Value |
+|---|---|
+| When | 2026-10-19, finished 17:35:32 UTC, after A3's merge (`7cc0815`) |
+| Input | `perf/results/stress-2026-10/main/` (`s3`, `s4`, `s5c`, `s6`, `soak`), `perf/results/stress-2026-10/one-cpu/` (`s4-lite`, `s6`), `perf/results/stress-2026-10/default-limits/` (`s5a`): the `*.requests.csv.gz` per-request files and the `*.summary.json` stage windows |
+| Method | A9's own Python script (scratch area, run with `python3 -I`): for each stage, select the requests whose timestamp falls in [stage start, start + stage seconds), count failures (`ok` = 0) and 5xx, and compute nearest-rank p95 per request class; probe calls (`probe.synthetic`) are in the files but not in the summaries |
+| Result | Every p95 the report states for S4 (1×, 2×, spike, recovery), S6 (each step, including the 400-user dashboard p95 608.9 ms), S5c, one-CPU S4-lite and one-CPU S6 is reproduced exactly; 0 failed requests and 0 5xx in every file; S3 50,000-row job: VALIDATED in 5,780.4 ms, job read 764.9 ms and 17,945,399 bytes; S5a: 22 responses 429 (uploads 3, exports 3, generate 5, ingestion 5, sign-in 6) |
+| Difference found | S4 stage totals sum to 26,438 (as in the report); the scenario total in `s4.summary.json` is 26,439 (MO-034 observation O-6) |
+| Not done | The stress run itself was not repeated (about one hour of the shared machine) |

@@ -24,9 +24,9 @@ roadmap:
   action: "Bounded queues for generation and ingestion; shared rate-limit counters; staging load test at 2x the confirmed peak with applied WAF and autoscaling."
   status: In progress
 risk:
-  likelihood: null
-  impact: null
-  residual: null
+  likelihood: 2
+  impact: 4
+  residual: Medium
 policy_document: docs/compliance/policies/degradation-runbook.md
 to_confirm:
   - "TO CONFIRM (organisational): expected production peak (the test used 50 concurrent users as 1x)."

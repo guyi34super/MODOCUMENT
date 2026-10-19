@@ -73,7 +73,7 @@ Each cell shows the number of risks and the band of the cell (L = Low, M = Mediu
 | Impact ↓ / Likelihood → | 1 Rare | 2 Unlikely | 3 Possible | 4 Likely | 5 Almost certain |
 |---|---|---|---|---|---|
 | **5 Severe** | 3 (M) | 2 (H) | 1 (H) | 1 (C) | – (C) |
-| **4 Major** | 6 (L) | 13 (M) | 14 (H) | 3 (H) | 1 (C) |
+| **4 Major** | 6 (L) | 14 (M) | 13 (H) | 3 (H) | 1 (C) |
 | **3 Moderate** | 3 (L) | 14 (M) | 15 (M) | 3 (H) | – (H) |
 | **2 Minor** | 1 (L) | – (L) | – (M) | – (M) | – (H) |
 | **1 Insignificant** | – (L) | – (L) | – (L) | – (L) | – (M) |
@@ -83,8 +83,8 @@ Each cell shows the number of risks and the band of the cell (L = Low, M = Mediu
 | Band | Inherent | Residual |
 |---|---|---|
 | Critical | 13 | 2 |
-| High | 54 | 23 |
-| Medium | 13 | 45 |
+| High | 54 | 22 |
+| Medium | 13 | 46 |
 | Low | 0 | 10 |
 | **Total** | **80** | **80** |
 
@@ -96,7 +96,7 @@ Residual High and Critical risks, by cell:
 | 5 × 4 | 20 Critical | R-TECH-09 |
 | 4 × 4 | 16 High | R-SEC-032, R-PEOPLE-02, R-SEC-010 |
 | 3 × 5 | 15 High | R-PRIV-006 |
-| 3 × 4 | 12 High | R-SEC-009, R-SEC-017, R-SEC-008, R-SEC-025, R-AI-01, R-SEC-026, R-SUP-S09, R-SUP-S10, R-SPOOF-01, R-TECH-01, R-TECH-02, R-TECH-04, R-TECH-06, R-TECH-11 |
+| 3 × 4 | 12 High | R-SEC-009, R-SEC-017, R-SEC-025, R-AI-01, R-SEC-026, R-SUP-S09, R-SUP-S10, R-SPOOF-01, R-TECH-01, R-TECH-02, R-TECH-04, R-TECH-06, R-TECH-11 |
 | 4 × 3 | 12 High | R-SCHED-01, R-TECH-12, R-TECH-13 |
 | 2 × 5 | 10 High | R-SUP-S05, R-PRIV-003 |
 
@@ -141,7 +141,7 @@ One row per risk. `WB 02/03/04` = workbook risk (ID kept); `New` = added by this
 | R-PRIV-017 | Ex-staff or over-privileged accounts keep access | WB 03 | Access | PRIV-017, SEC-013 | Software Engineering — Bhavish Nobeen | 3×5 = 15 High | 2×4 = 8 **Medium** | Mitigate | Open | No | Yes |
 | R-SEC-006 | Shadow interfaces without security review | WB 03 | Security | SEC-006 | Software Engineering — Bhavish Nobeen | 3×3 = 9 Medium | 2×3 = 6 **Medium** | Mitigate | Open | No | No |
 | R-SEC-007 | Broken object-level authorisation or unthrottled endpoints leak data | WB 03 | Security | SEC-007, SEC-011 | Software Engineering — Bhavish Nobeen | 4×5 = 20 Critical | 2×4 = 8 **Medium** | Mitigate | Open | No | No |
-| R-SEC-008 | Capacity discovered in production during a real peak | WB 03 | Availability / performance | SEC-008, SEC-002, SEC-003 | Software Engineering — Bhavish Nobeen | 4×4 = 16 High | 3×4 = 12 **High** | Mitigate | Open | Yes | No |
+| R-SEC-008 | Capacity discovered in production during a real peak | WB 03 | Availability / performance | SEC-008, SEC-002, SEC-003 | Software Engineering — Bhavish Nobeen | 4×4 = 16 High | 2×4 = 8 **Medium** | Mitigate | Open | No | No |
 | R-SEC-010 | Vulnerabilities and secrets merge unexamined | WB 03 | Security | SEC-010, SEC-025, SUP-S05 | Software Engineering — Bhavish Nobeen | 4×4 = 16 High | 4×4 = 16 **High** | Mitigate | Open | Yes | No |
 | R-SEC-011 | Unmapped endpoints default open | WB 03 | Access | SEC-011 | Software Engineering — Bhavish Nobeen | 4×5 = 20 Critical | 1×4 = 4 **Low** | Mitigate | Open (control effective) | No | No |
 | R-SEC-012 | Staff receive supervisor rights because no finer role exists | WB 03 | Access | SEC-012 | Software Engineering — Bhavish Nobeen | 3×4 = 12 High | 1×3 = 3 **Low** | Mitigate | Open (control effective) | No | No |
@@ -202,7 +202,7 @@ One row per risk. `WB 02/03/04` = workbook risk (ID kept); `New` = added by this
 | R-TECH-13 | Pack evidence not yet independently reviewed or approved | New | Security | SEC-041, PRIV-011, SEC-027 | Taj Aundoo (risk and control review, RACI row 19) | 4×4 = 16 High | 4×3 = 12 **High** | Mitigate | Open | Yes | No |
 | R-TECH-14 | Conflicting commitments in documents | New | Regulatory / privacy | SEC-005, PRIV-006, SEC-026 | Board of Directors | 4×3 = 12 High | 3×3 = 9 **Medium** | Mitigate | Open | No | No |
 | R-TECH-15 | Colleagues see raw personal data on bank-shared records | New | Regulatory / privacy | PRIV-004, SEC-016 | The DPO; Software Engineering — Bhavish Nobeen | 4×3 = 12 High | 3×3 = 9 **Medium** | Mitigate | Open | No | Yes |
-| R-TECH-16 | Performance findings from the stress test | New | Availability / performance | SEC-008, SEC-002, SEC-003 | Software Engineering — Bhavish Nobeen | 3×4 = 12 High | 3×3 = 9 **Medium** | Mitigate | Open | No | No |
+| R-TECH-16 | Capacity limits found by the stress test (MO-017 F-01 to F-09) | New | Availability / performance | SEC-008, SEC-002, SEC-003 | Software Engineering — Bhavish Nobeen | 3×4 = 12 High | 3×3 = 9 **Medium** | Mitigate | Open | No | No |
 
 ## 6. Risk details by theme
 
@@ -277,13 +277,13 @@ One row per risk. `WB 02/03/04` = workbook risk (ID kept); `New` = added by this
 
 | ID | Cause → consequence | Current controls (proof) | Residual | Action | Action owner | Target date |
 |---|---|---|---|---|---|---|
-| R-SEC-008 | No load or stress test ever run in a production-like environment. → Outage or slow service at the first peak. | A3 input pending (MO-017) | 12 High | A3 input pending (MO-017) | Bhavish Nobeen (plan, report); Rushal (staging run) | A3 input pending (MO-017) |
-| R-SEC-003 | Autoscaling configured but never observed working. → Slow or failed service at peaks; cost. | A3 input pending (MO-017) | 9 Medium | A3 input pending (MO-017) | Bhavish Nobeen; Rushal (run) | A3 input pending (MO-017) |
+| R-SEC-003 | Autoscaling configured but never observed working. → Slow or failed service at peaks; cost. | CPU target tracking 2–8 tasks in Terraform, not applied; stress test: CPU saturates first (one CPU carried 2× peak at 73 % mean CPU), so CPU is the right signal; memory headroom 160 MiB at 2,656 MiB RSS (F-04) (`docs/compliance/controls/SEC-003.md`). | 9 Medium | Fix the memory headroom (F-04); apply staging and record a scale-out event with zero 5xx under MO-016 load. | Bhavish Nobeen; Rushal (run) | 2026-11-30 (F-04); 2027-01-31 (scale-out evidence) |
 | R-SEC-005 | SLA quoted with no external probe or report. → Service-credit disputes; loss of trust. | Probe endpoint built; `SyntheticProbeTest` re-run by A9 (3/3). No external monitor, status page or signed clause (`docs/compliance/controls/SEC-005.md`). | 9 Medium | External probe with alarm; status page; agreed SLA clause; monthly uptime report. | Bhavish Nobeen; Rushal | Before go-live, with the first `terraform apply` (date `TO CONFIRM (organisational)`) |
 | R-SUP-S11 | No external synthetic probing. → Late response; loss of trust. | Probe endpoint and Terraform alarms; alarm delivery blocked by DEF-2; no dashboards or paging (`docs/compliance/controls/SUP-S11.md`). | 9 Medium | Synthetics canaries, dashboard, burn-rate alarms, paging; fix DEF-2. | Bhavish Nobeen; Rushal | Before go-live, with the first `terraform apply` (date `TO CONFIRM (organisational)`) |
-| R-TECH-16 | A3 input pending (MO-017) → A3 input pending (MO-017) | A3 input pending (MO-017) | 9 Medium | A3 input pending (MO-017) | Bhavish Nobeen | A3 input pending (MO-017) |
-| R-SEC-002 | No rate limiting; one abusive client can exhaust the service (workbook). → Outage and SLA breach. | A3 input pending (MO-017) | 8 Medium | A3 input pending (MO-017) | Bhavish Nobeen | A3 input pending (MO-017) |
+| R-TECH-16 | Full 50,000-row job read of 17.9 MB / 765 ms (F-01); 2 ingestion threads with an unbounded queue (F-02); 35 s re-index holding a DB connection (F-03); RSS 160 MiB under the container limit (F-04); synchronous generation (F-05); no early shedding (F-06). → Slow screens with large jobs, queued uploads, a container killed for memory under heavy generation. | No error, 5xx or failed job in any run (`docs/compliance/mo-017-stress-testing-report.md` §7, raw output `perf/results/stress-2026-10/`, re-computed by A9); each finding has an owner and a proposed date. | 9 Medium | F-04 memory headroom; F-01 paged job rows; F-02/F-05 bounded queues; F-03 batched re-index; F-06 to F-08 later; re-test on staging. | Bhavish Nobeen | 2026-11-30 (F-04); 2026-12-15 (F-01–F-03, F-05) (proposed) |
+| R-SEC-002 | Workbook: no rate limiting. Today: limits exist; report generation has no queue and the ingestion queue is unbounded. → Outage and SLA breach. | Every limit answered 429 with `Retry-After` at its limit and other users were unaffected; AI outage: 20/20 jobs completed; full DB pool: waiting, 0 errors (MO-017 S5; A9 counted the 22 × 429 in the raw output). Generation synchronous (F-05), ingestion queue unbounded (F-02), counters per instance (F-07); WAF not applied (`docs/compliance/controls/SEC-002.md`). | 8 Medium | Bounded queues for generation and ingestion (429 or 202 when full); shared rate-limit store; apply the WAF. | Bhavish Nobeen | 2026-12-15 |
 | R-SEC-004 | Single-AZ database (workbook). → Client-visible outage. | Production Terraform: RDS Multi-AZ, two-AZ app tier, minimum 2 tasks; never failed over (`docs/compliance/controls/SEC-004.md`). | 8 Medium | Zone-failure and forced-failover test in staging, then production. | Bhavish Nobeen; Rushal | Before go-live, with the first `terraform apply` (date `TO CONFIRM (organisational)`) |
+| R-SEC-008 | Workbook: no test ever run. Today: tested on a shared test box only; expected peak not stated. → Outage or slow service at the first peak. | MO-016 plan run on 2026-10-19 (`docs/compliance/mo-017-stress-testing-report.md`): 0 errors at 1×, 2× and a 4× spike of an assumed 50-user peak; breakpoint 400 users on 4 shared CPUs, 150 on one CPU; A9 re-computed the p95 figures from the raw output in `perf/results/stress-2026-10/` (all match). Not run on staging; expected peak `TO CONFIRM (organisational)`. | 8 Medium | Business states the expected peak; re-run MO-016 on staging at 2× that peak with a 1-hour soak (gate E7) and re-issue MO-017. | Bhavish Nobeen (plan, report); Rushal (staging run) | Before go-live (workbook control date 2027-01-31) |
 | R-SUP-S03 | Origin reachable directly (workbook). → Outage in business hours. | CloudFront + WAF, origin lock and rate rules in Terraform; staging has no WAF; mTLS listener bypasses the WAF (`docs/compliance/controls/SUP-S03.md`, `docs/compliance/policies/ddos-runbook.md`). | 8 Medium | Deploy the edge; origin-bypass and flood tests; edge logs; Shield Advanced decision. | Bhavish Nobeen | Before go-live, with the first `terraform apply` (date `TO CONFIRM (organisational)`) |
 
 ### 6.5 Hosting / infrastructure
@@ -360,7 +360,7 @@ MO-031 asks for nine themes. Each is covered by workbook risks; a new `R-TECH` r
 | RBAC exceptions X-02 (APPROVER MFA), X-03 (raw colleague records), X-04 (break-glass password) | `docs/compliance/mo-019-role-based-access-system-report.md` §8 | R-SEC-014, R-TECH-15 (new), R-SEC-017 |
 | Owner, RTO and patch-limit conflicts | `docs/compliance/mo-001-governance-structure.md` §3.4; A8 DOC-7 | R-TECH-14 (new) |
 | Incident response plan is a stub (pack-09 pending) | `docs/security/incident-response-stub.md` | R-TECH-06 (new) |
-| Stress-test findings | `docs/compliance/mo-017-stress-testing-report.md` (A3 input pending) | R-SEC-008, R-SEC-002, R-SEC-003, R-TECH-16 — ratings provisional until MO-017 is merged |
+| Stress-test findings | `docs/compliance/mo-017-stress-testing-report.md` | R-SEC-008, R-SEC-002, R-SEC-003, R-TECH-16 |
 
 ## 9. Acceptance register
 
@@ -376,7 +376,6 @@ These risks need a written decision. Reezvi Pydiah decides (approval matrix D11)
 | R-PRIV-006 | 15 High | Mitigate | Approve the treatment plan and accept the residual until it closes, or hold go-live | Reezvi Pydiah; Board (High, proposed) | None in the repository | — |
 | R-AI-01 | 12 High | Accept | Accept the residual risk in writing | Reezvi Pydiah; Board (High, proposed) | None in the repository | Workbook: Reezvi Pydiah (gate C11). |
 | R-SCHED-01 | 12 High | Mitigate | Approve the treatment plan and accept the residual until it closes, or hold go-live | Reezvi Pydiah; Board (High, proposed) | None in the repository | Workbook: "Recorded". |
-| R-SEC-008 | 12 High | Mitigate | Approve the treatment plan and accept the residual until it closes, or hold go-live | Reezvi Pydiah; Board (High, proposed) | None in the repository | — |
 | R-SEC-009 | 12 High | Mitigate | Approve the treatment plan and accept the residual until it closes, or hold go-live | Reezvi Pydiah; Board (High, proposed) | None in the repository | — |
 | R-SEC-017 | 12 High | Mitigate | Approve the treatment plan and accept the residual until it closes, or hold go-live | Reezvi Pydiah; Board (High, proposed) | None in the repository | — |
 | R-SEC-025 | 12 High | Mitigate | Approve the treatment plan and accept the residual until it closes, or hold go-live | Reezvi Pydiah; Board (High, proposed) | None in the repository | — |
@@ -445,4 +444,3 @@ Workbook dates that have passed on 2026-10-19 are shown in §6 with a new date m
 - `TO CONFIRM (organisational)`: the go-live date that the "before go-live" targets depend on.
 - `TO CONFIRM (organisational)`: owner conflicts for R-SUP-S09, R-SUP-S10 and R-SUP-S12 (MO-001 §3.4).
 - `NOT IN REPO (live cloud)`: any rating that depends on a deployed environment (backups, failover, alerts, edge) is rated on design only.
-- A3 input pending: stress-test results (MO-017) for R-SEC-008, R-SEC-002, R-SEC-003 and R-TECH-16; ratings provisional.
