@@ -196,6 +196,7 @@ def update_risk_workbook(path, controls, risks, out_dir):
         "against the MoDocument repository (docs/compliance, scripts/compliance/check_pack.py). Owner statements "
         "of 2 Oct are kept in Comments. Anything the repository cannot prove is marked TO CONFIRM or NOT IN REPO.")
 
+    wb.calculation.fullCalcOnLoad = True  # Dashboard formulas refresh when the copy is opened
     out = out_dir / (Path(path).stem.split("-", 1)[-1] + "_updated.xlsx")
     wb.save(out)
     return out, seen
@@ -214,6 +215,7 @@ def update_checklist(path, out_dir):
         old = r[h["Notes"]].value or ""
         r[h["Notes"]].value = (f"Draft v1 delivered 2026-10-19: {docs[tid]} (PDF in the documentation pack). "
                                f"Awaiting review/approval as listed.\n{old}")
+    wb.calculation.fullCalcOnLoad = True
     out = out_dir / (Path(path).stem.split("-", 1)[-1] + "_updated.xlsx")
     wb.save(out)
     return out
