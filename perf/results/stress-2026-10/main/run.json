@@ -1,0 +1,130 @@
+{
+  "task": "MO-017",
+  "label": "main",
+  "machine": {
+    "at": "2026-10-19T16:35:40.071Z",
+    "commit": "eb53e97",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      8.51,
+      10.48,
+      7.11
+    ]
+  },
+  "javaPid": 21893,
+  "jvm": {
+    "args": [
+      "-Xmx1971m",
+      "-XX:+UseG1GC"
+    ],
+    "affinity": "f"
+  },
+  "dbAppRole": "rls",
+  "rateLimitOverrides": {
+    "MODOCUMENT_RATELIMIT_UPLOADS": "200",
+    "MODOCUMENT_RATELIMIT_DOC_GENERATE": "300",
+    "MODOCUMENT_RATELIMIT_INGESTION": "600",
+    "MODOCUMENT_RATELIMIT_EXPORTS": "600"
+  },
+  "dbPoolMax": "20 (default)",
+  "thresholds": {
+    "p95": {
+      "read": 500,
+      "write": 1000,
+      "auth": 1000,
+      "heavy": 3000,
+      "job": 60000
+    },
+    "p99": {
+      "read": 1500,
+      "write": 3000,
+      "auth": 2000,
+      "heavy": 8000,
+      "job": 120000
+    },
+    "maxErrorRate": 0.01
+  },
+  "startedAt": "2026-10-19T16:35:40.090Z",
+  "scenarios": [
+    {
+      "key": "s1",
+      "title": "S1 concurrent data entry",
+      "start": "2026-10-19T16:36:31.954Z",
+      "end": "2026-10-19T16:39:02.967Z",
+      "requests": 6761
+    },
+    {
+      "key": "s2",
+      "title": "S2 concurrent generation and export",
+      "start": "2026-10-19T16:39:08.080Z",
+      "end": "2026-10-19T16:42:25.066Z",
+      "requests": 12122
+    },
+    {
+      "key": "s3",
+      "title": "S3 large templates and files",
+      "start": "2026-10-19T16:42:30.259Z",
+      "end": "2026-10-19T16:43:49.984Z",
+      "requests": 966
+    },
+    {
+      "key": "s5b",
+      "title": "S5b AI degradation and circuit breaker",
+      "start": "2026-10-19T16:43:55.027Z",
+      "end": "2026-10-19T16:44:26.120Z",
+      "requests": 288
+    },
+    {
+      "key": "s4",
+      "title": "S4 peak mixed load (1x, 2x, spike, recovery)",
+      "start": "2026-10-19T16:44:31.147Z",
+      "end": "2026-10-19T16:54:03.746Z",
+      "requests": 26725
+    },
+    {
+      "key": "soak",
+      "title": "Soak (short) at 1x peak",
+      "start": "2026-10-19T16:54:09.137Z",
+      "end": "2026-10-19T17:04:11.958Z",
+      "requests": 18466
+    },
+    {
+      "key": "s5b-recovery",
+      "title": "S5b circuit recovery after the open duration",
+      "start": "2026-10-19T17:04:17.636Z",
+      "end": "2026-10-19T17:04:19.195Z",
+      "requests": 4
+    },
+    {
+      "key": "s5c",
+      "title": "S5c DB connection pool pressure",
+      "start": "2026-10-19T17:04:24.234Z",
+      "end": "2026-10-19T17:05:24.723Z",
+      "requests": 26241
+    },
+    {
+      "key": "s6",
+      "title": "S6 breakpoint (step load) and recovery",
+      "start": "2026-10-19T17:05:30.274Z",
+      "end": "2026-10-19T17:11:51.562Z",
+      "requests": 119333
+    }
+  ],
+  "endedAt": "2026-10-19T17:11:55.271Z",
+  "machineAtEnd": {
+    "at": "2026-10-19T17:11:55.303Z",
+    "commit": "eb53e97",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      10.23,
+      10.83,
+      6.82
+    ]
+  }
+}

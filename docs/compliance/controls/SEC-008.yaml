@@ -1,0 +1,34 @@
+id: SEC-008
+status: Partially Implemented
+current_state: "Stress test plan (docs/compliance/mo-016-stress-test-plan.md) and stress testing report dated 2026-10-19 (docs/compliance/mo-017-stress-testing-report.md) exist; the load driver is in perf/stress/ and raw per-request outputs, timelines, resource samples and GC logs are archived in perf/results/stress-2026-10/. Run on the shared 4-vCPU test box with one instance (plus a one-CPU pinned variant), synthetic data only: 0 errors at 1x and 2x of an assumed 50-user peak; capacity within thresholds about 715 req/s at 300 users on 4 CPUs; latency breaking point at 400 users; nine findings, none critical. k6 scenarios for staging exist in loadtest/."
+gap: "The test has not been run on production-sized infrastructure (staging) at the confirmed expected peak; the report is not yet approved."
+gap_type: Config
+required_action: "Apply the staging Terraform, seed synthetic production-scale data, run loadtest/ k6 scenarios and MO-016 S1 to S6 at 2x the confirmed peak with a 1-hour soak, and re-issue MO-017; obtain review (Rushal) and management approval (Reezvi Pydiah); re-run every 12 months and after major architecture changes."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2027-01-31
+evidence:
+  id: SEC-008-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-008.md; docs/compliance/mo-016-stress-test-plan.md; docs/compliance/mo-017-stress-testing-report.md; docs/compliance/evidence/A3-stress-runs.md; perf/results/stress-2026-10/; perf/stress/"
+question:
+  final_answer: "MoDocument has a documented stress test plan and a stress testing report. The test was run on 19 October 2026 with synthetic data only, on a pre-production test environment (one application instance, production configuration with row-level security, a 4-vCPU machine, plus a run pinned to one CPU to approximate one production task). It covered concurrent data entry, concurrent report generation, large templates (300-field PDF forms, 50,000-row files), a peak user mix at 1x, 2x and 4x an assumed peak of 50 concurrent users, a 10-minute soak, overload behaviour (rate limits, AI outage, database pool saturation) and a breakpoint search. Results: 0 errors at 1x and 2x peak with p95 latency below 60 ms for interactive requests; one instance on 4 CPUs sustained about 715 requests per second within the latency thresholds and reached its latency breaking point at 400 concurrent fast-clicking users, with no errors; the machine's CPU was the bottleneck. Nine findings (none critical) have owners and dates. Raw outputs are archived with the report. Before go-live the same plan is re-run on the staging environment at 2x the confirmed peak, and the report is re-issued at least every 12 months and after major architecture changes. Evidence: SEC-008-E01."
+  confidence: Medium
+test:
+  id: SEC-008-T01
+  actual_result: "Plan executed 2026-10-19 in four runs (main, default-limits, one-cpu, retest-s5b); report dated 2026-10-19 states the tested capacity (300 users, about 715 req/s within thresholds on 4 shared CPUs) and the breaking point (400 users, latency); 0 errors in all capacity scenarios; raw outputs archived under perf/results/stress-2026-10/. Not yet run on production-sized staging infrastructure."
+  result: Partial
+  tester: "Agent A3 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 90
+  action: "Re-run MO-016 on staging (production-sized) at 2x the confirmed peak and re-issue MO-017 before go-live."
+  status: In progress
+risk:
+  likelihood: null
+  impact: null
+  residual: null
+policy_document: docs/compliance/mo-017-stress-testing-report.md
+to_confirm:
+  - "NOT IN REPO (live cloud): staging environment and the k6 run on it (gate E7)."
+  - "TO CONFIRM (organisational): expected production peak; approval of the report by Rushal and Reezvi Pydiah."
+  - "TO CONFIRM (organisational): dependency PRIV-005 (masked staging data); this pack uses generated synthetic data only."

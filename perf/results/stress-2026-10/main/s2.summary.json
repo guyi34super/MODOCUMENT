@@ -1,0 +1,1310 @@
+{
+  "key": "s2",
+  "title": "S2 concurrent generation and export",
+  "start": "2026-10-19T16:39:08.080Z",
+  "end": "2026-10-19T16:42:25.066Z",
+  "seconds": 197,
+  "total": {
+    "all": {
+      "requests": 12024,
+      "rps": 61.04,
+      "p50": 25.5,
+      "p90": 114.4,
+      "p95": 148.4,
+      "p99": 263.3,
+      "max": 1945.3,
+      "errors": 0,
+      "errorRate": 0,
+      "rateLimited": 0,
+      "statuses": {
+        "200": 12024
+      },
+      "avgBytes": 4565
+    },
+    "errorBudgetPass": true,
+    "latencyPass": true,
+    "classes": {
+      "write": {
+        "requests": 4504,
+        "rps": 22.86,
+        "p50": 14.3,
+        "p90": 38.5,
+        "p95": 49.4,
+        "p99": 69.9,
+        "max": 234.6,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 4504
+        },
+        "avgBytes": 4626,
+        "p95Limit": 1000,
+        "p99Limit": 3000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "heavy": {
+        "requests": 5268,
+        "rps": 26.74,
+        "p50": 32,
+        "p90": 90.4,
+        "p95": 117.8,
+        "p99": 337.4,
+        "max": 1945.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5268
+        },
+        "avgBytes": 6465,
+        "p95Limit": 3000,
+        "p99Limit": 8000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "flow": {
+        "requests": 2252,
+        "rps": 11.43,
+        "p50": 101.9,
+        "p90": 179.7,
+        "p95": 212.7,
+        "p99": 495.3,
+        "max": 1142.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2252
+        },
+        "avgBytes": 0,
+        "p95Pass": null,
+        "p99Pass": null
+      }
+    },
+    "names": {
+      "doc.download": {
+        "class": "heavy",
+        "requests": 2252,
+        "rps": 11.43,
+        "p50": 9.2,
+        "p90": 20.8,
+        "p95": 28.9,
+        "p99": 53.1,
+        "max": 182.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2252
+        },
+        "avgBytes": 10551
+      },
+      "doc.generate": {
+        "class": "heavy",
+        "requests": 2252,
+        "rps": 11.43,
+        "p50": 52.5,
+        "p90": 104.1,
+        "p95": 131.2,
+        "p99": 337.4,
+        "max": 1038.9,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2252
+        },
+        "avgBytes": 112
+      },
+      "doc.validate": {
+        "class": "write",
+        "requests": 2252,
+        "rps": 11.43,
+        "p50": 14.5,
+        "p90": 33.8,
+        "p95": 47.4,
+        "p99": 70,
+        "max": 198,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2252
+        },
+        "avgBytes": 4644
+      },
+      "doc.values.autosave": {
+        "class": "write",
+        "requests": 2252,
+        "rps": 11.43,
+        "p50": 14,
+        "p90": 41.3,
+        "p95": 50.1,
+        "p99": 69.2,
+        "max": 234.6,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2252
+        },
+        "avgBytes": 4609
+      },
+      "flow.save-generate-download": {
+        "class": "flow",
+        "requests": 2252,
+        "rps": 11.43,
+        "p50": 101.9,
+        "p90": 179.7,
+        "p95": 212.7,
+        "p99": 495.3,
+        "max": 1142.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2252
+        },
+        "avgBytes": 0
+      },
+      "ingest.export.csv": {
+        "class": "heavy",
+        "requests": 494,
+        "rps": 2.51,
+        "p50": 22.6,
+        "p90": 51.3,
+        "p95": 63.9,
+        "p99": 92.5,
+        "max": 113.1,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 494
+        },
+        "avgBytes": 14346
+      },
+      "ingest.export.xlsx": {
+        "class": "heavy",
+        "requests": 270,
+        "rps": 1.37,
+        "p50": 95.1,
+        "p90": 347.9,
+        "p95": 721.1,
+        "p99": 1920.8,
+        "max": 1945.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 270
+        },
+        "avgBytes": 10958
+      }
+    }
+  },
+  "resources": {
+    "samples": 197,
+    "javaCpuPct": {
+      "mean": 139.3,
+      "max": 331,
+      "last": 5
+    },
+    "javaRssMiB": {
+      "mean": 1360.9,
+      "max": 2071.6,
+      "last": 1853.1
+    },
+    "javaThreads": {
+      "mean": 71.9,
+      "max": 76,
+      "last": 74
+    },
+    "sysCpuPct": {
+      "mean": 48,
+      "max": 95.7,
+      "last": 7.2
+    },
+    "load1": {
+      "mean": 2.5,
+      "max": 4,
+      "last": 4.01
+    },
+    "nodeCpuPct": {
+      "mean": 7.1,
+      "max": 20.3,
+      "last": 0.6
+    },
+    "dbConnTotal": {
+      "mean": 17.2,
+      "max": 18,
+      "last": 18
+    },
+    "dbConnActive": {
+      "mean": 0,
+      "max": 0,
+      "last": 0
+    }
+  },
+  "stages": [
+    {
+      "label": "5 users",
+      "vus": 5,
+      "start": "2026-10-19T16:39:08.081Z",
+      "seconds": 45,
+      "all": {
+        "requests": 724,
+        "rps": 16.09,
+        "p50": 19.2,
+        "p90": 100.1,
+        "p95": 160.8,
+        "p99": 1061.8,
+        "max": 1945.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 724
+        },
+        "avgBytes": 4555
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 271,
+          "rps": 6.02,
+          "p50": 13.8,
+          "p90": 24.3,
+          "p95": 48.8,
+          "p99": 67.6,
+          "max": 144.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 271
+          },
+          "avgBytes": 4622,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "heavy": {
+          "requests": 317,
+          "rps": 7.04,
+          "p50": 29.9,
+          "p90": 90.4,
+          "p95": 201.1,
+          "p99": 1916.4,
+          "max": 1945.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 317
+          },
+          "avgBytes": 6452,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "flow": {
+          "requests": 136,
+          "rps": 3.02,
+          "p50": 86.4,
+          "p90": 181.3,
+          "p95": 276.7,
+          "p99": 1087.4,
+          "max": 1142.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 136
+          },
+          "avgBytes": 0,
+          "p95Pass": null,
+          "p99Pass": null
+        }
+      },
+      "names": {
+        "doc.download": {
+          "class": "heavy",
+          "requests": 135,
+          "rps": 3,
+          "p50": 9.1,
+          "p90": 20.2,
+          "p95": 28.9,
+          "p99": 31.9,
+          "max": 44.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 135
+          },
+          "avgBytes": 10497
+        },
+        "doc.generate": {
+          "class": "heavy",
+          "requests": 135,
+          "rps": 3,
+          "p50": 50.4,
+          "p90": 99.8,
+          "p95": 201.1,
+          "p99": 1005.3,
+          "max": 1038.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 135
+          },
+          "avgBytes": 112
+        },
+        "doc.validate": {
+          "class": "write",
+          "requests": 135,
+          "rps": 3,
+          "p50": 14.7,
+          "p90": 25.7,
+          "p95": 48.8,
+          "p99": 61.9,
+          "max": 67.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 135
+          },
+          "avgBytes": 4639
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 136,
+          "rps": 3.02,
+          "p50": 12.7,
+          "p90": 22.1,
+          "p95": 48.8,
+          "p99": 75,
+          "max": 144.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 136
+          },
+          "avgBytes": 4605
+        },
+        "flow.save-generate-download": {
+          "class": "flow",
+          "requests": 136,
+          "rps": 3.02,
+          "p50": 86.4,
+          "p90": 181.3,
+          "p95": 276.7,
+          "p99": 1087.4,
+          "max": 1142.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 136
+          },
+          "avgBytes": 0
+        },
+        "ingest.export.csv": {
+          "class": "heavy",
+          "requests": 30,
+          "rps": 0.67,
+          "p50": 17.9,
+          "p90": 27.9,
+          "p95": 38.4,
+          "p99": 62.8,
+          "max": 62.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 30
+          },
+          "avgBytes": 14232
+        },
+        "ingest.export.xlsx": {
+          "class": "heavy",
+          "requests": 17,
+          "rps": 0.38,
+          "p50": 202.1,
+          "p90": 1933.2,
+          "p95": 1945.3,
+          "p99": 1945.3,
+          "max": 1945.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 17
+          },
+          "avgBytes": 10953
+        }
+      },
+      "probe": {
+        "requests": 22,
+        "rps": 0.49,
+        "p50": 4.6,
+        "p90": 9,
+        "p95": 9.3,
+        "p99": 11.2,
+        "max": 11.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 22
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 45,
+        "javaCpuPct": {
+          "mean": 81.6,
+          "max": 331,
+          "last": 52
+        },
+        "javaRssMiB": {
+          "mean": 1137.9,
+          "max": 1343.5,
+          "last": 1183
+        },
+        "javaThreads": {
+          "mean": 71.4,
+          "max": 72,
+          "last": 71
+        },
+        "sysCpuPct": {
+          "mean": 29.3,
+          "max": 93,
+          "last": 23.1
+        },
+        "load1": {
+          "mean": 3,
+          "max": 3.9,
+          "last": 2.19
+        },
+        "nodeCpuPct": {
+          "mean": 2.7,
+          "max": 9.3,
+          "last": 3.6
+        },
+        "dbConnTotal": {
+          "mean": 17,
+          "max": 17,
+          "last": 17
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "10 users",
+      "vus": 10,
+      "start": "2026-10-19T16:39:53.080Z",
+      "seconds": 45,
+      "all": {
+        "requests": 1520,
+        "rps": 33.78,
+        "p50": 16.2,
+        "p90": 78.4,
+        "p95": 93.5,
+        "p99": 146.6,
+        "max": 204,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1520
+        },
+        "avgBytes": 4561
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 569,
+          "rps": 12.64,
+          "p50": 11.9,
+          "p90": 18.5,
+          "p95": 26.2,
+          "p99": 46.8,
+          "max": 82.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 569
+          },
+          "avgBytes": 4624,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "heavy": {
+          "requests": 667,
+          "rps": 14.82,
+          "p50": 27.3,
+          "p90": 60.5,
+          "p95": 78.4,
+          "p99": 129.5,
+          "max": 191.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 667
+          },
+          "avgBytes": 6451,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "flow": {
+          "requests": 284,
+          "rps": 6.31,
+          "p50": 75.6,
+          "p90": 129,
+          "p95": 145,
+          "p99": 184.6,
+          "max": 204,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 284
+          },
+          "avgBytes": 0,
+          "p95Pass": null,
+          "p99Pass": null
+        }
+      },
+      "names": {
+        "doc.download": {
+          "class": "heavy",
+          "requests": 285,
+          "rps": 6.33,
+          "p50": 8.2,
+          "p90": 14.4,
+          "p95": 19.3,
+          "p99": 27.5,
+          "max": 32.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 285
+          },
+          "avgBytes": 10550
+        },
+        "doc.generate": {
+          "class": "heavy",
+          "requests": 285,
+          "rps": 6.33,
+          "p50": 42.2,
+          "p90": 71.1,
+          "p95": 86.2,
+          "p99": 121.8,
+          "max": 141.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 285
+          },
+          "avgBytes": 112
+        },
+        "doc.validate": {
+          "class": "write",
+          "requests": 285,
+          "rps": 6.33,
+          "p50": 12.5,
+          "p90": 18.5,
+          "p95": 21,
+          "p99": 28,
+          "max": 42.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 285
+          },
+          "avgBytes": 4641
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 284,
+          "rps": 6.31,
+          "p50": 11.3,
+          "p90": 20.1,
+          "p95": 41.1,
+          "p99": 51.8,
+          "max": 82.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 284
+          },
+          "avgBytes": 4606
+        },
+        "flow.save-generate-download": {
+          "class": "flow",
+          "requests": 284,
+          "rps": 6.31,
+          "p50": 75.6,
+          "p90": 129,
+          "p95": 145,
+          "p99": 184.6,
+          "max": 204,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 284
+          },
+          "avgBytes": 0
+        },
+        "ingest.export.csv": {
+          "class": "heavy",
+          "requests": 61,
+          "rps": 1.36,
+          "p50": 17.3,
+          "p90": 28.6,
+          "p95": 34.3,
+          "p99": 44.7,
+          "max": 44.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 61
+          },
+          "avgBytes": 14255
+        },
+        "ingest.export.xlsx": {
+          "class": "heavy",
+          "requests": 36,
+          "rps": 0.8,
+          "p50": 67.4,
+          "p90": 138.3,
+          "p95": 151.8,
+          "p99": 191.1,
+          "max": 191.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 36
+          },
+          "avgBytes": 10954
+        }
+      },
+      "probe": {
+        "requests": 22,
+        "rps": 0.49,
+        "p50": 5.4,
+        "p90": 7.3,
+        "p95": 12.4,
+        "p99": 21.6,
+        "max": 21.6,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 22
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 45,
+        "javaCpuPct": {
+          "mean": 69.5,
+          "max": 155,
+          "last": 85
+        },
+        "javaRssMiB": {
+          "mean": 1218.6,
+          "max": 1408.6,
+          "last": 1225.1
+        },
+        "javaThreads": {
+          "mean": 71.1,
+          "max": 72,
+          "last": 71
+        },
+        "sysCpuPct": {
+          "mean": 28.1,
+          "max": 55.7,
+          "last": 37
+        },
+        "load1": {
+          "mean": 2.3,
+          "max": 2.5,
+          "last": 2.15
+        },
+        "nodeCpuPct": {
+          "mean": 5,
+          "max": 14.8,
+          "last": 3.9
+        },
+        "dbConnTotal": {
+          "mean": 17,
+          "max": 17,
+          "last": 17
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "20 users",
+      "vus": 20,
+      "start": "2026-10-19T16:40:38.081Z",
+      "seconds": 60,
+      "all": {
+        "requests": 3975,
+        "rps": 66.25,
+        "p50": 21.2,
+        "p90": 102.9,
+        "p95": 127.9,
+        "p99": 182.7,
+        "max": 365.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 3975
+        },
+        "avgBytes": 4560
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 1490,
+          "rps": 24.83,
+          "p50": 13.3,
+          "p90": 34.8,
+          "p95": 45.3,
+          "p99": 63.6,
+          "max": 76.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1490
+          },
+          "avgBytes": 4626,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "heavy": {
+          "requests": 1740,
+          "rps": 29,
+          "p50": 30.3,
+          "p90": 81.9,
+          "p95": 95.2,
+          "p99": 154.3,
+          "max": 340.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1740
+          },
+          "avgBytes": 6455,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "flow": {
+          "requests": 745,
+          "rps": 12.42,
+          "p50": 97.2,
+          "p90": 154.2,
+          "p95": 170.7,
+          "p99": 201.1,
+          "max": 365.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 745
+          },
+          "avgBytes": 0,
+          "p95Pass": null,
+          "p99Pass": null
+        }
+      },
+      "names": {
+        "doc.download": {
+          "class": "heavy",
+          "requests": 745,
+          "rps": 12.42,
+          "p50": 8.8,
+          "p90": 16.9,
+          "p95": 19.7,
+          "p99": 46,
+          "max": 69.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 745
+          },
+          "avgBytes": 10556
+        },
+        "doc.generate": {
+          "class": "heavy",
+          "requests": 745,
+          "rps": 12.42,
+          "p50": 49.2,
+          "p90": 90.2,
+          "p95": 100.2,
+          "p99": 136.2,
+          "max": 269.2,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 745
+          },
+          "avgBytes": 112
+        },
+        "doc.validate": {
+          "class": "write",
+          "requests": 745,
+          "rps": 12.42,
+          "p50": 13.2,
+          "p90": 23.7,
+          "p95": 35.6,
+          "p99": 64.4,
+          "max": 72.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 745
+          },
+          "avgBytes": 4644
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 745,
+          "rps": 12.42,
+          "p50": 13.4,
+          "p90": 40.8,
+          "p95": 49,
+          "p99": 62.1,
+          "max": 76.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 745
+          },
+          "avgBytes": 4609
+        },
+        "flow.save-generate-download": {
+          "class": "flow",
+          "requests": 745,
+          "rps": 12.42,
+          "p50": 97.2,
+          "p90": 154.2,
+          "p95": 170.7,
+          "p99": 201.1,
+          "max": 365.3,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 745
+          },
+          "avgBytes": 0
+        },
+        "ingest.export.csv": {
+          "class": "heavy",
+          "requests": 161,
+          "rps": 2.68,
+          "p50": 22.8,
+          "p90": 38.3,
+          "p95": 49.8,
+          "p99": 67.9,
+          "max": 82.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 161
+          },
+          "avgBytes": 14343
+        },
+        "ingest.export.xlsx": {
+          "class": "heavy",
+          "requests": 89,
+          "rps": 1.48,
+          "p50": 86.6,
+          "p90": 217.1,
+          "p95": 302.2,
+          "p99": 340.4,
+          "max": 340.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 89
+          },
+          "avgBytes": 10958
+        }
+      },
+      "probe": {
+        "requests": 30,
+        "rps": 0.5,
+        "p50": 5.7,
+        "p90": 19,
+        "p95": 29.9,
+        "p99": 32.4,
+        "max": 32.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 30
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 60,
+        "javaCpuPct": {
+          "mean": 166.7,
+          "max": 261.9,
+          "last": 218.1
+        },
+        "javaRssMiB": {
+          "mean": 1354.2,
+          "max": 1647,
+          "last": 1306.7
+        },
+        "javaThreads": {
+          "mean": 71,
+          "max": 71,
+          "last": 71
+        },
+        "sysCpuPct": {
+          "mean": 55.6,
+          "max": 78.4,
+          "last": 68.4
+        },
+        "load1": {
+          "mean": 2.1,
+          "max": 2.2,
+          "last": 2.24
+        },
+        "nodeCpuPct": {
+          "mean": 7.6,
+          "max": 15.3,
+          "last": 7.4
+        },
+        "dbConnTotal": {
+          "mean": 17,
+          "max": 17,
+          "last": 17
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    },
+    {
+      "label": "40 users",
+      "vus": 40,
+      "start": "2026-10-19T16:41:38.082Z",
+      "seconds": 45,
+      "all": {
+        "requests": 5795,
+        "rps": 128.78,
+        "p50": 30.4,
+        "p90": 134.1,
+        "p95": 170.5,
+        "p99": 395.8,
+        "max": 911.5,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5795
+        },
+        "avgBytes": 4566
+      },
+      "errorBudgetPass": true,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 2172,
+          "rps": 48.27,
+          "p50": 16.8,
+          "p90": 43.2,
+          "p95": 55.5,
+          "p99": 77.6,
+          "max": 234.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 2172
+          },
+          "avgBytes": 4628,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "heavy": {
+          "requests": 2536,
+          "rps": 56.36,
+          "p50": 34.2,
+          "p90": 104.1,
+          "p95": 139.9,
+          "p99": 451.9,
+          "max": 911.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 2536
+          },
+          "avgBytes": 6471,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "flow": {
+          "requests": 1087,
+          "rps": 24.16,
+          "p50": 119,
+          "p90": 204.7,
+          "p95": 242,
+          "p99": 585.4,
+          "max": 790.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1087
+          },
+          "avgBytes": 0,
+          "p95Pass": null,
+          "p99Pass": null
+        }
+      },
+      "names": {
+        "doc.download": {
+          "class": "heavy",
+          "requests": 1083,
+          "rps": 24.07,
+          "p50": 10.2,
+          "p90": 26.1,
+          "p95": 35.8,
+          "p99": 66.4,
+          "max": 182.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1083
+          },
+          "avgBytes": 10554
+        },
+        "doc.generate": {
+          "class": "heavy",
+          "requests": 1085,
+          "rps": 24.11,
+          "p50": 63.6,
+          "p90": 124.4,
+          "p95": 152.7,
+          "p99": 395.8,
+          "max": 650.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1085
+          },
+          "avgBytes": 112
+        },
+        "doc.validate": {
+          "class": "write",
+          "requests": 1085,
+          "rps": 24.11,
+          "p50": 16.8,
+          "p90": 41.9,
+          "p95": 56.2,
+          "p99": 86.1,
+          "max": 198,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1085
+          },
+          "avgBytes": 4645
+        },
+        "doc.values.autosave": {
+          "class": "write",
+          "requests": 1087,
+          "rps": 24.16,
+          "p50": 16.8,
+          "p90": 44.5,
+          "p95": 54.8,
+          "p99": 73.3,
+          "max": 234.6,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1087
+          },
+          "avgBytes": 4610
+        },
+        "flow.save-generate-download": {
+          "class": "flow",
+          "requests": 1087,
+          "rps": 24.16,
+          "p50": 119,
+          "p90": 204.7,
+          "p95": 242,
+          "p99": 585.4,
+          "max": 790.7,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1087
+          },
+          "avgBytes": 0
+        },
+        "ingest.export.csv": {
+          "class": "heavy",
+          "requests": 241,
+          "rps": 5.36,
+          "p50": 24.8,
+          "p90": 61.3,
+          "p95": 72.4,
+          "p99": 95.2,
+          "max": 113.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 241
+          },
+          "avgBytes": 14386
+        },
+        "ingest.export.xlsx": {
+          "class": "heavy",
+          "requests": 127,
+          "rps": 2.82,
+          "p50": 121.9,
+          "p90": 678.9,
+          "p95": 793.7,
+          "p99": 867,
+          "max": 911.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 127
+          },
+          "avgBytes": 10959
+        }
+      },
+      "probe": {
+        "requests": 23,
+        "rps": 0.51,
+        "p50": 7.6,
+        "p90": 20.4,
+        "p95": 28.5,
+        "p99": 136.1,
+        "max": 136.1,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 23
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 45,
+        "javaCpuPct": {
+          "mean": 230.8,
+          "max": 294.9,
+          "last": 279.7
+        },
+        "javaRssMiB": {
+          "mean": 1713.5,
+          "max": 2071.6,
+          "last": 1853.1
+        },
+        "javaThreads": {
+          "mean": 74.1,
+          "max": 76,
+          "last": 75
+        },
+        "sysCpuPct": {
+          "mean": 76.4,
+          "max": 95.7,
+          "last": 91.9
+        },
+        "load1": {
+          "mean": 2.7,
+          "max": 4,
+          "last": 4.01
+        },
+        "nodeCpuPct": {
+          "mean": 12.9,
+          "max": 20.3,
+          "last": 17
+        },
+        "dbConnTotal": {
+          "mean": 18,
+          "max": 18,
+          "last": 18
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    }
+  ],
+  "extra": null
+}
