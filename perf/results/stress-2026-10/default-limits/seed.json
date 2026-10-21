@@ -1,0 +1,283 @@
+{
+  "users": 5,
+  "loginAllMs": 201,
+  "seconds": 6.7,
+  "requests": {
+    "all": {
+      "requests": 68,
+      "rps": 10.16,
+      "p50": 104.1,
+      "p90": 1269.5,
+      "p95": 1709.1,
+      "p99": 2297.3,
+      "max": 2297.3,
+      "errors": 0,
+      "errorRate": 0,
+      "rateLimited": 0,
+      "statuses": {
+        "200": 43,
+        "201": 25
+      },
+      "avgBytes": 12282
+    },
+    "errorBudgetPass": true,
+    "latencyPass": true,
+    "classes": {
+      "auth": {
+        "requests": 5,
+        "rps": 0.75,
+        "p50": 197.8,
+        "p90": 199.4,
+        "p95": 199.4,
+        "p99": 199.4,
+        "max": 199.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5
+        },
+        "avgBytes": 441,
+        "p95Limit": 1000,
+        "p99Limit": 2000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "probe": {
+        "requests": 3,
+        "rps": 0.45,
+        "p50": 17.2,
+        "p90": 30.2,
+        "p95": 30.2,
+        "p99": 30.2,
+        "max": 30.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 3
+        },
+        "avgBytes": 88,
+        "p95Pass": null,
+        "p99Pass": null
+      },
+      "write": {
+        "requests": 40,
+        "rps": 5.98,
+        "p50": 53.5,
+        "p90": 232.3,
+        "p95": 249.4,
+        "p99": 256,
+        "max": 256,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 20,
+          "201": 20
+        },
+        "avgBytes": 2331,
+        "p95Limit": 1000,
+        "p99Limit": 3000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "heavy": {
+        "requests": 15,
+        "rps": 2.24,
+        "p50": 1238.1,
+        "p90": 1745.9,
+        "p95": 2297.3,
+        "p99": 2297.3,
+        "max": 2297.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 10,
+          "201": 5
+        },
+        "avgBytes": 48003,
+        "p95Limit": 3000,
+        "p99Limit": 8000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "read": {
+        "requests": 5,
+        "rps": 0.75,
+        "p50": 96.8,
+        "p90": 108.4,
+        "p95": 108.4,
+        "p99": 108.4,
+        "max": 108.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5
+        },
+        "avgBytes": 3891,
+        "p95Limit": 500,
+        "p99Limit": 1500,
+        "p95Pass": true,
+        "p99Pass": true
+      }
+    },
+    "names": {
+      "auth.login.initial": {
+        "class": "auth",
+        "requests": 5,
+        "rps": 0.75,
+        "p50": 197.8,
+        "p90": 199.4,
+        "p95": 199.4,
+        "p99": 199.4,
+        "max": 199.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5
+        },
+        "avgBytes": 441
+      },
+      "probe.synthetic": {
+        "class": "probe",
+        "requests": 3,
+        "rps": 0.45,
+        "p50": 17.2,
+        "p90": 30.2,
+        "p95": 30.2,
+        "p99": 30.2,
+        "max": 30.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 3
+        },
+        "avgBytes": 88
+      },
+      "setup.blueprint.confirm": {
+        "class": "write",
+        "requests": 5,
+        "rps": 0.75,
+        "p50": 177.6,
+        "p90": 216.2,
+        "p95": 216.2,
+        "p99": 216.2,
+        "max": 216.2,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5
+        },
+        "avgBytes": 3573
+      },
+      "setup.blueprint.get": {
+        "class": "read",
+        "requests": 5,
+        "rps": 0.75,
+        "p50": 96.8,
+        "p90": 108.4,
+        "p95": 108.4,
+        "p99": 108.4,
+        "max": 108.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 5
+        },
+        "avgBytes": 3891
+      },
+      "setup.blueprint.upload": {
+        "class": "heavy",
+        "requests": 5,
+        "rps": 0.75,
+        "p50": 1165.7,
+        "p90": 1722.9,
+        "p95": 1722.9,
+        "p99": 1722.9,
+        "max": 1722.9,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "201": 5
+        },
+        "avgBytes": 3894
+      },
+      "setup.ingest": {
+        "class": "heavy",
+        "requests": 10,
+        "rps": 1.49,
+        "p50": 1238.1,
+        "p90": 1745.9,
+        "p95": 2297.3,
+        "p99": 2297.3,
+        "max": 2297.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 10
+        },
+        "avgBytes": 70057
+      },
+      "setup.instance.create": {
+        "class": "write",
+        "requests": 15,
+        "rps": 2.24,
+        "p50": 40.1,
+        "p90": 68.7,
+        "p95": 69.7,
+        "p99": 69.7,
+        "max": 69.7,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "201": 15
+        },
+        "avgBytes": 24
+      },
+      "setup.instance.values": {
+        "class": "write",
+        "requests": 15,
+        "rps": 2.24,
+        "p50": 57.7,
+        "p90": 109.7,
+        "p95": 115.9,
+        "p99": 115.9,
+        "max": 115.9,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 15
+        },
+        "avgBytes": 4583
+      },
+      "setup.template.create": {
+        "class": "write",
+        "requests": 5,
+        "rps": 0.75,
+        "p50": 249.4,
+        "p90": 256,
+        "p95": 256,
+        "p99": 256,
+        "max": 256,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "201": 5
+        },
+        "avgBytes": 1251
+      }
+    }
+  }
+}

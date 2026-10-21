@@ -1,0 +1,32 @@
+id: SUP-S07
+status: Partially Implemented
+current_state: "Terraform designs staging and production as separate AWS accounts (plus a planned lock account) with separate state backends, Secrets Manager entries, deploy roles and non-overlapping VPCs (10.41/16 staging, 10.40/16 production); no peering or VPN between them; database reachable only from its own app security group; staging ingress limited to ingress_cidrs, production behind CloudFront and WAF; Session Manager only. Access matrix per environment on the control page. Test-data policy written (synthetic only below production, no refresh from production). Repository test data is synthetic (.test identities, per-run generated secrets, fake model). Nothing applied; provider blocks have no allowed_account_ids; staging deploy role trusts repo:<repo>:*; replay and reachability tests (due 2026-10-09) not run."
+gap: "Separation not yet real (no accounts exist); no account pin in Terraform; staging OIDC trust covers every ref; credential replay and reachability tests overdue; human access to each environment undefined; policy not approved."
+gap_type: Org
+required_action: "Create the separate AWS accounts; add allowed_account_ids to all providers; restrict staging trust to environment:staging; after the first apply run token replay, role-assumption and reachability tests against production; define and approve human access per environment and the test-data policy."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-30
+evidence:
+  id: SUP-S07-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SUP-S07.md; docs/compliance/policies/test-data-policy.md; infra/terraform/envs/staging/providers.tf; infra/terraform/envs/production/providers.tf; infra/terraform/envs/staging/main.tf; infra/terraform/envs/production/main.tf; infra/terraform/README.md"
+test:
+  id: SUP-S07-T01
+  actual_result: "Inspection on 2026-10-19: separate account design, separate state and secrets, CIDRs 10.41/16 and 10.40/16, no peering, no shared secret or cross-environment reference; repository test data synthetic. Defects: no allowed_account_ids in any provider block; staging deploy role trusts repo:<repo>:*. Gate A2 replay and reachability tests not run because no AWS account exists; the 2026-10-09 workbook date is overdue."
+  result: Partial
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Day 30: account pins, narrow staging trust, approve the test-data policy; Day 60: create accounts and run replay and reachability tests."
+  status: In progress
+risk:
+  likelihood: 2
+  impact: 4
+  residual: Medium
+policy_document: docs/compliance/policies/test-data-policy.md
+to_confirm:
+  - "Creation of the separate AWS accounts and who administers each: TO CONFIRM (organisational)"
+  - "Developer and operator access to staging and production: TO CONFIRM (organisational)"
+  - "Credential replay and reachability results: NOT IN REPO (live cloud)"
+  - "Azure subscription split named in the workbook action: TO CONFIRM (organisational); the repository has no Azure infrastructure"

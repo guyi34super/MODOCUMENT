@@ -1,0 +1,33 @@
+id: SEC-040
+status: Partially Implemented
+current_state: "Access-control matrix docs/security/role-permission-matrix.csv (6 roles x 41 permissions) is generated from RolePermissions and pinned byte-for-byte by RolePermissionMatrixTest (pass 2026-10-19), so each release carries the enforced matrix. Threat-control matrix docs/security/threat-control-matrix.md v1.1 draft (2026-10-19, versioned) lists 12 threats with preventive and detective controls and their proof, plus a per-threat tested-alert table: 4 of 12 threats have a detective control with a tested alert (one partly), 2 have untested alert rules, 6 have no alerting detective control."
+gap: "Acceptance not met: 8 of 12 threat rows lack a detective control with a tested alert; matrices not approved."
+gap_type: Build
+required_action: "Add trip tests for refresh-token-reuse and the AI rules; add or decide detective controls for ransomware, supply chain, log leak, spoofed identity, malicious upload and web extraction (or accept the risk in writing); approve both matrices; monthly review."
+action_owner: "Security — Bhavish Nobeen"
+target_date: 2026-11-02
+evidence:
+  id: SEC-040-E01
+  status: Partial — to collect
+  location: "docs/security/role-permission-matrix.csv; docs/security/threat-control-matrix.md; docs/compliance/controls/SEC-040.md; docs/compliance/evidence/A5-scans-and-tests.md"
+question:
+  final_answer: "We maintain two security matrices as versioned documents. The access-control matrix lists six roles against 41 permissions; it is generated from the application's authorisation code and checked on every build, so the document always matches what the system enforces. The threat–control matrix lists twelve threats with their preventive and detective controls and the test or infrastructure code that proves each one, and is reviewed monthly. Four of the twelve threats already have a detective control with an automatically tested alert; tests for the remaining alert rules and decisions on the threats without an alert are scheduled for November 2026. Personal identifiers are masked per role and per output channel. Evidence SEC-040-E01."
+  confidence: Medium
+test:
+  id: SEC-040-T01
+  actual_result: "4 of 12 threat rows have a detective control whose alert is tripped and asserted by a passing test (AlertingGateD1Test, AccessDeniedBurstAlertTest, ExportCapGateD2Test, PlatformChangeAlertTest; 2026-10-19; web/API row only partly). Token theft and AI abuse have rules pinned as configuration only. Six threats have no alerting detective control."
+  result: Partial
+  tester: "Agent A5 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Trip tests for untested alert rules; detective control or written acceptance per remaining threat; approve both matrices; access matrix regenerated per release (automatic via RolePermissionMatrixTest)."
+  status: In progress
+risk:
+  likelihood: 3
+  impact: 3
+  residual: Medium
+policy_document: docs/security/threat-control-matrix.md
+to_confirm:
+  - "TO CONFIRM (organisational): approval of both matrices and the monthly review record"
+  - "NOT IN REPO (live cloud): GuardDuty and CloudTrail detections named in the matrix"

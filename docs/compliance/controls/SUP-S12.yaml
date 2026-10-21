@@ -1,0 +1,31 @@
+id: SUP-S12
+status: Partially Implemented
+current_state: "frontend/public/.well-known/security.txt exists with Contact, Expires (2027-10-04), Preferred-Languages, Canonical and Policy and is served by nginx with the security headers; the Contact address is a placeholder on the reserved .example domain and the Policy URL points at a private repository. SECURITY.md and a one-page disclosure policy (docs/compliance/policies/vulnerability-disclosure-policy.md: 48 h acknowledgement, 7-day triage, fix SLAs, 90-day coordinated disclosure, safe harbour) exist. Threat-intelligence feeds are automated (Dependabot weekly for five ecosystems, weekly image rebuild with Trivy issue, weekly Security and ZAP workflows); the weekly human review is written as a procedure with a template and a first note for 2026-W43. No mailbox exists; CERT-MU subscription not evidenced."
+gap: "No real security address or mailbox; Policy and Canonical URLs not public; CERT-MU not subscribed; policy and procedure not approved."
+gap_type: Org
+required_action: "Create the security mailbox to the directors and put the real address in security.txt and SECURITY.md; publish the policy at a public URL; subscribe to CERT-MU; run a test report and record the acknowledgement; approve the policy."
+action_owner: "Security — Bhavish Nobeen"
+target_date: 2026-10-30
+evidence:
+  id: SUP-S12-E01
+  status: Partial — to collect
+  location: "frontend/public/.well-known/security.txt; docs/compliance/policies/vulnerability-disclosure-policy.md; docs/compliance/policies/threat-intelligence-review-procedure.md; docs/compliance/evidence/A5-threat-intel-review-note-2026-W43.md; SECURITY.md"
+test:
+  id: SUP-S12-T01
+  actual_result: "Acknowledgement test not performed: the contact is a placeholder on the reserved .example domain and no mailbox exists. RFC 9116 field check: Contact and Expires present, Expires within one year, served with security headers (scripts/check-nginx-headers.sh OK 2026-10-19); Policy URL not publicly reachable."
+  result: Not run
+  tester: "Agent A5 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Security mailbox live with 48 h acknowledgement, real address in security.txt, public policy URL, CERT-MU subscription, weekly review notes filed."
+  status: In progress
+risk:
+  likelihood: 3
+  impact: 3
+  residual: Medium
+policy_document: docs/compliance/policies/vulnerability-disclosure-policy.md
+to_confirm:
+  - "TO CONFIRM (organisational): real security contact address and mailbox, and its owner (Taj Aundoo per SECURITY.md, Bhavish Nobeen per the workbook)"
+  - "TO CONFIRM (organisational): production domain for Canonical and the public policy URL; legal review of the safe-harbour wording; CERT-MU subscription"
+  - "NOT IN REPO (live cloud): security.txt served at the production domain"

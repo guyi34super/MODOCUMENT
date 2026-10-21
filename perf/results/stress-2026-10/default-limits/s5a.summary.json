@@ -1,0 +1,749 @@
+{
+  "key": "s5a",
+  "title": "S5a rate limiting with default limits",
+  "start": "2026-10-19T17:12:47.282Z",
+  "end": "2026-10-19T17:13:07.822Z",
+  "seconds": 20.5,
+  "total": {
+    "all": {
+      "requests": 391,
+      "rps": 19.04,
+      "p50": 50.7,
+      "p90": 73.8,
+      "p95": 95.5,
+      "p99": 158.6,
+      "max": 697.4,
+      "errors": 6,
+      "errorRate": 0.0153,
+      "rateLimited": 22,
+      "statuses": {
+        "200": 292,
+        "201": 77,
+        "429": 22
+      },
+      "avgBytes": 2737
+    },
+    "errorBudgetPass": false,
+    "latencyPass": true,
+    "classes": {
+      "write": {
+        "requests": 2,
+        "rps": 0.1,
+        "p50": 39.2,
+        "p90": 71.5,
+        "p95": 71.5,
+        "p99": 71.5,
+        "max": 71.5,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2
+        },
+        "avgBytes": 4617,
+        "p95Limit": 1000,
+        "p99Limit": 3000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "heavy": {
+        "requests": 184,
+        "rps": 8.96,
+        "p50": 33.2,
+        "p90": 96.8,
+        "p95": 136.9,
+        "p99": 201.3,
+        "max": 697.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 16,
+        "statuses": {
+          "200": 91,
+          "201": 77,
+          "429": 16
+        },
+        "avgBytes": 5284,
+        "p95Limit": 3000,
+        "p99Limit": 8000,
+        "p95Pass": true,
+        "p99Pass": true
+      },
+      "auth": {
+        "requests": 205,
+        "rps": 9.98,
+        "p50": 54.1,
+        "p90": 66.4,
+        "p95": 70.6,
+        "p99": 80.5,
+        "max": 83.1,
+        "errors": 6,
+        "errorRate": 0.0293,
+        "rateLimited": 6,
+        "statuses": {
+          "200": 199,
+          "429": 6
+        },
+        "avgBytes": 432,
+        "p95Limit": 1000,
+        "p99Limit": 2000,
+        "p95Pass": true,
+        "p99Pass": true
+      }
+    },
+    "names": {
+      "rl.blueprint.upload": {
+        "class": "heavy",
+        "requests": 22,
+        "rps": 1.07,
+        "p50": 55.9,
+        "p90": 71.3,
+        "p95": 74.3,
+        "p99": 102.9,
+        "max": 102.9,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 3,
+        "statuses": {
+          "201": 19,
+          "429": 3
+        },
+        "avgBytes": 3369
+      },
+      "rl.export": {
+        "class": "heavy",
+        "requests": 63,
+        "rps": 3.07,
+        "p50": 29.4,
+        "p90": 41.9,
+        "p95": 47.1,
+        "p99": 136.9,
+        "max": 136.9,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 3,
+        "statuses": {
+          "200": 60,
+          "429": 3
+        },
+        "avgBytes": 13561
+      },
+      "rl.generate": {
+        "class": "heavy",
+        "requests": 35,
+        "rps": 1.7,
+        "p50": 94.5,
+        "p90": 156.9,
+        "p95": 201.3,
+        "p99": 697.4,
+        "max": 697.4,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 5,
+        "statuses": {
+          "200": 30,
+          "429": 5
+        },
+        "avgBytes": 117
+      },
+      "rl.generate.other-user": {
+        "class": "heavy",
+        "requests": 1,
+        "rps": 0.05,
+        "p50": 161.8,
+        "p90": 161.8,
+        "p95": 161.8,
+        "p99": 161.8,
+        "max": 161.8,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 1
+        },
+        "avgBytes": 112
+      },
+      "rl.ingest": {
+        "class": "heavy",
+        "requests": 63,
+        "rps": 3.07,
+        "p50": 30.1,
+        "p90": 38.4,
+        "p95": 40.2,
+        "p99": 80.1,
+        "max": 80.1,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 5,
+        "statuses": {
+          "201": 58,
+          "429": 5
+        },
+        "avgBytes": 627
+      },
+      "rl.login": {
+        "class": "auth",
+        "requests": 205,
+        "rps": 9.98,
+        "p50": 54.1,
+        "p90": 66.4,
+        "p95": 70.6,
+        "p99": 80.5,
+        "max": 83.1,
+        "errors": 6,
+        "errorRate": 0.0293,
+        "rateLimited": 6,
+        "statuses": {
+          "200": 199,
+          "429": 6
+        },
+        "avgBytes": 432
+      },
+      "rl.validate": {
+        "class": "write",
+        "requests": 2,
+        "rps": 0.1,
+        "p50": 39.2,
+        "p90": 71.5,
+        "p95": 71.5,
+        "p99": 71.5,
+        "max": 71.5,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 2
+        },
+        "avgBytes": 4617
+      }
+    }
+  },
+  "resources": {
+    "samples": 21,
+    "javaCpuPct": {
+      "mean": 154.9,
+      "max": 321,
+      "last": 118
+    },
+    "javaRssMiB": {
+      "mean": 1093.4,
+      "max": 1203.1,
+      "last": 1197.1
+    },
+    "javaThreads": {
+      "mean": 54.5,
+      "max": 55,
+      "last": 55
+    },
+    "sysCpuPct": {
+      "mean": 47,
+      "max": 84.5,
+      "last": 35.9
+    },
+    "load1": {
+      "mean": 5.1,
+      "max": 5.8,
+      "last": 4.61
+    },
+    "nodeCpuPct": {
+      "mean": 5,
+      "max": 15.8,
+      "last": 4.4
+    },
+    "dbConnTotal": {
+      "mean": 6,
+      "max": 6,
+      "last": 6
+    },
+    "dbConnActive": {
+      "mean": 0,
+      "max": 0,
+      "last": 0
+    }
+  },
+  "stages": [
+    {
+      "label": "rate-limit probes",
+      "vus": 1,
+      "start": "2026-10-19T17:12:47.283Z",
+      "seconds": 20.5,
+      "all": {
+        "requests": 391,
+        "rps": 19.04,
+        "p50": 50.7,
+        "p90": 73.8,
+        "p95": 95.5,
+        "p99": 158.6,
+        "max": 697.4,
+        "errors": 6,
+        "errorRate": 0.0153,
+        "rateLimited": 22,
+        "statuses": {
+          "200": 292,
+          "201": 77,
+          "429": 22
+        },
+        "avgBytes": 2737
+      },
+      "errorBudgetPass": false,
+      "latencyPass": true,
+      "classes": {
+        "write": {
+          "requests": 2,
+          "rps": 0.1,
+          "p50": 39.2,
+          "p90": 71.5,
+          "p95": 71.5,
+          "p99": 71.5,
+          "max": 71.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 2
+          },
+          "avgBytes": 4617,
+          "p95Limit": 1000,
+          "p99Limit": 3000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "heavy": {
+          "requests": 184,
+          "rps": 8.96,
+          "p50": 33.2,
+          "p90": 96.8,
+          "p95": 136.9,
+          "p99": 201.3,
+          "max": 697.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 16,
+          "statuses": {
+            "200": 91,
+            "201": 77,
+            "429": 16
+          },
+          "avgBytes": 5284,
+          "p95Limit": 3000,
+          "p99Limit": 8000,
+          "p95Pass": true,
+          "p99Pass": true
+        },
+        "auth": {
+          "requests": 205,
+          "rps": 9.98,
+          "p50": 54.1,
+          "p90": 66.4,
+          "p95": 70.6,
+          "p99": 80.5,
+          "max": 83.1,
+          "errors": 6,
+          "errorRate": 0.0293,
+          "rateLimited": 6,
+          "statuses": {
+            "200": 199,
+            "429": 6
+          },
+          "avgBytes": 432,
+          "p95Limit": 1000,
+          "p99Limit": 2000,
+          "p95Pass": true,
+          "p99Pass": true
+        }
+      },
+      "names": {
+        "rl.blueprint.upload": {
+          "class": "heavy",
+          "requests": 22,
+          "rps": 1.07,
+          "p50": 55.9,
+          "p90": 71.3,
+          "p95": 74.3,
+          "p99": 102.9,
+          "max": 102.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 3,
+          "statuses": {
+            "201": 19,
+            "429": 3
+          },
+          "avgBytes": 3369
+        },
+        "rl.export": {
+          "class": "heavy",
+          "requests": 63,
+          "rps": 3.07,
+          "p50": 29.4,
+          "p90": 41.9,
+          "p95": 47.1,
+          "p99": 136.9,
+          "max": 136.9,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 3,
+          "statuses": {
+            "200": 60,
+            "429": 3
+          },
+          "avgBytes": 13561
+        },
+        "rl.generate": {
+          "class": "heavy",
+          "requests": 35,
+          "rps": 1.7,
+          "p50": 94.5,
+          "p90": 156.9,
+          "p95": 201.3,
+          "p99": 697.4,
+          "max": 697.4,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 5,
+          "statuses": {
+            "200": 30,
+            "429": 5
+          },
+          "avgBytes": 117
+        },
+        "rl.generate.other-user": {
+          "class": "heavy",
+          "requests": 1,
+          "rps": 0.05,
+          "p50": 161.8,
+          "p90": 161.8,
+          "p95": 161.8,
+          "p99": 161.8,
+          "max": 161.8,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 1
+          },
+          "avgBytes": 112
+        },
+        "rl.ingest": {
+          "class": "heavy",
+          "requests": 63,
+          "rps": 3.07,
+          "p50": 30.1,
+          "p90": 38.4,
+          "p95": 40.2,
+          "p99": 80.1,
+          "max": 80.1,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 5,
+          "statuses": {
+            "201": 58,
+            "429": 5
+          },
+          "avgBytes": 627
+        },
+        "rl.login": {
+          "class": "auth",
+          "requests": 205,
+          "rps": 9.98,
+          "p50": 54.1,
+          "p90": 66.4,
+          "p95": 70.6,
+          "p99": 80.5,
+          "max": 83.1,
+          "errors": 6,
+          "errorRate": 0.0293,
+          "rateLimited": 6,
+          "statuses": {
+            "200": 199,
+            "429": 6
+          },
+          "avgBytes": 432
+        },
+        "rl.validate": {
+          "class": "write",
+          "requests": 2,
+          "rps": 0.1,
+          "p50": 39.2,
+          "p90": 71.5,
+          "p95": 71.5,
+          "p99": 71.5,
+          "max": 71.5,
+          "errors": 0,
+          "errorRate": 0,
+          "rateLimited": 0,
+          "statuses": {
+            "200": 2
+          },
+          "avgBytes": 4617
+        }
+      },
+      "probe": {
+        "requests": 10,
+        "rps": 0.49,
+        "p50": 8.3,
+        "p90": 12.3,
+        "p95": 50.3,
+        "p99": 50.3,
+        "max": 50.3,
+        "errors": 0,
+        "errorRate": 0,
+        "rateLimited": 0,
+        "statuses": {
+          "200": 10
+        },
+        "avgBytes": 88
+      },
+      "resources": {
+        "samples": 21,
+        "javaCpuPct": {
+          "mean": 154.9,
+          "max": 321,
+          "last": 118
+        },
+        "javaRssMiB": {
+          "mean": 1093.4,
+          "max": 1203.1,
+          "last": 1197.1
+        },
+        "javaThreads": {
+          "mean": 54.5,
+          "max": 55,
+          "last": 55
+        },
+        "sysCpuPct": {
+          "mean": 47,
+          "max": 84.5,
+          "last": 35.9
+        },
+        "load1": {
+          "mean": 5.1,
+          "max": 5.8,
+          "last": 4.61
+        },
+        "nodeCpuPct": {
+          "mean": 5,
+          "max": 15.8,
+          "last": 4.4
+        },
+        "dbConnTotal": {
+          "mean": 6,
+          "max": 6,
+          "last": 6
+        },
+        "dbConnActive": {
+          "mean": 0,
+          "max": 0,
+          "last": 0
+        }
+      }
+    }
+  ],
+  "extra": {
+    "doc-generate (limit 30/user/h)": {
+      "attempts": 35,
+      "counts": {
+        "200": 30,
+        "429": 5
+      },
+      "firstLimitedAt": 31,
+      "retryAfterSeconds": "3597",
+      "body429": {
+        "requestId": "01a15526-d724-74b1-b3bc-84cb312ec75b",
+        "error": "You have reached the document generation request limit for now. Please try again later."
+      }
+    },
+    "doc-generate other user": {
+      "status": 200
+    },
+    "ingestion (limit 60/user/h)": {
+      "attempts": 63,
+      "counts": {
+        "201": 58,
+        "429": 5
+      },
+      "firstLimitedAt": 59,
+      "retryAfterSeconds": "3585",
+      "body429": {
+        "requestId": "01a15526-df66-7685-bdd4-13f3c8a7f265",
+        "error": "You have reached the ingestion job request limit for now. Please try again later."
+      }
+    },
+    "exports (limit 60/user/h)": {
+      "attempts": 63,
+      "counts": {
+        "200": 60,
+        "429": 3
+      },
+      "firstLimitedAt": 61,
+      "retryAfterSeconds": "3598",
+      "body429": {
+        "type": "Buffer",
+        "data": [
+          123,
+          34,
+          114,
+          101,
+          113,
+          117,
+          101,
+          115,
+          116,
+          73,
+          100,
+          34,
+          58,
+          34,
+          48,
+          49,
+          97,
+          49,
+          53,
+          53,
+          50,
+          54,
+          45,
+          101,
+          55,
+          54,
+          97,
+          45,
+          55,
+          52,
+          51,
+          52,
+          45,
+          98,
+          101,
+          97,
+          102,
+          45,
+          100,
+          99,
+          99,
+          49,
+          56,
+          51,
+          56,
+          97,
+          56,
+          51,
+          102,
+          99,
+          34,
+          44,
+          34,
+          101,
+          114,
+          114,
+          111,
+          114,
+          34,
+          58,
+          34,
+          89,
+          111,
+          117,
+          32,
+          104,
+          97,
+          118,
+          101,
+          32,
+          114,
+          101,
+          97,
+          99,
+          104,
+          101,
+          100,
+          32,
+          116,
+          104,
+          101,
+          32,
+          101,
+          120,
+          112,
+          111,
+          114,
+          116,
+          32,
+          114,
+          101,
+          113,
+          117,
+          101,
+          115,
+          116,
+          32,
+          108,
+          105,
+          109,
+          105,
+          116,
+          32,
+          102,
+          111,
+          114,
+          32,
+          110,
+          111,
+          119,
+          46,
+          32,
+          80,
+          108,
+          101,
+          97,
+          115,
+          101,
+          32,
+          116,
+          114,
+          121,
+          32,
+          97,
+          103,
+          97,
+          105,
+          110,
+          32,
+          108,
+          97,
+          116,
+          101,
+          114,
+          46,
+          34,
+          125
+        ]
+      }
+    },
+    "uploads (limit 20/user/h)": {
+      "attempts": 22,
+      "counts": {
+        "201": 19,
+        "429": 3
+      },
+      "firstLimitedAt": 20,
+      "retryAfterSeconds": "3585",
+      "body429": {
+        "requestId": "01a15526-ec22-7373-858b-2bacefca3be2",
+        "error": "You have reached the file upload request limit for now. Please try again later."
+      }
+    },
+    "auth login per e-mail (harness value 200/15 min)": {
+      "attempts": 205,
+      "counts": {
+        "200": 199,
+        "429": 6
+      },
+      "firstLimitedAt": 200,
+      "retryAfterSeconds": "870",
+      "body429": {
+        "requestId": "01a15527-17d2-74ad-8342-26d849d1efff",
+        "error": "Too many attempts for this account. Please wait a few minutes and try again."
+      }
+    }
+  }
+}

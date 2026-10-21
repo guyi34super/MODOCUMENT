@@ -1,0 +1,33 @@
+id: PRIV-004
+status: Partially Implemented
+current_state: "PR template carries a Privacy checklist (PRIV-004); DPIA template plus a completed draft DPIA for document ingestion and creation; template fields tagged with PiiKind (V100, ws34) and classified once when untagged; shared PiiPatterns for logs, prompts and alerts; role x channel masking engine pinned by MaskingMatrixDocTest; tokenisation before AI with a fail-closed prompt scan; 30-day retention; minimisation diff: commit 1035294 removed email and displayName claims from the access token."
+gap: "DPIA not signed off by the DPO; no API-wide scan for untagged PII; MoDocument's own fixed PII columns are listed in the data inventory but not annotated; data inventory out of date (no ws25-ws34 stores)."
+gap_type: Build
+required_action: "DPO sign-off of the DPIA; add an API-wide canary PII test over every GET route and role; add a @PersonalData marker on entity fields matched to the inventory; update the data inventory."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-20
+evidence:
+  id: PRIV-004-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/PRIV-004.md; .github/pull_request_template.md; docs/compliance/policies/dpia-modocument.md; docs/compliance/policies/pii-tagging-convention.md; commit 1035294; docs/compliance/evidence/A6-test-runs.md"
+question:
+  final_answer: "Yes. Privacy is part of how MoDocument is built and changed. Every pull request carries a privacy checklist (new personal-data fields classified, retention assigned, data-subject-request impact checked). Each template field is tagged with the kind of personal data it holds, and that tag drives role-based masking of national ID and account numbers on screens, reports and exports. Identifiers are replaced with placeholders before any AI processing, and a prompt that still contains one is blocked. Customer data is deleted automatically after 30 days, logs are redacted, and development and testing use synthetic data only. A data protection impact assessment covers document ingestion and document creation. Evidence: PRIV-004-E01."
+  confidence: Medium
+test:
+  id: PRIV-004-T01
+  actual_result: "2026-10-19 H2 run: MaskingGateC2Test 4/4 (export, report and read-only screen channels masked; DSR export raw by design), MaskingMatrixDocTest 2/2, MaskerTest 8/8, PiiClassifierTest 6/6, PiiMaskingServiceTest 5/5, PiiTokenizerTest 15/15, AiGatewayC9Test 6/6; 0 failures. PR checklist present, DPIA drafted, minimisation commit 1035294 found. API-wide untagged-PII scan not run."
+  result: Partial
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "DPIA sign-off and data-inventory update (Day 30); API-wide canary PII test (Day 60); entity PII marker (Day 90)."
+  status: In progress
+risk:
+  likelihood: 2
+  impact: 3
+  residual: Medium
+policy_document: docs/compliance/policies/dpia-modocument.md
+to_confirm:
+  - "TO CONFIRM (organisational): DPO review and sign-off of dpia-modocument.md, with the risk owner's approval."
+  - "TO CONFIRM (organisational): production language-model provider and its data-handling terms (DPIA section 2)."

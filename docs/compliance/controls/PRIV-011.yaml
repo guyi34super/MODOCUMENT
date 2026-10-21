@@ -1,0 +1,34 @@
+id: PRIV-011
+status: Partially Implemented
+current_state: "One-page CIA controls table (docs/security/cia-controls-table.md, v1.1 draft 2026-10-19) names a test, file or Terraform path in every cell. Confidentiality and integrity controls are in code and covered by tests (RBAC 6 roles x 41 permissions pinned by RolePermissionMatrixTest, admin MFA, masking, RLS, export caps, AI gateway, log redaction, maker/checker, upload gate, append-only audit). Encryption and key management are documented (crypto-standard.md, key-certificate-register.md). Availability controls (Multi-AZ, autoscaling, locked backups) exist only as validated, unapplied Terraform; no restore drill record exists."
+gap: "Table not approved; availability untested (no restore drill); RTO figure inconsistent (4 h in sla-and-status.md vs 2 h in the 04 workbook)."
+gap_type: Build
+required_action: "Approve the table (Reezvi Pydiah); run the timed restore drill in staging (gate D6) and record RTO/RPO; settle one RTO figure."
+action_owner: "Security — Bhavish Nobeen"
+target_date: 2026-11-02
+evidence:
+  id: PRIV-011-E01
+  status: Partial — to collect
+  location: "docs/security/cia-controls-table.md; docs/compliance/controls/PRIV-011.md; docs/compliance/evidence/A5-scans-and-tests.md"
+question:
+  final_answer: "Our CIA controls are listed on one page, each with the test, configuration file or infrastructure code that proves it. Confidentiality: role-based access with six roles and a test-pinned permission matrix, MFA for administrators, role-based masking of personal identifiers, database row-level security per bank, per-role export limits with alerts, a single AI gateway with a locally hosted model by default, log redaction, and encryption in transit and at rest. Integrity: server-side validation and upload content checks, SHA-256 file hashes, maker/checker approval for critical changes, separation of author and releaser, and an append-only audit trail enforced by the database. Availability: multi-zone database and application tiers, autoscaling, and locked backups with a cross-region copy are defined as infrastructure code for our pre-production AWS environment; the first timed restore drill will run in staging before go-live. Evidence PRIV-011-E01."
+  confidence: Medium
+test:
+  id: PRIV-011-T01
+  actual_result: "Every cell of docs/security/cia-controls-table.md names an existing test, file or Terraform path (script check 2026-10-19, 0 missing). Sampled cited tests passed on 2026-10-19. Terraform cells have no runtime evidence; the network-egress and restore-drill cells name gaps. PostgreSQL tests (PgIT) passed on a scratch PostgreSQL 16 in the A4, A7 and A9 runs of 2026-10-19."
+  result: Pass
+  tester: "Agent A5 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Approve the CIA table; restore drill (gate D6) before go-live; settle the RTO figure."
+  status: In progress
+risk:
+  likelihood: 2
+  impact: 3
+  residual: Medium
+policy_document: docs/security/cia-controls-table.md
+to_confirm:
+  - "TO CONFIRM (organisational): whether the 3 Oct 2026 restore drill took place"
+  - "TO CONFIRM (organisational): approval of the CIA table by Reezvi Pydiah"
+  - "NOT IN REPO (live cloud): runtime evidence for every Terraform cell; restore drill log"

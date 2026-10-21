@@ -1,0 +1,628 @@
+# Generated from the four uploaded workbooks (2026-10-19). IDs, names and owners only.
+# Do not edit by hand; scripts/compliance/check_pack.py reads this file.
+tasks:
+- id: MO-001
+  task: Define company governance structure
+  deliverable: Governance Structure document with organisation chart, approval matrix and RACI.
+  agent: A1
+  doc: docs/compliance/mo-001-governance-structure.md
+- id: MO-009
+  task: Developer & technical documentation
+  deliverable: Developer & Technical Documentation set.
+  agent: A2
+  doc: docs/compliance/mo-009-developer-technical-documentation.md
+- id: MO-016
+  task: Stress test plan
+  deliverable: Stress Test Plan.
+  agent: A3
+  doc: docs/compliance/mo-016-stress-test-plan.md
+- id: MO-017
+  task: Run stress tests & write stress testing report
+  deliverable: Stress Testing Report.
+  agent: A3
+  doc: docs/compliance/mo-017-stress-testing-report.md
+- id: MO-018
+  task: RBAC role & permission matrix
+  deliverable: RBAC Role & Permission Matrix.
+  agent: A4
+  doc: docs/compliance/mo-018-rbac-role-permission-matrix.md
+- id: MO-019
+  task: Role-based access system report
+  deliverable: Role-Based Access System Report.
+  agent: A4
+  doc: docs/compliance/mo-019-role-based-access-system-report.md
+- id: MO-031
+  task: Technology risk register (joint workshop)
+  deliverable: Technology Risk Register.
+  agent: A9
+  doc: docs/compliance/mo-031-technology-risk-register.md
+- id: MO-032
+  task: Risk technology document
+  deliverable: Technology Risk Management Document.
+  agent: A9
+  doc: docs/compliance/mo-032-technology-risk-management.md
+- id: MO-033
+  task: Internal control matrix
+  deliverable: Internal Control Matrix.
+  agent: A9
+  doc: docs/compliance/mo-033-internal-control-matrix.md
+- id: MO-034
+  task: Internal control audit document
+  deliverable: Internal Control Audit Report + corrective action log.
+  agent: A9
+  doc: docs/compliance/mo-034-internal-control-audit-report.md
+workbooks:
+  02-security: 02 Security — Technology Risk Workbook
+  03-software-engineering: 03 Software Engineering — Technology Risk Workbook
+  04-it-infrastructure: 04 IT Infrastructure & Operations — Technology Risk Workbook
+controls:
+- id: PRIV-002
+  name: Mechanism to detect data loss / breach prevention
+  workbook: 02-security
+  area: Security
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A5
+  page: docs/compliance/controls/PRIV-002.md
+  data: docs/compliance/controls/PRIV-002.yaml
+- id: PRIV-011
+  name: How you ensure confidentiality, integrity and availability (CIA)
+  workbook: 02-security
+  area: Security
+  priority: P1
+  question: true
+  policy_document: A one-page CIA controls table with links to each control's evidence
+  agent: A5
+  page: docs/compliance/controls/PRIV-011.md
+  data: docs/compliance/controls/PRIV-011.yaml
+- id: SEC-009
+  name: Submit latest VA/PT report
+  workbook: 02-security
+  area: Security
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A5
+  page: docs/compliance/controls/SEC-009.md
+  data: docs/compliance/controls/SEC-009.yaml
+- id: SEC-013
+  name: Least privilege support
+  workbook: 02-security
+  area: Security
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A4
+  page: docs/compliance/controls/SEC-013.md
+  data: docs/compliance/controls/SEC-013.yaml
+- id: SEC-015
+  name: All privileged session activity logged
+  workbook: 02-security
+  area: Security
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A5
+  page: docs/compliance/controls/SEC-015.md
+  data: docs/compliance/controls/SEC-015.yaml
+- id: SEC-017
+  name: Privileged access rights restricted, controlled and monitored
+  workbook: 02-security
+  area: Security
+  priority: P1
+  question: true
+  policy_document: Privileged-account inventory, the break-glass procedure, one monthly review record
+  agent: A4
+  page: docs/compliance/controls/SEC-017.md
+  data: docs/compliance/controls/SEC-017.yaml
+- id: SEC-031
+  name: SIEM integration
+  workbook: 02-security
+  area: Security
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A5
+  page: docs/compliance/controls/SEC-031.md
+  data: docs/compliance/controls/SEC-031.yaml
+- id: SEC-032
+  name: Real-time alerts on unauthorized access, threshold breaches, suspicious activity
+  workbook: 02-security
+  area: Security
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A5
+  page: docs/compliance/controls/SEC-032.md
+  data: docs/compliance/controls/SEC-032.yaml
+- id: SEC-040
+  name: Security matrix defined in your solution
+  workbook: 02-security
+  area: Security
+  priority: P1
+  question: true
+  policy_document: Both matrices as versioned documents
+  agent: A5
+  page: docs/compliance/controls/SEC-040.md
+  data: docs/compliance/controls/SEC-040.yaml
+- id: SEC-041
+  name: Security roadmap of your solution
+  workbook: 02-security
+  area: Security
+  priority: P1
+  question: true
+  policy_document: The roadmap document with owners/dates/budget
+  agent: A5
+  page: docs/compliance/controls/SEC-041.md
+  data: docs/compliance/controls/SEC-041.yaml
+- id: SUP-S12
+  name: Vulnerability disclosure and threat intelligence
+  workbook: 02-security
+  area: Security
+  priority: P2
+  question: false
+  policy_document: security.txt live, the disclosure policy, a weekly-review note
+  agent: A5
+  page: docs/compliance/controls/SUP-S12.md
+  data: docs/compliance/controls/SUP-S12.yaml
+- id: PRIV-004
+  name: Built on privacy by design
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/PRIV-004.md
+  data: docs/compliance/controls/PRIV-004.yaml
+- id: PRIV-013
+  name: Full Data Subject Rights functionality
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/PRIV-013.md
+  data: docs/compliance/controls/PRIV-013.yaml
+- id: PRIV-017
+  name: Details of data access management control
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: JML runbook, a completed quarterly review, the drift-report job
+  agent: A4
+  page: docs/compliance/controls/PRIV-017.md
+  data: docs/compliance/controls/PRIV-017.yaml
+- id: SEC-006
+  name: Which types of API are supported
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: The OpenAPI file, the versioning/deprecation policy, sandbox credentials process
+  agent: A6
+  page: docs/compliance/controls/SEC-006.md
+  data: docs/compliance/controls/SEC-006.yaml
+- id: SEC-007
+  name: In-built mechanism to secure API connectivity
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/SEC-007.md
+  data: docs/compliance/controls/SEC-007.yaml
+- id: SEC-008
+  name: Submit stress testing report
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A3
+  page: docs/compliance/controls/SEC-008.md
+  data: docs/compliance/controls/SEC-008.yaml
+- id: SEC-010
+  name: Submit latest code review report
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/SEC-010.md
+  data: docs/compliance/controls/SEC-010.yaml
+- id: SEC-011
+  name: Describe your role-based access system
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: The matrix export, the middleware code reference, the route-coverage test
+  agent: A4
+  page: docs/compliance/controls/SEC-011.md
+  data: docs/compliance/controls/SEC-011.yaml
+- id: SEC-012
+  name: Roles mapped per job function
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: Role catalogue document + the SoD conflict table
+  agent: A4
+  page: docs/compliance/controls/SEC-012.md
+  data: docs/compliance/controls/SEC-012.yaml
+- id: SEC-014
+  name: In-built MFA functionality
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/SEC-014.md
+  data: docs/compliance/controls/SEC-014.yaml
+- id: SEC-016
+  name: Reports and dashboards by role / privileged access
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A4
+  page: docs/compliance/controls/SEC-016.md
+  data: docs/compliance/controls/SEC-016.yaml
+- id: SEC-018
+  name: Credentials stored in a secure vault
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/SEC-018.md
+  data: docs/compliance/controls/SEC-018.yaml
+- id: SEC-019
+  name: Password captured in plain text? (expect No)
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/SEC-019.md
+  data: docs/compliance/controls/SEC-019.yaml
+- id: SEC-020
+  name: Password visible to system admin? (expect No)
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: DB schema showing only hash columns, the reset-token design note
+  agent: A6
+  page: docs/compliance/controls/SEC-020.md
+  data: docs/compliance/controls/SEC-020.yaml
+- id: SEC-021
+  name: Complex password support
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/SEC-021.md
+  data: docs/compliance/controls/SEC-021.yaml
+- id: SEC-022
+  name: Time-based password support
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/SEC-022.md
+  data: docs/compliance/controls/SEC-022.yaml
+- id: SEC-023
+  name: Maker/checker for critical configuration change
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A4
+  page: docs/compliance/controls/SEC-023.md
+  data: docs/compliance/controls/SEC-023.yaml
+- id: SEC-024
+  name: Detecting input, verify and approval authority in one user
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A4
+  page: docs/compliance/controls/SEC-024.md
+  data: docs/compliance/controls/SEC-024.yaml
+- id: SEC-025
+  name: Formal change management with change history
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: Pipeline definition, a sample release ticket trail, the config-history UI
+  agent: A7
+  page: docs/compliance/controls/SEC-025.md
+  data: docs/compliance/controls/SEC-025.yaml
+- id: SEC-027
+  name: Describe all in-built security features
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: The security-feature catalogue (3–5 pages)
+  agent: A7
+  page: docs/compliance/controls/SEC-027.md
+  data: docs/compliance/controls/SEC-027.yaml
+- id: SEC-028
+  name: Encryption at rest and in transit
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A7
+  page: docs/compliance/controls/SEC-028.md
+  data: docs/compliance/controls/SEC-028.yaml
+- id: SEC-029
+  name: Encryption type, method and level
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: The crypto standard, KMS key policies, TLS config
+  agent: A7
+  page: docs/compliance/controls/SEC-029.md
+  data: docs/compliance/controls/SEC-029.yaml
+- id: SEC-034
+  name: Log activities in a 360-degree view
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A7
+  page: docs/compliance/controls/SEC-034.md
+  data: docs/compliance/controls/SEC-034.yaml
+- id: SEC-035
+  name: Audit trail workflow, capture, immutability
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A7
+  page: docs/compliance/controls/SEC-035.md
+  data: docs/compliance/controls/SEC-035.yaml
+- id: SEC-042
+  name: Use of open-source components, libraries or queries
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A7
+  page: docs/compliance/controls/SEC-042.md
+  data: docs/compliance/controls/SEC-042.yaml
+- id: SUP-S01
+  name: Browser session and web-layer hardening
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: false
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/SUP-S01.md
+  data: docs/compliance/controls/SUP-S01.yaml
+- id: SUP-S02
+  name: 'Token architecture: JWT/OAuth hardening and revocation'
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: false
+  policy_document: null
+  agent: A6
+  page: docs/compliance/controls/SUP-S02.md
+  data: docs/compliance/controls/SUP-S02.yaml
+- id: SUP-S05
+  name: CI/CD pipeline and software supply-chain security
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: false
+  policy_document: null
+  agent: A7
+  page: docs/compliance/controls/SUP-S05.md
+  data: docs/compliance/controls/SUP-S05.yaml
+- id: SUP-S07
+  name: Environment segregation and test-data governance
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P2
+  question: false
+  policy_document: null
+  agent: A7
+  page: docs/compliance/controls/SUP-S07.md
+  data: docs/compliance/controls/SUP-S07.yaml
+- id: SUP-S13
+  name: External AI / LLM provider controls (technical, not just contractual)
+  workbook: 03-software-engineering
+  area: Software Engineering
+  priority: P1
+  question: false
+  policy_document: null
+  agent: A7
+  page: docs/compliance/controls/SUP-S13.md
+  data: docs/compliance/controls/SUP-S13.yaml
+- id: PRIV-003
+  name: In-built ransomware detection capability
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A8
+  page: docs/compliance/controls/PRIV-003.md
+  data: docs/compliance/controls/PRIV-003.yaml
+- id: PRIV-006
+  name: Details of data storage, backup and recovery
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P1
+  question: true
+  policy_document: Storage map, backup policy config export, last restore-drill timing
+  agent: A8
+  page: docs/compliance/controls/PRIV-006.md
+  data: docs/compliance/controls/PRIV-006.yaml
+- id: SEC-001
+  name: Submit security architecture (on-premise, cloud, or hybrid)
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P1
+  question: true
+  policy_document: Architecture diagram + Terraform repo reference + CIS scan result of a golden image
+  agent: A8
+  page: docs/compliance/controls/SEC-001.md
+  data: docs/compliance/controls/SEC-001.yaml
+- id: SEC-002
+  name: How the solution handles peak load and performance degradation
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A3
+  page: docs/compliance/controls/SEC-002.md
+  data: docs/compliance/controls/SEC-002.yaml
+- id: SEC-003
+  name: Autoscaling vertically and horizontally
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A3
+  page: docs/compliance/controls/SEC-003.md
+  data: docs/compliance/controls/SEC-003.yaml
+- id: SEC-004
+  name: HA and DR replication support
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P1
+  question: true
+  policy_document: null
+  agent: A8
+  page: docs/compliance/controls/SEC-004.md
+  data: docs/compliance/controls/SEC-004.yaml
+- id: SEC-005
+  name: Uptime guarantee
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: true
+  policy_document: SLA clause, external-probe dashboard, one monthly uptime report
+  agent: A8
+  page: docs/compliance/controls/SEC-005.md
+  data: docs/compliance/controls/SEC-005.yaml
+- id: SEC-026
+  name: Patch, database and OS update process
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P1
+  question: true
+  policy_document: Patch policy doc, last month's patch report, the emergency-patch runbook
+  agent: A8
+  page: docs/compliance/controls/SEC-026.md
+  data: docs/compliance/controls/SEC-026.yaml
+- id: SEC-033
+  name: Log retention for 7 years
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: true
+  policy_document: null
+  agent: A8
+  page: docs/compliance/controls/SEC-033.md
+  data: docs/compliance/controls/SEC-033.yaml
+- id: SUP-S03
+  name: DDoS and volumetric abuse protection
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: false
+  policy_document: null
+  agent: A8
+  page: docs/compliance/controls/SUP-S03.md
+  data: docs/compliance/controls/SUP-S03.yaml
+- id: SUP-S04
+  name: Container / Kubernetes hardening (if containerised)
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: false
+  policy_document: null
+  agent: A8
+  page: docs/compliance/controls/SUP-S04.md
+  data: docs/compliance/controls/SUP-S04.yaml
+- id: SUP-S06
+  name: Database network and account hardening
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: false
+  policy_document: null
+  agent: A8
+  page: docs/compliance/controls/SUP-S06.md
+  data: docs/compliance/controls/SUP-S06.yaml
+- id: SUP-S08
+  name: Certificate and cryptographic key lifecycle
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: false
+  policy_document: The key/cert register, expiry alert config, one rotation drill note
+  agent: A8
+  page: docs/compliance/controls/SUP-S08.md
+  data: docs/compliance/controls/SUP-S08.yaml
+- id: SUP-S09
+  name: Endpoint, device and physical security
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: false
+  policy_document: null
+  agent: A8
+  page: docs/compliance/controls/SUP-S09.md
+  data: docs/compliance/controls/SUP-S09.yaml
+- id: SUP-S10
+  name: Email and company-domain security
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P1
+  question: false
+  policy_document: null
+  agent: A8
+  page: docs/compliance/controls/SUP-S10.md
+  data: docs/compliance/controls/SUP-S10.yaml
+- id: SUP-S11
+  name: Observability, SLO operations and status communication
+  workbook: 04-it-infrastructure
+  area: IT Infrastructure & Operations
+  priority: P2
+  question: false
+  policy_document: null
+  agent: A8
+  page: docs/compliance/controls/SUP-S11.md
+  data: docs/compliance/controls/SUP-S11.yaml

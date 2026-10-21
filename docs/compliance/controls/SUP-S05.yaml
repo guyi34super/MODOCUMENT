@@ -1,0 +1,31 @@
+id: SUP-S05
+status: Partially Implemented
+current_state: "Deploys use GitHub OIDC to a per-environment AWS role (ci-oidc module, not applied); no static cloud keys in any workflow; least-privilege deploy role (ECR push, ECS deploy, PassRole to task roles only); immutable ECR tags with scan on push; images built once and deployed by digest; build separated from staging and production deploy, production behind environment reviewers; 58 of 58 external actions pinned by full commit SHA; read-only default token permissions; pull_request only (no pull_request_target) on GitHub-hosted runners; Dependabot for Actions, Maven, npm, Docker and Terraform. Gaps: staging OIDC trust is repo:<repo>:* (any ref); no provenance attestation (buildx --provenance=false); documented branch protection not enforced (PRs #63 to #66 merged with failed checks and no review); GitHub Actions has started no job since 2026-10-16."
+gap: "CI outage and unenforced branch/workflow protection; staging deploy role trusts every ref of the repository; no build-provenance attestation; leaked-token drill (gate A8) not run; some checkouts persist credentials."
+gap_type: Config
+required_action: "Restore Actions and apply the branch ruleset without bypass with Code Owner review of workflows; limit staging trust to environment:staging and drop production's transitional main subject; add attest-build-provenance for images and the agent jar and verify before deploy; run the A8 drill after the first apply; set persist-credentials false everywhere."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-13
+evidence:
+  id: SUP-S05-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SUP-S05.md; infra/terraform/modules/ci-oidc/main.tf; infra/terraform/envs/staging/main.tf; .github/workflows/release.yml; docs/security/branch-protection.md; docs/compliance/evidence/A7-runs.md; docs/compliance/evidence/A7-github-change-trail.md"
+test:
+  id: SUP-S05-T01
+  actual_result: "Run R10 (2026-10-19): 58/58 external actions SHA-pinned; least-privilege permissions in all 7 workflows; id-token write only in the staging, production and deploy jobs; no static AWS credentials. OIDC: production limited to environment:production plus a transitional main subject; staging trusts repo:<repo>:*. No provenance step (buildx --provenance=false). Run R9: merges #63 to #66 passed no check and had no review. Gate A8 drill not run (no AWS)."
+  result: Partial
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Restore CI, enforce protections, narrow staging trust; Day 60: provenance attestation; Day 90: A8 drill."
+  status: In progress
+risk:
+  likelihood: 2
+  impact: 5
+  residual: High
+policy_document: null
+to_confirm:
+  - "Applied branch and tag rulesets and production environment reviewers: NOT IN REPO (live cloud)"
+  - "Cause of the GitHub Actions outage: TO CONFIRM (organisational)"
+  - "Gate A8 leaked-token drill: NOT IN REPO (live cloud)"

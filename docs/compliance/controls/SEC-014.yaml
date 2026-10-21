@@ -1,0 +1,33 @@
+id: SEC-014
+status: Partially Implemented
+current_state: "Built-in TOTP MFA with recovery codes and two-phase sign-in; PLATFORM_ADMIN always needs TOTP; ADMIN needs TOTP (security.mfa.requireForAdmins locked true, yml default true); other roles when the bank sets security.mfa.requireForAllRoles. OIDC SSO with Entra ID and Keycloak (bridge pattern); Keycloak realm forces TOTP enrolment; Entra MFA via the bank's Conditional Access; MFA reset is maker/checker."
+gap: "No step-up MFA before critical actions; OIDC sign-in does not verify that the IdP performed MFA (amr/acr); docker-compose.yml defaults admin MFA to false (only ECS enforces guardrails)."
+gap_type: Build
+required_action: "Add step-up TOTP on approve, role-change and export routes; require an MFA amr/acr (or MoDocument TOTP) for ADMIN OIDC sign-ins; default compose to admin MFA on."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-20
+evidence:
+  id: SEC-014-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-014.md; docker/keycloak/modocument-realm.json; application-oidc.yml.example; docs/security/identity-providers.md; docs/compliance/evidence/A6-test-runs.md"
+question:
+  final_answer: "Yes. MoDocument has built-in multi-factor authentication with authenticator-app one-time codes (TOTP) and one-time recovery codes. A second factor is mandatory for bank administrators and for the platform owner's accounts, and each bank can make it mandatory for all its users; a password alone never produces a session for these accounts. MoDocument also supports single sign-on through OpenID Connect with Microsoft Entra ID and Keycloak. On that path the identity provider enforces MFA: through the bank's Entra Conditional Access policy, or through the Keycloak realm, which requires every user to enrol an authenticator. Evidence: SEC-014-E01."
+  confidence: Medium
+test:
+  id: SEC-014-T01
+  actual_result: "2026-10-19 H2 run: MfaFlowIntegrationTest 6/6 (admin without MFA must enrol before any token; no token until the code verifies), MfaUseCaseTest 10/10, AuthUseCaseTest 37/37, KeycloakRealmConfigTest 6/6, OidcLoginServiceTest 18/18, OidcLoginSuccessHandlerTest 2/2, OidcRegistrationFactoryTest 5/5, AuthProvidersConfiguredTest 3/3; 0 failures. Review: no step-up, no amr/acr check on OIDC, compose default admin MFA false."
+  result: Partial
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Compose default fix (Day 30); step-up MFA and OIDC amr/acr check (Day 60)."
+  status: Not started
+risk:
+  likelihood: 2
+  impact: 4
+  residual: Medium
+policy_document: null
+to_confirm:
+  - "TO CONFIRM (organisational): each bank's Entra ID Conditional Access policy requiring MFA for the MoDocument app."
+  - "NOT IN REPO (live cloud): screenshots of the Keycloak required actions and of the MoDocument settings tab in a deployed environment."

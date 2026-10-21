@@ -1,0 +1,33 @@
+id: SEC-027
+status: Fully Implemented
+current_state: "One security-feature catalogue (docs/security/security-feature-catalogue.md, about five pages) re-written on 2026-10-19 against main at 23647fe. Nine sections: identity and authentication, authorization and dual control (6 roles x 41 permissions, 17 maker/checker change types, platform owner), tenant isolation and data protection (incl. S3 file store with SSE-KMS), audit and monitoring (incl. v1.2.0 audit viewer and read audit), settings guardrails, integration hub security (API clients, mTLS, agent, SecretVault with per-bank HKDF keys, egress rules), AI controls, document creation (validation before download, PII masking in generated documents), platform and supply chain. Each row names code and test; Terraform-only items are marked; seven open gaps are listed."
+gap: "Catalogue not yet reviewed and approved by a person; the reference check is not yet part of CI."
+gap_type: Doc
+required_action: "Human review and approval of the catalogue; add the path and test-class reference check to CI; update the catalogue with every release."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-02
+evidence:
+  id: SEC-027-E01
+  status: Complete
+  location: "docs/security/security-feature-catalogue.md; docs/compliance/controls/SEC-027.md; docs/compliance/evidence/A7-runs.md"
+question:
+  final_answer: "MoDocument's security features are listed in one catalogue, organised by identity and authentication, authorization and dual control, tenant isolation and data protection, audit and monitoring, configuration guardrails, integration security, AI controls, document creation and the delivery pipeline. Each feature names the code that implements it and the automated test that proves it; on 19 Oct 2026 every one of the 106 file references and 95 test classes named in the catalogue was checked to exist, and the tests behind the main controls were re-run green. Highlights: individual accounts with MFA and lockout, six roles with every API route mapped to a permission, maker/checker on 17 kinds of sensitive change, database-enforced tenant isolation, PII masking per role and channel, an append-only audit trail with a viewer, AES-256-GCM encryption of stored secrets with per-bank keys, TLS everywhere at the edge and to the database, and an AI gateway that pseudonymises prompts and keeps each prompt to one bank. Infrastructure controls are written as code and will be applied at go-live; the catalogue marks them and lists the open gaps (evidence SEC-027-E01)."
+  confidence: High
+test:
+  id: SEC-027-T01
+  actual_result: "Reference check on 2026-10-19: 106 path references and 100 test-class references (95 distinct classes) in the catalogue, 0 missing. 34 of the named test classes re-run in runs R1 to R3 and R5: 315 tests, 0 failures."
+  result: Pass
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Approve the catalogue and put the reference check in CI."
+  status: In progress
+risk:
+  likelihood: 1
+  impact: 2
+  residual: Low
+policy_document: docs/security/security-feature-catalogue.md
+to_confirm:
+  - "Human sign-off of the catalogue: TO CONFIRM (organisational)"
+  - "Cloud controls marked as Terraform-only are effective only once applied: NOT IN REPO (live cloud)"

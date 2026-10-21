@@ -1,0 +1,34 @@
+id: SEC-035
+status: Partially Implemented
+current_state: "Append-only AuditEvent (V14): UUIDv7 id, time, bank, actor id/e-mail/role, session jti, request id, IP, action, entity, old/new values, outcome; written only through the AuditRecorder port; success events in the business transaction. 131 catalogued actions (docs/security/audit-events.md). UPDATE/DELETE/TRUNCATE revoked from modocument_app and blocked for everyone by triggers; RLS per bank; AuditAppendOnlyPgIT passes on PostgreSQL. Individual user and machine identities. Audit viewer with filters, diff and masked CSV export, itself audited (v1.2.0). No hash chain and no verification job: a superuser with session_replication_role=replica edited a row in the drill and nothing would detect it. ExtractionAuditEvent is not append-only."
+gap: "No tamper evidence (hash chain plus verification run) against a database superuser; superuser credential governance not evidenced; ExtractionAuditEvent mutable."
+gap_type: Build
+required_action: "Add a per-bank SHA-256 hash chain (new expand migration), a daily verification job that audits and alerts on a break, and periodic anchoring to the Object-Lock archive; restrict and log RDS master-credential use; make ExtractionAuditEvent append-only."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-12-18
+evidence:
+  id: SEC-035-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-035.md; src/main/resources/db/migration/V14__audit_event.sql; src/test/java/com/modocument/pgit/AuditAppendOnlyPgIT.java; docs/compliance/evidence/A7-audit-tamper-drill.md; frontend/src/pages/AuditLogPage.jsx; docs/compliance/evidence/A7-runs.md"
+question:
+  final_answer: "MoDocument writes an append-only audit trail for every security-relevant action: the individual user (or machine client), their role, bank, session and IP address, the request ID, the time, the action and the affected record with its old and new values, and the outcome. Successful changes are recorded in the same database transaction as the change itself, so no change can commit without its audit record. The application's database role can only insert and read audit records, and database triggers refuse any update, delete or truncate, even by the table owner; an automated test on PostgreSQL proves both. Administrators and approvers can search, compare and export the trail in an audit viewer, and that access is itself audited. Records are kept for seven years. A database superuser could still bypass the triggers; to make such tampering detectable we are adding a hash chain over the records with a daily verification job before go-live (evidence SEC-035-E01)."
+  confidence: High
+test:
+  id: SEC-035-T01
+  actual_result: "Run R3 (2026-10-19): AuditAppendOnlyPgIT 5 tests, 0 failures (app role: insert only within its tenant, permission denied on UPDATE/DELETE/TRUNCATE; owner stopped by trigger; RLS covers the table). Run R1: 33 H2 audit tests, 0 failures. Run R4 drill: grants INSERT, SELECT only; triggers enabled; a superuser update with session_replication_role=replica succeeded (rolled back) and no verification exists to flag it. Part (a) Pass, part (b) Fail."
+  result: Partial
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Hash chain with daily verification and anchoring; superuser governance; ExtractionAuditEvent append-only."
+  status: Not started
+risk:
+  likelihood: 1
+  impact: 4
+  residual: Low
+policy_document: null
+to_confirm:
+  - "Who holds the RDS master credential and how its use is approved: TO CONFIRM (organisational)"
+  - "History-tab screenshot from a running environment: NOT IN REPO (live cloud)"
+  - "Production database on PostgreSQL 17 (drill used 16.14): NOT IN REPO (live cloud)"

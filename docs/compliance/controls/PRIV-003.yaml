@@ -1,0 +1,35 @@
+id: PRIV-003
+status: Partially Implemented
+current_state: "Pre-production; designed in Terraform, validated 2026-10-19, not deployed. GuardDuty detector with findings (severity 4+) routed to SNS, VPC flow logs and CloudTrail (modules/security-monitoring, modules/network). Daily AWS Backup recovery points kept 90 days with a daily copy to ap-southeast-2, RDS PITR 35 days, vault lock and Object Lock compliance mode available behind enforce_backup_locks (off by default) (modules/backups). Not declared: GuardDuty runtime and malware protection. S3 file store has 7-day versioning only, no backup copy. Alert topic uses the AWS-managed SNS key, which blocks finding delivery. No EDR on staff devices."
+gap: "Nothing deployed; locks off until the restore drill; GuardDuty runtime/malware protection not in code; file store has no locked copy; alert delivery defect; vaults in the production account until the lock account exists; no EDR; restore never tested."
+gap_type: Build
+required_action: "Apply production; run the timed restore drill (gate D6); enable enforce_backup_locks and run the deletion test (D5); add GuardDuty runtime and malware protection features; give the SNS topic a customer-managed KMS key; back up the file store to a locked copy; create the lock account; deploy EDR on staff devices."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: PRIV-003-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/PRIV-003.md; infra/terraform/modules/backups/main.tf; infra/terraform/modules/security-monitoring/main.tf; docs/compliance/evidence/A8-infra-checks.md; docs/compliance/policies/storage-backup-recovery-map.md"
+question:
+  final_answer: "MoDocument is not yet in production and holds no bank data. Its AWS environment is defined in code and will be deployed before go-live with: Amazon GuardDuty threat detection on the account, with findings sent to the on-call team; database backups taken daily, kept 90 days and copied to a second AWS region; and an AWS Backup vault lock that, once enabled, stops anyone, including our own administrators, from deleting or shortening recovery points. Two items are still open before go-live: enabling GuardDuty runtime and malware protection, and adding a locked backup copy for the document file store. Endpoint protection for staff laptops will be in place before go-live. We will prove recoverability with a timed full restore to an isolated environment before bank data is accepted. Evidence: PRIV-003-E01."
+  confidence: Low
+test:
+  id: PRIV-003-T01
+  actual_result: "Static re-performance: terraform fmt and validate passed for staging and production (2026-10-19); vault lock, cross-region copy and GuardDuty present in code, but locks are off by default, GuardDuty runtime/malware features are absent and the file store is not backed up. Acceptance test (deletion attempt fails; full restore within RTO) not run: no AWS environment exists."
+  result: Partial
+  tester: "Agent A8 (static re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): deploy, restore drill, enforce locks, deletion test, GuardDuty features, file-store locked copy, EDR."
+  status: In progress
+risk:
+  likelihood: 2
+  impact: 5
+  residual: High
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): vault lock state, GuardDuty feature state, restore-drill result, deletion-test result"
+  - "TO CONFIRM (organisational): EDR product and coverage for staff devices"
+  - "TO CONFIRM (organisational): lock-account creation date"
+  - "TO CONFIRM (organisational): go-live date for gate items D4, D5, D6"

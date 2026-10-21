@@ -8,8 +8,11 @@ Gate: **E2** (API documented in OpenAPI). Related: [OWASP API Top 10 checklist](
 | What | Where |
 |---|---|
 | Machine-readable spec, generated from the code (springdoc) | `GET /v3/api-docs` (JSON), `GET /v3/api-docs.yaml` |
-| Route inventory (METHOD + path), pinned in CI | [`docs/api/openapi-routes.txt`](openapi-routes.txt) |
-| CI check | `OpenApiContractTest` (part of `mvn -B verify`) |
+| Route inventory (METHOD + path), pinned in CI | [`docs/api/openapi-routes.txt`](openapi-routes.txt) — 245 routes on 2026-10-19 |
+| CI check | `OpenApiContractTest` (`src/test/java/com/modocument/api/contract/OpenApiContractTest.java`, part of `mvn -B verify`) |
+| Integration API v1 for bank systems (OAuth2 client credentials, API key, mutual TLS) | [`docs/integration/developer-guide.md`](../integration/developer-guide.md), Postman collection beside it |
+| Connector Agent protocol v1 | [`docs/integration/agent.md`](../integration/agent.md) |
+| Sandbox access and credentials | [`docs/compliance/policies/api-sandbox-access-process.md`](../compliance/policies/api-sandbox-access-process.md) |
 | Interactive explorer | Swagger UI at `/swagger-ui`, **`local` profile only** |
 | Hand-written `static/swagger/spec.yaml` | **Deprecated.** It is not maintained, already differs from the code, and will be removed. |
 
@@ -23,8 +26,14 @@ the following on every build:
   removed or given a different method fails CI until the file is regenerated and the diff reviewed;
 - `bearerAuth` (HTTP bearer, JWT) is the global security scheme. The only anonymous operations are
   the login entry points (`/api/auth/login`, `/api/auth/refresh`, `/api/auth/mfa/verify`,
-  `/api/auth/providers`) and the public synthetic uptime probe (`GET /api/probe/synthetic`,
-  rate-limited per IP, ws18). Every other operation answers an anonymous call with **401**;
+  `/api/auth/providers`), the public synthetic uptime probe (`GET /api/probe/synthetic`,
+  rate-limited per IP, ws18), the OAuth2 token endpoint for API clients
+  (`POST /api/integration/oauth/token`, the client authenticates inside the request, ws26) and agent
+  enrolment (`POST /api/agent/v1/enroll`, the one-time enrolment token is the credential, ws26).
+  Every other operation answers an anonymous call with **401**. Machine clients
+  (`/api/integration/v1/**`, `/api/agent/v1/**`) present a client token, an `Authorization: ApiKey`
+  header or a client certificate; the spec describes these in prose, and `SecurityConfig` admits
+  only API clients on those paths and only users everywhere else;
 - every rate-limited operation documents **429** with a `Retry-After` header;
 - every operation has an explicit controller `@Tag` and a stable `operationId`
   (`<controller><Method>`, for example `ingestionJobResume`).
@@ -42,6 +51,13 @@ git diff docs/api/openapi-routes.txt   # review against section 3 below
   `/Templates/**`, `/TemplateFields/**`, `/TemplateDataTypes/**`, `/ProcessStep/**`,
   `/ImportHistory/**`, `/ImportDetails/**` and `/Validation*/**`. The spec's `info.version` is
   the build version. It identifies the release, not the API generation.
+- The two machine APIs added in phase 2 carry their version in the path:
+  `/api/integration/v1/**` (bank systems) and `/api/agent/v1/**` (the on-premises Connector
+  Agent). Their next breaking version is `/api/integration/v2/**` or `/api/agent/v2/**`. The token
+  endpoint `/api/integration/oauth/token` is not versioned; it follows OAuth 2.0 (RFC 6749).
+- Outbound webhooks to bank systems keep their envelope and signature headers
+  (`X-MoDocument-Timestamp`, `X-MoDocument-Signature`) for the life of v1
+  (developer guide §6).
 - Paths are **URL-stable** within a version. A published path keeps its method, meaning and
   authentication model for the life of v1.
 - A **breaking change ships under a new `/api/v2/...` namespace**, served alongside v1. v1 is not
@@ -106,19 +122,29 @@ Reasons for the production choice:
   framework and carry no `@RequiresPermission`. `RoutePermissionCoverageTest` allowlists the
   `/v3/api-docs` and `/swagger` prefixes for that reason, and its comment records this decision.
 
-## 6. Sandbox access (stub; to be completed before external integrators onboard)
+<a id="6-sandbox-access-stub-to-be-completed-before-external-integrators-onboard"></a>
+
+## 6. Sandbox access (process defined; sandbox not yet deployed)
+
+The full process — environment, request, maker/checker creation, one-time secret hand-over,
+expiry — is [`docs/compliance/policies/api-sandbox-access-process.md`](../compliance/policies/api-sandbox-access-process.md)
+(2026-10-19). In short:
 
 - **Environment:** a non-production deployment loaded with synthetic data only, never a copy of
   production (see the SEC-008 notes in [`loadtest/README.md`](../../loadtest/README.md)).
-- **Credentials:** issued per integrator as admin-created users (`READ_ONLY` or `READ_WRITE`),
-  through the [JML runbook](../security/jml-runbook.md). No shared accounts. Access tokens last
-  15 minutes and are renewed through `/api/auth/refresh`.
+- **Credentials for bank systems (integration API v1):** an API client per integrator, created
+  by one bank administrator and approved by a second (`API_CLIENT_CREATE`); the secret is shown
+  once, to the maker, within 24 hours. Client tokens last 15 minutes.
+- **Credentials for people calling the user API:** admin-created users (`READ_ONLY` or
+  `READ_WRITE`) through the [JML runbook](../security/jml-runbook.md). No shared accounts. Access
+  tokens last 15 minutes and are renewed through `/api/auth/refresh`.
 - **Limits:** the same per-user rate limits as production, so clients learn to honour `429` and
   `Retry-After`.
 - **Contract:** `/v3/api-docs` on the sandbox host. `modocument.api.server-url`
   (`MODOCUMENT_API_SERVER_URL`) sets the `servers` entry.
-- **Open items:** owner, request process, data-refresh schedule. These are tracked with the
-  SEC-006 control.
+- **Open items:** which environment hosts the sandbox, the ticket queue and secure channel for
+  secrets, and the data-refresh schedule. These are tracked with the SEC-006 control
+  (`docs/compliance/controls/SEC-006.md`).
 
 ## 7. Deprecated and removed routes (release 1.2.0, workstream 28)
 

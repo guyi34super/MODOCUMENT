@@ -175,15 +175,16 @@ are **never** exempt; there is deliberately no switch for them.
 
 ## Bank onboarding needs two admins (SEC-023)
 
-There is no bank-creation endpoint yet, so the two-bank-admins rule is
-enforced where it bites today: an onboarding's second administrator can only
-come from an approved `USER_CREATE` with role `ADMIN`, which inherently
-requires a different user's approval. When bank onboarding ships it MUST
-create the bank with **two** named administrators (or one administrator plus
-an approver), because a bank with a single admin cannot pass any
-maker/checker gate for user-security changes — the first admin's requests
-would have nobody to approve them. Keep that invariant in the onboarding
-workstream's design review.
+Bank onboarding is itself a maker/checker change: a platform admin requests
+`BANK_CREATE` and a second platform admin approves it. The applier
+(`src/main/java/com/modocument/application/usecase/BankCreateChangeApplier.java`)
+refuses an onboarding unless the first users include at least one `ADMIN` and
+at least two users who can approve (`ADMIN` or `APPROVER`). A bank with a
+single approver could not pass any maker/checker gate for user-security
+changes, because the first admin's requests would have nobody to approve
+them. Inside an existing bank, a further administrator still only comes from
+an approved `USER_CREATE` with role `ADMIN`, which needs a different user's
+approval.
 
 ## Audit vocabulary
 

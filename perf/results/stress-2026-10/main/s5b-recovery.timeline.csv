@@ -1,0 +1,3 @@
+second,requests,errors,rate_limited,p50_ms,p95_ms,max_ms,java_cpu_pct,java_rss_mib,java_threads,sys_cpu_pct,load1,db_conn_total,db_conn_active
+0,2,0,0,516,518,518,6,1330.8,154,63.6,4.4,9,0
+1,2,0,0,3,519,519,8,1330.8,154,62.3,4.37,9,0

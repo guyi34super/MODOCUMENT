@@ -1,0 +1,34 @@
+id: SEC-033
+status: Partially Implemented
+current_state: "Pre-production; Terraform validated, not deployed. S3 log archive with Object Lock enabled, versioning, SSE-KMS, lifecycle to Glacier after 90 days and expiry at 2557 days; COMPLIANCE 7-year default retention only when enforce_backup_locks = true (off by default). CloudTrail (multi-region, log-file validation) and Session Manager logs go to the archive; CloudTrail kept 400 days hot (min 365 enforced). AuditEvent is append-only in PostgreSQL and never purged by the app, but has no archived copy. App logs 90 days, flow logs 30 days, RDS log retention unset, no WAF/ALB/CloudFront logs. Rehydration runbook written, never run."
+gap: "Audit trail, application, database and edge logs not archived; lock off until the restore drill; archive in the production account; no rehydration test."
+gap_type: Config
+required_action: "Ship log groups to the archive (Firehose), export AuditEvent and AlertLog daily to the archive, enable WAF/ALB/CloudFront logs, set enforce_backup_locks = true after gate D6, move the archive to the lock account, test rehydration yearly."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SEC-033-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-033.md; docs/compliance/policies/log-retention-and-rehydration.md; infra/terraform/modules/backups/main.tf; infra/terraform/modules/security-monitoring/main.tf; src/main/resources/db/migration/V14__audit_event.sql"
+question:
+  final_answer: "MoDocument is not yet in production. Its infrastructure code creates a log archive in Amazon S3 with Object Lock in compliance mode and a seven-year retention, moving logs to Glacier after 90 days; AWS CloudTrail writes all account activity there with integrity validation, and the lock is enabled in production once our restore drill has passed. The application's audit trail is append-only in the database and is never deleted by the application. Before go-live we are adding a daily export of the audit trail and the shipping of application and database logs into the same locked archive; application logs are kept 90 days. A documented procedure retrieves archived log lines, and it will be tested yearly. Evidence: SEC-033-E01."
+  confidence: Low
+test:
+  id: SEC-033-T01
+  actual_result: "Static: only CloudTrail and Session Manager logs reach the 7-year archive, and only once locks are enforced; AuditEvent and application logs are not archived; terraform validate passed (2026-10-19). Rehydration of a 13-month-old line not possible: no archive exists yet."
+  result: Partial
+  tester: "Agent A8 (static re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): archive pipeline for audit, app, DB and edge logs; enforce the lock after D6; yearly rehydration test."
+  status: In progress
+risk:
+  likelihood: 3
+  impact: 3
+  residual: Medium
+policy_document: docs/compliance/policies/log-retention-and-rehydration.md
+to_confirm:
+  - "NOT IN REPO (live cloud): applied Object Lock and lifecycle configuration; rehydration test note"
+  - "TO CONFIRM (organisational): whether audit rows older than 7 years are deleted"
+  - "TO CONFIRM (organisational): lock-account creation date"

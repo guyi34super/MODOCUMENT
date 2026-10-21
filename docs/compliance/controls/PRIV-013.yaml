@@ -1,0 +1,34 @@
+id: PRIV-013
+status: Partially Implemented
+current_state: "Bank-scoped, USER_ADMIN-only, audited DSR search/export/erase (POST /api/admin/dsr/*, DataSubjectUseCase): SAR export ZIP with machine-readable JSON (portability) and text copy; erase reaches ingestion rows, uploads and export copies, import payloads, extraction records, legacy document blocks/assets, PDF-template document values and generated PDF (ws31), flow records TemplateRecord (ws32) and the AI result cache; retried file deletes; 30-day retention backstop; runbook, propagation checklist and register template written."
+gap: "Erase does not reach document titles (kept after the retention purge too), PDF-template document photos, the scale build's MongoDB store or transient agent staging; no restriction/objection feature; statutory period unconfirmed."
+gap_type: Build
+required_action: "Include DocInstance.Title and document photos in search/export/erase and clear titles at the content purge; cover or forbid the Mongo store; bank procedure for restriction/objection; confirm the statutory period (pack 09)."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-20
+evidence:
+  id: PRIV-013-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/PRIV-013.md; docs/security/retention-and-dsr.md; docs/compliance/policies/dsr-request-register-template.md; src/test/java/com/modocument/api/DataSubjectRightsGateC12Test.java; docs/compliance/evidence/A6-test-runs.md"
+question:
+  final_answer: "Yes, for access, portability and erasure; rectification uses the normal editing functions. On the bank's instruction, a bank administrator can search all of MoDocument's stores for one person (by national ID, account number, e-mail or name), export everything found as a machine-readable JSON file plus a readable text copy, and erase it. Erasure reaches the uploaded files, extracted rows, generated documents, the searchable record index and caches; a repeated search returning nothing is the closure evidence, and every step is audited without recording the person's identifier. Restriction and objection are handled by the bank stopping or deleting the processing; there is no separate switch. Backups that still hold erased data expire within 90 days and are re-erased if ever restored. All customer data is deleted automatically after at most 30 days. Evidence: PRIV-013-E01."
+  confidence: Medium
+test:
+  id: PRIV-013-T01
+  actual_result: "2026-10-19 H2 run: DataSubjectRightsGateC12Test 3/3 (synthetic subject seeded across stores, search, export, erase, re-search 0, identifier never in the audit trail), FlowRecordsApiTest 11/11, RetentionPurgeGateC5Test 2/2, ApiRateLimitIntegrationTest 16/16; 0 failures. Code review: document titles, PDF-template document photos, Mongo store (scale build) and agent staging not reached."
+  result: Partial
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Extend erase to document titles and photos; confirm statutory period; bank restriction/objection procedure."
+  status: In progress
+risk:
+  likelihood: 2
+  impact: 4
+  residual: Medium
+policy_document: docs/compliance/policies/dsr-request-register-template.md
+to_confirm:
+  - "TO CONFIRM (organisational): statutory response period (pack 09)."
+  - "TO CONFIRM (organisational): where the DSR register is kept and who reviews it."
+  - "TO CONFIRM (organisational): the bank-side procedure for restriction and objection."

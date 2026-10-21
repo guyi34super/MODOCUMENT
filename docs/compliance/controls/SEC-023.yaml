@@ -1,0 +1,32 @@
+id: SEC-023
+status: Fully Implemented
+current_state: Pending-change workflow for 17 critical change types (users, roles, disable, password and MFA resets, templates, bank security settings, integration connections and outbound flows, API clients, agents, platform settings, bank create/suspend, break-glass admin, egress rules). A change is inert until a different user with change:approve in the right audience approves; invariants are re-run at apply. Self-approval returns 409 and writes a SELF_APPROVAL_BLOCKED DENIED audit row, for every role. BANK_CREATE requires at least two ADMIN/APPROVER users. Live probe confirmed the bank and platform self-approval refusals.
+gap: None in the product. docs/security/maker-checker.md still says no bank-creation endpoint exists (stale); no screen recording of the flow.
+gap_type: Doc
+required_action: Correct the onboarding section of docs/security/maker-checker.md; record the Approvals flow once on staging.
+action_owner: Software Engineering — Bhavish Nobeen
+target_date: 2026-11-14
+evidence:
+  id: SEC-023-E01
+  status: Complete
+  location: docs/security/maker-checker.md; src/main/java/com/modocument/application/security/ChangeAudience.java; src/test/java/com/modocument/api/MakerCheckerIntegrationTest.java; docs/compliance/evidence/A4-rbac-probe.md
+question:
+  final_answer: 'Critical changes in MoDocument always need two different people: user creation, role changes, account disabling, password and MFA resets, template changes and deletions, security settings, integration connections, outbound data flows, API clients and connector agents, and every platform-level change such as onboarding or suspending a bank. The change is held as pending, with no effect, until a different authorised user approves it. If the requester tries to approve their own change, the system returns an error and records the attempt in the audit trail; this applies to administrators too. Every bank is created with at least two administrators or approvers so a second approver is always available. We verified this on a running system. Evidence SEC-023-E01.'
+  confidence: High
+test:
+  id: SEC-023-T01
+  actual_result: 'MakerCheckerIntegrationTest (6) and PendingChangeAudienceTest (40) passed. Live: role change 202 pending, self-approval 409, APPROVER rejection 200; platform BANK_CREATE self-approval 409, second platform admin approval applied it.'
+  result: Pass
+  tester: Agent A4 (automated re-performance); human sign-off required
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: Pending-change workflow with self-approval hard-blocked and two-admin onboarding delivered; correct the stale documentation section.
+  status: In progress
+risk:
+  likelihood: 1
+  impact: 4
+  residual: Low
+policy_document: null
+to_confirm:
+- 'TO CONFIRM (organisational): screen recording of the Approvals flow on staging.'

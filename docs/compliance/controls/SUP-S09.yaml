@@ -1,0 +1,33 @@
+id: SUP-S09
+status: Not Implemented
+current_state: "Organisational control. No MDM, enforced disk encryption or EDR chosen or deployed (workbook, 2 Oct 2026: planned before go-live). Device/BYOD policy drafted as proposed (docs/compliance/policies/endpoint-device-policy.md). Repository contributions: CI deploys through GitHub OIDC (no cloud keys on laptops), per-machine local secrets in a gitignored .env, secret scanning in CI. Production runs in AWS, not on MO premises."
+gap: "No MDM, encryption enforcement or EDR; device/BYOD policy not approved; no premises access note."
+gap_type: Org
+required_action: "Choose and deploy MDM and EDR for every in-scope device; approve the device/BYOD policy with a BYOD position; write the premises access note."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SUP-S09-E01
+  status: Missing
+  location: "docs/compliance/controls/SUP-S09.md; docs/compliance/policies/endpoint-device-policy.md (draft)"
+test:
+  id: SUP-S09-T01
+  actual_result: "Not possible: no MDM exists, so no compliance report can be produced."
+  result: Not run
+  tester: "Agent A8; human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Choose MDM and EDR, approve the device/BYOD policy, enrol in-scope devices before bank data arrives."
+  status: Not started
+risk:
+  likelihood: 3
+  impact: 4
+  residual: High
+policy_document: docs/compliance/policies/endpoint-device-policy.md
+to_confirm:
+  - "TO CONFIRM (organisational): MDM and EDR products"
+  - "TO CONFIRM (organisational): inventory of in-scope staff devices"
+  - "TO CONFIRM (organisational): BYOD position and policy approver"
+  - "TO CONFIRM (organisational): premises access control"
+  - "TO CONFIRM (organisational): laptops currently hold synthetic data only"

@@ -1,0 +1,35 @@
+id: SEC-004
+status: Partially Implemented
+current_state: "Pre-production; Terraform validated, not deployed. Production: RDS Multi-AZ (multi_az = true, automatic failover), ECS Auto Scaling group across two private app subnets (min 2 nodes), service minimum 2 tasks with ALB health checks and circuit-breaker rollback, one NAT gateway per AZ. Out of region: daily AWS Backup copy of the database to ap-southeast-2 kept 90 days; no cross-region replica, no file-store replication, no standby stack. Region-loss RTO not documented. Staging runs single-AZ."
+gap: "Not deployed; zone-failure test never run; region-loss RTO not documented; file store not replicated; backup-copy failures not alarmed."
+gap_type: Build
+required_action: "Deploy; run the zone-failure and RDS forced-failover test in staging then production; document and rehearse the region rebuild and its RTO in the DR plan; replicate the file store; alarm on failed backup copy jobs."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: SEC-004-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-004.md (topology diagram); infra/terraform/modules/rds/main.tf; infra/terraform/modules/ecs-app/main.tf; infra/terraform/modules/network/main.tf; infra/terraform/modules/backups/main.tf; docs/compliance/evidence/A8-infra-checks.md"
+question:
+  final_answer: "MoDocument is not yet in production. At go-live it will run in two AWS availability zones in Cape Town: the PostgreSQL database uses Amazon RDS Multi-AZ with a synchronous standby and automatic failover; the application runs at least two containers on at least two servers spread across both zones behind a load balancer with health checks; each zone has its own outbound NAT gateway. For loss of the whole region, the database backup is copied daily to a second AWS region (Sydney) and kept 90 days; recovery from a region loss means rebuilding the environment from our infrastructure code and restoring that copy, so it is a restore, not an automatic failover. A zone-failure test will be run before go-live. Evidence: SEC-004-E01."
+  confidence: Medium
+test:
+  id: SEC-004-T01
+  actual_result: "Static: Multi-AZ RDS, two-AZ subnets, min 2 nodes and tasks, NAT per AZ and the cross-region backup copy are present in the production code; validate passed (2026-10-19); region loss has no standby by design. Zone-failure and forced-failover test not run: no AWS environment."
+  result: Partial
+  tester: "Agent A8 (static re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): deploy Multi-AZ, zone-failure test, region-loss RTO in the DR plan."
+  status: In progress
+risk:
+  likelihood: 2
+  impact: 4
+  residual: Medium
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): failover-test note; backup copy job history"
+  - "TO CONFIRM (organisational): region-loss RTO"
+  - "TO CONFIRM (organisational): acceptance of the no-warm-standby cost decision"
+  - "TO CONFIRM (organisational): RTO value (2 h in the workbook, 4 h in sla-and-status.md)"

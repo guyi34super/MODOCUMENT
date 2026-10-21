@@ -1,0 +1,33 @@
+id: SEC-018
+status: Partially Implemented
+current_state: "Argon2id (Spring v5.8 defaults: 16 MiB, 2 iterations, parallelism 1, per-hash salt) for passwords, recovery codes and API client secrets, legacy BCrypt re-hashed at sign-in; production secrets are AWS Secrets Manager shells in Terraform injected by ARN with least-privilege read; RDS master RDS-managed, KMS rotation on; secrets also readable via _FILE; TOTP and connector secrets AES-256-GCM; rotation cadences in the key register; gitleaks full-history scan clean (270 commits, 2026-10-19)."
+gap: "Argon2id parameters below the workbook baseline and OWASP minimum; application secrets rotate by hand with no dynamic DB credentials; Secrets Manager not yet applied in AWS."
+gap_type: Config
+required_action: "Raise Argon2id parameters after a latency check; add Secrets Manager rotation or IAM DB auth and rehearse a revocation; apply the Terraform and capture the policy listing."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-06
+evidence:
+  id: SEC-018-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-018.md; src/main/java/com/modocument/api/config/SecurityConfig.java; infra/terraform/envs/production/main.tf; docs/security/key-certificate-register.md; docs/compliance/evidence/A6-test-runs.md"
+question:
+  final_answer: "Yes. MoDocument keeps no plaintext credential at rest. User passwords for MoDocument's own sign-in are stored only as salted Argon2id hashes; users who sign in through Microsoft Entra ID or Keycloak have no MoDocument password. System credentials (token-signing key, encryption keys, database credentials) are held in AWS Secrets Manager and injected into the running service at start-up; they are never in source code, images or configuration files. Credentials for a bank's own systems are encrypted with a per-bank key. A secret scan over the full repository history finds no secrets. Evidence: SEC-018-E01."
+  confidence: Medium
+test:
+  id: SEC-018-T01
+  actual_result: "2026-10-19: SecretFileEnvironmentPostProcessorTest 13/13, ConnectorSecretVaultTest 13/13, MfaSecretCipherTest 7/7, AuthUseCaseTest 37/37, BootstrapAdminRunnerTest 13/13 (0 failures); gitleaks 8.21.2 over origin/main: 270 commits, no leaks. Lease-revocation demonstration not possible (static DB password, nothing deployed)."
+  result: Partial
+  tester: "Agent A6 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Argon2id parameters (Day 30); apply Secrets Manager (Day 60); automated rotation or IAM DB auth (Day 90)."
+  status: Not started
+risk:
+  likelihood: 1
+  impact: 5
+  residual: Medium
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): Secrets Manager entries, their resource policies and rotation records."
+  - "NOT IN REPO (live cloud): a revoked credential cutting the app's database access."

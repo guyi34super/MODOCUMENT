@@ -65,7 +65,7 @@ absent snapshot is simply not there.)
 | `organization.id` | keyword | `BankId` | The tenant. A bank's feed only ever carries its own id (gate E6). |
 | `user.id` | keyword | `ActorUserId` | Absent for system jobs and unknown-account logins. |
 | `user.email` | keyword | `ActorEmail` | The claimed email on anonymous flows (a failed login names the attempted account). |
-| `user.roles` | keyword[] | `ActorRole` | One element: `ADMIN`, `APPROVER`, `READ_WRITE`, `READ_ONLY`. |
+| `user.roles` | keyword[] | `ActorRole` | One element, a `Role` enum value: `ADMIN`, `APPROVER`, `READ_WRITE`, `READ_ONLY`, `PLATFORM_ADMIN`, `API_CLIENT`. |
 | `source.ip` | ip | `Ip` | Client address as seen behind the trusted proxy (SEC-022). |
 | `trace.id` | keyword | `RequestId` | The `X-Request-Id` — the same id is on every application log line of that request (E9). |
 | `modocument.outcome` | keyword | `Outcome` | The precise outcome: `SUCCESS`, `DENIED` (refused), `FAILED` (attempted and failed). |
@@ -162,3 +162,20 @@ each bank's SIEM the per-bank feed above.
   action-specific snapshots and are **not** covered by this promise.
 - The doc ↔ serializer equality is enforced by
   `SiemFeedE6Test#schemaDocFieldListMatchesTheSerializedOutput`.
+
+## Verification status (SEC-031) — 2026-10-19
+
+| Item | Status | Proof |
+|---|---|---|
+| Event format documented | Done. This page; the field list is pinned to the serializer | `src/main/java/com/modocument/infrastructure/siem/SiemEventMapper.java`, `SiemFeedE6Test` |
+| Tenant scoping of the feed (the 2 Oct 2026 open question) | Done in code. The pull feed is bank-scoped by the caller's token; the push forwarder serves one bank only and drops all other banks' events | `src/main/java/com/modocument/api/controller/SiemFeedController.java`, `src/main/java/com/modocument/infrastructure/siem/SiemWebhookForwarder.java`, `SiemFeedE6Test` (6 tests, 0 failures, run 2026-10-19, see `docs/compliance/evidence/A5-scans-and-tests.md`) |
+| Transport configuration | Done in code: pull feed `GET /api/siem/events` (`siem:read`, ADMIN) and optional signed NDJSON push | `src/main/resources/application.yml` (`modocument.siem.*`), `docker-compose.yml` |
+| Syslog over TLS (RFC 5424) and CEF mapping | Not built. The workbook lists them as options; only the HTTPS pull feed, the HTTPS push and structured logs exist | — |
+| Ingestion into a reference SIEM (Elastic or Splunk), "login failure visible in under 60 s" | Not done. No reference-SIEM run exists in this repository | Owner and date: [security-roadmap.md](security-roadmap.md) |
+| Live feed to a bank | `NOT IN REPO (live cloud)`: nothing is deployed | — |
+
+Latency by design: the pull feed holds back events younger than
+`modocument.siem.feed.settle` (default 5 s), and the documented poll interval
+is 15–60 s. A login-failure event therefore reaches a SIEM that polls every
+15 s within about 20 s of the action. This is a design figure, not a measured
+one, until the reference-SIEM test runs.

@@ -1,0 +1,34 @@
+id: SEC-029
+status: Partially Implemented
+current_state: "Written crypto standard (docs/security/crypto-standard.md, updated 2026-10-19): AES-256-GCM with 96-bit nonce and 128-bit tag through one primitive (AesGcm), HKDF-SHA256 per-bank keys for connection secrets, Argon2id for passwords and API-client secrets, HMAC-SHA256 signatures, JWT HS256 with an RS256 plan, SHA-256 digests. TLS policy names in Terraform: CloudFront TLSv1.2_2021, ALB ELBSecurityPolicy-TLS13-1-2-2021-06, origin TLSv1.2 https-only, RDS force_ssl plus verify-full. Two KMS CMKs (RDS, file store) with yearly rotation; no explicit key policies. Semgrep rules against MD5, SHA-1, DES, ECB and weak MACs run with --error in security.yml; 0 findings on 2026-10-19."
+gap: "No explicit KMS key policies; backups and logs use AWS-managed keys; SSL suite scan impossible until deployment; the Semgrep rule is not enforced while GitHub Actions is down; standard not approved."
+gap_type: Config
+required_action: "Write explicit key policies for every CMK and add CMKs for backups and logs; restore CI; run an SSL scan at go-live; approve the standard."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-11-30
+evidence:
+  id: SEC-029-E01
+  status: Partial — to collect
+  location: "docs/security/crypto-standard.md; .semgrep/modocument.yml; infra/terraform/modules/rds/main.tf; infra/terraform/modules/file-store/main.tf; infra/terraform/modules/ecs-app/main.tf; infra/terraform/modules/edge/main.tf; docs/compliance/evidence/A7-runs.md"
+question:
+  final_answer: "MoDocument's cryptography is specified in a written standard that lists every algorithm in use with its parameters. Data and secrets are encrypted with AES-256-GCM (96-bit random nonces, 128-bit tags); bank connection secrets use a separate key per bank derived with HKDF-SHA256 and bound to the bank; passwords and machine secrets are hashed with Argon2id; signatures use HMAC-SHA256. In transit we allow TLS 1.3 and 1.2 only, using the AWS policies ELBSecurityPolicy-TLS13-1-2-2021-06 on the load balancer and TLSv1.2_2021 on CloudFront, and the database connection is TLS-enforced and certificate-verified. Cloud data at rest uses AWS KMS customer-managed keys with automatic yearly rotation for the database and document storage. Keys live in AWS Secrets Manager and are never in code or images. MD5, SHA-1 (outside the TOTP standard), DES/3DES, RC4, ECB and TLS below 1.2 are prohibited, and an automated code-scanning rule blocks them; it found no violations on 19 Oct 2026. The live TLS scan will be produced when the environment is deployed (evidence SEC-029-E01)."
+  confidence: High
+test:
+  id: SEC-029-T01
+  actual_result: "Run R6 (2026-10-19): Semgrep repo rules, 6 rules on 1,033 files, 0 findings. Run R2: 30 crypto tests (ConnectorSecretVaultTest, MfaSecretCipherTest, TotpTest, JwtServiceTest), 0 failures. Standard compared with code and Terraform and updated; no explicit KMS key policies found. SSL scan not run (nothing deployed). Semgrep is not enforced in CI while GitHub Actions starts no job."
+  result: Partial
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Explicit KMS key policies and CMKs for backups and logs; Day 30: restore CI and approve the standard; Day 90: SSL scan at go-live."
+  status: In progress
+risk:
+  likelihood: 1
+  impact: 3
+  residual: Low
+policy_document: docs/security/crypto-standard.md
+to_confirm:
+  - "SSL scan of the public endpoint: NOT IN REPO (live cloud)"
+  - "Applied KMS key policies and key administrators: NOT IN REPO (live cloud)"
+  - "Approval of the crypto standard: TO CONFIRM (organisational)"

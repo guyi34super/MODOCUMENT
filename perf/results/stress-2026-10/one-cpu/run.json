@@ -1,0 +1,89 @@
+{
+  "task": "MO-017",
+  "label": "one-cpu",
+  "machine": {
+    "at": "2026-10-19T17:13:45.750Z",
+    "commit": "eb53e97",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      3.12,
+      8.04,
+      6.26
+    ]
+  },
+  "javaPid": 2250,
+  "jvm": {
+    "args": [
+      "-Xmx1971m",
+      "-XX:+UseG1GC",
+      "-XX:ActiveProcessorCount=1"
+    ],
+    "affinity": "8"
+  },
+  "dbAppRole": "rls",
+  "rateLimitOverrides": {
+    "MODOCUMENT_RATELIMIT_UPLOADS": "200",
+    "MODOCUMENT_RATELIMIT_DOC_GENERATE": "300",
+    "MODOCUMENT_RATELIMIT_INGESTION": "600",
+    "MODOCUMENT_RATELIMIT_EXPORTS": "600"
+  },
+  "dbPoolMax": "20 (default)",
+  "thresholds": {
+    "p95": {
+      "read": 500,
+      "write": 1000,
+      "auth": 1000,
+      "heavy": 3000,
+      "job": 60000
+    },
+    "p99": {
+      "read": 1500,
+      "write": 3000,
+      "auth": 2000,
+      "heavy": 8000,
+      "job": 120000
+    },
+    "maxErrorRate": 0.01
+  },
+  "startedAt": "2026-10-19T17:13:45.758Z",
+  "scenarios": [
+    {
+      "key": "s4-lite",
+      "title": "S4-lite peak mix at 1x and 2x",
+      "start": "2026-10-19T17:14:53.535Z",
+      "end": "2026-10-19T17:20:56.681Z",
+      "requests": 12343
+    },
+    {
+      "key": "s2-break",
+      "title": "S2-break generation only, no think time, stepped",
+      "start": "2026-10-19T17:21:01.859Z",
+      "end": "2026-10-19T17:23:34.053Z",
+      "requests": 11771
+    },
+    {
+      "key": "s6",
+      "title": "S6 breakpoint (step load) and recovery",
+      "start": "2026-10-19T17:23:39.285Z",
+      "end": "2026-10-19T17:30:01.296Z",
+      "requests": 45118
+    }
+  ],
+  "endedAt": "2026-10-19T17:30:03.855Z",
+  "machineAtEnd": {
+    "at": "2026-10-19T17:30:03.895Z",
+    "commit": "eb53e97",
+    "dirtyTree": false,
+    "node": "v22.22.0",
+    "cpus": 4,
+    "memGiB": 15.7,
+    "loadavg": [
+      9.76,
+      12.83,
+      9.21
+    ]
+  }
+}

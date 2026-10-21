@@ -1,0 +1,34 @@
+id: PRIV-017
+status: Partially Implemented
+current_state: 'Individual logins; joiner, mover and leaver are maker/checker in each bank''s Administration > Users; a role change replaces the role and kills outstanding tokens; a disabled account is inert immediately (token, refresh, password, SSO and MFA refused); BANK_CREATE requires at least one ADMIN and two ADMIN/APPROVER; user-list CSV export with last login and an access-review worksheet with inactive90d exist. Live probe: leaver token 401 and login 401 right after approval; mover token 200 while pending, 401 after, new role on sign-in. Not yet operated (pre-production).'
+gap: No completed quarterly review and no joiner ticket trail (pre-production); shared pre-production team account to delete; PRIV-021 signed undertaking in the joiner flow; no separate nightly role-holder report (permissions are code-pinned).
+gap_type: Org
+required_action: Delete the shared account; link each joiner request to a ticket; hold the first quarterly access review at go-live with the worksheet and CSV; decide whether a nightly role-holder report is needed.
+action_owner: Software Engineering — Bhavish Nobeen
+target_date: 2026-10-21
+evidence:
+  id: PRIV-017-E01
+  status: Partial — to collect
+  location: docs/security/jml-runbook.md; docs/compliance/controls/PRIV-017.md; src/test/java/com/modocument/api/UserAdminIntegrationTest.java; docs/compliance/evidence/A4-rbac-probe.md
+question:
+  final_answer: 'Each bank''s administrator manages the bank''s own users in MoDocument, and every joiner, role change and leaver needs the approval of a second administrator or approver. New users must change their temporary password at first sign-in, and administrators must enrol multi-factor authentication. A role change replaces the old role and ends the person''s sessions immediately. A leaver''s account is unusable the moment the disable is approved: existing sessions, password login and single sign-on are all refused. New banks are onboarded with at least two administrators. Administrators can export the user list with last-login dates and produce a quarterly review worksheet that flags accounts unused for 90 days. MO Intelligence staff follow the same process inside a separate platform tenant with no access to client data. We verified the leaver and role-change behaviour on a running system; the first quarterly review will take place after go-live. Evidence PRIV-017-E01.'
+  confidence: Medium
+test:
+  id: PRIV-017-T01
+  actual_result: 'Leaver: existing token 401 and password login 401 immediately after the second admin''s approval. Mover: token 200 while pending, 401 after approval, new sign-in carries READ_WRITE. User-list CSV (with LastLoginAt) and access-review worksheet (7 accounts) produced. UserAdminIntegrationTest passed (10 tests).'
+  result: Pass
+  tester: Agent A4 (automated re-performance); human sign-off required
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: Individual logins, bank-admin user list with last-login export and two-admin onboarding are built; delete the shared account and run the first quarterly review.
+  status: In progress
+risk:
+  likelihood: 2
+  impact: 4
+  residual: Medium
+policy_document: docs/security/jml-runbook.md
+to_confirm:
+- 'TO CONFIRM (organisational): the shared team account is deleted.'
+- 'TO CONFIRM (organisational): ticketing for joiner requests and the first quarterly review date.'
+- 'TO CONFIRM (organisational): PRIV-021 signed undertaking in place before access is granted.'

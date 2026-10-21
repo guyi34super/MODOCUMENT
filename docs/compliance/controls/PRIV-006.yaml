@@ -1,0 +1,36 @@
+id: PRIV-006
+status: Partially Implemented
+current_state: "Pre-production; storage map written (docs/compliance/policies/storage-backup-recovery-map.md). Terraform (not deployed): RDS PostgreSQL 17 Multi-AZ, KMS CMK, automated backups with PITR 35 days, backup window 01:00-02:00 UTC; AWS Backup daily recovery point kept 90 days with a daily copy to ap-southeast-2 kept 90 days. S3 file store SSE-KMS, versioning with 7-day noncurrent retention, no backup copy. Secrets Manager has no recovery copy. Restore procedures R1-R5 written; never run."
+gap: "No backups exist yet; restore never timed; file store has no backup or second-region copy; RTO not agreed (2 h in the workbook, 4 h in sla-and-status.md); no key escrow for the MFA and connector keys."
+gap_type: Build
+required_action: "Deploy; rehearse the restore in staging; run the timed PITR and vault restore drill on production (gate D6), then quarterly; add a file-store backup copy; agree one RTO; set up key escrow."
+action_owner: "IT Infrastructure — Bhavish Nobeen"
+target_date: null
+evidence:
+  id: PRIV-006-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/PRIV-006.md; docs/compliance/policies/storage-backup-recovery-map.md; infra/terraform/modules/rds/main.tf; infra/terraform/modules/backups/main.tf; infra/terraform/modules/file-store/main.tf; docs/compliance/evidence/A8-infra-checks.md"
+question:
+  final_answer: "MoDocument is not yet in production and holds no bank data. At go-live, all data will be stored in AWS Cape Town (af-south-1): the database in Amazon RDS for PostgreSQL across two availability zones, and documents in Amazon S3, both encrypted with dedicated KMS keys. The database has continuous backups with point-in-time recovery for 35 days, and daily backups kept 90 days in AWS Backup with an encrypted copy in a second AWS region (Sydney). Document files are versioned; an off-site backup copy for them is being added before go-live. Our recovery targets are an RPO of 5 minutes within the region and 24 hours for loss of the region. Restores have not been tested yet because nothing is deployed; a timed restore drill on the deployed system is a go-live condition and will then run quarterly. The full storage map is provided. Evidence: PRIV-006-E01."
+  confidence: Medium
+test:
+  id: PRIV-006-T01
+  actual_result: "Static: storage map covers every data store found in the code and the data inventory; backup settings match Terraform; validate passed for both envs (2026-10-19). Found: file store has no backup copy; workbook overstates the PITR window (35 days, not 90). Timed PITR restore not run: no AWS environment."
+  result: Partial
+  tester: "Agent A8 (static re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Pre-go-live (workbook date to set): deploy, staging rehearsal, timed production restore drill, file-store backup copy, RTO decision, key escrow."
+  status: In progress
+risk:
+  likelihood: 3
+  impact: 5
+  residual: High
+policy_document: docs/compliance/policies/storage-backup-recovery-map.md
+to_confirm:
+  - "NOT IN REPO (live cloud): backup plan export, recovery-point listing, restore-drill timing"
+  - "TO CONFIRM (organisational): one RTO value (2 h or 4 h)"
+  - "TO CONFIRM (organisational): legal basis for the ap-southeast-2 backup copy"
+  - "TO CONFIRM (organisational): key escrow for MODOCUMENT_MFA_KEY and MODOCUMENT_CONNECTOR_KEY"
+  - "TO CONFIRM (organisational): repository backup outside GitHub"

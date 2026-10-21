@@ -1,0 +1,34 @@
+id: SEC-032
+status: Partially Implemented
+current_state: "26 alert rules over the append-only audit trail are configuration (modocument.alerts.rules), validated at startup and pinned by AlertRuleCatalogueTest; thresholds and windows of windowed rules are also maker/checker platform settings. Immediate rules fire after commit; windowed rules every 60 s. Alerts are stored in AlertLog with delivery evidence (ALERT_SENT) and shown under Administration > Security alerts. Channels: log, webhook (phone path), e-mail. No receiver is configured and the ECS task definition passes no alert variables. Test run 2026-10-19: 11 immediate alerts raised within 108 ms and accepted by channels within 346 ms; 10 of 26 rules tripped end to end. Escalation policy drafted."
+gap: "No phone path (no webhook receiver, alert variables missing from the ECS task); 16 of 26 rules without a trip test; some workbook catalogue items not built (new country, off-hours privileged use, new egress destination, canary rows, AWS root use); escalation policy not approved."
+gap_type: Config
+required_action: "Connect an on-call relay and pass MODOCUMENT_ALERTS_* in the ECS task; trip a HIGH rule in staging and out of hours with a written record; add trip tests for untested rules; decide the missing catalogue items; approve the escalation policy."
+action_owner: "Security — Bhavish Nobeen"
+target_date: 2026-10-30
+evidence:
+  id: SEC-032-E01
+  status: Partial — to collect
+  location: "src/main/resources/application.yml (modocument.alerts); docs/security/alerting-and-export-caps.md; docs/compliance/policies/alert-escalation-policy.md; docs/compliance/evidence/A5-scans-and-tests.md (trip-test timing)"
+question:
+  final_answer: "Security alerts are raised in real time from the audit trail by 26 configurable rules, including repeated failed logins per account and per address, account lockouts, refresh-token replay, privileged role and MFA changes, self-approval attempts, separation-of-duties violations, blocked and large exports, bursts of denied access, API-client authentication failures and platform changes. Thresholds and windows are configuration and can be tuned by administrators under four-eyes approval. Single-event rules fire immediately and threshold rules are evaluated every minute; in our automated test run of 19 October 2026, every tripped immediate rule was raised within 0.2 seconds and delivered to its channels within 0.4 seconds. Alerts are recorded with their delivery evidence and sent to the log, a webhook and e-mail. Routing of high-severity alerts to the on-call phone, with a written on-call and escalation policy, is being completed by 30 October 2026. Evidence SEC-032-E01."
+  confidence: Medium
+test:
+  id: SEC-032-T01
+  actual_result: "Alerting tests pass (2026-10-19). 11 immediate alerts raised within 108 ms and accepted by log and test-webhook channels within 346 ms; 12 windowed alerts raised when the tests ran the sweep (AlertingGateD1Test asserts under 5 minutes; production worst case one 60 s sweep plus delivery). 10 of 26 rules tripped end to end. No person's phone or mailbox in the loop."
+  result: Partial
+  tester: "Agent A5 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Route HIGH/CRITICAL alerts to the on-call phone; write up a live trip test (date, rule, time, recipient) and repeat out of hours; trip tests for untested rules."
+  status: In progress
+risk:
+  likelihood: 4
+  impact: 4
+  residual: High
+policy_document: null
+to_confirm:
+  - "TO CONFIRM (organisational): on-call phone numbers, rotation calendar and paging/relay tool"
+  - "TO CONFIRM (organisational): record of the 2 Oct 2026 e-mail trip test (date, rule, time, recipient)"
+  - "NOT IN REPO (live cloud): live trip tests and SNS subscriptions"

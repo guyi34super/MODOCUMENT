@@ -1,0 +1,35 @@
+id: SEC-025
+status: Partially Implemented
+current_state: "Change process is built and documented: PR template with security and privacy checklists, CI on every push and PR (ci.yml, security.yml), tag-driven release pipeline that builds once, scans with Trivy, deploys to staging, smoke-tests and needs production-environment approval (release.yml), rollback workflow by digest (deploy.yml), expand-only migrations enforced by MigrationPolicyTest, Terraform for all infrastructure, version sync and VERSION_DEPLOYED audit. In-app configuration changes are maker/checker for the SECURITY tier and every setting change is in the append-only audit trail, browsable in the audit viewer (category Settings). Written change procedure added (docs/compliance/policies/change-management-procedure.md). Not operating as designed: GitHub Actions has started no job since PR #63 (2026-10-16); PRs #63 to #66 merged on a local gate with red checks; PRs #32 and #62 to #66 have no review; no tag or release has ever run. Nothing is deployed."
+gap: "CI outage since 2026-10-16; branch protection not enforced (merges with red checks and no review); single code owner; release pipeline and production approval never exercised; no Terraform drift detection; procedure not yet approved."
+gap_type: Config
+required_action: "Restore GitHub Actions runners and re-run CI on main, reviewing the four merges made during the outage; apply the documented branch ruleset with no bypass and add a second code owner; run the first tagged release once AWS staging exists and keep it as the release trail; add scheduled terraform plan drift detection; approve the change procedure."
+action_owner: "Software Engineering — Bhavish Nobeen"
+target_date: 2026-10-26
+evidence:
+  id: SEC-025-E01
+  status: Partial — to collect
+  location: "docs/compliance/controls/SEC-025.md; docs/compliance/policies/change-management-procedure.md; .github/workflows/release.yml; .github/workflows/deploy.yml; docs/compliance/evidence/A7-github-change-trail.md; docs/compliance/evidence/A7-runs.md"
+question:
+  final_answer: "Changes to MoDocument follow a written change procedure (normal, standard, security-configuration and emergency changes). Code changes go through pull requests with a security and privacy checklist and automated CI (build, unit and PostgreSQL tests, secret scanning, SAST, dependency checks). Releases are tagged versions built once, scanned, deployed to staging, smoke-tested and promoted to production only after approval by two reviewers who did not cut the release; rollback is automatic on a failed deployment and manual by version through the same pipeline; database migrations are expand-only. In-app security settings require a second approver, and every configuration change is recorded with old and new values in an append-only audit trail that administrators can browse and export. MoDocument is pre-production: no production change has happened yet. Our own review on 19 Oct 2026 found that the CI service has not run since 16 Oct and that recent merges lacked a second reviewer; both are being corrected before go-live (evidence SEC-025-E01)."
+  confidence: Medium
+test:
+  id: SEC-025-T01
+  actual_result: "Run R1 (2026-10-19): 197 change-management, settings and audit-viewer tests, 0 failures. Release 1.2.0 traced via git and the GitHub API: request (PR #32), author, time, tests and changelog retrievable; no review recorded and no deployment record (no tag, no release run). Last six merges (#32, #62 to #66) have 0 reviews; #63 to #66 merged with every check failed because GitHub Actions started no job."
+  result: Partial
+  tester: "Agent A7 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Restore CI, enforce branch protection without bypass, second code owner, approve the change procedure; Day 60: first tagged release trail and drift detection."
+  status: In progress
+risk:
+  likelihood: 3
+  impact: 4
+  residual: High
+policy_document: docs/compliance/policies/change-management-procedure.md
+to_confirm:
+  - "Applied GitHub branch ruleset, production environment reviewers and tag ruleset: NOT IN REPO (live cloud)"
+  - "Cause of the GitHub Actions outage since 2026-10-16: TO CONFIRM (organisational)"
+  - "Names of release managers and production approvers: TO CONFIRM (organisational)"
+  - "A production change trail: NOT IN REPO (live cloud), nothing is deployed"

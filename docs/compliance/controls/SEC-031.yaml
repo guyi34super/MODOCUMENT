@@ -1,0 +1,33 @@
+id: SEC-031
+status: Partially Implemented
+current_state: "Security events come from one source, the append-only audit trail, rendered as ECS 8.11 JSON by one serializer (SiemEventMapper). The schema is documented in docs/security/siem-event-schema.md and pinned to the serializer by SiemFeedE6Test. Transports: HTTPS pull feed GET /api/siem/events (siem:read, ADMIN, bank taken from the token, RLS) with cursor paging; optional signed NDJSON push for one bank; structured ECS logs with the structured-logs profile. Tenant scoping proven by a two-bank test (SiemFeedE6Test, 6 tests pass 2026-10-19). No syslog/CEF transport; no reference-SIEM test; the ECS task does not enable structured logs or the push."
+gap: "No reference-SIEM ingestion test; ECS task definition does not enable structured logs or SIEM push; no syslog/CEF transport."
+gap_type: Build
+required_action: "Run a reference SIEM (Elastic or Splunk) against a staging feed and measure login-failure latency; enable structured-logs in ECS; decide on syslog/CEF."
+action_owner: "Security — Bhavish Nobeen"
+target_date: 2026-11-30
+evidence:
+  id: SEC-031-E01
+  status: Partial — to collect
+  location: "docs/security/siem-event-schema.md; src/main/resources/application.yml (modocument.siem); src/main/java/com/modocument/api/controller/SiemFeedController.java; src/main/java/com/modocument/infrastructure/siem/SiemWebhookForwarder.java; docs/compliance/evidence/A5-scans-and-tests.md"
+question:
+  final_answer: "Every security event is recorded once, in an append-only audit trail, and exported to the bank's SIEM as structured JSON using Elastic Common Schema field names, with a published field reference and a field-stability promise. A bank's SIEM can pull its events over HTTPS with cursor-based paging, or receive them by signed HTTPS push. Each bank's feed contains only that bank's events: this is enforced by the bank identity in the access token and by database row-level security, and verified by an automated two-bank test. An end-to-end validation with a reference SIEM (Elastic or Splunk) is scheduled for 30 November 2026. Syslog and CEF delivery are not offered today. Evidence SEC-031-E01."
+  confidence: Medium
+test:
+  id: SEC-031-T01
+  actual_result: "Reference-SIEM test not performed (no reference SIEM available). SiemFeedE6Test passed twice on 2026-10-19 (6 tests): bank-scoped feed, cursor paging, ADMIN-only access, single-bank push, schema doc equals serializer output. Design latency with defaults about 20 s; not measured."
+  result: Not run
+  tester: "Agent A5 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 60
+  action: "Reference-SIEM ingestion test with latency record; structured logs in ECS; syslog/CEF decision."
+  status: In progress
+risk:
+  likelihood: 2
+  impact: 3
+  residual: Medium
+policy_document: null
+to_confirm:
+  - "NOT IN REPO (live cloud): reference-SIEM ingestion and its timing; any bank's live feed"
+  - "TO CONFIRM (organisational): which bank SIEM products and transports (syslog/CEF) must be supported"

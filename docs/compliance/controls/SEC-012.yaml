@@ -1,0 +1,32 @@
+id: SEC-012
+status: Fully Implemented
+current_state: 'APPROVER role built. Role catalogue maps ADMIN (application owner / IT admin), APPROVER (supervisor / checker), READ_WRITE (operations / maker), READ_ONLY (auditor / controller) plus PLATFORM_ADMIN and API_CLIENT (docs/security/role-catalogue-and-sod.md). SoD conflict table is data in SodPolicy. A user holds exactly one role, so conflicting role pairs cannot be assigned; RoleAssignmentPolicy and a DB trigger refuse PLATFORM_ADMIN in a customer bank (live probe: 400). Banks map finer job functions through their IdP role claim.'
+gap: None in the product; the annual catalogue review has not yet been held.
+gap_type: Org
+required_action: Review the role catalogue annually and with every release that changes RolePermissions.
+action_owner: Software Engineering — Bhavish Nobeen
+target_date: 2026-10-21
+evidence:
+  id: SEC-012-E01
+  status: Complete
+  location: docs/compliance/controls/SEC-012.md; docs/security/role-catalogue-and-sod.md; src/main/java/com/modocument/application/security/SodPolicy.java; src/test/java/com/modocument/application/security/SodPolicyTest.java
+question:
+  final_answer: 'MoDocument''s roles follow bank job functions: Administrator (application owner and user administration), Approver (supervisor and four-eyes checker, who approves changes and releases reports but cannot author them), Read-write (operations staff who prepare data and reports) and Read-only (auditors and controllers). A bank maps its own job functions onto these roles through its identity provider. Each user holds exactly one role, so conflicting role combinations cannot be assigned at all; conflicting duties within a role (maker and checker of the same change, author and releaser of the same report) are separated per object and refused by the system. The role catalogue and conflict table are maintained with the code. Evidence SEC-012-E01.'
+  confidence: High
+test:
+  id: SEC-012-T01
+  actual_result: 'SodPolicyTest and RoleAssignmentPolicyTest passed (12 tests); live: creating a PLATFORM_ADMIN user in a customer bank returned 400; a second role cannot be expressed (one role column per user).'
+  result: Pass
+  tester: Agent A4 (automated re-performance); human sign-off required
+  date: 2026-10-19
+roadmap:
+  phase: Done
+  action: Approver role and role catalogue with SoD conflict table delivered.
+  status: Done
+risk:
+  likelihood: 1
+  impact: 3
+  residual: Low
+policy_document: docs/security/role-catalogue-and-sod.md
+to_confirm:
+- 'TO CONFIRM (organisational): per-client mapping of bank job titles to roles in the client''s IdP.'

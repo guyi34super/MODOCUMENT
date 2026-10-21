@@ -1,0 +1,33 @@
+id: SEC-011
+status: Fully Implemented
+current_state: 'RBAC with 6 roles and 41 resource:action permissions. Grants are code (RolePermissions) rendered to docs/security/role-permission-matrix.csv and pinned by RolePermissionMatrixTest. One central check: @RequiresPermission evaluated by PermissionChecker (deny by default, platform-bank guard, API-client scope narrowing). RoutePermissionCoverageTest fails the build on any unmapped route; 238 of 245 routes carry a permission, 7 are the public allowlist. PostgreSQL RLS and owner scoping below the permission layer. Live probe: 352/352 role x route calls matched the matrix.'
+gap: 'None in the product. Organisational: retire the shared pre-production team account; hold the first quarterly matrix review.'
+gap_type: Org
+required_action: Confirm the shared account is deleted and every team member uses an individual login; hold the quarterly matrix review together with the access review.
+action_owner: Software Engineering — Bhavish Nobeen
+target_date: 2026-10-21
+evidence:
+  id: SEC-011-E01
+  status: Complete
+  location: docs/compliance/controls/SEC-011.md; docs/security/role-permission-matrix.csv; src/main/java/com/modocument/api/security/PermissionChecker.java; src/test/java/com/modocument/api/security/RoutePermissionCoverageTest.java; docs/compliance/evidence/A4-route-permission-inventory.md; docs/compliance/evidence/A4-rbac-probe.md
+question:
+  final_answer: MoDocument uses role-based access control enforced on the server. Each user holds exactly one of four bank roles (Administrator, Approver, Read-write, Read-only); MO Intelligence staff use a separate platform role that cannot see any bank's data; machine integrations use a client role limited to the scopes granted to each client. The 41 permissions take the form resource:action. Every API route requires exactly one permission, checked in a single authorisation component, and an automated test fails the build if any route is left unmapped. The role-permission matrix is version-controlled as code, and a second test fails the build if the published matrix and the code differ. Below the permission layer, database row-level security confines each user to their own bank. We verified enforcement by calling each role's routes on a running system. Evidence SEC-011-E01.
+  confidence: High
+test:
+  id: SEC-011-T01
+  actual_result: 'RoutePermissionCoverageTest and RolePermissionMatrixTest passed; 238 of 245 routes carry exactly one permission, 7 are the public allowlist; live probe on the production-profile stack: 352/352 role x route calls matched the matrix (126 allowed, 182 denied 403, 44 anonymous 401).'
+  result: Pass
+  tester: Agent A4 (automated re-performance); human sign-off required
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: Central authorisation middleware, matrix as data and route-coverage test are built; retire the shared account (organisational).
+  status: In progress
+risk:
+  likelihood: 1
+  impact: 4
+  residual: Low
+policy_document: docs/compliance/mo-018-rbac-role-permission-matrix.md
+to_confirm:
+- 'TO CONFIRM (organisational): the shared pre-production team account is deleted.'
+- 'TO CONFIRM (organisational): date and reviewer of the first quarterly matrix review.'

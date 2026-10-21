@@ -1,0 +1,57 @@
+2026-10-19T17:13:45.633Z [stress] pinned backend JVM 2250 to CPU(s) 3
+2026-10-19T17:13:45.758Z [stress] label=one-cpu java pid=2250 affinity=8 jvm=-Xmx1971m -XX:+UseG1GC -XX:ActiveProcessorCount=1 overrides={"MODOCUMENT_RATELIMIT_UPLOADS":"200","MODOCUMENT_RATELIMIT_DOC_GENERATE":"300","MODOCUMENT_RATELIMIT_INGESTION":"600","MODOCUMENT_RATELIMIT_EXPORTS":"600"}
+2026-10-19T17:14:11.504Z [stress] seeded 10/60 users
+2026-10-19T17:14:20.573Z [stress] seeded 20/60 users
+2026-10-19T17:14:28.094Z [stress] seeded 30/60 users
+2026-10-19T17:14:35.018Z [stress] seeded 40/60 users
+2026-10-19T17:14:42.744Z [stress] seeded 50/60 users
+2026-10-19T17:14:48.520Z [stress] seeded 60/60 users
+2026-10-19T17:14:48.534Z [stress] seeded 60 users in 63 s (initial logins 5770 ms)
+2026-10-19T17:14:48.534Z [stress] === s4-lite: S4-lite peak mix at 1x and 2x
+2026-10-19T17:14:53.536Z [stress]   stage "warm-up 25" (25 VUs, 60s)
+2026-10-19T17:15:53.536Z [stress]   stage "1x peak 50" (50 VUs, 120s)
+2026-10-19T17:17:53.537Z [stress]   stage "2x peak 100" (100 VUs, 120s)
+2026-10-19T17:19:53.537Z [stress]   stage "recovery 10" (10 VUs, 60s)
+2026-10-19T17:20:56.858Z [stress]   warm-up 25: 890 req 14.83/s p50 29 p95 550.5 p99 2159.9 max 2543.9 err 0.00% 429=0 cpu 60.9/95% rss 956 MiB db 15
+2026-10-19T17:20:56.858Z [stress]   1x peak 50: 3652 req 30.43/s p50 16.7 p95 277.1 p99 2093.9 max 2422.5 err 0.00% 429=0 cpu 52.7/99% rss 1078.1 MiB db 17
+2026-10-19T17:20:56.858Z [stress]   2x peak 100: 7240 req 60.33/s p50 23.3 p95 331.2 p99 2127.5 max 2488.1 err 0.00% 429=0 cpu 73.2/101% rss 1240.9 MiB db 20
+2026-10-19T17:20:56.858Z [stress]   recovery 10: 380 req 6.33/s p50 8.9 p95 50.7 p99 2032.4 max 2086.7 err 0.00% 429=0 cpu 8.5/54% rss 1018.1 MiB db 20
+2026-10-19T17:20:56.858Z [stress] === s2-break: S2-break generation only, no think time, stepped
+2026-10-19T17:21:01.860Z [stress]   stage "5 users, no think time" (5 VUs, 30s)
+2026-10-19T17:21:31.860Z [stress]   stage "10 users, no think time" (10 VUs, 30s)
+2026-10-19T17:22:01.861Z [stress]   stage "20 users, no think time" (20 VUs, 30s)
+2026-10-19T17:22:31.862Z [stress]   stage "40 users, no think time" (40 VUs, 30s)
+2026-10-19T17:23:01.863Z [stress]   stage "60 users, no think time" (60 VUs, 30s)
+2026-10-19T17:23:34.283Z [stress]   5 users, no think time: 2088 req 69.6/s p50 62.3 p95 414.8 p99 543.2 max 649 err 0.00% 429=0 cpu 92.7/100% rss 2017.9 MiB db 20
+2026-10-19T17:23:34.283Z [stress]   10 users, no think time: 2272 req 75.73/s p50 117.8 p95 718 p99 872 max 1197.8 err 0.00% 429=0 cpu 94.2/98% rss 2435.6 MiB db 20
+2026-10-19T17:23:34.283Z [stress]   20 users, no think time: 2579 req 85.96/s p50 210.2 p95 1275.5 p99 1484.6 max 3022.4 err 0.00% 429=0 cpu 94.4/99% rss 2441.9 MiB db 20
+2026-10-19T17:23:34.284Z [stress]   40 users, no think time: 2377 req 79.23/s p50 515 p95 2909.9 p99 3591.6 max 5008.6 err 0.00% 429=0 cpu 94.2/99.9% rss 2436.3 MiB db 20
+2026-10-19T17:23:34.284Z [stress]   60 users, no think time: 2303 req 76.77/s p50 863.7 p95 4409.6 p99 5626.9 max 7145.6 err 0.00% 429=0 cpu 92.9/97.9% rss 2429.5 MiB db 20
+2026-10-19T17:23:34.284Z [stress] === s6: S6 breakpoint (step load) and recovery
+2026-10-19T17:23:39.286Z [stress]   stage "5 VUs" (5 VUs, 40s)
+2026-10-19T17:24:19.289Z [stress]   -> 579 req, 14.5 req/s, errors 0.00%, p95 20 ms
+2026-10-19T17:24:19.290Z [stress]   stage "10 VUs" (10 VUs, 40s)
+2026-10-19T17:24:59.296Z [stress]   -> 1131 req, 28.3 req/s, errors 0.00%, p95 18 ms
+2026-10-19T17:24:59.296Z [stress]   stage "25 VUs" (25 VUs, 40s)
+2026-10-19T17:25:39.302Z [stress]   -> 2815 req, 70.4 req/s, errors 0.00%, p95 20 ms
+2026-10-19T17:25:39.302Z [stress]   stage "50 VUs" (50 VUs, 40s)
+2026-10-19T17:26:19.310Z [stress]   -> 5489 req, 137.2 req/s, errors 0.00%, p95 32 ms
+2026-10-19T17:26:19.310Z [stress]   stage "100 VUs" (100 VUs, 40s)
+2026-10-19T17:26:59.330Z [stress]   -> 9467 req, 236.7 req/s, errors 0.00%, p95 231 ms
+2026-10-19T17:26:59.330Z [stress]   stage "150 VUs" (150 VUs, 40s)
+2026-10-19T17:27:39.345Z [stress]   -> 8509 req, 212.7 req/s, errors 0.00%, p95 886 ms
+2026-10-19T17:27:39.345Z [stress]   stage "200 VUs" (200 VUs, 40s)
+2026-10-19T17:28:19.361Z [stress]   -> 7103 req, 177.6 req/s, errors 0.00%, p95 1956 ms
+2026-10-19T17:28:19.363Z [stress]   stage "300 VUs" (300 VUs, 40s)
+2026-10-19T17:28:59.377Z [stress]   -> 7823 req, 195.6 req/s, errors 0.00%, p95 3185 ms
+2026-10-19T17:29:00.876Z [stress]   stage "recovery 10 VUs" (10 VUs, 60s)
+2026-10-19T17:30:02.006Z [stress]   5 VUs: 559 req 13.97/s p50 9.6 p95 19.8 p99 52.2 max 80.2 err 0.00% 429=0 cpu 10.4/52% rss 2423.8 MiB db 20
+2026-10-19T17:30:02.007Z [stress]   10 VUs: 1111 req 27.77/s p50 8.8 p95 17.8 p99 27.4 max 36.9 err 0.00% 429=0 cpu 16.6/81% rss 2431.9 MiB db 20
+2026-10-19T17:30:02.007Z [stress]   25 VUs: 2796 req 69.9/s p50 8.8 p95 20.2 p99 34.7 max 79.8 err 0.00% 429=0 cpu 33.3/77% rss 2445.4 MiB db 20
+2026-10-19T17:30:02.007Z [stress]   50 VUs: 5470 req 136.75/s p50 10.3 p95 31.7 p99 76.4 max 192.6 err 0.00% 429=0 cpu 56.2/96% rss 2445.7 MiB db 20
+2026-10-19T17:30:02.007Z [stress]   100 VUs: 9458 req 236.44/s p50 48.6 p95 231.2 p99 365.3 max 686.9 err 0.00% 429=0 cpu 89.8/98% rss 1202.2 MiB db 20
+2026-10-19T17:30:02.007Z [stress]   150 VUs: 8589 req 214.72/s p50 281.7 p95 912.9 p99 1438.2 max 3585.8 err 0.00% 429=0 cpu 93.9/99.1% rss 1050.7 MiB db 20
+2026-10-19T17:30:02.007Z [stress]   200 VUs: 7225 req 180.62/s p50 634.9 p95 1977.3 p99 2909.8 max 7454.6 err 0.00% 429=0 cpu 92.6/98% rss 947 MiB db 20
+2026-10-19T17:30:02.007Z [stress]   300 VUs: 8041 req 201.03/s p50 898.7 p95 3196.3 p99 4707.4 max 8641.7 err 0.00% 429=0 cpu 94.1/100% rss 950.2 MiB db 20
+2026-10-19T17:30:02.007Z [stress]   recovery 10 VUs: 1687 req 28.12/s p50 9.1 p95 17.3 p99 29 max 86.9 err 0.00% 429=0 cpu 16/84% rss 951.3 MiB db 20
+2026-10-19T17:30:03.896Z [stress] done; results in perf/results/stress-2026-10/one-cpu

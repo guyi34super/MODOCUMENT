@@ -1,0 +1,33 @@
+id: SEC-009
+status: Partially Implemented
+current_state: "Vulnerability scanning is configured in CI: gitleaks full history, Semgrep, dependency review and npm audit on every push/PR and weekly; weekly image rebuild with Trivy; weekly OWASP ZAP baseline; SBOM per release; weekly Dependabot. Internal VA report of 2026-10-19: 0 secrets, 0 SAST findings (repo rules), 0 npm vulnerabilities, ZAP 0 fail and 1 low warning (COEP header). Trivy on 2026-10-12 found 11 critical and 41 high fixable library vulnerabilities in the app image; the current pom.xml still resolves the affected versions. GitHub Actions has started no job since at least 2026-10-17. No independent penetration test has ever been performed."
+gap: "11 Critical (SLA breached) and 41 High library vulnerabilities open; CI scans not running; ZAP warning unresolved; no independent penetration test."
+gap_type: Build
+required_action: "Upgrade Spring Boot and the listed libraries, rebuild and re-scan; restore GitHub Actions; fix or justify the COEP header; budget decision and external PT with retest."
+action_owner: "Security — Bhavish Nobeen"
+target_date: 2026-10-31
+evidence:
+  id: SEC-009-E01
+  status: Partial — to collect
+  location: "docs/compliance/evidence/A5-vulnerability-assessment-report-2026-10.md; docs/compliance/evidence/A5-scans-and-tests.md; .github/workflows/security.yml; .github/workflows/image-rebuild.yml; .github/workflows/zap-baseline.yml"
+question:
+  final_answer: "Automated vulnerability scanning is in place: secret scanning of the full code history, static code analysis, dependency checks on every change, a weekly container image scan, a weekly OWASP ZAP web scan, and weekly dependency updates. Our latest internal assessment (19 October 2026) found no secrets, no static-analysis findings, no vulnerable frontend packages and one low-severity web header warning; the container scan of 12 October 2026 found known vulnerabilities in Java framework libraries, which are being remediated through a framework upgrade under our 72-hour critical / 14-day high patch targets. An independent penetration test has not yet been performed; the budget decision is due 31 October 2026, with the test and retest planned for Q1 2027. We share report summaries; full technical reports are kept controlled. Evidence SEC-009-E01."
+  confidence: High
+test:
+  id: SEC-009-T01
+  actual_result: "Scans re-run 2026-10-19: gitleaks history 0, semgrep repo rules 0, npm audit 0 (frontend prod/all, e2e). OWASP dependency-check and Semgrep registry packs could not run (feeds blocked in the sandbox). Latest CI results: Trivy 2026-10-12 11 critical + 41 high fixable (still present in current dependency versions), ZAP 2026-10-13 0 fail / 1 warn. No external PT. Acceptance (no open Critical/High) not met."
+  result: Fail
+  tester: "Agent A5 (automated re-performance); human sign-off required"
+  date: 2026-10-19
+roadmap:
+  phase: Day 30
+  action: "Fix the open Critical/High library CVEs and restore CI scanning (2026-10-22 proposed); monthly VA report; PT budget decision by 2026-10-31 (Reezvi Pydiah); PT + retest Q1 2027."
+  status: In progress
+risk:
+  likelihood: 3
+  impact: 4
+  residual: High
+policy_document: null
+to_confirm:
+  - "TO CONFIRM (organisational): penetration-test vendor, scope, budget and dates"
+  - "TO CONFIRM (organisational): cause of the GitHub Actions runner outage; whether Dependabot alerts and security updates are enabled"
